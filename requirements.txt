@@ -1,0 +1,31 @@
+# AI / LLM
+anthropic
+google-generativeai
+tavily-python
+langchain-core
+langgraph
+
+# Data validation
+pydantic>=2.0
+
+# PDF handling
+pymupdf
+weasyprint
+jinja2
+
+# Word documents
+python-docx
+
+# Backend
+fastapi
+uvicorn
+
+# Frontend
+streamlit
+
+# Utilities
+python-dotenv
+loguru
+
+# Testing
+pytest
