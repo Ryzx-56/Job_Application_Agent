@@ -28,3 +28,6 @@ Thumbs.db
 # Pytest / Testing
 .pytest_cache/
 pytest.ini
+
+# Specific project documentation
+Job_Application_Agent_Roadmap.docx
