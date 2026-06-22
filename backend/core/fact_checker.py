@@ -5,6 +5,8 @@ import os
 from google import genai
 from google.genai import types
 from loguru import logger
+from core.state import AgentState
+from agents.tailoring_engine import make_regeneration_fn
 
 client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
 
@@ -28,7 +30,6 @@ or
 
 MAX_RETRIES = 3
 
-
 def _call_gemini(prompt: str) -> dict:
     """Call Gemini Flash and parse the JSON response."""
     response = client.models.generate_content(
@@ -41,7 +42,6 @@ def _call_gemini(prompt: str) -> dict:
     text = response.text.strip()
     text = re.sub(r"```json|```", "", text).strip()
     return json.loads(text)
-
 
 def verify_bullet(bullet: str, facts_json: dict) -> dict:
     """
@@ -58,7 +58,6 @@ def verify_bullet(bullet: str, facts_json: dict) -> dict:
         logger.warning(f"Fact check parse error: {e}. Defaulting to pass.")
         return {"passes": True, "issue": None}
 
-
 def run_fact_check_loop(
     bullets: list[dict],
     facts_json: dict,
@@ -66,11 +65,6 @@ def run_fact_check_loop(
 ) -> tuple[list[dict], list[dict]]:
     """
     Run the full fact-check loop on a list of bullet dicts.
-    Each bullet dict: {"text": str, "section": str}
-
-    Returns:
-        - verified_bullets: list of bullets that passed
-        - hallucination_flags: list of {"bullet": str, "issue": str, "excluded": bool}
     """
     verified_bullets   = []
     hallucination_flags = []
@@ -89,10 +83,8 @@ def run_fact_check_loop(
                 break
             else:
                 issue = result.get("issue", "Unknown hallucination")
-                logger.warning(
-                    f"⚠️  Attempt {attempt}/{MAX_RETRIES} failed — {issue}\n"
-                    f"    Bullet: {bullet_text[:80]}..."
-                )
+                logger.warning(f"⚠️  Attempt {attempt}/{MAX_RETRIES} failed — {issue}")
+                
                 hallucination_flags.append({
                     "bullet":   bullet_text,
                     "issue":    issue,
@@ -108,38 +100,33 @@ def run_fact_check_loop(
                 if flag["bullet"] == bullet_obj["text"]:
                     flag["excluded"] = True
                     break
-            logger.error(f"❌ Bullet excluded after {MAX_RETRIES} retries: {bullet_text[:60]}...")
+            logger.error(f"❌ Bullet excluded after {MAX_RETRIES} retries.")
 
     return verified_bullets, hallucination_flags
 
-
-def make_regeneration_fn(facts_json: dict):
+def run_fact_checker(state: AgentState) -> AgentState:
     """
-    Returns a callable used by the fact-check loop to regenerate a failed bullet.
-    Signature: (bullet: str, issue: str) -> str
+    LangGraph Validation Node wrapper.
     """
-    REGENERATION_PROMPT = """
-The following bullet was REJECTED because it contains invented information:
+    if state.get("error"):
+        return state
 
-BULLET: {bullet}
-ISSUE: {issue}
+    logger.info("🛡️  Agent Node — Executing Strict Fact Checker...")
 
-Rewrite this bullet using ONLY facts from this JSON:
-{facts_json}
+    tailored_bullets = state.get("tailored_bullets", [])
+    facts_json = state.get("facts_json", {})
 
-Return ONLY the corrected bullet text, nothing else.
-"""
+    regenerate_bullet_fn = make_regeneration_fn(facts_json)
 
-    def regenerate(bullet: str, issue: str) -> str:
-        prompt = REGENERATION_PROMPT.format(
-            bullet     = bullet,
-            issue      = issue,
-            facts_json = json.dumps(facts_json, ensure_ascii=False)
-        )
-        response = client.models.generate_content(
-            model    = "gemini-2.5-flash",
-            contents = prompt,
-        )
-        return response.text.strip()
+    verified_bullets, hallucination_flags = run_fact_check_loop(
+        bullets=tailored_bullets,
+        facts_json=facts_json,
+        tailoring_fn=regenerate_bullet_fn
+    )
 
-    return regenerate
+    state["tailored_bullets"] = verified_bullets
+    state["hallucination_logs"] = hallucination_flags
+    state["fact_check_passed"] = len(verified_bullets) > 0
+
+    logger.info(f"🛡️  Fact check complete. Passed: {state['fact_check_passed']}")
+    return state

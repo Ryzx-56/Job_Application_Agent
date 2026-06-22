@@ -1,15 +1,15 @@
 # core/orchestrator.py
-from langgraph.graph import StateMachine, StateGraph, END
+from langgraph.graph import StateGraph, END
 from core.state import AgentState
 
 # Import node wrappers
 from agents.cv_parser import run_cv_parser          # Agent 1
 from agents.jd_analyzer import run_jd_analyzer      # Agent 2
-from agents.tailoring_engine import run_tailoring   # Agent 3
+from agents.tailoring_engine import run_tailoring_engine   # Agent 3 
 from core.fact_checker import run_fact_checker      # Validation Node
 from agents.document_generator import run_document_generator  # Agent 4
 from agents.match_scorer import run_match_scorer    # Agent 5
-from agents.jobs_finder import run_jobs_finder      # Agent 6 (Day 17-18 Added)
+from agents.jobs_finder import run_jobs_finder      # Agent 6 
 
 # 1. Initialize State Graph Engine
 workflow = StateGraph(AgentState)
@@ -17,7 +17,7 @@ workflow = StateGraph(AgentState)
 # 2. Register Processing Nodes
 workflow.add_node("cv_parser", run_cv_parser)
 workflow.add_node("jd_analyzer", run_jd_analyzer)
-workflow.add_node("tailoring_engine", run_tailoring)
+workflow.add_node("tailoring_engine", run_tailoring_engine) # Updated node reference
 workflow.add_node("fact_checker", run_fact_checker)
 workflow.add_node("document_generator", run_document_generator)
 workflow.add_node("match_scorer", run_match_scorer)
