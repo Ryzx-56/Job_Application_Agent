@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: "Georgia", serif;
+      font-size: 11.5pt;
+      color: #1a1a1a;
+      line-height: 1.6;
+      padding: 60px 64px;
+    }
+    .date  { margin-bottom: 28px; color: #555; font-size: 10.5pt; }
+    .intro { margin-bottom: 24px; }
+    .body  { white-space: pre-wrap; margin-bottom: 32px; }
+    .sign  { margin-top: 8px; font-weight: bold; }
+  </style>
+</head>
+<body>
+  <div class="date">{{ date }}</div>
+  <div class="intro">
+    <strong>{{ job_title }}</strong> — {{ company }}
+  </div>
+  <div class="body">{{ cover_letter_text }}</div>
+  <div class="sign">{{ candidate_name }}</div>
+</body>
+</html>

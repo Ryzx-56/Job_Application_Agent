@@ -1,5 +1,6 @@
 from typing import TypedDict, List, Optional
 
+
 class AgentState(TypedDict):
     # ── INPUTS ──────────────────────────────────────────────
     raw_cv_text:             str
@@ -11,11 +12,11 @@ class AgentState(TypedDict):
     # ── AGENT 2 OUTPUT (Gemini) ─────────────────────────────
     weight_factors:          dict
 
-    # ── AGENT 3 OUTPUT (Claude) ─────────────────────────────
+    # ── AGENT 3 OUTPUT (Gemini — temporary; Claude later) ───
     tailored_bullets:        List[dict]
     tailored_summary:        str
 
-    # ── FACT CHECK LOOP ─────────────────────────────────────
+    # ── FACT CHECK LOOP (Gemini) ────────────────────────────
     hallucination_flags:     List[dict]
     fact_check_passed:       bool
 

@@ -1,0 +1,30 @@
+# Environment variables — NEVER commit this
+.env
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+
+# Virtual environment (Updated to match your current JBAA3.11 directory)
+JBAA/
+JBAA3.11/
+
+# Generated output files
+*.pdf
+*.docx
+outputs/
+
+# IDE / Editors
+.vscode/
+.idea/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Pytest / Testing
+.pytest_cache/
+pytest.ini
