@@ -21,7 +21,6 @@ def build_pdf_styles():
     PRIMARY_COLOR = colors.HexColor("#1A365D")  # Deep Navy
     TEXT_COLOR = colors.HexColor("#2D3748")     # Charcoal
     
-    # Modify existing or add unique custom styles
     styles.add(ParagraphStyle(
         name='CV_Name',
         fontName='Helvetica-Bold',
@@ -82,7 +81,6 @@ def render_cv_pdf(state: dict) -> str:
     """Renders tailored CV to PDF using ReportLab flowables."""
     output_path = os.path.join(OUTPUT_DIR, "tailored_cv.pdf")
     
-    # 0.5 inch margins are standard and give plenty of breathing room for content
     doc = SimpleDocTemplate(
         output_path, 
         pagesize=letter,
@@ -95,11 +93,11 @@ def render_cv_pdf(state: dict) -> str:
     styles = build_pdf_styles()
     story = []
     
-    facts = state.get("facts_json", {})
-    personal = facts.get("personal", {})
+    facts = state.get("facts_json", {}) or {}
+    personal = facts.get("personal", {}) or {}
     
     # 1. Header Section
-    name = personal.get("name", "Candidate Name")
+    name = personal.get("name") or "Candidate Name"
     story.append(Paragraph(name, styles['CV_Name']))
     story.append(Spacer(1, 4))
     
@@ -113,10 +111,8 @@ def render_cv_pdf(state: dict) -> str:
     story.append(Paragraph(contact_str, styles['CV_Contact']))
     story.append(Spacer(1, 10))
     
-    # Helper for adding standard horizontal divider lines
     def add_section_divider(title):
         story.append(Paragraph(title.upper(), styles['CV_SectionHeading']))
-        # Add a subtle thin line below section title
         t = Table([['']], colWidths=[540], rowHeights=[1])
         t.setStyle(TableStyle([
             ('LINEABOVE', (0,0), (-1,-1), 0.75, colors.HexColor("#CBD5E0")),
@@ -127,20 +123,19 @@ def render_cv_pdf(state: dict) -> str:
         story.append(Spacer(1, 6))
 
     # 2. Professional Summary
-    summary_text = state.get("tailored_summary") or facts.get("summary", "")
+    summary_text = state.get("tailored_summary") or facts.get("summary") or ""
     if summary_text:
         add_section_divider("Professional Summary")
         story.append(Paragraph(summary_text, styles['CV_Body']))
         story.append(Spacer(1, 10))
 
     # 3. Experience Section
-    experience = facts.get("experience", [])
+    experience = facts.get("experience", []) or []
     if experience:
         add_section_divider("Work Experience")
         for exp in experience:
-            # Table layout for Company & Title (Left) vs Dates & Location (Right)
             left_text = f"<b>{exp.get('title', '')}</b> — {exp.get('company', '')}"
-            right_text = exp.get("dates", "")
+            right_text = exp.get("dates", "") or ""
             
             exp_table = Table(
                 [[Paragraph(left_text, styles['CV_Body']), Paragraph(right_text, styles['CV_ItemRight'])]],
@@ -154,22 +149,18 @@ def render_cv_pdf(state: dict) -> str:
             story.append(exp_table)
             story.append(Spacer(1, 4))
             
-            # Use tailored bullets if available, else fall back to original
-            bullets = exp.get("bullets", [])
-            # If your pipeline formats tailored_bullets as a flat list mapping to the current experience:
-            if state.get("tailored_bullets") and isinstance(state["tailored_bullets"], list):
-                # Simple check: if it's a list of strings matching this section, use them
-                pass 
+            bullets = exp.get("bullets", []) or []
             
             list_items = [ListItem(Paragraph(b, styles['CV_Body']), leftIndent=12, bulletColor=colors.HexColor("#1A365D")) for b in bullets]
-            story.append(ListFlowable(list_items, bulletType='bullet', start='circle', bulletFontName='Helvetica', bulletFontSize=8, spaceAfter=8))
+            if list_items:
+                story.append(ListFlowable(list_items, bulletType='bullet', start='circle', bulletFontName='Helvetica', bulletFontSize=8, spaceAfter=8))
 
     # 4. Projects Section
-    projects = facts.get("projects", [])
+    projects = facts.get("projects", []) or []
     if projects:
         add_section_divider("Projects")
         for proj in projects:
-            tech_stack = ", ".join(proj.get("tech_stack", []))
+            tech_stack = ", ".join(proj.get("tech_stack", []) or [])
             left_text = f"<b>{proj.get('name', '')}</b>"
             if tech_stack:
                 left_text += f" | <i>{tech_stack}</i>"
@@ -182,13 +173,13 @@ def render_cv_pdf(state: dict) -> str:
             story.append(proj_table)
             story.append(Spacer(1, 2))
             
-            desc = proj.get("description", "")
+            desc = proj.get("description", "") or ""
             if desc:
                 story.append(Paragraph(desc, styles['CV_Body']))
                 story.append(Spacer(1, 6))
 
     # 5. Skills Section
-    skills = facts.get("skills", {})
+    skills = facts.get("skills", {}) or {}
     if skills:
         add_section_divider("Skills")
         skills_lines = []
@@ -203,12 +194,12 @@ def render_cv_pdf(state: dict) -> str:
         story.append(Spacer(1, 6))
 
     # 6. Education Section
-    education = facts.get("education", [])
+    education = facts.get("education", []) or []
     if education:
         add_section_divider("Education")
         for edu in education:
             left_text = f"<b>{edu.get('degree', '')}</b> — {edu.get('institution', '')}"
-            right_text = edu.get("graduation_year", "")
+            right_text = edu.get("graduation_year", "") or ""
             if edu.get("gpa"):
                 left_text += f" (GPA: {edu.get('gpa')})"
                 
@@ -245,12 +236,12 @@ def render_cover_letter_pdf(state: dict) -> str:
     styles = build_pdf_styles()
     story = []
     
-    facts = state.get("facts_json", {})
-    personal = facts.get("personal", {})
-    wf = state.get("weight_factors", {})
+    facts = state.get("facts_json", {}) or {}
+    personal = facts.get("personal", {}) or {}
+    wf = state.get("weight_factors", {}) or {}
     
     # Sender Block
-    name = personal.get("name", "Candidate Name")
+    name = personal.get("name") or "Candidate Name"
     story.append(Paragraph(f"<b>{name}</b>", styles['CV_Body']))
     if personal.get("location"): story.append(Paragraph(personal["location"], styles['CV_Body']))
     if personal.get("email"): story.append(Paragraph(personal["email"], styles['CV_Body']))
@@ -262,8 +253,8 @@ def render_cover_letter_pdf(state: dict) -> str:
     story.append(Spacer(1, 15))
     
     # Recipient Block
-    company = wf.get("company", "Company Name")
-    job_title = wf.get("job_title", "Position")
+    company = wf.get("company") or "Company Name"
+    job_title = wf.get("job_title") or "Position"
     story.append(Paragraph("Hiring Team", styles['CV_Body_Bold']))
     story.append(Paragraph(company, styles['CV_Body']))
     story.append(Spacer(1, 15))
@@ -276,8 +267,8 @@ def render_cover_letter_pdf(state: dict) -> str:
     story.append(Paragraph("Dear Hiring Team,", styles['CV_Body']))
     story.append(Spacer(1, 10))
     
-    # Body Paragraphs (Split text block into clean paragraph elements on newlines)
-    letter_text = state.get("cover_letter_text", "")
+    # Body Paragraphs — guard against None before .split()
+    letter_text = state.get("cover_letter_text") or ""
     paragraphs = [p.strip() for p in letter_text.split('\n') if p.strip()]
     
     for para in paragraphs:

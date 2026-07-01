@@ -1,13 +1,9 @@
 # agents/tailoring_engine.py
 import json
 import re
-import os
-from google import genai
-from google.genai import types
 from loguru import logger
 from core.state import AgentState
-
-client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
+from core.llm_config import generate_claude_text
 
 TAILORING_PROMPT = """
 You are a senior CV writer with 15 years of experience.
@@ -57,9 +53,7 @@ Return ONLY the corrected bullet text, nothing else.
 
 def run_tailoring_engine(state: AgentState) -> AgentState:
     """
-    Agent 3 — Tailoring Engine (Gemini Flash swap).
-    NOTE: When Anthropic credits are restored, replace client.models.generate_content()
-    with anthropic_client.messages.create(model='claude-sonnet-4-6', ...)
+    Agent 3 — Tailoring Engine (Claude Sonnet 4.6 — the main brain).
     """
     if state.get("error"):
         return state
@@ -72,19 +66,12 @@ def run_tailoring_engine(state: AgentState) -> AgentState:
         weight_factors = json.dumps(weight_factors, ensure_ascii=False),
     )
 
-    logger.info("🧠 Agent 3 — Tailoring Engine running (Gemini Flash swap)...")
+    logger.info("🧠 Agent 3 — Tailoring Engine running (Claude Sonnet 4.6)...")
 
     MAX_RETRIES = 3
     for attempt in range(1, MAX_RETRIES + 1):
         try:
-            response = client.models.generate_content(
-                model    = "gemini-2.5-flash",
-                contents = prompt,
-                config   = types.GenerateContentConfig(
-                    response_mime_type="application/json"
-                )
-            )
-            raw  = response.text.strip()
+            raw  = generate_claude_text(prompt, max_tokens=2000)
             raw  = re.sub(r"```json|```", "", raw).strip()
             data = json.loads(raw)
 
@@ -113,10 +100,6 @@ def make_regeneration_fn(facts_json: dict):
             issue      = issue,
             facts_json = json.dumps(facts_json, ensure_ascii=False)
         )
-        response = client.models.generate_content(
-            model    = "gemini-2.5-flash",
-            contents = prompt,
-        )
-        return response.text.strip()
+        return generate_claude_text(prompt, max_tokens=300).strip()
 
     return regenerate

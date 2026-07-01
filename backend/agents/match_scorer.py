@@ -1,21 +1,22 @@
 # agents/match_scorer.py
 import json
-import os
-from google import genai
+import re
 from loguru import logger
 from core.state import AgentState
-
-client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
+from core.llm_config import generate_claude_text
 
 def run_match_scorer(state: AgentState) -> AgentState:
     """
-    Agent 5 — Match Scorer.
+    Agent 5 — Match Scorer (Claude Sonnet 4.6).
     Calculates the alignment between the tailored CV and the job description.
+    Uses Claude because scoring requires semantic reasoning (e.g. recognizing
+    that "built neural networks" satisfies "deep learning experience"),
+    not just keyword counting.
     """
     if state.get("error"):
         return state
 
-    logger.info("🎯 Agent 5 — Scoring match...")
+    logger.info("🎯 Agent 5 — Scoring match (Claude Sonnet 4.6)...")
 
     # Combine data for the prompt
     cv_content = state.get("tailored_summary", "")
@@ -28,27 +29,20 @@ def run_match_scorer(state: AgentState) -> AgentState:
     CV Summary: {cv_content}
     Job Description: {jd_content}
 
-    Return ONLY JSON: {{"score": 85, "reason": "Reason here"}}
+    Return ONLY JSON, no markdown fences: {{"score": 85, "reason": "Reason here"}}
     """
 
     try:
-        response = client.models.generate_content(
-            model="gemini-2.5-flash",
-            contents=prompt
-        )
-        
-        # Clean and parse
-        raw = response.text.replace("```json", "").replace("```", "").strip()
+        raw = generate_claude_text(prompt, max_tokens=300)
+        raw = re.sub(r"```json|```", "", raw).strip()
         data = json.loads(raw)
 
-        state["match_score"] = data.get("score", 0)
-        state["match_reason"] = data.get("reason", "No analysis provided.")
-        
-        logger.info(f"🎯 Match Score: {state['match_score']}/100")
-        return state
+        match_score = data.get("score", 0)
+        match_reason = data.get("reason", "No analysis provided.")
+
+        logger.info(f"🎯 Match Score: {match_score}/100")
+        return {"match_score": match_score, "match_reason": match_reason}
 
     except Exception as e:
         logger.error(f"Match scoring failed: {e}")
-        state["match_score"] = 0
-        state["match_reason"] = "Scoring failed."
-        return state
+        return {"match_score": 0, "match_reason": "Scoring failed."}

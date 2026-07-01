@@ -7,7 +7,9 @@ from dotenv import load_dotenv
 from loguru import logger
 
 # Initialize environment variables from .env immediately
-load_dotenv()
+from dotenv import load_dotenv, find_dotenv
+load_dotenv(find_dotenv(), override=True)
+
 
 # Import pipeline structures
 from core.state import AgentState

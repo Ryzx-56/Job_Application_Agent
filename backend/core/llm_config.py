@@ -14,7 +14,7 @@ GEMINI_MODEL = "gemini-2.5-flash"
 
 # Claude client — used for writing tasks only (tailoring, cover letter, scoring)
 claude_client = anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
-CLAUDE_MODEL = "claude-sonnet-4-20250514"
+CLAUDE_MODEL = "claude-sonnet-4-6"
 
 # Shared config for Gemini JSON responses
 gemini_json_config = types.GenerateContentConfig(
@@ -65,7 +65,47 @@ def generate_gemini_json(prompt: str, max_retries: int = 5) -> str:
     raise RuntimeError(f"Gemini failed after {max_retries} attempts: {last_error}")
 
 
-def generate_gemini_text(prompt: str, max_retries: int = 5) -> str:
+def _is_retryable_anthropic_error(exc: Exception) -> bool:
+    if isinstance(exc, (anthropic.RateLimitError, anthropic.APIStatusError)):
+        status = getattr(exc, "status_code", None)
+        return status in (429, 529, 500, 503)
+    return isinstance(exc, anthropic.APIConnectionError)
+
+
+def generate_claude_text(prompt: str, max_tokens: int = 2000, max_retries: int = 5) -> str:
+    """
+    Call Claude and return plain text. Retries on rate limits / transient
+    server errors with backoff.
+    """
+    last_error = None
+
+    for attempt in range(1, max_retries + 1):
+        try:
+            response = claude_client.messages.create(
+                model=CLAUDE_MODEL,
+                max_tokens=max_tokens,
+                messages=[{"role": "user", "content": prompt}],
+            )
+            return response.content[0].text
+        except Exception as e:
+            last_error = e
+            if _is_retryable_anthropic_error(e) and attempt < max_retries:
+                delay = min(60, 8 * attempt)
+                print(f"[Claude] Transient error, retrying in {delay:.0f}s (attempt {attempt}/{max_retries})")
+                time.sleep(delay)
+                continue
+            raise
+
+    raise RuntimeError(f"Claude failed after {max_retries} attempts: {last_error}")
+
+
+def generate_claude_json(prompt: str, max_tokens: int = 2000, max_retries: int = 5) -> str:
+    """
+    Call Claude expecting a JSON object back. Claude doesn't have a native
+    JSON response_mime_type like Gemini, so we instruct it in the prompt
+    and the caller is responsible for stripping markdown fences if any slip through.
+    """
+    return generate_claude_text(prompt, max_tokens=max_tokens, max_retries=max_retries)
     """Call Gemini and return plain text (no JSON mode)."""
     last_error = None
 
