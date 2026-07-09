@@ -1,13 +1,9 @@
 # agents/cv_parser.py
 import json
-import os
 from pydantic import ValidationError
-from google import genai
-from google.genai import types
 from schemas.facts_schema import FactsJSON
 from utils.pdf_parser import extract_text_from_pdf
-
-client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
+from core.llm_config import generate_gemini_json
 
 CV_PARSER_PROMPT = """
 You are a CV data extractor. Your ONLY job is to extract existing information from the CV text below.
@@ -95,15 +91,7 @@ def parse_cv_text(cv_text: str, max_retries: int = 3) -> FactsJSON:
         print(f"[Agent 1] Attempt {attempt}/{max_retries}")
 
         try:
-            response = client.models.generate_content(
-                model="gemini-2.5-flash",
-                contents=CV_PARSER_PROMPT.format(cv_text=cv_text),
-                config=types.GenerateContentConfig(
-                    response_mime_type="application/json"
-                )
-            )
-
-            raw_json = response.text
+            raw_json = generate_gemini_json(CV_PARSER_PROMPT.format(cv_text=cv_text))
             data = json.loads(raw_json)
             facts = FactsJSON.model_validate(data)
 
@@ -125,12 +113,117 @@ def parse_cv_text(cv_text: str, max_retries: int = 3) -> FactsJSON:
 def run_cv_parser(state: dict) -> dict:
     """LangGraph node: parse raw_cv_text into facts_json."""
     try:
-        facts = parse_cv_text(state["raw_cv_text"])
-        state["facts_json"] = facts.model_dump()
-        state["error"] = None
+        cv_text = state["raw_cv_text"]
+        additional_info = (state.get("additional_info") or "").strip()
+        if additional_info:
+            cv_text += "\n\nADDITIONAL INFORMATION FROM CANDIDATE:\n" + additional_info
+
+        facts = parse_cv_text(cv_text)
+        return {"facts_json": facts.model_dump(), "error": None}
     except Exception as e:
-        state["error"] = f"Agent 1 failed: {e}"
-    return state
+        return {"error": f"Agent 1 failed: {e}"}
+
+
+def serialize_manual_cv(form_data: dict, additional_info: str = "") -> str:
+    """
+    Converts structured 'Create New CV' form data into a plain-text block
+    shaped like a real CV, so it can run through the exact same Gemini
+    extraction pipeline (parse_cv_text) as an uploaded PDF — keeping
+    facts_json output consistent no matter which input method was used.
+    """
+    lines: list[str] = []
+
+    personal = form_data.get("personal", {}) or {}
+    lines.append(f"Name: {personal.get('name', '')}")
+    for label, key in [("Email", "email"), ("Phone", "phone"), ("LinkedIn", "linkedin"),
+                        ("GitHub", "github"), ("Location", "location"), ("Portfolio", "portfolio")]:
+        if personal.get(key):
+            lines.append(f"{label}: {personal[key]}")
+
+    education = form_data.get("education") or []
+    if education:
+        lines.append("\nEDUCATION:")
+        for edu in education:
+            line = f"- {edu.get('institution', '')}, {edu.get('degree', '')}"
+            if edu.get("gpa"):
+                line += f", GPA: {edu['gpa']}"
+            if edu.get("graduation_year"):
+                line += f", {edu['graduation_year']}"
+            lines.append(line)
+            if edu.get("distinctions"):
+                lines.append(f"  Distinctions: {', '.join(edu['distinctions'])}")
+            if edu.get("relevant_coursework"):
+                lines.append(f"  Relevant coursework: {', '.join(edu['relevant_coursework'])}")
+
+    experience = form_data.get("experience") or []
+    if experience:
+        lines.append("\nEXPERIENCE:")
+        for exp in experience:
+            lines.append(f"- {exp.get('title', '')} at {exp.get('company', '')} ({exp.get('dates', '')})")
+            for bullet in exp.get("bullets", []) or []:
+                if bullet and bullet.strip():
+                    lines.append(f"  • {bullet.strip()}")
+
+    projects = form_data.get("projects") or []
+    if projects:
+        lines.append("\nPROJECTS:")
+        for proj in projects:
+            line = f"- {proj.get('name', '')}"
+            if proj.get("tech_stack"):
+                line += f" ({', '.join(proj['tech_stack'])})"
+            lines.append(line)
+            if proj.get("description"):
+                lines.append(f"  {proj['description']}")
+            if proj.get("metrics"):
+                lines.append(f"  Results: {', '.join(proj['metrics'])}")
+            if proj.get("url"):
+                lines.append(f"  URL: {proj['url']}")
+
+    skills = form_data.get("skills") or {}
+    if any(skills.values()):
+        lines.append("\nSKILLS:")
+        for category, items in skills.items():
+            if items:
+                lines.append(f"- {category}: {', '.join(items)}")
+
+    certifications = form_data.get("certifications") or []
+    if certifications:
+        lines.append("\nCERTIFICATIONS:")
+        for cert in certifications:
+            lines.append(f"- {cert}")
+
+    languages_spoken = form_data.get("languages_spoken") or []
+    if languages_spoken:
+        lines.append(f"\nLANGUAGES SPOKEN: {', '.join(languages_spoken)}")
+
+    awards = form_data.get("awards") or []
+    if awards:
+        lines.append("\nAWARDS:")
+        for award in awards:
+            lines.append(f"- {award}")
+
+    if additional_info and additional_info.strip():
+        lines.append("\nADDITIONAL INFORMATION FROM CANDIDATE:")
+        lines.append(additional_info.strip())
+
+    return "\n".join(lines)
+
+
+def run_manual_cv_parser(state: dict) -> dict:
+    """
+    LangGraph node for the 'Create New CV' flow. Reuses the exact same
+    Gemini extraction pipeline as an uploaded PDF (parse_cv_text) — just
+    fed a serialized version of the structured form instead of raw PDF
+    text, so downstream nodes see an identical facts_json shape either way.
+    """
+    try:
+        manual_data = state.get("manual_cv_data", {}) or {}
+        additional_info = state.get("additional_info", "") or ""
+        serialized = serialize_manual_cv(manual_data, additional_info)
+        facts = parse_cv_text(serialized)
+        return {"facts_json": facts.model_dump(), "error": None}
+    except Exception as e:
+        return {"error": f"Manual CV parsing failed: {e}"}
 
 
 def _print_summary(facts: FactsJSON):

@@ -303,3 +303,43 @@ def calculate_ats_score(
         "matched_skills": matched_skills,
         "missing_skills": missing_skills,
     }
+
+
+# ─── LANGGRAPH NODE WRAPPER ───────────────────────────────────────────────────
+
+def run_ats_scorer(state: dict) -> dict:
+    """
+    LangGraph node. Wraps calculate_ats_score above — pure Python matching,
+    no LLM call, so it's instant and immune to Gemini/Claude rate limits
+    or billing issues entirely.
+    """
+    from loguru import logger
+
+    if state.get("error"):
+        return {}
+
+    logger.info("📋 Computing ATS score (keyword + skills + education + experience match)...")
+
+    facts_json       = state.get("facts_json", {}) or {}
+    weight_factors   = state.get("weight_factors", {}) or {}
+    tailored_bullets = state.get("tailored_bullets", []) or []
+    tailored_summary = state.get("tailored_summary", "") or ""
+
+    tailored_cv_text = tailored_summary + " " + " ".join(
+        b.get("tailored", "") for b in tailored_bullets
+    )
+
+    result = calculate_ats_score(facts_json, weight_factors, tailored_cv_text)
+
+    logger.info(f"📋 ATS score: {result['ats_score']}/100")
+
+    return {
+        "ats_score": result["ats_score"],
+        "score_breakdown": {
+            **result["score_breakdown"],
+            "matched_keywords":   result["matched_keywords"],
+            "unmatched_keywords": result["unmatched_keywords"],
+            "matched_skills":     result["matched_skills"],
+            "missing_skills":     result["missing_skills"],
+        },
+    }

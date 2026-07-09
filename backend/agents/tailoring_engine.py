@@ -2,8 +2,10 @@
 import json
 import re
 from loguru import logger
+from pydantic import ValidationError
 from core.state import AgentState
 from core.llm_config import generate_claude_text
+from schemas.tailored_cv_schema import TailoredCV
 
 TAILORING_PROMPT = """
 You are a senior CV writer with 15 years of experience.
@@ -28,12 +30,16 @@ WEIGHT_FACTORS:
 
 Tailor the CV bullets and summary to match this job. Follow the strict rules.
 
+For each bullet, include:
+  - "original": the exact original bullet text from FACTS_JSON
+  - "tailored": your rewritten version using JD keywords
+  - "relevance_score": a float from 0.0 to 1.0 rating how relevant this bullet is to the job description
+
 Return ONLY a JSON object in this exact format (no markdown):
 {{
   "professional_summary": "3-sentence summary here",
   "bullets": [
-    {{"section": "experience", "text": "bullet text here"}},
-    {{"section": "project", "text": "bullet text here"}}
+    {{"original": "original bullet text here", "tailored": "rewritten bullet text here", "relevance_score": 0.9}}
   ]
 }}
 """
@@ -51,15 +57,16 @@ Return ONLY the corrected bullet text, nothing else.
 """
 
 
-def run_tailoring_engine(state: AgentState) -> AgentState:
+def run_tailoring_engine(state: AgentState) -> dict:
     """
     Agent 3 — Tailoring Engine (Claude Sonnet 4.6 — the main brain).
     """
     if state.get("error"):
-        return state
+        return {}
 
     facts_json     = state["facts_json"]
     weight_factors = state["weight_factors"]
+    attempts       = state.get("tailoring_attempts", 0) + 1
 
     prompt = TAILORING_PROMPT.format(
         facts_json     = json.dumps(facts_json, ensure_ascii=False),
@@ -75,18 +82,37 @@ def run_tailoring_engine(state: AgentState) -> AgentState:
             raw  = re.sub(r"```json|```", "", raw).strip()
             data = json.loads(raw)
 
-            state["tailored_bullets"] = data.get("bullets", [])
-            state["tailored_summary"] = data.get("professional_summary", "")
-            state["error"]            = None
+            # Validate against the schema so malformed LLM output never
+            # silently flows downstream to the fact-checker / PDF generator.
+            validated = TailoredCV.model_validate(data)
 
-            logger.info(f"✅ Agent 3 complete — {len(state['tailored_bullets'])} bullets generated.")
-            return state
+            bullets = [b.model_dump() for b in validated.bullets]
+            logger.info(f"✅ Agent 3 complete — {len(bullets)} bullets generated.")
 
-        except (json.JSONDecodeError, KeyError) as e:
-            logger.warning(f"Agent 3 attempt {attempt}/{MAX_RETRIES} failed: {e}")
+            return {
+                "tailored_bullets": bullets,
+                "tailored_summary": validated.professional_summary,
+                "tailoring_attempts": attempts,
+                "error": None,
+            }
+
+        except (json.JSONDecodeError, KeyError, ValidationError) as e:
+            logger.warning(f"Agent 3 attempt {attempt}/{MAX_RETRIES} failed — bad output: {e}")
             if attempt == MAX_RETRIES:
-                state["error"] = f"Agent 3 failed after {MAX_RETRIES} retries: {e}"
-                return state
+                return {
+                    "tailoring_attempts": attempts,
+                    "error": f"Agent 3 failed after {MAX_RETRIES} retries (invalid output): {e}",
+                }
+
+        except Exception as e:
+            # Catches API/network failures (rate limits, auth errors, timeouts)
+            # so a transient issue triggers a retry instead of crashing the pipeline.
+            logger.warning(f"Agent 3 attempt {attempt}/{MAX_RETRIES} failed — API error: {e}")
+            if attempt == MAX_RETRIES:
+                return {
+                    "tailoring_attempts": attempts,
+                    "error": f"Agent 3 failed after {MAX_RETRIES} retries (API error): {e}",
+                }
 
 
 def make_regeneration_fn(facts_json: dict):

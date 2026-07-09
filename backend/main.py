@@ -1,7 +1,7 @@
 import os
 import json
 import uvicorn
-from fastapi import FastAPI, HTTPException, status
+from fastapi import FastAPI, HTTPException, status, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
 from loguru import logger
@@ -16,6 +16,7 @@ from core.state import AgentState
 from core.orchestrator import app as graph
 from utils.pdf_parser import extract_text_from_pdf
 from utils.pdf_generator import render_cv_pdf, render_cover_letter_pdf
+from schemas.manual_cv_request import ManualCVRequest
 
 # 1. Initialize FastAPI Application Instance
 app = FastAPI(
@@ -49,6 +50,9 @@ def make_initial_state(cv_text: str, jd_text: str) -> AgentState:
     return AgentState(
         raw_cv_text=cv_text,
         job_description=jd_text,
+        input_mode="upload",
+        manual_cv_data={},
+        additional_info="",
         facts_json={},
         weight_factors={},
         tailored_bullets=[],
@@ -61,7 +65,10 @@ def make_initial_state(cv_text: str, jd_text: str) -> AgentState:
         ats_score=0,
         score_breakdown={},
         gap_analysis=[],
+        job_match_score=0,
+        job_match_reason="",
         similar_jobs=[],
+        tailoring_attempts=0,
         error=None,
         current_step="start",
     )
@@ -71,13 +78,20 @@ async def health_check():
     return {"status": "healthy", "environment": os.getenv("ENVIRONMENT", "development")}
 
 @app.post("/api/v1/optimize", tags=["Agent Core"])
-async def optimize_application(cv_text: str = None, job_description: str = None):
+async def optimize_application(
+    cv: UploadFile = File(...),
+    job_description: str = Form(...),
+    additional_info: str = Form(""),
+):
     logger.info("🚀 API Gateway received an application optimization request.")
-    
-    final_cv_text = cv_text or extract_text_from_pdf("tests/sample_data/Abdulmalik_Hawsawi_CV.pdf")
+
+    cv_bytes = await cv.read()
+    final_cv_text = extract_text_from_pdf(pdf_bytes=cv_bytes)
     final_jd_text = job_description or SHORT_SAMPLE_JD
 
     initial_state = make_initial_state(final_cv_text, final_jd_text)
+    initial_state["input_mode"] = "upload"
+    initial_state["additional_info"] = additional_info or ""
     
     try:
         # Pipeline execution: graph.invoke is the standard LangGraph method
@@ -90,7 +104,10 @@ async def optimize_application(cv_text: str = None, job_description: str = None)
         
         return {
             "success": True,
-            "match_score": result.get("ats_score", 0),
+            "ats_score": result.get("ats_score", 0),
+            "ats_breakdown": result.get("score_breakdown", {}),
+            "job_match_score": result.get("job_match_score", 0),
+            "job_match_reason": result.get("job_match_reason", ""),
             "tailored_summary": result.get("tailored_summary", ""),
             "tailored_bullets": result.get("tailored_bullets", []),
             "cover_letter_text": result.get("cover_letter_text", ""),
@@ -107,6 +124,57 @@ async def optimize_application(cv_text: str = None, job_description: str = None)
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"An execution failure hit a core agent module: {str(err)}"
         )
+
+
+@app.post("/api/v1/optimize-manual", tags=["Agent Core"])
+async def optimize_manual_application(payload: ManualCVRequest):
+    """
+    Same pipeline as /api/v1/optimize, but for the 'Create New CV' flow —
+    structured form data instead of an uploaded PDF. Both routes converge
+    on the same LangGraph, just entering through a different parser node
+    (see core/orchestrator.py's route_cv_input).
+    """
+    logger.info("🚀 API Gateway received a MANUAL CV optimization request.")
+
+    manual_data = payload.model_dump(exclude={"job_description", "additional_info"})
+    final_jd_text = payload.job_description or SHORT_SAMPLE_JD
+
+    initial_state = make_initial_state("", final_jd_text)
+    initial_state["input_mode"] = "manual"
+    initial_state["manual_cv_data"] = manual_data
+    initial_state["additional_info"] = payload.additional_info or ""
+
+    try:
+        logger.info("🧠 Commencing agent graph routing lifecycle (manual entry)...")
+        result = graph.invoke(initial_state)
+        logger.info("✅ Multi-agent execution phase completed.")
+
+        cv_pdf_path = render_cv_pdf(result)
+        cl_pdf_path = render_cover_letter_pdf(result)
+
+        return {
+            "success": True,
+            "ats_score": result.get("ats_score", 0),
+            "ats_breakdown": result.get("score_breakdown", {}),
+            "job_match_score": result.get("job_match_score", 0),
+            "job_match_reason": result.get("job_match_reason", ""),
+            "tailored_summary": result.get("tailored_summary", ""),
+            "tailored_bullets": result.get("tailored_bullets", []),
+            "cover_letter_text": result.get("cover_letter_text", ""),
+            "similar_jobs": result.get("similar_jobs", []),
+            "fact_check_passed": result.get("fact_check_passed", False),
+            "generated_cv_pdf": cv_pdf_path,
+            "generated_cl_pdf": cl_pdf_path,
+            "error": result.get("error", None)
+        }
+
+    except Exception as err:
+        logger.error(f"❌ Pipeline Failure (manual): {err}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"An execution failure hit a core agent module: {str(err)}"
+        )
+
 
 if __name__ == "__main__":
     logger.info("🔥 Starting local development API server via Uvicorn...")

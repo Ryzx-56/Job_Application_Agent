@@ -1,4 +1,6 @@
 import json
+import random
+import time
 
 from pydantic import ValidationError
 
@@ -41,10 +43,15 @@ Respond ONLY in valid JSON matching this exact structure:
 """
 
 
-def run_jd_analyzer(state: AgentState) -> AgentState:
+def run_jd_analyzer(state: AgentState) -> dict:
     job_description = state["job_description"]
     max_retries = 3
     last_error = None
+
+    # cv_parser fires its Gemini call in the same LangGraph step. A $0-balance
+    # account enforces a burst limit on concurrent requests within the same
+    # second — this small jitter desyncs the two calls to avoid tripping it.
+    time.sleep(random.uniform(0.6, 1.4))
 
     for attempt in range(1, max_retries + 1):
         try:
@@ -54,10 +61,8 @@ def run_jd_analyzer(state: AgentState) -> AgentState:
             data = json.loads(raw_text)
             weight_factors = WeightFactors.model_validate(data)
 
-            state["weight_factors"] = weight_factors.model_dump()
-            state["error"] = None
             print(f"[Agent 2] JD analyzed successfully on attempt {attempt}")
-            return state
+            return {"weight_factors": weight_factors.model_dump(), "error": None}
 
         except (json.JSONDecodeError, ValidationError) as e:
             last_error = e
@@ -66,6 +71,7 @@ def run_jd_analyzer(state: AgentState) -> AgentState:
         except Exception as e:
             last_error = e
             print(f"[Agent 2] Attempt {attempt} failed: {e}")
+            if attempt < max_retries:
+                time.sleep(3)  # short, burst-limit-appropriate pause before retrying
 
-    state["error"] = f"Agent 2 failed after {max_retries} attempts: {last_error}"
-    return state
+    return {"error": f"Agent 2 failed after {max_retries} attempts: {last_error}"}

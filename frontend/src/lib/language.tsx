@@ -1,6 +1,6 @@
 "use client";
 
-import React, { createContext, useContext, useState, ReactNode } from "react";
+import React, { createContext, useContext, useState, useEffect, ReactNode } from "react";
 
 /* ========================================================================
    CONTENT — one dictionary per language, shared by every page. Add new
@@ -388,7 +388,7 @@ export const content = {
       generate: {
         eyebrow: "New application",
         title: "Tailor a resume for your next role",
-        sub: "Upload your CV and paste the job description — Tarshih handles the rest.",
+        sub: "Build a new CV or upload your existing one, paste the job description, and let Tarshih handle the rest.",
         uploadLabel: "Your CV",
         uploadHint: "Drag and drop a PDF or DOCX, or click to browse",
         uploadedLabel: "Parsed",
@@ -713,7 +713,7 @@ export const content = {
       items: [
         {
           q: "ما هو نظام ATS ولماذا يهم؟",
-          a: "نظام تتبع المتقدمين هو برنامج تستخدمه الشركات لفرز السير الذاتية قبل أن يطّلع عليها شخص حقيقي. يحلّل ترشيح كل وصف وظيفي ويحسّن سيرتك الذاتية لتُقرأ بوضوح من قبل النظام الآلي والمسؤول عن التوظيف على حد سواء.",
+          a: "نظام تتبع المتقدمين هو برنامج تستخدمه الشركات لفرز السير الذاتية قبل أن يطّلع عليها شخص حقيقي. يحلّل ترشيح كل وصف وظيفي ويحسّن سيرتك الذاتية لتُقرأ بوضوح من قبل النظام الآلي والمسؤول عن التوظيف على حد Apparel.",
         },
         {
           q: "هل ستبقى سيرتي الذاتية تعبّر عني فعلًا؟",
@@ -833,7 +833,7 @@ export const content = {
       passwordLabel: "كلمة المرور",
       passwordPlaceholder: "أنشئ كلمة مرور",
       confirmPasswordLabel: "تأكيد كلمة المرور",
-      confirmPasswordPlaceholder: "أعد إدخال كلمة المرور",
+      confirmPasswordPlaceholder: "أعد إدخل كلمة المرور",
       termsPrefix: "أوافق على",
       submit: "إنشاء حساب",
       submitting: "جارٍ إنشاء الحساب…",
@@ -865,7 +865,7 @@ export const content = {
       generate: {
         eyebrow: "طلب جديد",
         title: "خصّص سيرة ذاتية لوظيفتك القادمة",
-        sub: "ارفع سيرتك الذاتية والصق الوصف الوظيفي — يتولى ترشيح الباقي.",
+        sub: "أنشئ سيرة ذاتية جديدة أو ارفع ملفك الحالي، ثم الصق الوصف الوظيفي ودع ترشيح يتولى الباقي.",
         uploadLabel: "سيرتك الذاتية",
         uploadHint: "اسحب وأفلت ملف PDF أو DOCX، أو اضغط للاختيار",
         uploadedLabel: "تم التحليل",
@@ -937,10 +937,6 @@ export const content = {
 
 export type Lang = keyof typeof content;
 
-/* ========================================================================
-   LANGUAGE CONTEXT — mount <LangProvider> ONCE in app/layout.tsx so every
-   page shares the same selected language instead of resetting on navigation.
-======================================================================== */
 type LangContextValue = {
   lang: Lang;
   setLang: (lang: Lang) => void;
@@ -958,7 +954,23 @@ export function useLang() {
 }
 
 export function LangProvider({ children }: { children: ReactNode }) {
-  const [lang, setLang] = useState<Lang>("en");
+  // Initialize state from localStorage if available, otherwise default to "en"
+  const [lang, setLangState] = useState<Lang>(() => {
+    if (typeof window !== "undefined") {
+      const saved = localStorage.getItem("tarshih_lang") as Lang;
+      if (saved === "en" || saved === "ar") return saved;
+    }
+    return "en";
+  });
+
+  // Custom setter that persists the language pick to localStorage
+  const setLang = (newLang: Lang) => {
+    setLangState(newLang);
+    if (typeof window !== "undefined") {
+      localStorage.setItem("tarshih_lang", newLang);
+    }
+  };
+
   const isRTL = lang === "ar";
   const dir = isRTL ? "rtl" : "ltr";
   const t = content[lang];

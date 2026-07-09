@@ -40,9 +40,15 @@ def run_match_scorer(state: AgentState) -> AgentState:
         match_score = data.get("score", 0)
         match_reason = data.get("reason", "No analysis provided.")
 
-        logger.info(f"🎯 Match Score: {match_score}/100")
-        return {"match_score": match_score, "match_reason": match_reason}
+        logger.info(f"🎯 Job Match Score: {match_score}/100")
+        return {
+            "job_match_score": match_score,
+            "job_match_reason": match_reason,
+        }
 
     except Exception as e:
         logger.error(f"Match scoring failed: {e}")
-        return {"match_score": 0, "match_reason": "Scoring failed."}
+        return {
+            "job_match_score": 0,
+            "job_match_reason": "Scoring failed.",
+        }

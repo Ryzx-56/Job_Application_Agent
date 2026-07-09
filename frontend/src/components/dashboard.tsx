@@ -151,13 +151,6 @@ export function UploadZone({
   const [isDragging, setIsDragging] = useState(false);
   const inputId = "cv-upload-input";
 
-  function handleDrop(e: React.DragEvent<HTMLLabelElement>) {
-    e.preventDefault();
-    setIsDragging(false);
-    const dropped = e.dataTransfer.files?.[0];
-    if (dropped) onFileSelect(dropped);
-  }
-
   if (file) {
     return (
       <div className="flex items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white px-5 py-4 shadow-sm">
@@ -190,7 +183,12 @@ export function UploadZone({
         setIsDragging(true);
       }}
       onDragLeave={() => setIsDragging(false)}
-      onDrop={handleDrop}
+      onDrop={(e) => {
+        e.preventDefault();
+        setIsDragging(false);
+        const dropped = e.dataTransfer.files?.[0];
+        if (dropped) onFileSelect(dropped);
+      }}
       className={`flex cursor-pointer flex-col items-center justify-center gap-2.5 rounded-xl border-2 border-dashed px-5 py-10 text-center transition-colors ${
         isDragging ? "border-sky-400 bg-sky-50" : "border-slate-200 bg-slate-50 hover:border-slate-300 hover:bg-slate-100/60"
       }`}
@@ -286,7 +284,8 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
     <div className="flex h-full flex-col">
       <div className="px-5 pb-6 pt-1">
         <Link href="/dashboard" aria-label="Tarshih dashboard">
-          <Logo />
+          {/* Forces light-mode theme inversion for the desktop sidebar layout */}
+          <Logo variant="light" />
         </Link>
       </div>
 
@@ -324,7 +323,7 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
 }
 
 export function DashboardShell({ user, children }: { user: DashboardUser; children: React.ReactNode }) {
-  const { t, isRTL } = useLang();
+  const { isRTL } = useLang();
   const [drawerOpen, setDrawerOpen] = useState(false);
   const displayName = user.name?.trim() || user.email;
 
@@ -368,7 +367,8 @@ export function DashboardShell({ user, children }: { user: DashboardUser; childr
               <Menu className="size-5" aria-hidden />
             </button>
             <div className="lg:hidden">
-              <Logo showWordmark={false} />
+              {/* Forces light-mode theme inversion for the mobile top header layout */}
+              <Logo variant="light" showWordmark={false} />
             </div>
           </div>
 

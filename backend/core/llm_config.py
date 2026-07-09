@@ -31,6 +31,10 @@ def _retry_delay_seconds(exc: Exception, attempt: int) -> float:
 
 
 def _is_retryable_gemini_error(exc: Exception) -> bool:
+    # A depleted prepayment balance is permanent until you top up — no
+    # amount of waiting fixes it, so don't burn 5 retries finding that out.
+    if "prepayment credits are depleted" in str(exc).lower():
+        return False
     if isinstance(exc, genai_errors.ServerError):
         return True
     if isinstance(exc, genai_errors.ClientError):
@@ -106,6 +110,9 @@ def generate_claude_json(prompt: str, max_tokens: int = 2000, max_retries: int =
     and the caller is responsible for stripping markdown fences if any slip through.
     """
     return generate_claude_text(prompt, max_tokens=max_tokens, max_retries=max_retries)
+
+
+def generate_gemini_text(prompt: str, max_retries: int = 5) -> str:
     """Call Gemini and return plain text (no JSON mode)."""
     last_error = None
 
