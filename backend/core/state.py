@@ -36,6 +36,13 @@ class AgentState(TypedDict):
     # ── AGENT 3 OUTPUT (Gemini — temporary; Claude later) ───
     tailored_bullets:        List[dict]
     tailored_summary:        str
+    # Free-text sections (project descriptions, volunteer work,
+    # candidate-typed additional info) polished into professional
+    # language by Agent 3, kept separate from facts_json since Agent 1
+    # must never rephrase — only Agent 3 (tailoring_engine) does that.
+    tailored_projects:       List[dict]   # [{"name": str, "tailored_description": str}]
+    tailored_volunteer_work: List[str]
+    tailored_additional_info: str
 
     # ── FACT CHECK LOOP (Gemini) ────────────────────────────
     hallucination_flags:     List[dict]
@@ -49,6 +56,7 @@ class AgentState(TypedDict):
     # ── AGENT 5 OUTPUT (Claude) — semantic job fit ──────────
     job_match_score:         int
     job_match_reason:        str
+    overall_recommendation:  str
 
     # ── DETERMINISTIC ATS KEYWORD-COVERAGE CHECK (no LLM) ───
     ats_score:               int

@@ -77,6 +77,28 @@ def build_pdf_styles():
     return styles
 
 
+def _build_bullet_lookup(tailored_bullets: list) -> dict:
+    """original bullet text (stripped) -> tailored bullet text."""
+    lookup = {}
+    for b in tailored_bullets or []:
+        original = (b.get("original") or "").strip()
+        tailored = (b.get("tailored") or "").strip()
+        if original and tailored:
+            lookup[original] = tailored
+    return lookup
+
+
+def _build_project_lookup(tailored_projects: list) -> dict:
+    """project name (stripped) -> tailored description."""
+    lookup = {}
+    for p in tailored_projects or []:
+        name = (p.get("name") or "").strip()
+        desc = (p.get("tailored_description") or "").strip()
+        if name and desc:
+            lookup[name] = desc
+    return lookup
+
+
 def render_cv_pdf(state: dict) -> str:
     """Renders tailored CV to PDF using ReportLab flowables."""
     output_path = os.path.join(OUTPUT_DIR, "tailored_cv.pdf")
@@ -95,6 +117,13 @@ def render_cv_pdf(state: dict) -> str:
     
     facts = state.get("facts_json", {}) or {}
     personal = facts.get("personal", {}) or {}
+
+    # Tailored (Agent 3) content — falls back to raw facts_json if Agent 3
+    # hasn't produced a tailored version of something (e.g. partial failure).
+    bullet_lookup = _build_bullet_lookup(state.get("tailored_bullets", []))
+    project_lookup = _build_project_lookup(state.get("tailored_projects", []))
+    tailored_volunteer_work = state.get("tailored_volunteer_work", []) or []
+    tailored_additional_info = (state.get("tailored_additional_info") or "").strip()
     
     # 1. Header Section
     name = personal.get("name") or "Candidate Name"
@@ -150,8 +179,13 @@ def render_cv_pdf(state: dict) -> str:
             story.append(Spacer(1, 4))
             
             bullets = exp.get("bullets", []) or []
-            
-            list_items = [ListItem(Paragraph(b, styles['CV_Body']), leftIndent=12, bulletColor=colors.HexColor("#1A365D")) for b in bullets]
+
+            # Use Agent 3's tailored/polished version of each bullet when available,
+            # matched by the original text. Falls back to the raw bullet if Agent 3
+            # didn't produce a tailored version for it.
+            display_bullets = [bullet_lookup.get(b.strip(), b) for b in bullets]
+
+            list_items = [ListItem(Paragraph(b, styles['CV_Body']), leftIndent=12, bulletColor=colors.HexColor("#1A365D")) for b in display_bullets]
             if list_items:
                 story.append(ListFlowable(list_items, bulletType='bullet', start='circle', bulletFontName='Helvetica', bulletFontSize=8, spaceAfter=8))
 
@@ -161,7 +195,8 @@ def render_cv_pdf(state: dict) -> str:
         add_section_divider("Projects")
         for proj in projects:
             tech_stack = ", ".join(proj.get("tech_stack", []) or [])
-            left_text = f"<b>{proj.get('name', '')}</b>"
+            proj_name = proj.get("name", "")
+            left_text = f"<b>{proj_name}</b>"
             if tech_stack:
                 left_text += f" | <i>{tech_stack}</i>"
             
@@ -172,8 +207,12 @@ def render_cv_pdf(state: dict) -> str:
             proj_table.setStyle(TableStyle([('VALIGN', (0,0), (-1,-1), 'TOP'), ('LEFTPADDING', (0,0), (-1,-1), 0)]))
             story.append(proj_table)
             story.append(Spacer(1, 2))
-            
-            desc = proj.get("description", "") or ""
+
+            # Use Agent 3's professionally-rewritten description, matched by
+            # project name. Falls back to the raw candidate-typed description
+            # if Agent 3 didn't produce a tailored version.
+            raw_desc = proj.get("description", "") or ""
+            desc = project_lookup.get(proj_name.strip(), raw_desc)
             if desc:
                 story.append(Paragraph(desc, styles['CV_Body']))
                 story.append(Spacer(1, 6))
@@ -214,6 +253,46 @@ def render_cv_pdf(state: dict) -> str:
             ]))
             story.append(edu_table)
             story.append(Spacer(1, 4))
+
+    # 7. Certifications Section
+    # NEW — this section didn't exist before, so certifications the candidate
+    # had (or added based on an ATS "add this certification" tip) never
+    # actually showed up on the CV. Rendered as-is since these are short,
+    # factual titles that don't need professional rewriting.
+    certifications = facts.get("certifications", []) or []
+    if certifications:
+        add_section_divider("Certifications")
+        list_items = [ListItem(Paragraph(c, styles['CV_Body']), leftIndent=12, bulletColor=colors.HexColor("#1A365D")) for c in certifications]
+        story.append(ListFlowable(list_items, bulletType='bullet', start='circle', bulletFontName='Helvetica', bulletFontSize=8, spaceAfter=8))
+
+    # 8. Volunteer Work Section
+    # NEW — uses Agent 3's polished phrasing when available, since these are
+    # free-text entries the candidate typed themselves (same category of bug
+    # as project descriptions).
+    raw_volunteer_work = facts.get("volunteer_work", []) or []
+    if raw_volunteer_work:
+        add_section_divider("Volunteer Work")
+        display_volunteer = tailored_volunteer_work if len(tailored_volunteer_work) == len(raw_volunteer_work) else raw_volunteer_work
+        list_items = [ListItem(Paragraph(v, styles['CV_Body']), leftIndent=12, bulletColor=colors.HexColor("#1A365D")) for v in display_volunteer]
+        story.append(ListFlowable(list_items, bulletType='bullet', start='circle', bulletFontName='Helvetica', bulletFontSize=8, spaceAfter=8))
+
+    # 9. Awards Section
+    # NEW — same reasoning as certifications: short factual titles, rendered as-is.
+    awards = facts.get("awards", []) or []
+    if awards:
+        add_section_divider("Awards")
+        list_items = [ListItem(Paragraph(a, styles['CV_Body']), leftIndent=12, bulletColor=colors.HexColor("#1A365D")) for a in awards]
+        story.append(ListFlowable(list_items, bulletType='bullet', start='circle', bulletFontName='Helvetica', bulletFontSize=8, spaceAfter=8))
+
+    # 10. Additional Information Section
+    # NEW — this is the fix for "the additional info box just pastes whatever
+    # I write". Agent 3 (tailoring_engine.py) now produces a professionally
+    # rewritten version of whatever the candidate typed in that box; render
+    # that instead of the raw text.
+    if tailored_additional_info:
+        add_section_divider("Additional Information")
+        story.append(Paragraph(tailored_additional_info, styles['CV_Body']))
+        story.append(Spacer(1, 6))
 
     doc.build(story)
     logger.info(f"✅ CV PDF saved via ReportLab → {output_path}")

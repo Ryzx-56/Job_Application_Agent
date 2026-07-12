@@ -1,7 +1,17 @@
 "use client";
 
 import React, { useState } from "react";
-import { Sparkles, CheckCircle2, ChevronDown, ChevronUp, FileUp, PenLine, FileText, Mail } from "lucide-react";
+import {
+  Sparkles,
+  CheckCircle2,
+  ChevronDown,
+  ChevronUp,
+  FileUp,
+  PenLine,
+  FileText,
+  Mail,
+  TrendingUp,
+} from "lucide-react";
 import { useLang } from "@/lib/language";
 import { DashboardButton, ScoreRing, ScoreBar, UploadZone, FileResultCard } from "@/components/dashboard";
 import { createClient } from "@/lib/supabase/client";
@@ -32,6 +42,12 @@ type AtsBreakdown = {
   missing_skills?: string[];
 };
 
+type GapItem = {
+  skill: string;
+  importance: "required" | "preferred";
+  how_to_close: string;
+};
+
 type GenerateResult = {
   atsScore: number;
   atsBreakdown: AtsBreakdown;
@@ -42,6 +58,8 @@ type GenerateResult = {
   coverLetterText: string;
   similarJobs: SimilarJob[];
   factCheckPassed: boolean;
+  gapAnalysis: GapItem[];
+  overallRecommendation: string;
 };
 
 // Base URL for the FastAPI backend, e.g. http://127.0.0.1:8000 in dev.
@@ -58,6 +76,8 @@ function mapBackendResponse(raw: any): GenerateResult {
     coverLetterText: raw.cover_letter_text ?? "",
     similarJobs: raw.similar_jobs ?? [],
     factCheckPassed: raw.fact_check_passed ?? false,
+    gapAnalysis: raw.gap_analysis ?? [],
+    overallRecommendation: raw.overall_recommendation ?? "",
   };
 }
 
@@ -187,6 +207,24 @@ async function generateFromManual(
   }
 
   return mapBackendResponse(await res.json());
+}
+
+/**
+ * Color-codes a similar-job match label into a glassy badge style.
+ * jobs_finder.py emits exactly one of: "Strong Match", "Partial Match", "Stretch Role".
+ */
+function getMatchBadgeStyle(label?: string): { classes: string; dot: string } {
+  const normalized = (label || "").toLowerCase();
+  if (normalized.includes("strong")) {
+    return { classes: "border-emerald-400/40 bg-emerald-400/15 text-emerald-200", dot: "bg-emerald-400" };
+  }
+  if (normalized.includes("partial")) {
+    return { classes: "border-amber-400/40 bg-amber-400/15 text-amber-200", dot: "bg-amber-400" };
+  }
+  if (normalized.includes("stretch")) {
+    return { classes: "border-rose-400/40 bg-rose-400/15 text-rose-200", dot: "bg-rose-400" };
+  }
+  return { classes: "border-white/20 bg-white/10 text-white/80", dot: "bg-white/50" };
 }
 
 export default function DashboardHomePage() {
@@ -371,6 +409,57 @@ export default function DashboardHomePage() {
         </DashboardButton>
       </div>
 
+      {(generating || result) && (
+        <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
+          <div className="flex items-center justify-between gap-3">
+            <div className="min-w-0">
+              <p className="text-sm font-semibold text-slate-900">
+                {generating
+                  ? lang === "ar"
+                    ? "جارٍ إنشاء سيرتك الذاتية وخطاب التقديم"
+                    : "Creating your new CV and cover letter"
+                  : lang === "ar"
+                  ? "تم التحسين"
+                  : "Optimized"}
+              </p>
+              <p className="mt-1 text-xs leading-relaxed text-slate-500">
+                {generating
+                  ? lang === "ar"
+                    ? "يستغرق الأمر بضع لحظات لأننا نستخدم عدة وكلاء ذكاء اصطناعي متخصصين لضمان أفضل جودة."
+                    : "This takes a few moments — we run several specialized AI agents in sequence to make sure everything is accurate and polished."
+                  : lang === "ar"
+                  ? "سيرتك الذاتية وخطاب التقديم جاهزان أدناه."
+                  : "Your tailored CV and cover letter are ready below."}
+              </p>
+            </div>
+            <span
+              className={`inline-flex shrink-0 items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium ${
+                generating ? "bg-blue-50 text-blue-600" : "bg-emerald-50 text-emerald-600"
+              }`}
+            >
+              <CheckCircle2 className="size-3.5" aria-hidden />
+              {generating ? (lang === "ar" ? "جارٍ الإنشاء" : "Generating") : lang === "ar" ? "محسّن" : "Optimized"}
+            </span>
+          </div>
+
+          {generating && (
+            <div className="mt-4 h-2 w-full overflow-hidden rounded-full bg-slate-100">
+              <div className="h-full w-1/3 rounded-full bg-blue-600 animate-jbaa-loading-bar" />
+            </div>
+          )}
+
+          <style>{`
+            @keyframes jbaa-loading-bar-slide {
+              0% { transform: translateX(-100%); }
+              100% { transform: translateX(340%); }
+            }
+            .animate-jbaa-loading-bar {
+              animation: jbaa-loading-bar-slide 1.15s ease-in-out infinite;
+            }
+          `}</style>
+        </div>
+      )}
+
       {result && (
         <div className="space-y-6 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-7">
           <h2 className="text-lg font-semibold text-slate-900">{copy.resultsTitle}</h2>
@@ -435,6 +524,18 @@ export default function DashboardHomePage() {
                   ))}
                 </div>
               )}
+
+              {result.gapAnalysis.length > 0 && (
+                <a
+                  href="#improve-cv"
+                  className="mt-3 inline-flex items-center gap-1 text-xs font-medium text-blue-600 hover:text-blue-700"
+                >
+                  <TrendingUp className="size-3.5" aria-hidden />
+                  {lang === "ar"
+                    ? "راجع «كيف تُحسّن سيرتك الذاتية» أدناه لرفع هذه النتيجة"
+                    : "See “How to improve your CV” below to raise this score"}
+                </a>
+              )}
             </div>
 
             <div className="rounded-xl border border-slate-200 bg-slate-50/60 p-5">
@@ -456,6 +557,67 @@ export default function DashboardHomePage() {
               )}
             </div>
           </div>
+
+          {result.gapAnalysis.length > 0 && (
+            <div id="improve-cv" className="scroll-mt-6 rounded-xl border border-slate-200 bg-white p-5 sm:p-6">
+              <div className="flex items-center gap-2.5">
+                <span className="grid size-8 shrink-0 place-items-center rounded-full bg-blue-50 text-blue-600">
+                  <TrendingUp className="size-4" aria-hidden />
+                </span>
+                <p className="text-sm font-semibold text-slate-900">
+                  {lang === "ar" ? "كيف تُحسّن سيرتك الذاتية" : "How to improve your CV"}
+                </p>
+              </div>
+              <p className="mt-1.5 text-xs leading-relaxed text-slate-500">
+                {lang === "ar"
+                  ? "أضف أيًا من هذه إلى ملفك، ثم أعد الرفع لرؤية نتيجة ATS أعلى."
+                  : "Add any of these to your profile, then re-upload or re-generate to see a higher ATS score."}
+              </p>
+
+              <ul className="mt-4 space-y-2.5">
+                {result.gapAnalysis.map((gap, i) => (
+                  <li
+                    key={i}
+                    className="flex items-start gap-3 rounded-lg border border-slate-100 bg-slate-50/70 px-3.5 py-3"
+                  >
+                    <span
+                      className={`mt-1.5 size-2 shrink-0 rounded-full ${
+                        gap.importance === "required" ? "bg-rose-400" : "bg-amber-400"
+                      }`}
+                      aria-hidden
+                    />
+                    <div className="min-w-0">
+                      <p className="flex flex-wrap items-center gap-1.5 text-sm font-medium text-slate-800">
+                        {gap.skill}
+                        <span
+                          className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${
+                            gap.importance === "required"
+                              ? "bg-rose-50 text-rose-600"
+                              : "bg-amber-50 text-amber-700"
+                          }`}
+                        >
+                          {gap.importance === "required"
+                            ? lang === "ar"
+                              ? "مطلوب"
+                              : "required"
+                            : lang === "ar"
+                            ? "مُفضّل"
+                            : "preferred"}
+                        </span>
+                      </p>
+                      <p className="mt-1 text-xs leading-relaxed text-slate-600">{gap.how_to_close}</p>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+
+              {result.overallRecommendation && (
+                <p className="mt-4 rounded-lg border border-blue-100 bg-blue-50/60 px-3.5 py-2.5 text-xs leading-relaxed text-blue-700">
+                  {result.overallRecommendation}
+                </p>
+              )}
+            </div>
+          )}
 
           <div>
             <p className="mb-1.5 text-sm font-medium text-slate-700">
@@ -498,35 +660,64 @@ export default function DashboardHomePage() {
           </div>
 
           {result.similarJobs.length > 0 && (
-            <div>
-              <p className="mb-2.5 text-sm font-medium text-slate-700">
-                {lang === "ar" ? "وظائف مشابهة" : "Similar jobs"}
-              </p>
-              <ul className="space-y-2.5">
-                {result.similarJobs.map((job, i) => (
-                  <li key={i}>
-                    <a
-                      href={job.url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="block rounded-xl border border-slate-200 bg-white px-4 py-3.5 shadow-sm transition-colors hover:border-blue-300 hover:bg-blue-50/40"
-                    >
-                      <div className="flex items-start justify-between gap-3">
-                        <p className="text-sm font-medium text-blue-700">{job.title ?? job.url}</p>
-                        {job.match_label && (
-                          <span className="shrink-0 rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-600">
-                            {job.match_label}
-                          </span>
-                        )}
-                      </div>
-                      {job.snippet && (
-                        <p className="mt-1 line-clamp-2 text-xs leading-relaxed text-slate-500">{job.snippet}</p>
-                      )}
-                      {job.source && <p className="mt-1.5 text-xs text-slate-400">{job.source}</p>}
-                    </a>
-                  </li>
-                ))}
-              </ul>
+            <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-[#0B1220] via-[#0F1E3D] to-[#122952] p-6 shadow-lg shadow-blue-950/20 sm:p-8">
+              <div className="pointer-events-none absolute -right-16 -top-16 size-56 rounded-full bg-blue-500/20 blur-3xl" />
+              <div className="pointer-events-none absolute -bottom-20 -left-10 size-56 rounded-full bg-cyan-400/10 blur-3xl" />
+
+              <div className="relative">
+                <div className="flex items-center gap-2.5">
+                  <span className="grid size-9 shrink-0 place-items-center rounded-full bg-white/10 text-cyan-300 ring-1 ring-white/20">
+                    <Sparkles className="size-4" aria-hidden />
+                  </span>
+                  <p className="text-xs font-semibold uppercase tracking-wide text-cyan-300">
+                    {lang === "ar" ? "بحث تلقائي بالذكاء الاصطناعي" : "Found automatically by AI"}
+                  </p>
+                </div>
+                <h3 className="mt-2.5 text-xl font-bold text-white sm:text-2xl">
+                  {lang === "ar" ? "وظائف مشابهة، مطابقة لك" : "Similar jobs, matched for you"}
+                </h3>
+                <p className="mt-1 text-sm text-white/60">
+                  {lang === "ar"
+                    ? "بناءً على سيرتك الذاتية المخصصة، هذه أقرب الفرص المتاحة الآن."
+                    : "Based on your tailored CV, here's what's actually open right now."}
+                </p>
+
+                <ul className="mt-5 space-y-3">
+                  {result.similarJobs.map((job, i) => {
+                    const badge = getMatchBadgeStyle(job.match_label);
+                    return (
+                      <li key={i}>
+                        <a
+                          href={job.url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="group block rounded-xl border border-white/10 bg-white/[0.06] px-4 py-4 backdrop-blur-md transition-all hover:border-cyan-300/40 hover:bg-white/[0.1] sm:px-5"
+                        >
+                          <div className="flex items-start justify-between gap-3">
+                            <p className="text-base font-semibold text-white sm:text-[17px]">
+                              {job.title ?? job.url}
+                            </p>
+                            {job.match_label && (
+                              <span
+                                className={`inline-flex shrink-0 items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium backdrop-blur-sm ${badge.classes}`}
+                              >
+                                <span className={`size-1.5 rounded-full ${badge.dot}`} aria-hidden />
+                                {job.match_label}
+                              </span>
+                            )}
+                          </div>
+                          {job.snippet && (
+                            <p className="mt-1.5 line-clamp-2 text-sm leading-relaxed text-white/60">
+                              {job.snippet}
+                            </p>
+                          )}
+                          {job.source && <p className="mt-2 text-xs text-white/35">{job.source}</p>}
+                        </a>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </div>
             </div>
           )}
 
