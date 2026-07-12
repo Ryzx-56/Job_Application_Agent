@@ -20,7 +20,6 @@ import {
   X,
   FileText,
   LayoutDashboard,
-  Files,
   Settings,
   Lock,
   ScanSearch,
@@ -253,7 +252,6 @@ function DashboardPreview() {
   const sidebarItems = [
     { icon: LayoutDashboard, label: d.sidebar.dashboard, active: true },
     { icon: FileText, label: d.sidebar.myResumes, active: false },
-    { icon: Files, label: d.sidebar.applications, active: false },
     { icon: Settings, label: d.sidebar.settings, active: false },
   ];
 

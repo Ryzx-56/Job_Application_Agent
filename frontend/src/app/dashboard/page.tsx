@@ -1,9 +1,9 @@
 "use client";
 
 import React, { useState } from "react";
-import { Download, Eye, Sparkles, CheckCircle2, ChevronDown, ChevronUp } from "lucide-react";
+import { Sparkles, CheckCircle2, ChevronDown, ChevronUp, FileUp, PenLine, FileText, Mail } from "lucide-react";
 import { useLang } from "@/lib/language";
-import { DashboardButton, ScoreRing, UploadZone } from "@/components/dashboard";
+import { DashboardButton, ScoreRing, ScoreBar, UploadZone, FileResultCard } from "@/components/dashboard";
 import { createClient } from "@/lib/supabase/client";
 import { ManualCvForm, ManualCvData, emptyManualCvData } from "@/components/manual-cv-form";
 
@@ -44,6 +44,9 @@ type GenerateResult = {
   factCheckPassed: boolean;
 };
 
+// Base URL for the FastAPI backend, e.g. http://127.0.0.1:8000 in dev.
+const API_URL = process.env.NEXT_PUBLIC_API_URL;
+
 function mapBackendResponse(raw: any): GenerateResult {
   return {
     atsScore: raw.ats_score ?? 0,
@@ -81,7 +84,7 @@ async function generateFromUpload(
   formData.append("job_description", jobDescription);
   formData.append("additional_info", additionalInfo);
 
-  const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/v1/optimize`, {
+  const res = await fetch(`${API_URL}/api/v1/optimize`, {
     method: "POST",
     headers: {
       Authorization: `Bearer ${session.access_token}`,
@@ -170,7 +173,7 @@ async function generateFromManual(
 
   const payload = buildManualPayload(data, jobDescription, additionalInfo);
 
-  const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/v1/optimize-manual`, {
+  const res = await fetch(`${API_URL}/api/v1/optimize-manual`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -225,7 +228,11 @@ export default function DashboardHomePage() {
       setResult(data);
     } catch (err) {
       console.error(err);
-      setError(lang === "ar" ? "حدث خطأ ما أثناء إعداد طلبك. يرجى المحاولة مرة أخرى." : "Something went wrong generating your application. Please try again.");
+      setError(
+        lang === "ar"
+          ? "حدث خطأ ما أثناء إعداد طلبك. يرجى المحاولة مرة أخرى."
+          : "Something went wrong generating your application. Please try again."
+      );
     } finally {
       setGenerating(false);
     }
@@ -234,7 +241,7 @@ export default function DashboardHomePage() {
   return (
     <div className="mx-auto max-w-4xl space-y-8" dir={dir}>
       <div>
-        <span className="text-sm font-medium text-sky-600">{copy.eyebrow}</span>
+        <span className="text-sm font-medium text-blue-600">{copy.eyebrow}</span>
         <h1 className="mt-1.5 text-2xl font-semibold tracking-tight text-slate-900 sm:text-3xl">{copy.title}</h1>
         <p className="mt-2 text-sm leading-relaxed text-slate-500 sm:text-base">{copy.sub}</p>
       </div>
@@ -246,34 +253,56 @@ export default function DashboardHomePage() {
             <button
               type="button"
               onClick={() => setCvMode("manual")}
-              className={`rounded-xl border-2 px-5 py-4 transition-colors ${
+              className={`flex items-start gap-3 rounded-xl border-2 px-5 py-4 transition-all ${
                 lang === "ar" ? "text-right" : "text-left"
               } ${
-                cvMode === "manual" ? "border-sky-400 bg-sky-50" : "border-slate-200 bg-white hover:border-slate-300"
+                cvMode === "manual"
+                  ? "border-blue-500 bg-blue-50/60 shadow-sm"
+                  : "border-slate-200 bg-white hover:border-slate-300"
               }`}
             >
-              <p className="text-sm font-medium text-slate-900">
-                {lang === "ar" ? "إنشاء سيرة ذاتية جديدة" : "Create new CV"}
-              </p>
-              <p className="mt-0.5 text-xs text-slate-500">
-                {lang === "ar" ? "أدخل بياناتك يدويًا بالتفصيل" : "Fill in your details manually"}
-              </p>
+              <span
+                className={`mt-0.5 grid size-8 shrink-0 place-items-center rounded-lg ${
+                  cvMode === "manual" ? "bg-blue-600 text-white" : "bg-slate-100 text-slate-500"
+                }`}
+              >
+                <PenLine className="size-4" aria-hidden />
+              </span>
+              <span>
+                <p className="text-sm font-medium text-slate-900">
+                  {lang === "ar" ? "إنشاء سيرة ذاتية جديدة" : "Create new CV"}
+                </p>
+                <p className="mt-0.5 text-xs text-slate-500">
+                  {lang === "ar" ? "أدخل بياناتك يدويًا بالتفصيل" : "Fill in your details manually"}
+                </p>
+              </span>
             </button>
             <button
               type="button"
               onClick={() => setCvMode("upload")}
-              className={`rounded-xl border-2 px-5 py-4 transition-colors ${
+              className={`flex items-start gap-3 rounded-xl border-2 px-5 py-4 transition-all ${
                 lang === "ar" ? "text-right" : "text-left"
               } ${
-                cvMode === "upload" ? "border-sky-400 bg-sky-50" : "border-slate-200 bg-white hover:border-slate-300"
+                cvMode === "upload"
+                  ? "border-blue-500 bg-blue-50/60 shadow-sm"
+                  : "border-slate-200 bg-white hover:border-slate-300"
               }`}
             >
-              <p className="text-sm font-medium text-slate-900">
-                {lang === "ar" ? "رفع سيرة ذاتية الحالية" : "Upload existing CV"}
-              </p>
-              <p className="mt-0.5 text-xs text-slate-500">
-                {lang === "ar" ? "اسحب وأفلت ملف PDF أو DOCX" : "Drag & drop a PDF or DOCX"}
-              </p>
+              <span
+                className={`mt-0.5 grid size-8 shrink-0 place-items-center rounded-lg ${
+                  cvMode === "upload" ? "bg-blue-600 text-white" : "bg-slate-100 text-slate-500"
+                }`}
+              >
+                <FileUp className="size-4" aria-hidden />
+              </span>
+              <span>
+                <p className="text-sm font-medium text-slate-900">
+                  {lang === "ar" ? "رفع سيرة ذاتية الحالية" : "Upload existing CV"}
+                </p>
+                <p className="mt-0.5 text-xs text-slate-500">
+                  {lang === "ar" ? "اسحب وأفلت ملف PDF أو DOCX" : "Drag & drop a PDF or DOCX"}
+                </p>
+              </span>
             </button>
           </div>
         </div>
@@ -306,7 +335,7 @@ export default function DashboardHomePage() {
                 ? "أي شيء آخر يستحق الإضافة ولم يتم ذكره أعلاه — جوائز، أعمال تطوعية، لغات، سياق حول فجوة مهنية، إلخ."
                 : "Anything else worth including that isn't captured above — awards, volunteer work, languages, context about a gap, etc."
             }
-            className="block w-full resize-y rounded-lg border border-slate-200 bg-slate-50 px-3.5 py-2.5 text-sm text-slate-900 placeholder:text-slate-400 outline-none transition-colors focus:border-sky-400 focus:bg-white focus:ring-2 focus:ring-sky-500/20"
+            className="block w-full resize-y rounded-lg border border-slate-200 bg-slate-50 px-3.5 py-2.5 text-sm text-slate-900 placeholder:text-slate-400 outline-none transition-colors focus:border-blue-400 focus:bg-white focus:ring-2 focus:ring-blue-500/20"
           />
         </div>
 
@@ -320,7 +349,7 @@ export default function DashboardHomePage() {
             value={jobDescription}
             onChange={(e) => setJobDescription(e.target.value)}
             placeholder={copy.jdPlaceholder}
-            className="block w-full resize-y rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 placeholder:text-slate-400 outline-none transition-colors focus:border-sky-400 focus:bg-white focus:ring-2 focus:ring-sky-500/20"
+            className="block w-full resize-y rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 placeholder:text-slate-400 outline-none transition-colors focus:border-blue-400 focus:bg-white focus:ring-2 focus:ring-blue-500/20"
           />
         </div>
 
@@ -337,7 +366,7 @@ export default function DashboardHomePage() {
           onClick={handleGenerate}
           className="w-full sm:w-auto"
         >
-          <Sparkles className="size-4" aria-hidden />
+          <Sparkles className={`size-4 ${generating ? "animate-pulse" : ""}`} aria-hidden />
           {generating ? copy.generatingCta : copy.generateCta}
         </DashboardButton>
       </div>
@@ -347,7 +376,7 @@ export default function DashboardHomePage() {
           <h2 className="text-lg font-semibold text-slate-900">{copy.resultsTitle}</h2>
 
           <div className="grid gap-4 sm:grid-cols-2">
-            <div className="rounded-xl border border-slate-200 bg-slate-50 p-5">
+            <div className="rounded-xl border border-slate-200 bg-slate-50/60 p-5">
               <div className="flex items-center gap-4">
                 <ScoreRing score={result.atsScore} size={88} />
                 <div className="min-w-0">
@@ -355,45 +384,47 @@ export default function DashboardHomePage() {
                     {lang === "ar" ? "نتيجة نظام ATS" : "ATS Score"}
                   </p>
                   <p className="mt-0.5 text-xs leading-relaxed text-slate-500">
-                    {lang === "ar" 
-                      ? "تطابق الكلمات المفتاحية، المهارات، التعليم والخبرة مع متطلبات هذه الوظيفة." 
+                    {lang === "ar"
+                      ? "تطابق الكلمات المفتاحية، المهارات، التعليم والخبرة مع متطلبات هذه الوظيفة."
                       : "Keyword, skills, education & experience match against this job's requirements."}
                   </p>
                 </div>
               </div>
 
               {(result.atsBreakdown.keyword_match !== undefined ||
-                result.atsBreakdown.skills_match !== undefined) && (
-                <div className="mt-3 grid grid-cols-2 gap-x-3 gap-y-1.5 text-xs text-slate-600">
+                result.atsBreakdown.skills_match !== undefined ||
+                result.atsBreakdown.education_match !== undefined ||
+                result.atsBreakdown.experience_match !== undefined) && (
+                <div className="mt-4 space-y-3">
                   {result.atsBreakdown.keyword_match !== undefined && (
-                    <div className="flex justify-between">
-                      <span>{lang === "ar" ? "الكلمات المفتاحية" : "Keywords"}</span>
-                      <span className="font-medium">{result.atsBreakdown.keyword_match}%</span>
-                    </div>
+                    <ScoreBar
+                      label={lang === "ar" ? "الكلمات المفتاحية" : "Keywords"}
+                      value={result.atsBreakdown.keyword_match}
+                    />
                   )}
                   {result.atsBreakdown.skills_match !== undefined && (
-                    <div className="flex justify-between">
-                      <span>{lang === "ar" ? "المهارات" : "Skills"}</span>
-                      <span className="font-medium">{result.atsBreakdown.skills_match}%</span>
-                    </div>
+                    <ScoreBar
+                      label={lang === "ar" ? "المهارات" : "Skills"}
+                      value={result.atsBreakdown.skills_match}
+                    />
                   )}
                   {result.atsBreakdown.education_match !== undefined && (
-                    <div className="flex justify-between">
-                      <span>{lang === "ar" ? "التعليم" : "Education"}</span>
-                      <span className="font-medium">{result.atsBreakdown.education_match}%</span>
-                    </div>
+                    <ScoreBar
+                      label={lang === "ar" ? "التعليم" : "Education"}
+                      value={result.atsBreakdown.education_match}
+                    />
                   )}
                   {result.atsBreakdown.experience_match !== undefined && (
-                    <div className="flex justify-between">
-                      <span>{lang === "ar" ? "الخبرة" : "Experience"}</span>
-                      <span className="font-medium">{result.atsBreakdown.experience_match}%</span>
-                    </div>
+                    <ScoreBar
+                      label={lang === "ar" ? "الخبرة" : "Experience"}
+                      value={result.atsBreakdown.experience_match}
+                    />
                   )}
                 </div>
               )}
 
               {(result.atsBreakdown.missing_skills?.length ?? 0) > 0 && (
-                <div className="mt-3 flex flex-wrap gap-1.5">
+                <div className="mt-4 flex flex-wrap gap-1.5">
                   {result.atsBreakdown.missing_skills!.slice(0, 5).map((kw) => (
                     <span
                       key={kw}
@@ -406,7 +437,7 @@ export default function DashboardHomePage() {
               )}
             </div>
 
-            <div className="rounded-xl border border-slate-200 bg-slate-50 p-5">
+            <div className="rounded-xl border border-slate-200 bg-slate-50/60 p-5">
               <div className="flex items-center gap-4">
                 <ScoreRing score={result.jobMatchScore} size={88} />
                 <div className="min-w-0">
@@ -414,14 +445,14 @@ export default function DashboardHomePage() {
                     {lang === "ar" ? "نتيجة الملاءمة للوظيفة" : "Job Match Score"}
                   </p>
                   <p className="mt-0.5 text-xs leading-relaxed text-slate-500">
-                    {lang === "ar" 
-                      ? "تقييم كلود لمدى ملاءمة خلفيتك المهنية الحقيقية لهذه الوظيفة المحددة." 
-                      : "Claude's judgment of how well your background genuinely fits this specific role."}
+                    {lang === "ar"
+                      ? "تقييم لمدى ملاءمة خلفيتك المهنية الحقيقية لهذه الوظيفة المحددة."
+                      : "Judgment of how well your background genuinely fits this specific role."}
                   </p>
                 </div>
               </div>
               {result.jobMatchReason && (
-                <p className="mt-3 text-xs leading-relaxed text-slate-600">{result.jobMatchReason}</p>
+                <p className="mt-4 text-xs leading-relaxed text-slate-600">{result.jobMatchReason}</p>
               )}
             </div>
           </div>
@@ -433,35 +464,37 @@ export default function DashboardHomePage() {
             <p className="text-sm leading-relaxed text-slate-600">{result.tailoredSummary}</p>
             {!result.factCheckPassed && (
               <p className="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700">
-                {lang === "ar" 
-                  ? "لم يجتز فحص الحقائق بالكامل — يرجى مراجعة النقاط المُنشأة قبل إرسالها." 
+                {lang === "ar"
+                  ? "لم يجتز فحص الحقائق بالكامل — يرجى مراجعة النقاط المُنشأة قبل إرسالها."
                   : "Fact check did not fully pass — review the generated bullets before sending this out."}
               </p>
             )}
           </div>
 
-          <div className="grid gap-3 sm:grid-cols-2">
-            {[copy.resumeCardTitle, copy.coverLetterCardTitle].map((title) => (
-              <div key={title} className="flex items-center justify-between gap-3 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3.5">
-                <span className="text-sm font-medium text-slate-800">{title}</span>
-                <div className="flex items-center gap-1.5">
-                  <button
-                    type="button"
-                    aria-label={copy.preview}
-                    className="grid size-8 place-items-center rounded-lg text-slate-500 transition-colors hover:bg-white hover:text-slate-700"
-                  >
-                    <Eye className="size-4" aria-hidden />
-                  </button>
-                  <button
-                    type="button"
-                    aria-label={copy.download}
-                    className="grid size-8 place-items-center rounded-lg text-slate-500 transition-colors hover:bg-white hover:text-slate-700"
-                  >
-                    <Download className="size-4" aria-hidden />
-                  </button>
-                </div>
-              </div>
-            ))}
+          <div>
+            <p className="mb-2.5 text-sm font-medium text-slate-700">
+              {lang === "ar" ? "ملفاتك جاهزة" : "Your files"}
+            </p>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <FileResultCard
+                icon={FileText}
+                title={copy.resumeCardTitle}
+                readyLabel={lang === "ar" ? "جاهز" : "Ready"}
+                previewLabel={copy.preview}
+                downloadLabel={copy.download}
+                previewHref={`${API_URL}/api/v1/preview/cv`}
+                downloadHref={`${API_URL}/api/v1/download/cv`}
+              />
+              <FileResultCard
+                icon={Mail}
+                title={copy.coverLetterCardTitle}
+                readyLabel={lang === "ar" ? "جاهز" : "Ready"}
+                previewLabel={copy.preview}
+                downloadLabel={copy.download}
+                previewHref={`${API_URL}/api/v1/preview/cover-letter`}
+                downloadHref={`${API_URL}/api/v1/download/cover-letter`}
+              />
+            </div>
           </div>
 
           {result.similarJobs.length > 0 && (
@@ -476,10 +509,10 @@ export default function DashboardHomePage() {
                       href={job.url}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="block rounded-xl border border-slate-200 bg-white px-4 py-3.5 shadow-sm transition-colors hover:border-sky-300 hover:bg-sky-50/40"
+                      className="block rounded-xl border border-slate-200 bg-white px-4 py-3.5 shadow-sm transition-colors hover:border-blue-300 hover:bg-blue-50/40"
                     >
                       <div className="flex items-start justify-between gap-3">
-                        <p className="text-sm font-medium text-sky-700">{job.title ?? job.url}</p>
+                        <p className="text-sm font-medium text-blue-700">{job.title ?? job.url}</p>
                         {job.match_label && (
                           <span className="shrink-0 rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-600">
                             {job.match_label}
@@ -507,7 +540,7 @@ export default function DashboardHomePage() {
                   key={i}
                   className="flex items-start gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3.5 shadow-sm"
                 >
-                  <span className="mt-0.5 grid size-7 shrink-0 place-items-center rounded-full bg-sky-50 text-sky-600">
+                  <span className="mt-0.5 grid size-7 shrink-0 place-items-center rounded-full bg-blue-50 text-blue-600">
                     <Sparkles className="size-3.5" aria-hidden />
                   </span>
                   <div className="min-w-0 flex-1">
@@ -525,7 +558,7 @@ export default function DashboardHomePage() {
               <button
                 type="button"
                 onClick={() => setShowAllBullets((v) => !v)}
-                className="mt-3 flex items-center gap-1.5 text-sm font-medium text-sky-600 hover:text-sky-700"
+                className="mt-3 flex items-center gap-1.5 text-sm font-medium text-blue-600 hover:text-blue-700"
               >
                 {showAllBullets ? (
                   <>
@@ -533,7 +566,10 @@ export default function DashboardHomePage() {
                   </>
                 ) : (
                   <>
-                    {lang === "ar" ? `عرض المزيد (${result.tailoredBullets.length - 2})` : `Show ${result.tailoredBullets.length - 2} more`} <ChevronDown className="size-4" aria-hidden />
+                    {lang === "ar"
+                      ? `عرض المزيد (${result.tailoredBullets.length - 2})`
+                      : `Show ${result.tailoredBullets.length - 2} more`}{" "}
+                    <ChevronDown className="size-4" aria-hidden />
                   </>
                 )}
               </button>

@@ -1,6 +1,7 @@
 "use client";
 
-import React, { createContext, useContext, useState, useEffect, ReactNode } from "react";
+import React, { createContext, useContext, useState, useEffect, ReactNode, useRef } from "react";
+import { createClient } from "@/lib/supabase/client";
 
 /* ========================================================================
    CONTENT — one dictionary per language, shared by every page. Add new
@@ -381,7 +382,6 @@ export const content = {
       sidebar: {
         dashboard: "Dashboard",
         myResumes: "My Resumes",
-        applications: "Applications",
         settings: "Settings",
         logout: "Log out",
       },
@@ -422,24 +422,6 @@ export const content = {
         emptyBody: "Generate your first tailored resume from the Dashboard to see it here.",
         emptyCta: "Go to Dashboard",
       },
-      applications: {
-        title: "Applications",
-        sub: "Track every application you've submitted.",
-        columns: {
-          company: "Company",
-          role: "Role",
-          status: "Status",
-          date: "Date",
-        },
-        status: {
-          applied: "Applied",
-          interview: "Interview",
-          rejected: "Rejected",
-        },
-        emptyTitle: "No applications tracked yet",
-        emptyBody: "Once you submit an application, track its status here.",
-        emptyCta: "Go to Dashboard",
-      },
       settings: {
         title: "Settings",
         sub: "Manage your account and preferences.",
@@ -453,6 +435,7 @@ export const content = {
         changePlan: "Change plan",
         languageSection: "Language",
         languageLabel: "Preferred language",
+        languageSaved: "Saved — applies on any device you log in from.",
       },
     },
   },
@@ -858,7 +841,6 @@ export const content = {
       sidebar: {
         dashboard: "لوحة التحكم",
         myResumes: "سيري الذاتية",
-        applications: "الطلبات",
         settings: "الإعدادات",
         logout: "تسجيل الخروج",
       },
@@ -899,24 +881,6 @@ export const content = {
         emptyBody: "أنشئ أول سيرة ذاتية مخصصة من لوحة التحكم لتظهر هنا.",
         emptyCta: "الذهاب إلى لوحة التحكم",
       },
-      applications: {
-        title: "الطلبات",
-        sub: "تتبّع كل طلب توظيف أرسلته.",
-        columns: {
-          company: "الشركة",
-          role: "الوظيفة",
-          status: "الحالة",
-          date: "التاريخ",
-        },
-        status: {
-          applied: "تم التقديم",
-          interview: "مقابلة",
-          rejected: "مرفوض",
-        },
-        emptyTitle: "لا توجد طلبات متتبَّعة بعد",
-        emptyBody: "بمجرد إرسال طلب توظيف، تتبّع حالته هنا.",
-        emptyCta: "الذهاب إلى لوحة التحكم",
-      },
       settings: {
         title: "الإعدادات",
         sub: "إدارة حسابك وتفضيلاتك.",
@@ -930,6 +894,7 @@ export const content = {
         changePlan: "تغيير الخطة",
         languageSection: "اللغة",
         languageLabel: "اللغة المفضلة",
+        languageSaved: "تم الحفظ — ستُطبَّق على أي جهاز تسجّل الدخول منه.",
       },
     },
   },
@@ -953,22 +918,72 @@ export function useLang() {
   return ctx;
 }
 
-export function LangProvider({ children }: { children: ReactNode }) {
-  // Initialize state from localStorage if available, otherwise default to "en"
-  const [lang, setLangState] = useState<Lang>(() => {
-    if (typeof window !== "undefined") {
-      const saved = localStorage.getItem("tarshih_lang") as Lang;
-      if (saved === "en" || saved === "ar") return saved;
-    }
-    return "en";
-  });
+/**
+ * Call once from the dashboard shell with the user's
+ * user_metadata.preferred_language (read server-side in the layout).
+ * If it's set and differs from what's currently active (e.g. first login
+ * on a new device, so localStorage is empty), switches the UI to match.
+ * Runs at most once per mount.
+ */
+export function useSyncLanguageFromAccount(preferredLanguage: string | null | undefined) {
+  const { lang, setLang } = useLang();
+  const synced = useRef(false);
 
-  // Custom setter that persists the language pick to localStorage
+  useEffect(() => {
+    if (synced.current) return;
+    if (preferredLanguage !== "en" && preferredLanguage !== "ar") return;
+    synced.current = true;
+    if (preferredLanguage !== lang) {
+      setLang(preferredLanguage);
+    }
+    // Only run on mount / when the account's saved value first arrives.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [preferredLanguage]);
+}
+
+/**
+ * Fire-and-forget: saves the language choice to the logged-in user's
+ * Supabase account (user_metadata.preferred_language), so it follows them
+ * to any device they log into. Silently does nothing if nobody's logged in
+ * — this is also called from public marketing pages where that's normal.
+ */
+async function persistLanguageToAccount(lang: Lang) {
+  if (typeof window === "undefined") return;
+  try {
+    const supabase = createClient();
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    if (!user) return;
+    await supabase.auth.updateUser({ data: { preferred_language: lang } });
+  } catch {
+    // Not logged in, offline, etc. — localStorage already has the pick,
+    // that's enough for this session.
+  }
+}
+
+export function LangProvider({ children }: { children: ReactNode }) {
+  // Always start at "en" to match what the server renders (no localStorage
+  // on the server). Reading the saved language happens after mount, below —
+  // reading it during the initial render caused a client/server mismatch
+  // (hydration error) whenever the saved language wasn't "en".
+  const [lang, setLangState] = useState<Lang>("en");
+
+  useEffect(() => {
+    const saved = localStorage.getItem("tarshih_lang") as Lang;
+    if (saved === "en" || saved === "ar") {
+      setLangState(saved);
+    }
+  }, []);
+
+  // Custom setter that persists the language pick to localStorage and,
+  // if the person is logged in, to their account too.
   const setLang = (newLang: Lang) => {
     setLangState(newLang);
     if (typeof window !== "undefined") {
       localStorage.setItem("tarshih_lang", newLang);
     }
+    persistLanguageToAccount(newLang);
   };
 
   const isRTL = lang === "ar";

@@ -3,6 +3,7 @@ import json
 import uvicorn
 from fastapi import FastAPI, HTTPException, status, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
 from dotenv import load_dotenv
 from loguru import logger
 
@@ -33,6 +34,11 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Must stay in sync with utils/pdf_generator.py — both generator functions
+# always write to these exact paths (OUTPUT_DIR="outputs", fixed filenames).
+RESUME_PDF_PATH = os.path.join("outputs", "tailored_cv.pdf")
+COVER_LETTER_PDF_PATH = os.path.join("outputs", "cover_letter.pdf")
 
 SHORT_SAMPLE_JD = """
 Position: Machine Learning Engineer (AI Systems)
@@ -76,6 +82,68 @@ def make_initial_state(cv_text: str, jd_text: str) -> AgentState:
 @app.get("/health", status_code=status.HTTP_200_OK, tags=["System Health"])
 async def health_check():
     return {"status": "healthy", "environment": os.getenv("ENVIRONMENT", "development")}
+
+@app.get("/api/v1/download/cv", tags=["Downloads"])
+async def download_cv():
+    """Serves the most recently generated tailored CV as a downloadable file."""
+    if not os.path.exists(RESUME_PDF_PATH):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="No generated CV found yet. Run /api/v1/optimize first.",
+        )
+    return FileResponse(
+        RESUME_PDF_PATH,
+        media_type="application/pdf",
+        filename="tailored_cv.pdf",
+        headers={"Content-Disposition": "attachment; filename=tailored_cv.pdf"},
+    )
+
+
+@app.get("/api/v1/download/cover-letter", tags=["Downloads"])
+async def download_cover_letter():
+    """Serves the most recently generated cover letter as a downloadable file."""
+    if not os.path.exists(COVER_LETTER_PDF_PATH):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="No generated cover letter found yet. Run /api/v1/optimize first.",
+        )
+    return FileResponse(
+        COVER_LETTER_PDF_PATH,
+        media_type="application/pdf",
+        filename="cover_letter.pdf",
+        headers={"Content-Disposition": "attachment; filename=cover_letter.pdf"},
+    )
+
+
+@app.get("/api/v1/preview/cv", tags=["Downloads"])
+async def preview_cv():
+    """Serves the tailored CV inline so the browser opens/renders it instead of downloading it."""
+    if not os.path.exists(RESUME_PDF_PATH):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="No generated CV found yet. Run /api/v1/optimize first.",
+        )
+    return FileResponse(
+        RESUME_PDF_PATH,
+        media_type="application/pdf",
+        headers={"Content-Disposition": "inline; filename=tailored_cv.pdf"},
+    )
+
+
+@app.get("/api/v1/preview/cover-letter", tags=["Downloads"])
+async def preview_cover_letter():
+    """Serves the cover letter inline so the browser opens/renders it instead of downloading it."""
+    if not os.path.exists(COVER_LETTER_PDF_PATH):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="No generated cover letter found yet. Run /api/v1/optimize first.",
+        )
+    return FileResponse(
+        COVER_LETTER_PDF_PATH,
+        media_type="application/pdf",
+        headers={"Content-Disposition": "inline; filename=cover_letter.pdf"},
+    )
+
 
 @app.post("/api/v1/optimize", tags=["Agent Core"])
 async def optimize_application(

@@ -261,8 +261,10 @@ function LoginForm() {
    PAGE — route: "/login"
 ======================================================================== */
 export default function LoginPage() {
+  const { dir } = useLang();
+
   return (
-    <div className="flex min-h-screen w-full">
+    <div className="flex min-h-screen w-full" dir={dir}>
       <BrandPanel />
       <LoginForm />
     </div>

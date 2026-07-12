@@ -6,7 +6,6 @@ import { usePathname } from "next/navigation";
 import {
   LayoutDashboard,
   FileText,
-  Files,
   Settings,
   LogOut,
   Menu,
@@ -14,9 +13,12 @@ import {
   UploadCloud,
   CheckCircle2,
   FileX2,
+  Eye,
+  Download,
+  Loader2,
 } from "lucide-react";
 import { Globe } from "lucide-react";
-import { useLang } from "@/lib/language";
+import { useLang, useSyncLanguageFromAccount } from "@/lib/language";
 import { Logo } from "@/components/brand";
 import { signOut } from "@/lib/auth";
 
@@ -34,8 +36,8 @@ function DashboardLangSwitcher() {
         onClick={() => setLang("en")}
         aria-pressed={lang === "en"}
         lang="en"
-        className={`rounded-md px-2.5 py-1.5 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500/40 ${
-          lang === "en" ? "bg-sky-600 text-white" : "text-slate-500 hover:text-slate-900"
+        className={`rounded-md px-2.5 py-1.5 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40 ${
+          lang === "en" ? "bg-blue-600 text-white" : "text-slate-500 hover:text-slate-900"
         }`}
       >
         English
@@ -46,8 +48,8 @@ function DashboardLangSwitcher() {
         onClick={() => setLang("ar")}
         aria-pressed={lang === "ar"}
         lang="ar"
-        className={`rounded-md px-2.5 py-1.5 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500/40 ${
-          lang === "ar" ? "bg-sky-600 text-white" : "text-slate-500 hover:text-slate-900"
+        className={`rounded-md px-2.5 py-1.5 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40 ${
+          lang === "ar" ? "bg-blue-600 text-white" : "text-slate-500 hover:text-slate-900"
         }`}
       >
         العربية
@@ -57,10 +59,8 @@ function DashboardLangSwitcher() {
 }
 
 /* ========================================================================
-   DASHBOARD BUTTON — the marketing Button in components/brand.tsx is
-   styled for the dark landing/login/signup theme. The dashboard is a
-   separate light theme (Linear/Notion-style), so it gets its own button
-   rather than overloading Button's variants with theme-switching logic.
+   DASHBOARD BUTTON — now shares the landing page's blue-600 accent so the
+   two surfaces read as one product instead of two different apps.
 ======================================================================== */
 type DashboardButtonProps = React.ComponentPropsWithoutRef<"button"> & {
   as?: React.ElementType;
@@ -78,9 +78,9 @@ export function DashboardButton({
   ...props
 }: DashboardButtonProps) {
   const base =
-    "inline-flex shrink-0 items-center justify-center gap-1.5 rounded-lg text-sm font-medium whitespace-nowrap transition-all outline-none select-none focus-visible:ring-2 focus-visible:ring-sky-500/40 disabled:pointer-events-none disabled:opacity-50 active:translate-y-px";
+    "inline-flex shrink-0 items-center justify-center gap-1.5 rounded-lg text-sm font-medium whitespace-nowrap transition-all duration-150 outline-none select-none focus-visible:ring-2 focus-visible:ring-blue-500/40 disabled:pointer-events-none disabled:opacity-50 active:translate-y-px";
   const variants = {
-    primary: "bg-sky-600 text-white hover:bg-sky-500 shadow-sm shadow-sky-900/10",
+    primary: "bg-blue-600 text-white hover:bg-blue-500 shadow-sm shadow-blue-900/15 hover:shadow-md hover:shadow-blue-900/20",
     outline: "border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 hover:border-slate-300",
     ghost: "text-slate-600 hover:bg-slate-100 hover:text-slate-900",
   };
@@ -105,13 +105,13 @@ export function ScoreRing({ score, label, size = 128 }: { score: number; label?:
     <div className="flex flex-col items-center gap-2">
       <div className="relative" style={{ width: size, height: size }}>
         <svg width={size} height={size} className="-rotate-90">
-          <circle cx={size / 2} cy={size / 2} r={radius} fill="none" stroke="#e2e8f0" strokeWidth={stroke} />
+          <circle cx={size / 2} cy={size / 2} r={radius} fill="none" stroke="#eef2f7" strokeWidth={stroke} />
           <circle
             cx={size / 2}
             cy={size / 2}
             r={radius}
             fill="none"
-            stroke="#0284c7"
+            stroke="#2563eb"
             strokeWidth={stroke}
             strokeDasharray={circumference}
             strokeDashoffset={offset}
@@ -124,6 +124,28 @@ export function ScoreRing({ score, label, size = 128 }: { score: number; label?:
         </div>
       </div>
       {label && <span className="text-sm font-medium text-slate-500">{label}</span>}
+    </div>
+  );
+}
+
+/* ========================================================================
+   SCORE BAR — a labeled horizontal progress bar for score breakdowns
+   (keyword match, formatting, skills, education, experience, etc).
+======================================================================== */
+export function ScoreBar({ label, value }: { label: string; value: number }) {
+  const clamped = Math.min(Math.max(value, 0), 100);
+  return (
+    <div className="min-w-0">
+      <div className="mb-1.5 flex items-center justify-between gap-3 text-xs">
+        <span className="min-w-0 truncate text-slate-500">{label}</span>
+        <span className="shrink-0 font-semibold text-slate-900">{clamped}%</span>
+      </div>
+      <div className="h-1.5 w-full overflow-hidden rounded-full bg-slate-100">
+        <div
+          className="h-full rounded-full bg-blue-600 transition-all duration-700 ease-out"
+          style={{ width: `${clamped}%` }}
+        />
+      </div>
     </div>
   );
 }
@@ -167,7 +189,7 @@ export function UploadZone({
           type="button"
           onClick={onRemove}
           aria-label={removeLabel}
-          className="grid size-8 shrink-0 place-items-center rounded-lg text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500/40"
+          className="grid size-8 shrink-0 place-items-center rounded-lg text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40"
         >
           <FileX2 className="size-4" aria-hidden />
         </button>
@@ -190,10 +212,10 @@ export function UploadZone({
         if (dropped) onFileSelect(dropped);
       }}
       className={`flex cursor-pointer flex-col items-center justify-center gap-2.5 rounded-xl border-2 border-dashed px-5 py-10 text-center transition-colors ${
-        isDragging ? "border-sky-400 bg-sky-50" : "border-slate-200 bg-slate-50 hover:border-slate-300 hover:bg-slate-100/60"
+        isDragging ? "border-blue-400 bg-blue-50/60" : "border-slate-200 bg-slate-50 hover:border-slate-300 hover:bg-slate-100/60"
       }`}
     >
-      <span className="grid size-10 place-items-center rounded-full bg-white text-sky-600 shadow-sm">
+      <span className="grid size-10 place-items-center rounded-full bg-white text-blue-600 shadow-sm ring-1 ring-slate-100">
         <UploadCloud className="size-5" aria-hidden />
       </span>
       <p className="text-sm font-medium text-slate-700">{label}</p>
@@ -209,6 +231,76 @@ export function UploadZone({
         }}
       />
     </label>
+  );
+}
+
+/* ========================================================================
+   FILE RESULT CARD — the "Resume" / "Cover letter" output cards, with
+   working Preview (opens the PDF inline in a new tab) and Download
+   (saves via Content-Disposition: attachment) actions.
+======================================================================== */
+export function FileResultCard({
+  icon: Icon = FileText,
+  title,
+  readyLabel,
+  previewLabel,
+  downloadLabel,
+  previewHref,
+  downloadHref,
+  disabled = false,
+}: {
+  icon?: React.ElementType;
+  title: string;
+  readyLabel: string;
+  previewLabel: string;
+  downloadLabel: string;
+  previewHref: string;
+  downloadHref: string;
+  disabled?: boolean;
+}) {
+  return (
+    <div className="group relative overflow-hidden rounded-xl border border-slate-200 bg-white p-4 shadow-sm transition-all hover:border-blue-200 hover:shadow-md">
+      <div className="flex items-start justify-between gap-3">
+        <div className="flex min-w-0 items-center gap-3">
+          <span className="grid size-10 shrink-0 place-items-center rounded-lg bg-blue-50 text-blue-600">
+            <Icon className="size-4.5" aria-hidden />
+          </span>
+          <div className="min-w-0">
+            <p className="truncate text-sm font-semibold text-slate-900">{title}</p>
+            <span className="mt-0.5 inline-flex items-center gap-1 text-xs font-medium text-emerald-600">
+              <CheckCircle2 className="size-3" aria-hidden />
+              {readyLabel}
+            </span>
+          </div>
+        </div>
+      </div>
+
+      <div className="mt-3.5 flex items-center gap-2">
+        <a
+          href={disabled ? undefined : previewHref}
+          target="_blank"
+          rel="noopener noreferrer"
+          aria-disabled={disabled}
+          className={`inline-flex h-8 flex-1 items-center justify-center gap-1.5 rounded-lg border border-slate-200 text-xs font-medium text-slate-700 transition-colors ${
+            disabled ? "pointer-events-none opacity-40" : "hover:bg-slate-50 hover:border-slate-300"
+          }`}
+        >
+          <Eye className="size-3.5" aria-hidden />
+          {previewLabel}
+        </a>
+        <a
+          href={disabled ? undefined : downloadHref}
+          download
+          aria-disabled={disabled}
+          className={`inline-flex h-8 flex-1 items-center justify-center gap-1.5 rounded-lg bg-blue-600 text-xs font-medium text-white transition-colors ${
+            disabled ? "pointer-events-none opacity-40" : "hover:bg-blue-500"
+          }`}
+        >
+          <Download className="size-3.5" aria-hidden />
+          {downloadLabel}
+        </a>
+      </div>
+    </div>
   );
 }
 
@@ -243,17 +335,26 @@ export function EmptyState({
 }
 
 /* ========================================================================
-   STATUS BADGE — Applications table status pill
+   STATUS BADGE — Applications table status pill / generic status pill
 ======================================================================== */
 const statusStyles: Record<string, string> = {
-  applied: "bg-sky-50 text-sky-700",
+  applied: "bg-blue-50 text-blue-700",
   interview: "bg-violet-50 text-violet-700",
   rejected: "bg-rose-50 text-rose-700",
+  ready: "bg-emerald-50 text-emerald-700",
+  generating: "bg-blue-50 text-blue-700",
 };
 
-export function StatusBadge({ status, label }: { status: "applied" | "interview" | "rejected"; label: string }) {
+export function StatusBadge({
+  status,
+  label,
+}: {
+  status: "applied" | "interview" | "rejected" | "ready" | "generating";
+  label: string;
+}) {
   return (
-    <span className={`inline-flex items-center rounded-full px-2.5 py-1 text-xs font-medium ${statusStyles[status]}`}>
+    <span className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-medium ${statusStyles[status]}`}>
+      {status === "generating" && <Loader2 className="size-3 animate-spin" aria-hidden />}
       {label}
     </span>
   );
@@ -263,14 +364,13 @@ export function StatusBadge({ status, label }: { status: "applied" | "interview"
    DASHBOARD SHELL — sidebar + topbar wrapper around every /dashboard/* page.
    Collapses to a hamburger drawer on mobile.
 ======================================================================== */
-type DashboardUser = { name: string | null; email: string };
+type DashboardUser = { name: string | null; email: string; preferredLanguage?: string | null };
 
 function useNavItems() {
   const { t } = useLang();
   return [
     { href: "/dashboard", label: t.dashboard.sidebar.dashboard, icon: LayoutDashboard },
     { href: "/dashboard/resumes", label: t.dashboard.sidebar.myResumes, icon: FileText },
-    { href: "/dashboard/applications", label: t.dashboard.sidebar.applications, icon: Files },
     { href: "/dashboard/settings", label: t.dashboard.sidebar.settings, icon: Settings },
   ];
 }
@@ -298,7 +398,7 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
               href={href}
               onClick={onNavigate}
               className={`flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors ${
-                active ? "bg-sky-50 text-sky-700" : "text-slate-600 hover:bg-slate-100 hover:text-slate-900"
+                active ? "bg-blue-50 text-blue-700" : "text-slate-600 hover:bg-slate-100 hover:text-slate-900"
               }`}
             >
               <Icon className="size-4.5 shrink-0" aria-hidden />
@@ -324,6 +424,7 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
 
 export function DashboardShell({ user, children }: { user: DashboardUser; children: React.ReactNode }) {
   const { isRTL } = useLang();
+  useSyncLanguageFromAccount(user.preferredLanguage);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const displayName = user.name?.trim() || user.email;
 

@@ -1,7 +1,7 @@
 "use client";
 
 import React from "react";
-import { Plus, Trash2 } from "lucide-react";
+import { Plus, Trash2, User, GraduationCap, Briefcase, FolderKanban, Award, Wrench } from "lucide-react";
 import { useLang } from "@/lib/language";
 
 export type EducationEntry = {
@@ -55,13 +55,46 @@ export const emptyManualCvData: ManualCvData = {
 };
 
 const inputClass =
-  "block w-full rounded-lg border border-slate-200 bg-slate-50 px-3.5 py-2.5 text-sm text-slate-900 placeholder:text-slate-400 outline-none transition-colors focus:border-sky-400 focus:bg-white focus:ring-2 focus:ring-sky-500/20";
+  "block w-full rounded-lg border border-slate-200 bg-white px-3.5 py-2.5 text-sm text-slate-900 placeholder:text-slate-400 outline-none transition-colors focus:border-blue-400 focus:ring-2 focus:ring-blue-500/15";
 
 function FieldLabel({ children }: { children: React.ReactNode }) {
   return <label className="mb-1.5 block text-xs font-medium text-slate-600">{children}</label>;
 }
 
+/* ========================================================================
+   SECTION CARD — every part of the form (Education, Experience, Projects,
+   Certifications) now lives in its own bordered card with an icon + title,
+   so the long form reads as distinct steps instead of one dense wall.
+======================================================================== */
+function SectionCard({
+  icon: Icon,
+  title,
+  action,
+  children,
+}: {
+  icon: React.ElementType;
+  title: string;
+  action?: React.ReactNode;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="rounded-xl border border-slate-200 bg-slate-50/50 p-4 sm:p-5">
+      <div className="mb-3.5 flex items-center justify-between gap-2">
+        <div className="flex items-center gap-2">
+          <span className="grid size-7 shrink-0 place-items-center rounded-md bg-blue-50 text-blue-600">
+            <Icon className="size-3.5" aria-hidden />
+          </span>
+          <p className="text-sm font-semibold text-slate-800">{title}</p>
+        </div>
+        {action}
+      </div>
+      {children}
+    </div>
+  );
+}
+
 function RepeatableSection<T>({
+  icon,
   title,
   items,
   onChange,
@@ -69,6 +102,7 @@ function RepeatableSection<T>({
   renderItem,
   lang,
 }: {
+  icon: React.ElementType;
   title: string;
   items: T[];
   onChange: (items: T[]) => void;
@@ -77,26 +111,28 @@ function RepeatableSection<T>({
   lang: string;
 }) {
   return (
-    <div>
-      <div className="mb-2 flex items-center justify-between">
-        <p className="text-sm font-medium text-slate-700">{title}</p>
+    <SectionCard
+      icon={icon}
+      title={title}
+      action={
         <button
           type="button"
           onClick={() => onChange([...items, emptyItem])}
-          className="flex items-center gap-1 rounded-lg px-2 py-1 text-xs font-medium text-sky-600 hover:bg-sky-50"
+          className="flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-xs font-medium text-blue-600 transition-colors hover:bg-blue-50"
         >
           <Plus className="size-3.5" aria-hidden /> {lang === "ar" ? "إضافة" : "Add"}
         </button>
-      </div>
+      }
+    >
       <div className="space-y-3">
         {items.map((item, i) => (
-          <div key={i} className="relative rounded-xl border border-slate-200 bg-slate-50/60 p-3.5">
+          <div key={i} className="relative rounded-lg border border-slate-200 bg-white p-3.5 shadow-sm">
             {items.length > 1 && (
               <button
                 type="button"
                 onClick={() => onChange(items.filter((_, idx) => idx !== i))}
-                aria-label={`Remove entry`}
-                className={`absolute top-2.5 grid size-6 place-items-center rounded-md text-slate-400 hover:bg-white hover:text-rose-500 ${
+                aria-label="Remove entry"
+                className={`absolute top-2.5 grid size-6 place-items-center rounded-md text-slate-400 transition-colors hover:bg-rose-50 hover:text-rose-500 ${
                   lang === "ar" ? "left-2.5" : "right-2.5"
                 }`}
               >
@@ -111,7 +147,7 @@ function RepeatableSection<T>({
           </div>
         ))}
       </div>
-    </div>
+    </SectionCard>
   );
 }
 
@@ -129,56 +165,59 @@ export function ManualCvForm({
   }
 
   return (
-    <div className="space-y-6" dir={dir}>
-      <div className="grid gap-3 sm:grid-cols-2">
-        <div>
-          <FieldLabel>{lang === "ar" ? "الاسم الكامل *" : "Full name *"}</FieldLabel>
-          <input
-            className={inputClass}
-            value={value.name}
-            onChange={(e) => set({ name: e.target.value })}
-            placeholder={lang === "ar" ? "اسمك الكامل" : "Your full name"}
-          />
+    <div className="space-y-4" dir={dir}>
+      <SectionCard icon={User} title={lang === "ar" ? "المعلومات الشخصية" : "Personal information"}>
+        <div className="grid gap-3 sm:grid-cols-2">
+          <div>
+            <FieldLabel>{lang === "ar" ? "الاسم الكامل *" : "Full name *"}</FieldLabel>
+            <input
+              className={inputClass}
+              value={value.name}
+              onChange={(e) => set({ name: e.target.value })}
+              placeholder={lang === "ar" ? "اسمك الكامل" : "Your full name"}
+            />
+          </div>
+          <div>
+            <FieldLabel>{lang === "ar" ? "البريد الإلكتروني" : "Email"}</FieldLabel>
+            <input
+              className={inputClass}
+              value={value.email}
+              onChange={(e) => set({ email: e.target.value })}
+              placeholder="you@example.com"
+            />
+          </div>
+          <div>
+            <FieldLabel>{lang === "ar" ? "رقم الهاتف" : "Phone"}</FieldLabel>
+            <input
+              className={inputClass}
+              value={value.phone}
+              onChange={(e) => set({ phone: e.target.value })}
+              placeholder={lang === "ar" ? "9665+..." : "+966 5..."}
+            />
+          </div>
+          <div>
+            <FieldLabel>{lang === "ar" ? "لينكد إن" : "LinkedIn"}</FieldLabel>
+            <input
+              className={inputClass}
+              value={value.linkedin}
+              onChange={(e) => set({ linkedin: e.target.value })}
+              placeholder="linkedin.com/in/..."
+            />
+          </div>
+          <div className="sm:col-span-2">
+            <FieldLabel>{lang === "ar" ? "الموقع (المدينة، الدولة)" : "Location"}</FieldLabel>
+            <input
+              className={inputClass}
+              value={value.location}
+              onChange={(e) => set({ location: e.target.value })}
+              placeholder={lang === "ar" ? "المدينة، الدولة" : "City, Country"}
+            />
+          </div>
         </div>
-        <div>
-          <FieldLabel>{lang === "ar" ? "البريد الإلكتروني" : "Email"}</FieldLabel>
-          <input
-            className={inputClass}
-            value={value.email}
-            onChange={(e) => set({ email: e.target.value })}
-            placeholder="you@example.com"
-          />
-        </div>
-        <div>
-          <FieldLabel>{lang === "ar" ? "رقم الهاتف" : "Phone"}</FieldLabel>
-          <input
-            className={inputClass}
-            value={value.phone}
-            onChange={(e) => set({ phone: e.target.value })}
-            placeholder={lang === "ar" ? "9665+..." : "+966 5..."}
-          />
-        </div>
-        <div>
-          <FieldLabel>{lang === "ar" ? "لينكد إن" : "LinkedIn"}</FieldLabel>
-          <input
-            className={inputClass}
-            value={value.linkedin}
-            onChange={(e) => set({ linkedin: e.target.value })}
-            placeholder="linkedin.com/in/..."
-          />
-        </div>
-        <div className="sm:col-span-2">
-          <FieldLabel>{lang === "ar" ? "الموقع (المدينة، الدولة)" : "Location"}</FieldLabel>
-          <input
-            className={inputClass}
-            value={value.location}
-            onChange={(e) => set({ location: e.target.value })}
-            placeholder={lang === "ar" ? "المدينة، الدولة" : "City, Country"}
-          />
-        </div>
-      </div>
+      </SectionCard>
 
       <RepeatableSection
+        icon={GraduationCap}
         title={lang === "ar" ? "التعليم" : "Education"}
         lang={lang}
         items={value.education}
@@ -215,6 +254,7 @@ export function ManualCvForm({
       />
 
       <RepeatableSection
+        icon={Briefcase}
         title={lang === "ar" ? "الخبرات المهنية" : "Experience"}
         lang={lang}
         items={value.experience}
@@ -254,6 +294,7 @@ export function ManualCvForm({
       />
 
       <RepeatableSection
+        icon={FolderKanban}
         title={lang === "ar" ? "المشاريع" : "Projects"}
         lang={lang}
         items={value.projects}
@@ -287,6 +328,7 @@ export function ManualCvForm({
       />
 
       <RepeatableSection
+        icon={Award}
         title={lang === "ar" ? "الشهادات الاحترافية" : "Certifications"}
         lang={lang}
         items={value.certifications}
@@ -302,8 +344,7 @@ export function ManualCvForm({
         )}
       />
 
-      <div>
-        <FieldLabel>{lang === "ar" ? "المهارات" : "Skills"}</FieldLabel>
+      <SectionCard icon={Wrench} title={lang === "ar" ? "المهارات" : "Skills"}>
         <input
           className={inputClass}
           value={value.skills}
@@ -314,7 +355,7 @@ export function ManualCvForm({
               : "Python, LangGraph, Claude API, Team leadership — comma separated"
           }
         />
-      </div>
+      </SectionCard>
     </div>
   );
 }

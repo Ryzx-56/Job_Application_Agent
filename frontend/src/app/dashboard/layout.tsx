@@ -20,6 +20,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
   const shellUser = {
     name: (user.user_metadata?.full_name as string | undefined) ?? null,
     email: user.email ?? "",
+    preferredLanguage: (user.user_metadata?.preferred_language as string | undefined) ?? null,
   };
 
   return <DashboardShell user={shellUser}>{children}</DashboardShell>;

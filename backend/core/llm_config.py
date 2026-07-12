@@ -10,7 +10,7 @@ import anthropic
 
 # Gemini client — used for cheap tasks (extraction, fact checking)
 gemini_client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
-GEMINI_MODEL = "gemini-2.5-flash"
+GEMINI_MODEL = "gemini-3.1-flash-lite"
 
 # Claude client — used for writing tasks only (tailoring, cover letter, scoring)
 claude_client = anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
