@@ -63,6 +63,15 @@ def route_after_fact_check(state: AgentState):
         # Trigger Document Generator, Match Scorer, ATS Scorer, AND Jobs Finder in PARALLEL
         return ["document_generator", "match_scorer", "ats_scorer", "jobs_finder"]
 
+    if state.get("error"):
+        # tailoring_engine already exhausted its own internal retries and
+        # permanently failed — it now no-ops on every further call (see its
+        # `if state.get("error"): return {}` guard), which means
+        # tailoring_attempts would never increment again and this router
+        # would loop back to it forever. Stop looping and proceed with
+        # best-effort results; the error is still visible to the frontend.
+        return ["document_generator", "match_scorer", "ats_scorer", "jobs_finder"]
+
     if state.get("tailoring_attempts", 0) >= MAX_TAILORING_ATTEMPTS:
         # Give up looping — proceed with best-effort results rather than
         # retrying indefinitely. fact_check_passed=False is still visible

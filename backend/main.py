@@ -1,7 +1,7 @@
 import os
 import json
 import uvicorn
-from fastapi import FastAPI, HTTPException, status, UploadFile, File, Form
+from fastapi import FastAPI, HTTPException, status, UploadFile, File, Form, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from dotenv import load_dotenv
@@ -15,6 +15,7 @@ load_dotenv(find_dotenv(), override=True)
 # Import pipeline structures
 from core.state import AgentState
 from core.orchestrator import app as graph
+from core.auth import get_current_user_id
 from utils.pdf_parser import extract_text_from_pdf
 from utils.pdf_generator import render_cv_pdf, render_cover_letter_pdf
 from schemas.manual_cv_request import ManualCVRequest
@@ -59,6 +60,7 @@ def make_initial_state(cv_text: str, jd_text: str) -> AgentState:
         input_mode="upload",
         manual_cv_data={},
         additional_info="",
+        cv_language="en",
         facts_json={},
         weight_factors={},
         tailored_bullets=[],
@@ -88,7 +90,7 @@ async def health_check():
     return {"status": "healthy", "environment": os.getenv("ENVIRONMENT", "development")}
 
 @app.get("/api/v1/download/cv", tags=["Downloads"])
-async def download_cv():
+async def download_cv(user_id: str = Depends(get_current_user_id)):
     """Serves the most recently generated tailored CV as a downloadable file."""
     if not os.path.exists(RESUME_PDF_PATH):
         raise HTTPException(
@@ -104,7 +106,7 @@ async def download_cv():
 
 
 @app.get("/api/v1/download/cover-letter", tags=["Downloads"])
-async def download_cover_letter():
+async def download_cover_letter(user_id: str = Depends(get_current_user_id)):
     """Serves the most recently generated cover letter as a downloadable file."""
     if not os.path.exists(COVER_LETTER_PDF_PATH):
         raise HTTPException(
@@ -120,7 +122,7 @@ async def download_cover_letter():
 
 
 @app.get("/api/v1/preview/cv", tags=["Downloads"])
-async def preview_cv():
+async def preview_cv(user_id: str = Depends(get_current_user_id)):
     """Serves the tailored CV inline so the browser opens/renders it instead of downloading it."""
     if not os.path.exists(RESUME_PDF_PATH):
         raise HTTPException(
@@ -135,7 +137,7 @@ async def preview_cv():
 
 
 @app.get("/api/v1/preview/cover-letter", tags=["Downloads"])
-async def preview_cover_letter():
+async def preview_cover_letter(user_id: str = Depends(get_current_user_id)):
     """Serves the cover letter inline so the browser opens/renders it instead of downloading it."""
     if not os.path.exists(COVER_LETTER_PDF_PATH):
         raise HTTPException(
@@ -154,6 +156,8 @@ async def optimize_application(
     cv: UploadFile = File(...),
     job_description: str = Form(...),
     additional_info: str = Form(""),
+    cv_language: str = Form("en"),
+    user_id: str = Depends(get_current_user_id),
 ):
     logger.info("🚀 API Gateway received an application optimization request.")
 
@@ -164,6 +168,7 @@ async def optimize_application(
     initial_state = make_initial_state(final_cv_text, final_jd_text)
     initial_state["input_mode"] = "upload"
     initial_state["additional_info"] = additional_info or ""
+    initial_state["cv_language"] = "ar" if str(cv_language).lower().startswith("ar") else "en"
     
     try:
         # Pipeline execution: graph.invoke is the standard LangGraph method
@@ -187,6 +192,9 @@ async def optimize_application(
             "cover_letter_text": result.get("cover_letter_text", ""),
             "similar_jobs": result.get("similar_jobs", []),
             "fact_check_passed": result.get("fact_check_passed", False),
+            "job_title": result.get("weight_factors", {}).get("job_title", ""),
+            "company": result.get("weight_factors", {}).get("company", ""),
+            "cv_language": result.get("cv_language", "en"),
             "generated_cv_pdf": cv_pdf_path,
             "generated_cl_pdf": cl_pdf_path,
             "error": result.get("error", None)
@@ -201,7 +209,10 @@ async def optimize_application(
 
 
 @app.post("/api/v1/optimize-manual", tags=["Agent Core"])
-async def optimize_manual_application(payload: ManualCVRequest):
+async def optimize_manual_application(
+    payload: ManualCVRequest,
+    user_id: str = Depends(get_current_user_id),
+):
     """
     Same pipeline as /api/v1/optimize, but for the 'Create New CV' flow —
     structured form data instead of an uploaded PDF. Both routes converge
@@ -210,13 +221,14 @@ async def optimize_manual_application(payload: ManualCVRequest):
     """
     logger.info("🚀 API Gateway received a MANUAL CV optimization request.")
 
-    manual_data = payload.model_dump(exclude={"job_description", "additional_info"})
+    manual_data = payload.model_dump(exclude={"job_description", "additional_info", "cv_language"})
     final_jd_text = payload.job_description or SHORT_SAMPLE_JD
 
     initial_state = make_initial_state("", final_jd_text)
     initial_state["input_mode"] = "manual"
     initial_state["manual_cv_data"] = manual_data
     initial_state["additional_info"] = payload.additional_info or ""
+    initial_state["cv_language"] = "ar" if str(payload.cv_language or "en").lower().startswith("ar") else "en"
 
     try:
         logger.info("🧠 Commencing agent graph routing lifecycle (manual entry)...")
@@ -239,6 +251,9 @@ async def optimize_manual_application(payload: ManualCVRequest):
             "cover_letter_text": result.get("cover_letter_text", ""),
             "similar_jobs": result.get("similar_jobs", []),
             "fact_check_passed": result.get("fact_check_passed", False),
+            "job_title": result.get("weight_factors", {}).get("job_title", ""),
+            "company": result.get("weight_factors", {}).get("company", ""),
+            "cv_language": result.get("cv_language", "en"),
             "generated_cv_pdf": cv_pdf_path,
             "generated_cl_pdf": cl_pdf_path,
             "error": result.get("error", None)

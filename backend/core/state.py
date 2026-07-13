@@ -27,6 +27,11 @@ class AgentState(TypedDict):
     manual_cv_data:            dict
     additional_info:           str
 
+    # Output language for the generated CV + cover letter: "en" or "ar".
+    # Independent of what language the candidate's source data is in —
+    # tailoring_engine / document_generator translate as needed.
+    cv_language:                str
+
     # ── AGENT 1 OUTPUT (Gemini) ─────────────────────────────
     facts_json:              dict
 

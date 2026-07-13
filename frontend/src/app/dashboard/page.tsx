@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useRef, useEffect } from "react";
 import {
   Sparkles,
   CheckCircle2,
@@ -12,11 +12,13 @@ import {
   Mail,
   TrendingUp,
   HelpCircle,
+  Languages,
 } from "lucide-react";
 import { useLang } from "@/lib/language";
 import { DashboardButton, ScoreRing, ScoreBar, UploadZone, FileResultCard } from "@/components/dashboard";
 import { createClient } from "@/lib/supabase/client";
 import { ManualCvForm, ManualCvData, emptyManualCvData } from "@/components/manual-cv-form";
+import { saveResumeResult } from "@/lib/supabase/resumes";
 
 type TailoredBullet = {
   original: string;
@@ -79,10 +81,17 @@ type GenerateResult = {
   factCheckPassed: boolean;
   gapAnalysis: GapItem[];
   overallRecommendation: string;
+  jobTitle: string;
+  company: string;
 };
 
 // Base URL for the FastAPI backend, e.g. http://127.0.0.1:8000 in dev.
 const API_URL = process.env.NEXT_PUBLIC_API_URL;
+
+// Max height (px) the "Additional information" textarea grows to before it
+// stops expanding and becomes scrollable instead. Kept slightly taller than
+// the job description textarea (rows=7 ≈ 188px) so it never dominates the form.
+const ADDITIONAL_INFO_MAX_HEIGHT = 220;
 
 function mapBackendResponse(raw: any): GenerateResult {
   return {
@@ -97,6 +106,8 @@ function mapBackendResponse(raw: any): GenerateResult {
     factCheckPassed: raw.fact_check_passed ?? false,
     gapAnalysis: raw.gap_analysis ?? [],
     overallRecommendation: raw.overall_recommendation ?? "",
+    jobTitle: raw.job_title ?? "",
+    company: raw.company ?? "",
   };
 }
 
@@ -107,7 +118,8 @@ function mapBackendResponse(raw: any): GenerateResult {
 async function generateFromUpload(
   cv: File,
   jobDescription: string,
-  additionalInfo: string
+  additionalInfo: string,
+  cvLanguage: "en" | "ar"
 ): Promise<GenerateResult> {
   const supabase = createClient();
   const {
@@ -122,6 +134,7 @@ async function generateFromUpload(
   formData.append("cv", cv);
   formData.append("job_description", jobDescription);
   formData.append("additional_info", additionalInfo);
+  formData.append("cv_language", cvLanguage);
 
   const res = await fetch(`${API_URL}/api/v1/optimize`, {
     method: "POST",
@@ -142,7 +155,12 @@ async function generateFromUpload(
  * Converts the flat "Create New CV" form state into the nested JSON shape
  * the backend's ManualCVRequest schema expects.
  */
-function buildManualPayload(data: ManualCvData, jobDescription: string, additionalInfo: string) {
+function buildManualPayload(
+  data: ManualCvData,
+  jobDescription: string,
+  additionalInfo: string,
+  cvLanguage: "en" | "ar"
+) {
   return {
     personal: {
       name: data.name,
@@ -189,6 +207,7 @@ function buildManualPayload(data: ManualCvData, jobDescription: string, addition
     },
     job_description: jobDescription,
     additional_info: additionalInfo || "",
+    cv_language: cvLanguage,
   };
 }
 
@@ -199,7 +218,8 @@ function buildManualPayload(data: ManualCvData, jobDescription: string, addition
 async function generateFromManual(
   data: ManualCvData,
   jobDescription: string,
-  additionalInfo: string
+  additionalInfo: string,
+  cvLanguage: "en" | "ar"
 ): Promise<GenerateResult> {
   const supabase = createClient();
   const {
@@ -210,7 +230,7 @@ async function generateFromManual(
     throw new Error("Not authenticated");
   }
 
-  const payload = buildManualPayload(data, jobDescription, additionalInfo);
+  const payload = buildManualPayload(data, jobDescription, additionalInfo, cvLanguage);
 
   const res = await fetch(`${API_URL}/api/v1/optimize-manual`, {
     method: "POST",
@@ -255,16 +275,83 @@ export default function DashboardHomePage() {
   const [manualData, setManualData] = useState<ManualCvData>(emptyManualCvData);
   const [additionalInfo, setAdditionalInfo] = useState("");
   const [jobDescription, setJobDescription] = useState("");
+  const [cvLanguage, setCvLanguage] = useState<"en" | "ar">("en");
   const [generating, setGenerating] = useState(false);
   const [result, setResult] = useState<GenerateResult | null>(null);
+  const [cvFileUrl, setCvFileUrl] = useState<string | null>(null);
+  const [coverLetterFileUrl, setCoverLetterFileUrl] = useState<string | null>(null);
   const [error, setError] = useState("");
   const [showAllBullets, setShowAllBullets] = useState(false);
   const [showAllGaps, setShowAllGaps] = useState(false);
+
+  const additionalInfoRef = useRef<HTMLTextAreaElement>(null);
+
+  // Auto-grow the "Additional information" textarea as the user types, capped
+  // at ADDITIONAL_INFO_MAX_HEIGHT (slightly taller than the job description
+  // block below it). Past that cap it stays fixed size and scrolls.
+  useEffect(() => {
+    const el = additionalInfoRef.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = `${Math.min(el.scrollHeight, ADDITIONAL_INFO_MAX_HEIGHT)}px`;
+  }, [additionalInfo]);
 
   const canGenerate =
     (cvMode === "upload" ? !!cvFile : manualData.name.trim().length > 0) &&
     jobDescription.trim().length > 0 &&
     !generating;
+
+  // The preview/download endpoints now require Authorization, so plain
+  // <a href> links to them won't work (a browser navigation can't attach a
+  // header). Fetch both files once with the session token and hand out
+  // local blob URLs instead — anchors work fine against those.
+  useEffect(() => {
+    if (!result) {
+      setCvFileUrl(null);
+      setCoverLetterFileUrl(null);
+      return;
+    }
+
+    let cancelled = false;
+    const objectUrls: string[] = [];
+
+    (async () => {
+      const supabase = createClient();
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+      if (!session?.access_token) return;
+
+      const fetchAsBlobUrl = async (endpoint: string) => {
+        try {
+          const res = await fetch(`${API_URL}${endpoint}`, {
+            headers: { Authorization: `Bearer ${session.access_token}` },
+          });
+          if (!res.ok) return null;
+          const blob = await res.blob();
+          const url = URL.createObjectURL(blob);
+          objectUrls.push(url);
+          return url;
+        } catch {
+          return null;
+        }
+      };
+
+      const [cvUrl, clUrl] = await Promise.all([
+        fetchAsBlobUrl("/api/v1/preview/cv"),
+        fetchAsBlobUrl("/api/v1/preview/cover-letter"),
+      ]);
+      if (cancelled) return;
+      setCvFileUrl(cvUrl);
+      setCoverLetterFileUrl(clUrl);
+    })();
+
+    return () => {
+      cancelled = true;
+      objectUrls.forEach((url) => URL.revokeObjectURL(url));
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [result]);
 
   async function handleGenerate() {
     setError("");
@@ -281,9 +368,19 @@ export default function DashboardHomePage() {
     try {
       const data =
         cvMode === "upload"
-          ? await generateFromUpload(cvFile!, jobDescription, additionalInfo)
-          : await generateFromManual(manualData, jobDescription, additionalInfo);
+          ? await generateFromUpload(cvFile!, jobDescription, additionalInfo, cvLanguage)
+          : await generateFromManual(manualData, jobDescription, additionalInfo, cvLanguage);
       setResult(data);
+
+      // Persist so it shows up in "My Resumes" and survives sign-out/back-in.
+      // Best-effort — the user already has their result on screen either way.
+      saveResumeResult({
+        role: data.jobTitle,
+        company: data.company,
+        cvLanguage,
+        jobDescription,
+        result: data,
+      }).catch((err) => console.error("Failed to save resume to history:", err));
     } catch (err) {
       console.error(err);
       setError(
@@ -385,15 +482,17 @@ export default function DashboardHomePage() {
             <span className="text-slate-400">({lang === "ar" ? "اختياري" : "optional"})</span>
           </label>
           <textarea
+            ref={additionalInfoRef}
             rows={3}
             value={additionalInfo}
             onChange={(e) => setAdditionalInfo(e.target.value)}
             placeholder={
               lang === "ar"
-                ? "أي شيء آخر يستحق الإضافة ولم يتم ذكره أعلاه — جوائز، أعمال تطوعية، لغات، سياق حول فجوة مهنية، إلخ."
-                : "Anything else worth including that isn't captured above — awards, volunteer work, languages, context about a gap, etc."
+                ? "أي شيء آخر يستحق الإضافة ولم يتم ذكره أعلاه، مثل الجوائز أو الأعمال التطوعية أو اللغات أو سياق حول فجوة مهنية."
+                : "Anything else worth including that isn't captured above, like awards, volunteer work, languages, or context about a gap."
             }
-            className="block w-full resize-y rounded-lg border border-slate-200 bg-slate-50 px-3.5 py-2.5 text-sm text-slate-900 placeholder:text-slate-400 outline-none transition-colors focus:border-blue-400 focus:bg-white focus:ring-2 focus:ring-blue-500/20"
+            style={{ maxHeight: ADDITIONAL_INFO_MAX_HEIGHT }}
+            className="block w-full resize-none overflow-y-auto rounded-lg border border-slate-200 bg-slate-50 px-3.5 py-2.5 text-sm text-slate-900 placeholder:text-slate-400 outline-none transition-colors focus:border-blue-400 focus:bg-white focus:ring-2 focus:ring-blue-500/20"
           />
         </div>
 
@@ -417,16 +516,51 @@ export default function DashboardHomePage() {
           </p>
         )}
 
-        <DashboardButton
-          type="button"
-          size="lg"
-          disabled={!canGenerate}
-          onClick={handleGenerate}
-          className="w-full sm:w-auto"
-        >
-          <Sparkles className={`size-4 ${generating ? "animate-pulse" : ""}`} aria-hidden />
-          {generating ? copy.generatingCta : copy.generateCta}
-        </DashboardButton>
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+          <DashboardButton
+            type="button"
+            size="lg"
+            disabled={!canGenerate}
+            onClick={handleGenerate}
+            className="w-full sm:w-auto"
+          >
+            <Sparkles className={`size-4 ${generating ? "animate-pulse" : ""}`} aria-hidden />
+            {generating ? copy.generatingCta : copy.generateCta}
+          </DashboardButton>
+
+          <div
+            role="group"
+            aria-label={lang === "ar" ? "لغة السيرة الذاتية الناتجة" : "Output CV language"}
+            className="inline-flex items-center gap-1 self-start rounded-full border border-slate-200 bg-slate-50 p-1 sm:self-auto"
+          >
+            <Languages className="ml-1.5 size-4 shrink-0 text-slate-400" aria-hidden />
+            <button
+              type="button"
+              onClick={() => setCvLanguage("en")}
+              aria-pressed={cvLanguage === "en"}
+              className={`rounded-full px-3.5 py-1.5 text-sm font-medium transition-colors ${
+                cvLanguage === "en" ? "bg-white text-blue-600 shadow-sm" : "text-slate-500 hover:text-slate-700"
+              }`}
+            >
+              English
+            </button>
+            <button
+              type="button"
+              onClick={() => setCvLanguage("ar")}
+              aria-pressed={cvLanguage === "ar"}
+              className={`rounded-full px-3.5 py-1.5 text-sm font-medium transition-colors ${
+                cvLanguage === "ar" ? "bg-white text-blue-600 shadow-sm" : "text-slate-500 hover:text-slate-700"
+              }`}
+            >
+              العربية
+            </button>
+          </div>
+        </div>
+        <p className="-mt-1.5 text-xs text-slate-400">
+          {lang === "ar"
+            ? "سيتم إنشاء سيرتك الذاتية وخطاب التقديم باللغة المختارة، حتى لو كانت بياناتك المُدخلة بلغة أخرى."
+            : "Your CV and cover letter will be generated in the selected language, even if your input is in the other language."}
+        </p>
       </div>
 
       {(generating || result) && (
@@ -446,7 +580,7 @@ export default function DashboardHomePage() {
                 {generating
                   ? lang === "ar"
                     ? "يستغرق الأمر بضع لحظات لأننا نستخدم عدة وكلاء ذكاء اصطناعي متخصصين لضمان أفضل جودة."
-                    : "This takes a few moments — we run several specialized AI agents in sequence to make sure everything is accurate and polished."
+                    : "This takes a few moments, since we run several specialized AI agents in sequence to make sure everything is accurate and polished."
                   : lang === "ar"
                   ? "سيرتك الذاتية وخطاب التقديم جاهزان أدناه."
                   : "Your tailored CV and cover letter are ready below."}
@@ -685,8 +819,8 @@ export default function DashboardHomePage() {
             {!result.factCheckPassed && (
               <p className="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700">
                 {lang === "ar"
-                  ? "لم يجتز فحص الحقائق بالكامل — يرجى مراجعة النقاط المُنشأة قبل إرسالها."
-                  : "Fact check did not fully pass — review the generated bullets before sending this out."}
+                  ? "لم يجتز فحص الحقائق بالكامل. يرجى مراجعة النقاط المُنشأة قبل إرسالها."
+                  : "Fact check did not fully pass. Review the generated bullets before sending this out."}
               </p>
             )}
           </div>
@@ -702,8 +836,9 @@ export default function DashboardHomePage() {
                 readyLabel={lang === "ar" ? "جاهز" : "Ready"}
                 previewLabel={copy.preview}
                 downloadLabel={copy.download}
-                previewHref={`${API_URL}/api/v1/preview/cv`}
-                downloadHref={`${API_URL}/api/v1/download/cv`}
+                previewHref={cvFileUrl ?? "#"}
+                downloadHref={cvFileUrl ?? "#"}
+                disabled={!cvFileUrl}
               />
               <FileResultCard
                 icon={Mail}
@@ -711,8 +846,9 @@ export default function DashboardHomePage() {
                 readyLabel={lang === "ar" ? "جاهز" : "Ready"}
                 previewLabel={copy.preview}
                 downloadLabel={copy.download}
-                previewHref={`${API_URL}/api/v1/preview/cover-letter`}
-                downloadHref={`${API_URL}/api/v1/download/cover-letter`}
+                previewHref={coverLetterFileUrl ?? "#"}
+                downloadHref={coverLetterFileUrl ?? "#"}
+                disabled={!coverLetterFileUrl}
               />
             </div>
           </div>
@@ -836,8 +972,8 @@ export default function DashboardHomePage() {
             </div>
             <p className="mt-2 text-xs leading-relaxed text-slate-600">
               {lang === "ar"
-                ? "ATS تعني «نظام تتبع المتقدمين» — البرنامج الذي تستخدمه معظم الشركات لفرز السير الذاتية قبل أن يراها أي إنسان. نحاكي هذا الفرز لنقدّر مدى مطابقة سيرتك لهذه الوظيفة تحديدًا، بناءً على أربعة عوامل:"
-                : "ATS stands for Applicant Tracking System — the software most companies use to auto-screen CVs before a human ever sees them. We simulate that screening to estimate how well your CV matches this specific job, based on four factors:"}
+                ? "ATS تعني «نظام تتبع المتقدمين»، البرنامج الذي تستخدمه معظم الشركات لفرز السير الذاتية قبل أن يراها أي إنسان. نحاكي هذا الفرز لنقدّر مدى مطابقة سيرتك لهذه الوظيفة تحديدًا، بناءً على أربعة عوامل:"
+                : "ATS stands for Applicant Tracking System, the software most companies use to auto-screen CVs before a human ever sees them. We simulate that screening to estimate how well your CV matches this specific job, based on four factors:"}
             </p>
 
             <ul className="mt-4 space-y-3">
@@ -847,8 +983,8 @@ export default function DashboardHomePage() {
                   title: lang === "ar" ? "الكلمات المفتاحية" : "Keywords",
                   desc:
                     lang === "ar"
-                      ? "هل تحتوي سيرتك على المصطلحات والعبارات المحددة الموجودة في وصف الوظيفة؟ نتيجة منخفضة هنا تعني أن سيرتك لا تستخدم نفس الكلمات التي يبحث عنها ATS الخاص بالشركة — ليس بالضرورة أنك غير مؤهل."
-                      : "Whether your CV contains the specific terms and phrases from the job description. A low score here means your CV isn't using the same wording the company's ATS is scanning for — not necessarily that you're unqualified.",
+                      ? "هل تحتوي سيرتك على المصطلحات والعبارات المحددة الموجودة في وصف الوظيفة؟ نتيجة منخفضة هنا تعني أن سيرتك لا تستخدم نفس الكلمات التي يبحث عنها ATS الخاص بالشركة. هذا لا يعني بالضرورة أنك غير مؤهل."
+                      : "Whether your CV contains the specific terms and phrases from the job description. A low score here means your CV isn't using the same wording the company's ATS is scanning for. It doesn't necessarily mean you're unqualified.",
                 },
                 {
                   key: "skills_match" as const,
@@ -893,8 +1029,8 @@ export default function DashboardHomePage() {
 
             <p className="mt-4 rounded-lg border border-blue-100 bg-blue-50/60 px-3.5 py-2.5 text-xs leading-relaxed text-blue-700">
               {lang === "ar"
-                ? "نتيجة منخفضة لا تعني أنك مرشح ضعيف — غالبًا تعني فقط أن سيرتك لا تُظهر بعد المصطلحات التي تبحث عنها هذه الوظيفة تحديدًا. استخدم قسم «كيف تُحسّن سيرتك الذاتية» أعلاه لسد هذه الفجوة."
-                : "A low score doesn't mean you're a weak candidate — it usually just means your CV isn't yet surfacing the exact terms this specific job is scanning for. Use the “How to improve your CV” section above to close that gap."}
+                ? "نتيجة منخفضة لا تعني أنك مرشح ضعيف. غالبًا تعني فقط أن سيرتك لا تُظهر بعد المصطلحات التي تبحث عنها هذه الوظيفة تحديدًا. استخدم قسم «كيف تُحسّن سيرتك الذاتية» أعلاه لسد هذه الفجوة."
+                : "A low score doesn't mean you're a weak candidate. It usually just means your CV isn't yet surfacing the exact terms this specific job is scanning for. Use the “How to improve your CV” section above to close that gap."}
             </p>
           </div>
         </div>

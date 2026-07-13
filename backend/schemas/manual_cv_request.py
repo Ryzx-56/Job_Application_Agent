@@ -56,3 +56,4 @@ class ManualCVRequest(BaseModel):
     awards: List[str] = []
     additional_info: Optional[str] = ""
     job_description: str
+    cv_language: Optional[str] = "en"  # "en" or "ar" — output language for the generated CV/cover letter

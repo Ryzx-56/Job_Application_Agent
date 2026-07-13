@@ -463,8 +463,8 @@ export function ManualCvForm({
           onChange={(e) => set({ skills: e.target.value })}
           placeholder={
             lang === "ar"
-              ? "بايثون، قيادة الفرق، كلاود إيه بي آي — مفصولة بفاصلة"
-              : "Python, LangGraph, Claude API, Team leadership — comma separated"
+              ? "بايثون، قيادة الفرق، كلاود إيه بي آي (مفصولة بفاصلة)"
+              : "Python, LangGraph, Claude API, Team leadership (comma separated)"
           }
         />
       </SectionCard>

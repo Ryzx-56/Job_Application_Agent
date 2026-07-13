@@ -21,8 +21,9 @@ Structure (3 paragraphs only):
   Paragraph 3: Short, confident close. No 'I look forward to hearing'.
 
 HARD RULES:
-  - Never start with 'I am writing to express my interest'
-  - Never use the phrase 'passion for'
+  - Never start with 'I am writing to express my interest' (or the equivalent stock opening in whatever
+    language you're writing in)
+  - Never use the phrase 'passion for' (or its equivalent)
   - Never write more than 3 paragraphs
   - Every achievement mentioned must come from FACTS_JSON
   - Sign off with the candidate's actual name from FACTS_JSON
@@ -30,9 +31,25 @@ HARD RULES:
     AI-generated text. Use a comma, period, colon, or "and" instead. Write two sentences if you need to.
     Ordinary hyphens inside compound words are fine (e.g. "well-suited"), just not as a standalone dash.
 
+{language_instruction}
+
 FACTS_JSON: {facts_json}
 WEIGHT_FACTORS: {weight_factors}
 """
+
+_AR_COVER_LETTER_LANGUAGE_INSTRUCTION = """OUTPUT LANGUAGE — READ CAREFULLY:
+  - Write the entire letter in Modern Standard Arabic, in natural professional business-letter register,
+    not a literal word-for-word translation of a typical English cover letter.
+  - FACTS_JSON and WEIGHT_FACTORS may contain English or Arabic text. Regardless of source language,
+    write your output entirely in Arabic; do not leave sentences untranslated.
+  - Keep company names, product/tool names, and technical terms/acronyms in their original Latin script
+    inline (e.g. "Python", "AWS", "React") — this is standard on Arabic business letters. Keep the
+    candidate's name as it appears in FACTS_JSON.
+  - Numbers and dates stay as normal digits, not spelled out."""
+
+_EN_COVER_LETTER_LANGUAGE_INSTRUCTION = """OUTPUT LANGUAGE:
+  - Write the entire letter in professional English, regardless of what language FACTS_JSON or
+    WEIGHT_FACTORS are written in. Translate any non-English source content into natural English."""
 
 
 def generate_cover_letter(state: AgentState) -> str:
@@ -42,6 +59,13 @@ def generate_cover_letter(state: AgentState) -> str:
     """
     weight_factors = state["weight_factors"]
     facts_json     = state["facts_json"]
+    cv_language    = state.get("cv_language", "en") or "en"
+
+    language_instruction = (
+        _AR_COVER_LETTER_LANGUAGE_INSTRUCTION
+        if cv_language == "ar"
+        else _EN_COVER_LETTER_LANGUAGE_INSTRUCTION
+    )
 
     prompt = COVER_LETTER_PROMPT.format(
         job_title       = weight_factors.get("job_title", "the role"),
@@ -49,6 +73,7 @@ def generate_cover_letter(state: AgentState) -> str:
         culture_signals = ", ".join(weight_factors.get("culture_signals", [])),
         facts_json      = json.dumps(facts_json, ensure_ascii=False),
         weight_factors  = json.dumps(weight_factors, ensure_ascii=False),
+        language_instruction = language_instruction,
     )
 
     logger.info("✍️  Agent 4a — Generating cover letter via Claude Sonnet 4.6...")
