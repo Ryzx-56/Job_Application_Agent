@@ -17,6 +17,9 @@ the job description, and specific gaps already identified by an automated ATS sc
    suggest the closest truthful alternative (e.g. "mention any coursework or personal project involving X").
 3. Write one short (1-2 sentence) overall recommendation for this specific application.
 
+WRITING STYLE: never use em dashes (—) or en dashes as punctuation in "reason", "how_to_close", or
+"overall_recommendation". Use a comma, colon, or write two sentences instead. Plain, direct language only.
+
 CV Summary: {cv_content}
 Job Description: {jd_content}
 
@@ -29,11 +32,18 @@ Return ONLY JSON, no markdown fences, in exactly this shape:
   "score": 85,
   "reason": "Reason here",
   "gap_analysis": [
-    {{"skill": "SQL", "importance": "required", "how_to_close": "Add a project or course where you queried or cleaned data — even a class assignment counts if it's real."}}
+    {{"skill": "SQL", "importance": "required", "how_to_close": "Add a project or course where you queried or cleaned data. Even a class assignment counts if it's real."}}
   ],
   "overall_recommendation": "One or two sentence takeaway."
 }}
 """
+
+
+def _strip_dashes(text: str) -> str:
+    """Defensive safety net — see tailoring_engine.py's version of this for why."""
+    if not text:
+        return text
+    return text.replace(" — ", ", ").replace(" – ", ", ").replace("—", ",").replace("–", ",")
 
 
 def run_match_scorer(state: AgentState) -> AgentState:
@@ -78,9 +88,9 @@ def run_match_scorer(state: AgentState) -> AgentState:
         data = json.loads(raw)
 
         match_score = data.get("score", 0)
-        match_reason = data.get("reason", "No analysis provided.")
+        match_reason = _strip_dashes(data.get("reason", "No analysis provided."))
         raw_gaps = data.get("gap_analysis", [])
-        overall_recommendation = data.get("overall_recommendation", "")
+        overall_recommendation = _strip_dashes(data.get("overall_recommendation", ""))
 
         # Defensive normalization — a malformed gap item from the LLM should
         # never break the frontend or crash the pipeline.
@@ -89,7 +99,7 @@ def run_match_scorer(state: AgentState) -> AgentState:
             if not isinstance(g, dict):
                 continue
             skill = str(g.get("skill", "")).strip()
-            how_to_close = str(g.get("how_to_close", "")).strip()
+            how_to_close = _strip_dashes(str(g.get("how_to_close", "")).strip())
             if not skill or not how_to_close:
                 continue
             importance = g.get("importance") if g.get("importance") in ("required", "preferred") else "preferred"

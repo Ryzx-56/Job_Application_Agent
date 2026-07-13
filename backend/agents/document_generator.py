@@ -26,7 +26,9 @@ HARD RULES:
   - Never write more than 3 paragraphs
   - Every achievement mentioned must come from FACTS_JSON
   - Sign off with the candidate's actual name from FACTS_JSON
-  - Do not  include dashes that are not needed (-)
+  - NEVER use em dashes (—) or en dashes as punctuation, anywhere in the letter. This reads as generic
+    AI-generated text. Use a comma, period, colon, or "and" instead. Write two sentences if you need to.
+    Ordinary hyphens inside compound words are fine (e.g. "well-suited"), just not as a standalone dash.
 
 FACTS_JSON: {facts_json}
 WEIGHT_FACTORS: {weight_factors}
@@ -53,6 +55,10 @@ def generate_cover_letter(state: AgentState) -> str:
 
     try:
         text = generate_claude_text(prompt, max_tokens=800).strip()
+        # Defensive cleanup: strip any em/en dashes that slip through despite
+        # the prompt rule, replacing with a comma so sentences stay readable
+        # instead of just deleting the character and running words together.
+        text = text.replace(" — ", ", ").replace(" – ", ", ").replace("—", ",").replace("–", "-")
         logger.info("✅ Cover letter generated.")
         return text
     except anthropic.APIError as e:

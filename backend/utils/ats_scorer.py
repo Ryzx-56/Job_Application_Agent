@@ -333,9 +333,42 @@ def run_ats_scorer(state: dict) -> dict:
     tailored_bullets = state.get("tailored_bullets", []) or []
     tailored_summary = state.get("tailored_summary", "") or ""
 
-    tailored_cv_text = tailored_summary + " " + " ".join(
-        b.get("tailored", "") for b in tailored_bullets
+    # IMPORTANT: this must include every piece of text that actually ends up
+    # rendered in the CV (see pdf_generator.py), or the score would be capped
+    # below what the candidate's real, truthful CV content earns. Previously
+    # this only looked at summary + bullets, so keywords Agent 3 correctly
+    # surfaced in project descriptions or the skills list were invisible to
+    # the scorer even though they're genuinely on the CV.
+    tailored_projects = state.get("tailored_projects", []) or []
+    tailored_volunteer_work = state.get("tailored_volunteer_work", []) or []
+    tailored_skills = state.get("tailored_skills") or {}
+
+    # Fall back to raw facts_json content wherever Agent 3 didn't produce a
+    # tailored version (partial failure, etc.) — same fallback pdf_generator.py
+    # uses, so the scorer always reflects exactly what's on the actual CV.
+    project_text = " ".join(
+        p.get("tailored_description", "") for p in tailored_projects
+    ) or " ".join(
+        (p.get("description") or "") for p in (facts_json.get("projects", []) or [])
     )
+    volunteer_text = " ".join(tailored_volunteer_work) or " ".join(
+        facts_json.get("volunteer_work", []) or []
+    )
+    skills_source = tailored_skills or (facts_json.get("skills", {}) or {})
+    skills_text = " ".join(
+        item
+        for category in skills_source.values()
+        if isinstance(category, list)
+        for item in category
+    )
+
+    tailored_cv_text = " ".join(filter(None, [
+        tailored_summary,
+        " ".join(b.get("tailored", "") for b in tailored_bullets),
+        project_text,
+        volunteer_text,
+        skills_text,
+    ]))
 
     result = calculate_ats_score(facts_json, weight_factors, tailored_cv_text)
 

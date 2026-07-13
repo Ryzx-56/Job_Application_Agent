@@ -212,7 +212,7 @@ def render_cv_pdf(state: dict) -> str:
         for exp in experience:
             display_title = _smart_title_case(exp.get('title', ''))
             display_company = _smart_title_case(exp.get('company', ''))
-            left_text = f"<b>{display_title}</b> — {display_company}"
+            left_text = f"<b>{display_title}</b> · {display_company}"
             right_text = exp.get("dates", "") or ""
             
             exp_table = Table(
@@ -297,7 +297,7 @@ def render_cv_pdf(state: dict) -> str:
         for edu in education:
             display_degree = _smart_title_case(edu.get('degree', ''))
             display_institution = _smart_title_case(edu.get('institution', ''))
-            left_text = f"<b>{display_degree}</b> — {display_institution}"
+            left_text = f"<b>{display_degree}</b> · {display_institution}"
             right_text = edu.get("graduation_year", "") or ""
             if edu.get("gpa"):
                 left_text += f" (GPA: {edu.get('gpa')})"

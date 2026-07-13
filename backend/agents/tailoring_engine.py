@@ -25,7 +25,30 @@ STRICT RULES:
   - You MUST NOT invent percentages, numbers, or timeframes
   - If the candidate lacks a required skill, DO NOT mention it. It will be flagged in gap analysis.
 
-REWRITING RAW TEXT — this matters:
+WRITING STYLE:
+  - NEVER use em dashes (—) or en dashes ( – as a standalone punctuation mark) anywhere in your output.
+    They read as generic AI-generated text. If you're tempted to use one, rewrite as two sentences, or
+    use a comma, colon, semicolon, or "and" instead. Ordinary hyphens inside compound words are fine
+    (e.g. "well-suited", "end-to-end").
+  - Write in plain, direct, human resume language. Avoid generic filler phrases and empty buzzwords.
+
+KEYWORD COVERAGE — this directly determines the candidate's ATS score, so it matters a lot:
+  - Cross-reference every keyword in WEIGHT_FACTORS.ats_keywords_high, WEIGHT_FACTORS.ats_keywords_medium,
+    and WEIGHT_FACTORS.required_skills against FACTS_JSON.
+  - For every one of those keywords the candidate genuinely has real evidence for (a real bullet, project,
+    tool, or listed skill in FACTS_JSON supports it), work that keyword's EXACT wording into your output
+    at least once, in whichever of professional_summary / bullets / tailored_projects descriptions /
+    tailored_skills it fits naturally. Exact wording matters: scoring is literal text matching, so if the
+    job wants "Python", the word "Python" must appear verbatim, not just be implied by "built a script".
+  - The more of your truthful output surfaces a given keyword (e.g. it appears in both a bullet AND
+    tailored_skills), the more robust the match, so don't hesitate to include a real keyword in more than
+    one place if it fits naturally.
+  - Do NOT force in a keyword the candidate has zero genuine evidence for. That is fabrication and is
+    forbidden. Keywords with no real evidence should simply be left out. They will surface in gap analysis
+    instead so the candidate can decide whether to honestly add that skill or experience themselves.
+  - Your goal: the highest ATS score that is 100% truthfully earned. Never the highest score by any means.
+  -Try to maximize the keywords used from the canditate's real experience, but never add any new skills or claims that aren't already present in FACTS_JSON or RAW_ADDITIONAL_INFO.
+  - Some skills you can understand from context (e.g. "built a website using Api integration" implies the user knows how to use APIs). You can include those skills in the tailored_skills section but only if the skill is obviously implied by the candidate's real experience. Do not add any skills that are not clearly supported by the candidate's real experience. 
   FACTS_JSON.projects[].description and FACTS_JSON.volunteer_work are extracted verbatim from whatever
   the candidate typed, often casually or unprofessionally. RAW_ADDITIONAL_INFO is the same — raw,
   unedited candidate notes. You MUST rewrite all of these into polished, concise, resume-appropriate
@@ -82,7 +105,7 @@ do not merge, drop, or add entries.
 
 Return ONLY a JSON object in this exact format (no markdown):
 {{
-  "professional_summary": "3-sentence summary here — weave in relevant RAW_ADDITIONAL_INFO context per the rule above",
+  "professional_summary": "3-sentence summary here (weave in relevant RAW_ADDITIONAL_INFO context per the rule above)",
   "bullets": [
     {{"original": "original bullet text here", "tailored": "rewritten bullet text here", "relevance_score": 0.9}}
   ],
@@ -109,10 +132,25 @@ ISSUE: {issue}
 Rewrite this bullet using ONLY facts from this JSON:
 {facts_json}
 
+Never use em dashes (—) or en dashes as punctuation. Use a comma or write two sentences instead.
+
 Return ONLY the corrected bullet text, nothing else.
 """
 
 _SKILL_CATEGORIES = ("languages", "frameworks", "tools", "soft_skills", "other")
+
+
+def _strip_dashes(text: str) -> str:
+    """
+    Defensive safety net: the prompt already forbids em/en dashes, but LLM
+    compliance isn't guaranteed. Replaces " — " / " – " with ", " so
+    sentences stay readable instead of words running together, and any
+    dash that slipped in without surrounding spaces gets swapped for a
+    plain comma too.
+    """
+    if not text:
+        return text
+    return text.replace(" — ", ", ").replace(" – ", ", ").replace("—", ",").replace("–", ",")
 
 
 def run_tailoring_engine(state: AgentState) -> dict:
@@ -149,8 +187,12 @@ def run_tailoring_engine(state: AgentState) -> dict:
             # — see note at bottom of this file if you want them added to the
             # pydantic schema too.
             core_data = {
-                "professional_summary": data.get("professional_summary", ""),
-                "bullets": data.get("bullets", []),
+                "professional_summary": _strip_dashes(data.get("professional_summary", "")),
+                "bullets": [
+                    {**b, "tailored": _strip_dashes(b.get("tailored", ""))}
+                    for b in data.get("bullets", [])
+                    if isinstance(b, dict)
+                ],
             }
             validated = TailoredCV.model_validate(core_data)
 
@@ -163,8 +205,8 @@ def run_tailoring_engine(state: AgentState) -> dict:
                 if not isinstance(p, dict):
                     continue
                 name = str(p.get("name", "")).strip()
-                display_name = str(p.get("display_name", "")).strip() or name
-                desc = str(p.get("tailored_description", "")).strip()
+                display_name = _strip_dashes(str(p.get("display_name", "")).strip()) or name
+                desc = _strip_dashes(str(p.get("tailored_description", "")).strip())
                 if name and desc:
                     tailored_projects.append({
                         "name": name,
@@ -173,7 +215,7 @@ def run_tailoring_engine(state: AgentState) -> dict:
                     })
 
             tailored_volunteer_work = [
-                str(v).strip() for v in data.get("tailored_volunteer_work", []) if str(v).strip()
+                _strip_dashes(str(v).strip()) for v in data.get("tailored_volunteer_work", []) if str(v).strip()
             ]
 
             raw_skills = data.get("tailored_skills", {})
@@ -182,7 +224,7 @@ def run_tailoring_engine(state: AgentState) -> dict:
                 for cat in _SKILL_CATEGORIES:
                     items = raw_skills.get(cat, [])
                     if isinstance(items, list):
-                        tailored_skills[cat] = [str(s).strip() for s in items if str(s).strip()]
+                        tailored_skills[cat] = [_strip_dashes(str(s).strip()) for s in items if str(s).strip()]
 
             logger.info(
                 f"✅ Agent 3 complete — {len(bullets)} bullets, "
