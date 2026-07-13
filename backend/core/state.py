@@ -40,9 +40,9 @@ class AgentState(TypedDict):
     # candidate-typed additional info) polished into professional
     # language by Agent 3, kept separate from facts_json since Agent 1
     # must never rephrase — only Agent 3 (tailoring_engine) does that.
-    tailored_projects:       List[dict]   # [{"name": str, "tailored_description": str}]
+    tailored_projects:       List[dict]   # [{"name": str, "display_name": str, "tailored_description": str}]
     tailored_volunteer_work: List[str]
-    tailored_additional_info: str
+    tailored_skills:         dict         # cleaned/filtered version of facts_json["skills"]
 
     # ── FACT CHECK LOOP (Gemini) ────────────────────────────
     hallucination_flags:     List[dict]

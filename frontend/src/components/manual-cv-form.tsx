@@ -32,6 +32,7 @@ export type ManualCvData = {
   name: string;
   email: string;
   phone: string;
+  phoneCountry: string; // ISO code into COUNTRY_OPTIONS below — drives phone formatting
   linkedin: string;
   location: string;
   education: EducationEntry[];
@@ -45,6 +46,7 @@ export const emptyManualCvData: ManualCvData = {
   name: "",
   email: "",
   phone: "",
+  phoneCountry: "SA",
   linkedin: "",
   location: "",
   education: [{ institution: "", degree: "", gpa: "", graduation_year: "" }],
@@ -53,6 +55,84 @@ export const emptyManualCvData: ManualCvData = {
   certifications: [{ name: "" }],
   skills: "",
 };
+
+type CountryPhoneOption = {
+  iso: string;
+  dial: string; // "" for the "Other / International" catch-all — no forced formatting
+  label: string;
+  flag: string;
+  groups: number[]; // how the significant digits are chunked, e.g. [2,3,4] -> "5X-XXX-XXXX"
+};
+
+/**
+ * Not an exhaustive list of every country — just the ones most likely to
+ * matter for JBAA's users, plus a genuine "Other / International" option
+ * that applies zero formatting so nobody's number gets mangled into a shape
+ * that doesn't fit their country.
+ */
+const COUNTRY_OPTIONS: CountryPhoneOption[] = [
+  { iso: "SA", dial: "966", label: "Saudi Arabia", flag: "🇸🇦", groups: [2, 3, 4] },
+  { iso: "AE", dial: "971", label: "UAE", flag: "🇦🇪", groups: [2, 3, 4] },
+  { iso: "KW", dial: "965", label: "Kuwait", flag: "🇰🇼", groups: [4, 4] },
+  { iso: "BH", dial: "973", label: "Bahrain", flag: "🇧🇭", groups: [4, 4] },
+  { iso: "QA", dial: "974", label: "Qatar", flag: "🇶🇦", groups: [4, 4] },
+  { iso: "OM", dial: "968", label: "Oman", flag: "🇴🇲", groups: [4, 4] },
+  { iso: "EG", dial: "20", label: "Egypt", flag: "🇪🇬", groups: [3, 3, 4] },
+  { iso: "JO", dial: "962", label: "Jordan", flag: "🇯🇴", groups: [1, 3, 4] },
+  { iso: "US", dial: "1", label: "United States / Canada", flag: "🇺🇸", groups: [3, 3, 4] },
+  { iso: "GB", dial: "44", label: "United Kingdom", flag: "🇬🇧", groups: [4, 6] },
+  { iso: "IN", dial: "91", label: "India", flag: "🇮🇳", groups: [5, 5] },
+  { iso: "OTHER", dial: "", label: "Other / International", flag: "🌍", groups: [] },
+];
+
+/**
+ * Live-formats a phone number as the person types, adapted to whichever
+ * country they've selected — e.g. Saudi Arabia -> "+966 5X-XXX-XXXX",
+ * UAE -> "+971 5X-XXX-XXXX", US -> "+1 XXX-XXX-XXXX". For "Other /
+ * International" (empty dial code) it applies no formatting at all and
+ * just returns what was typed, since guessing a format for an unknown
+ * country risks mangling a valid number worse than leaving it alone.
+ */
+function formatPhoneForCountry(raw: string, country: CountryPhoneOption): string {
+  if (!country.dial) {
+    return raw;
+  }
+
+  let digits = raw.replace(/\D/g, "");
+
+  // Strip the country's own dial code (with or without a leading "00") and a
+  // local trunk "0" prefix, so we always work from just the significant
+  // digits no matter how the person typed it (local format, with "+", etc).
+  if (digits.startsWith("00" + country.dial)) {
+    digits = digits.slice(2 + country.dial.length);
+  } else if (digits.startsWith(country.dial)) {
+    digits = digits.slice(country.dial.length);
+  }
+  if (digits.startsWith("0")) {
+    digits = digits.slice(1);
+  }
+
+  const maxDigits = country.groups.reduce((a, b) => a + b, 0);
+  digits = digits.slice(0, maxDigits);
+  if (!digits) return "";
+
+  let formatted = `+${country.dial} `;
+  let cursor = 0;
+  country.groups.forEach((size, idx) => {
+    const chunk = digits.slice(cursor, cursor + size);
+    if (!chunk) return;
+    formatted += (idx === 0 ? "" : "-") + chunk;
+    cursor += size;
+  });
+  return formatted;
+}
+
+/** Placeholder pattern like "5X-XXX-XXXX" derived from a country's digit groups. */
+function placeholderForCountry(country: CountryPhoneOption): string {
+  if (!country.dial) return "Phone number";
+  const dial = `+${country.dial} `;
+  return dial + country.groups.map((size) => "X".repeat(size)).join("-");
+}
 
 const inputClass =
   "block w-full rounded-lg border border-slate-200 bg-white px-3.5 py-2.5 text-sm text-slate-900 placeholder:text-slate-400 outline-none transition-colors focus:border-blue-400 focus:ring-2 focus:ring-blue-500/15";
@@ -188,12 +268,44 @@ export function ManualCvForm({
           </div>
           <div>
             <FieldLabel>{lang === "ar" ? "رقم الهاتف" : "Phone"}</FieldLabel>
-            <input
-              className={inputClass}
-              value={value.phone}
-              onChange={(e) => set({ phone: e.target.value })}
-              placeholder={lang === "ar" ? "9665+..." : "+966 5..."}
-            />
+            <div className="flex gap-2">
+              <select
+                value={value.phoneCountry}
+                onChange={(e) => {
+                  const nextCountry =
+                    COUNTRY_OPTIONS.find((c) => c.iso === e.target.value) ?? COUNTRY_OPTIONS[0];
+                  // Re-derive from raw digits already typed so switching country
+                  // doesn't just tack a new dial code onto the old formatting.
+                  const digitsOnly = value.phone.replace(/\D/g, "");
+                  set({
+                    phoneCountry: nextCountry.iso,
+                    phone: nextCountry.dial ? formatPhoneForCountry(digitsOnly, nextCountry) : value.phone,
+                  });
+                }}
+                aria-label={lang === "ar" ? "رمز الدولة" : "Country"}
+                className="w-[92px] shrink-0 rounded-lg border border-slate-200 bg-white px-2 py-2.5 text-sm text-slate-900 outline-none transition-colors focus:border-blue-400 focus:ring-2 focus:ring-blue-500/15"
+              >
+                {COUNTRY_OPTIONS.map((c) => (
+                  <option key={c.iso} value={c.iso}>
+                    {c.flag} {c.dial ? `+${c.dial}` : lang === "ar" ? "دولي" : "Intl"}
+                  </option>
+                ))}
+              </select>
+              <input
+                type="tel"
+                inputMode="tel"
+                className={`${inputClass} flex-1`}
+                value={value.phone}
+                onChange={(e) => {
+                  const country =
+                    COUNTRY_OPTIONS.find((c) => c.iso === value.phoneCountry) ?? COUNTRY_OPTIONS[0];
+                  set({ phone: formatPhoneForCountry(e.target.value, country) });
+                }}
+                placeholder={placeholderForCountry(
+                  COUNTRY_OPTIONS.find((c) => c.iso === value.phoneCountry) ?? COUNTRY_OPTIONS[0]
+                )}
+              />
+            </div>
           </div>
           <div>
             <FieldLabel>{lang === "ar" ? "لينكد إن" : "LinkedIn"}</FieldLabel>

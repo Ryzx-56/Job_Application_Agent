@@ -11,6 +11,7 @@ import {
   FileText,
   Mail,
   TrendingUp,
+  HelpCircle,
 } from "lucide-react";
 import { useLang } from "@/lib/language";
 import { DashboardButton, ScoreRing, ScoreBar, UploadZone, FileResultCard } from "@/components/dashboard";
@@ -40,6 +41,24 @@ type AtsBreakdown = {
   unmatched_keywords?: string[];
   matched_skills?: string[];
   missing_skills?: string[];
+  // Weight each factor carries toward the overall ATS score (percent),
+  // sent by ats_scorer.py so this always matches the backend exactly
+  // instead of a hardcoded guess on the frontend.
+  weights?: {
+    keyword_match?: number;
+    skills_match?: number;
+    education_match?: number;
+    experience_match?: number;
+  };
+};
+
+// Fallback only — used if an older backend response doesn't include
+// atsBreakdown.weights yet. Mirrors WEIGHTS in utils/ats_scorer.py.
+const DEFAULT_ATS_WEIGHTS = {
+  keyword_match: 40,
+  skills_match: 35,
+  education_match: 15,
+  experience_match: 10,
 };
 
 type GapItem = {
@@ -240,6 +259,7 @@ export default function DashboardHomePage() {
   const [result, setResult] = useState<GenerateResult | null>(null);
   const [error, setError] = useState("");
   const [showAllBullets, setShowAllBullets] = useState(false);
+  const [showAllGaps, setShowAllGaps] = useState(false);
 
   const canGenerate =
     (cvMode === "upload" ? !!cvFile : manualData.name.trim().length > 0) &&
@@ -474,8 +494,8 @@ export default function DashboardHomePage() {
                   </p>
                   <p className="mt-0.5 text-xs leading-relaxed text-slate-500">
                     {lang === "ar"
-                      ? "تطابق الكلمات المفتاحية، المهارات، التعليم والخبرة مع متطلبات هذه الوظيفة."
-                      : "Keyword, skills, education & experience match against this job's requirements."}
+                      ? "تقدير آلي لمدى قدرة أنظمة تتبع المتقدمين (ATS) التي تستخدمها الشركات على قراءة سيرتك ومطابقتها مع هذه الوظيفة تحديدًا."
+                      : "An estimate of how well the software companies use to auto-screen CVs (an ATS) would match yours to this specific job."}
                   </p>
                 </div>
               </div>
@@ -525,17 +545,26 @@ export default function DashboardHomePage() {
                 </div>
               )}
 
-              {result.gapAnalysis.length > 0 && (
+              <div className="mt-3 flex flex-col items-start gap-1.5">
+                {result.gapAnalysis.length > 0 && (
+                  <a
+                    href="#improve-cv"
+                    className="inline-flex items-center gap-1 text-xs font-medium text-blue-600 hover:text-blue-700"
+                  >
+                    <TrendingUp className="size-3.5" aria-hidden />
+                    {lang === "ar"
+                      ? "راجع «كيف تُحسّن سيرتك الذاتية» أدناه لرفع هذه النتيجة"
+                      : "See “How to improve your CV” below to raise this score"}
+                  </a>
+                )}
                 <a
-                  href="#improve-cv"
-                  className="mt-3 inline-flex items-center gap-1 text-xs font-medium text-blue-600 hover:text-blue-700"
+                  href="#ats-explainer"
+                  className="inline-flex items-center gap-1 text-xs font-medium text-slate-500 hover:text-slate-700"
                 >
-                  <TrendingUp className="size-3.5" aria-hidden />
-                  {lang === "ar"
-                    ? "راجع «كيف تُحسّن سيرتك الذاتية» أدناه لرفع هذه النتيجة"
-                    : "See “How to improve your CV” below to raise this score"}
+                  <HelpCircle className="size-3.5" aria-hidden />
+                  {lang === "ar" ? "كيف يتم حساب نتيجة ATS؟" : "See how ATS is calculated"}
                 </a>
-              )}
+              </div>
             </div>
 
             <div className="rounded-xl border border-slate-200 bg-slate-50/60 p-5">
@@ -575,7 +604,7 @@ export default function DashboardHomePage() {
               </p>
 
               <ul className="mt-4 space-y-2.5">
-                {result.gapAnalysis.map((gap, i) => (
+                {(showAllGaps ? result.gapAnalysis : result.gapAnalysis.slice(0, 2)).map((gap, i) => (
                   <li
                     key={i}
                     className="flex items-start gap-3 rounded-lg border border-slate-100 bg-slate-50/70 px-3.5 py-3"
@@ -611,11 +640,40 @@ export default function DashboardHomePage() {
                 ))}
               </ul>
 
+              {result.gapAnalysis.length > 2 && (
+                <button
+                  type="button"
+                  onClick={() => setShowAllGaps((v) => !v)}
+                  className="mt-3 flex items-center gap-1.5 text-sm font-medium text-blue-600 hover:text-blue-700"
+                >
+                  {showAllGaps ? (
+                    <>
+                      {lang === "ar" ? "عرض أقل" : "Show fewer"} <ChevronUp className="size-4" aria-hidden />
+                    </>
+                  ) : (
+                    <>
+                      {lang === "ar"
+                        ? `عرض المزيد (${result.gapAnalysis.length - 2})`
+                        : `Show ${result.gapAnalysis.length - 2} more`}{" "}
+                      <ChevronDown className="size-4" aria-hidden />
+                    </>
+                  )}
+                </button>
+              )}
+
               {result.overallRecommendation && (
                 <p className="mt-4 rounded-lg border border-blue-100 bg-blue-50/60 px-3.5 py-2.5 text-xs leading-relaxed text-blue-700">
                   {result.overallRecommendation}
                 </p>
               )}
+
+              <a
+                href="#ats-explainer"
+                className="mt-4 inline-flex items-center gap-1 text-xs font-medium text-slate-500 hover:text-slate-700"
+              >
+                <HelpCircle className="size-3.5" aria-hidden />
+                {lang === "ar" ? "كيف يتم حساب نتيجة ATS؟" : "See how ATS is calculated"}
+              </a>
             </div>
           )}
 
@@ -765,6 +823,79 @@ export default function DashboardHomePage() {
                 )}
               </button>
             )}
+          </div>
+
+          <div id="ats-explainer" className="scroll-mt-6 rounded-xl border border-slate-200 bg-slate-50/60 p-5 sm:p-6">
+            <div className="flex items-center gap-2.5">
+              <span className="grid size-8 shrink-0 place-items-center rounded-full bg-blue-50 text-blue-600">
+                <HelpCircle className="size-4" aria-hidden />
+              </span>
+              <p className="text-sm font-semibold text-slate-900">
+                {lang === "ar" ? "كيف يتم حساب نتيجة ATS؟" : "How your ATS score is calculated"}
+              </p>
+            </div>
+            <p className="mt-2 text-xs leading-relaxed text-slate-600">
+              {lang === "ar"
+                ? "ATS تعني «نظام تتبع المتقدمين» — البرنامج الذي تستخدمه معظم الشركات لفرز السير الذاتية قبل أن يراها أي إنسان. نحاكي هذا الفرز لنقدّر مدى مطابقة سيرتك لهذه الوظيفة تحديدًا، بناءً على أربعة عوامل:"
+                : "ATS stands for Applicant Tracking System — the software most companies use to auto-screen CVs before a human ever sees them. We simulate that screening to estimate how well your CV matches this specific job, based on four factors:"}
+            </p>
+
+            <ul className="mt-4 space-y-3">
+              {[
+                {
+                  key: "keyword_match" as const,
+                  title: lang === "ar" ? "الكلمات المفتاحية" : "Keywords",
+                  desc:
+                    lang === "ar"
+                      ? "هل تحتوي سيرتك على المصطلحات والعبارات المحددة الموجودة في وصف الوظيفة؟ نتيجة منخفضة هنا تعني أن سيرتك لا تستخدم نفس الكلمات التي يبحث عنها ATS الخاص بالشركة — ليس بالضرورة أنك غير مؤهل."
+                      : "Whether your CV contains the specific terms and phrases from the job description. A low score here means your CV isn't using the same wording the company's ATS is scanning for — not necessarily that you're unqualified.",
+                },
+                {
+                  key: "skills_match" as const,
+                  title: lang === "ar" ? "المهارات" : "Skills",
+                  desc:
+                    lang === "ar"
+                      ? "مدى تطابق المهارات المطلوبة في الوظيفة مع المهارات المذكورة في ملفك."
+                      : "How many of the required skills for this role are actually listed in your profile.",
+                },
+                {
+                  key: "education_match" as const,
+                  title: lang === "ar" ? "التعليم" : "Education",
+                  desc:
+                    lang === "ar"
+                      ? "هل يتوافق تخصصك ودرجتك العلمية مع ما تطلبه الوظيفة."
+                      : "Whether your degree and field of study line up with what the role asks for.",
+                },
+                {
+                  key: "experience_match" as const,
+                  title: lang === "ar" ? "الخبرة" : "Experience",
+                  desc:
+                    lang === "ar"
+                      ? "تقدير لعدد سنوات الخبرة لديك مقارنة بما تطلبه الوظيفة."
+                      : "An estimate of your years of relevant experience compared to what the role asks for.",
+                },
+              ].map((factor) => {
+                const weight =
+                  result.atsBreakdown.weights?.[factor.key] ?? DEFAULT_ATS_WEIGHTS[factor.key];
+                return (
+                  <li key={factor.key} className="flex items-start gap-3">
+                    <span className="mt-0.5 shrink-0 rounded-md bg-blue-600 px-2 py-1 text-xs font-semibold text-white">
+                      {weight}%
+                    </span>
+                    <div className="min-w-0">
+                      <p className="text-sm font-medium text-slate-800">{factor.title}</p>
+                      <p className="mt-0.5 text-xs leading-relaxed text-slate-600">{factor.desc}</p>
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
+
+            <p className="mt-4 rounded-lg border border-blue-100 bg-blue-50/60 px-3.5 py-2.5 text-xs leading-relaxed text-blue-700">
+              {lang === "ar"
+                ? "نتيجة منخفضة لا تعني أنك مرشح ضعيف — غالبًا تعني فقط أن سيرتك لا تُظهر بعد المصطلحات التي تبحث عنها هذه الوظيفة تحديدًا. استخدم قسم «كيف تُحسّن سيرتك الذاتية» أعلاه لسد هذه الفجوة."
+                : "A low score doesn't mean you're a weak candidate — it usually just means your CV isn't yet surfacing the exact terms this specific job is scanning for. Use the “How to improve your CV” section above to close that gap."}
+            </p>
           </div>
         </div>
       )}

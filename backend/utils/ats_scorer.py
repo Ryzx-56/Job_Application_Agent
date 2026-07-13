@@ -297,6 +297,14 @@ def calculate_ats_score(
             "skills_match":     int(skills_rate * 100),
             "education_match":  int(edu_score * 100),
             "experience_match": int(exp_score * 100),
+            # Sent through so the frontend's "how ATS is calculated" explainer
+            # always shows the real weights instead of a hardcoded guess.
+            "weights": {
+                "keyword_match":    int(WEIGHTS["keyword_match"] * 100),
+                "skills_match":     int(WEIGHTS["skills_match"] * 100),
+                "education_match":  int(WEIGHTS["education_match"] * 100),
+                "experience_match": int(WEIGHTS["experience_match"] * 100),
+            },
         },
         "matched_keywords": matched_kw,
         "unmatched_keywords": unmatched_kw,

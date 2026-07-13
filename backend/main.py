@@ -65,7 +65,7 @@ def make_initial_state(cv_text: str, jd_text: str) -> AgentState:
         tailored_summary="",
         tailored_projects=[],
         tailored_volunteer_work=[],
-        tailored_additional_info="",
+        tailored_skills={},
         hallucination_flags=[],
         fact_check_passed=False,
         cover_letter_text="",

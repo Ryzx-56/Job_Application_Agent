@@ -20,6 +20,7 @@ STRICT RULES:
   - You MAY rephrase existing bullets using JD keywords
   - You MAY re-order bullets to lead with the most relevant ones
   - You MAY restructure sentences for better impact
+  - You MAY fix capitalization and remove clearly unprofessional filler (e.g. "im cool", "super chill")
   - You MUST NOT add any skill, metric, company, or achievement not present in FACTS_JSON or RAW_ADDITIONAL_INFO
   - You MUST NOT invent percentages, numbers, or timeframes
   - If the candidate lacks a required skill, DO NOT mention it. It will be flagged in gap analysis.
@@ -30,6 +31,26 @@ REWRITING RAW TEXT — this matters:
   unedited candidate notes. You MUST rewrite all of these into polished, concise, resume-appropriate
   language — same rules as above: reword and restructure freely, but never add facts, skills, numbers,
   or claims that aren't already present in what the candidate wrote.
+
+ADDITIONAL INFO PLACEMENT — this matters:
+  RAW_ADDITIONAL_INFO must NOT become its own isolated CV section. Instead:
+  - If it adds context that belongs in the overall narrative, weave it into "professional_summary".
+  - If it's clearly about a specific project already in FACTS_JSON.projects, fold the relevant detail
+    into that project's "tailored_description" instead.
+  - If it describes a general competency (e.g. hardware repair, a tool, a skill), add it as a cleaned-up
+    entry in the appropriate "tailored_skills" category instead.
+  A CV reader should never see a section literally titled "Additional Information" — everything genuinely
+  CV-worthy should already be integrated into summary / projects / skills by the time you're done.
+
+SKILLS CLEANUP — this matters:
+  FACTS_JSON.skills was extracted verbatim and may contain unprofessional filler that isn't a real skill
+  at all (e.g. "im cool", "super chill", "lol", personality remarks). For "tailored_skills":
+  - Return the SAME categories as FACTS_JSON.skills (languages, frameworks, tools, soft_skills, other).
+  - DROP entries that are not genuine skills, competencies, or tools — filler, jokes, or personality
+    remarks do not belong on a CV.
+  - Fix capitalization and light phrasing on entries you keep (e.g. "fixing computers" ->
+    "Computer hardware troubleshooting", "hard worker" -> "Hardworking") — but do not invent skills
+    that weren't already listed.
 
 FACTS_JSON:
 {facts_json}
@@ -47,29 +68,35 @@ For each work-experience bullet, include:
   - "tailored": your rewritten version using JD keywords
   - "relevance_score": a float from 0.0 to 1.0 rating how relevant this bullet is to the job description
 
-For each project in FACTS_JSON.projects (if any), rewrite its raw "description" into 1-2 professional,
-resume-style sentences in "tailored_projects". Keep the project's "name" exactly as given in FACTS_JSON
-so it can be matched back up later.
+For each project in FACTS_JSON.projects (if any), return in "tailored_projects":
+  - "name": the project's name EXACTLY as given in FACTS_JSON (used to match it back up — do not alter this one)
+  - "display_name": a properly capitalized, resume-ready version of the name (e.g. "flight route demand
+    prediction" -> "Flight Route Demand Prediction"). Preserve acronyms and intentional stylization
+    (e.g. "API", "CV") as-is.
+  - "tailored_description": 1-2 professional, resume-style sentences (fold in any relevant
+    RAW_ADDITIONAL_INFO detail about this exact project here, per the rule above)
 
 For FACTS_JSON.volunteer_work (a list of raw strings, if any), rewrite each entry into one polished,
 resume-style sentence. Return the SAME NUMBER of items, IN THE SAME ORDER, in "tailored_volunteer_work" —
 do not merge, drop, or add entries.
 
-If RAW_ADDITIONAL_INFO is non-empty, rewrite it into "tailored_additional_info" as 1-3 professional
-sentences suitable for a CV (e.g. for an "Additional Information" section). If RAW_ADDITIONAL_INFO is
-empty, return "".
-
 Return ONLY a JSON object in this exact format (no markdown):
 {{
-  "professional_summary": "3-sentence summary here",
+  "professional_summary": "3-sentence summary here — weave in relevant RAW_ADDITIONAL_INFO context per the rule above",
   "bullets": [
     {{"original": "original bullet text here", "tailored": "rewritten bullet text here", "relevance_score": 0.9}}
   ],
   "tailored_projects": [
-    {{"name": "Project name from facts_json", "tailored_description": "Polished professional description here."}}
+    {{"name": "Project name exactly as in facts_json", "display_name": "Properly Capitalized Name", "tailored_description": "Polished professional description here."}}
   ],
   "tailored_volunteer_work": ["Polished sentence for volunteer entry 1", "Polished sentence for volunteer entry 2"],
-  "tailored_additional_info": "Polished professional version here, or empty string if nothing was provided."
+  "tailored_skills": {{
+    "languages": ["cleaned entries"],
+    "frameworks": ["cleaned entries"],
+    "tools": ["cleaned entries"],
+    "soft_skills": ["cleaned entries"],
+    "other": ["cleaned entries, junk removed"]
+  }}
 }}
 """
 
@@ -84,6 +111,8 @@ Rewrite this bullet using ONLY facts from this JSON:
 
 Return ONLY the corrected bullet text, nothing else.
 """
+
+_SKILL_CATEGORIES = ("languages", "frameworks", "tools", "soft_skills", "other")
 
 
 def run_tailoring_engine(state: AgentState) -> dict:
@@ -109,14 +138,14 @@ def run_tailoring_engine(state: AgentState) -> dict:
     MAX_RETRIES = 3
     for attempt in range(1, MAX_RETRIES + 1):
         try:
-            raw  = generate_claude_text(prompt, max_tokens=2600)
+            raw  = generate_claude_text(prompt, max_tokens=2800)
             raw  = re.sub(r"```json|```", "", raw).strip()
             data = json.loads(raw)
 
             # Validate the core schema-bound fields so malformed LLM output never
             # silently flows downstream to the fact-checker / PDF generator.
-            # tailored_projects / tailored_volunteer_work / tailored_additional_info
-            # are validated manually below since they're not yet part of TailoredCV
+            # tailored_projects / tailored_volunteer_work / tailored_skills are
+            # validated manually below since they're not yet part of TailoredCV
             # — see note at bottom of this file if you want them added to the
             # pydantic schema too.
             core_data = {
@@ -134,21 +163,32 @@ def run_tailoring_engine(state: AgentState) -> dict:
                 if not isinstance(p, dict):
                     continue
                 name = str(p.get("name", "")).strip()
+                display_name = str(p.get("display_name", "")).strip() or name
                 desc = str(p.get("tailored_description", "")).strip()
                 if name and desc:
-                    tailored_projects.append({"name": name, "tailored_description": desc})
+                    tailored_projects.append({
+                        "name": name,
+                        "display_name": display_name,
+                        "tailored_description": desc,
+                    })
 
             tailored_volunteer_work = [
                 str(v).strip() for v in data.get("tailored_volunteer_work", []) if str(v).strip()
             ]
 
-            tailored_additional_info = str(data.get("tailored_additional_info", "")).strip()
+            raw_skills = data.get("tailored_skills", {})
+            tailored_skills = {}
+            if isinstance(raw_skills, dict):
+                for cat in _SKILL_CATEGORIES:
+                    items = raw_skills.get(cat, [])
+                    if isinstance(items, list):
+                        tailored_skills[cat] = [str(s).strip() for s in items if str(s).strip()]
 
             logger.info(
                 f"✅ Agent 3 complete — {len(bullets)} bullets, "
                 f"{len(tailored_projects)} projects, "
                 f"{len(tailored_volunteer_work)} volunteer entries, "
-                f"additional_info {'rewritten' if tailored_additional_info else 'empty'}."
+                f"skills cleaned: {bool(tailored_skills)}."
             )
 
             return {
@@ -156,7 +196,7 @@ def run_tailoring_engine(state: AgentState) -> dict:
                 "tailored_summary": validated.professional_summary,
                 "tailored_projects": tailored_projects,
                 "tailored_volunteer_work": tailored_volunteer_work,
-                "tailored_additional_info": tailored_additional_info,
+                "tailored_skills": tailored_skills,
                 "tailoring_attempts": attempts,
                 "error": None,
             }
@@ -195,12 +235,17 @@ def make_regeneration_fn(facts_json: dict):
 
     return regenerate
 
-# ─── WHY additional_info NO LONGER READS FROM facts_json ─────────────────────
-# cv_parser.py's Agent 1 (Gemini) is deliberately forbidden from rephrasing
-# anything — it's a pure fact-extraction layer. When additional_info text gets
-# appended to raw_cv_text / the serialized manual form before Agent 1 runs, it
-# gets absorbed verbatim into whatever categories Gemini decides fit (awards,
-# certifications, volunteer_work) — it does NOT survive as its own field in
-# facts_json. So this version reads the RAW additional_info straight from
-# `state["additional_info"]` (already populated by main.py) instead of
-# expecting a nonexistent facts_json["additional_info"] key.
+# ─── NOTES ────────────────────────────────────────────────────────────────────
+# 1. additional_info is read from state["additional_info"] directly, NOT from
+#    facts_json["additional_info"] — that key never exists. cv_parser.py's
+#    Agent 1 (Gemini) is deliberately forbidden from rephrasing anything, so
+#    when additional_info gets appended to raw_cv_text before Agent 1 runs, it
+#    gets absorbed verbatim into whatever facts_json categories fit (awards,
+#    certifications, volunteer_work) — it doesn't survive as its own field.
+#
+# 2. tailored_additional_info was removed from this version's output on
+#    purpose — the whole point of this revision is that additional info no
+#    longer renders as its own CV section (see ADDITIONAL INFO PLACEMENT rule
+#    in the prompt above). If your state.py / pdf_generator.py still reference
+#    tailored_additional_info from an earlier version, they can be left as
+#    dead code or cleaned up — nothing downstream depends on it anymore.

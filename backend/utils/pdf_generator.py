@@ -13,6 +13,51 @@ from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, Tabl
 OUTPUT_DIR = "outputs"
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
+_SMALL_WORDS = {"a", "an", "and", "as", "at", "but", "by", "for", "in", "nor",
+                "of", "on", "or", "so", "the", "to", "up", "yet", "with"}
+
+
+def _smart_title_case(text: str) -> str:
+    """
+    Capitalizes headings (project names, job titles, company names, degrees)
+    without mangling acronyms or intentional casing.
+
+    Root cause this exists for: cv_parser.py's Agent 1 (Gemini) is correctly
+    forbidden from rephrasing facts — so if a candidate typed a project name
+    in lowercase, it stays lowercase in facts_json (that's correct extraction
+    behavior). This function is a purely cosmetic, deterministic display-layer
+    fix — it never touches facts_json, only what gets rendered.
+
+    - Words that are already ALL CAPS (len > 1) are treated as acronyms and
+      left untouched (e.g. "API", "CV", "ATS").
+    - Words with an internal capital letter are treated as intentional
+      stylization and left untouched (e.g. "LinkedIn", "iOS", "GitHub").
+    - Minor words (a, an, of, the, ...) are lowercased unless first/last word.
+    - Everything else gets a single leading capital.
+    """
+    if not text:
+        return text
+    words = text.split(" ")
+    result = []
+    for i, word in enumerate(words):
+        if not word:
+            result.append(word)
+            continue
+        core = word.strip("()[]{}.,;:\"'")
+        if core.isupper() and len(core) > 1:
+            result.append(word)
+            continue
+        if any(c.isupper() for c in core[1:]):
+            result.append(word)
+            continue
+        lower = word.lower()
+        if 0 < i < len(words) - 1 and lower.strip("()[]{}.,;:\"'") in _SMALL_WORDS:
+            result.append(lower)
+            continue
+        result.append(word[:1].upper() + word[1:].lower() if word[:1].isalpha() else word)
+    return " ".join(result)
+
+
 def build_pdf_styles():
     """Initializes and returns custom typography styles for an ATS-friendly look."""
     styles = getSampleStyleSheet()
@@ -89,13 +134,14 @@ def _build_bullet_lookup(tailored_bullets: list) -> dict:
 
 
 def _build_project_lookup(tailored_projects: list) -> dict:
-    """project name (stripped) -> tailored description."""
+    """project name (stripped) -> {"display_name": str, "description": str}."""
     lookup = {}
     for p in tailored_projects or []:
         name = (p.get("name") or "").strip()
         desc = (p.get("tailored_description") or "").strip()
+        display_name = (p.get("display_name") or "").strip()
         if name and desc:
-            lookup[name] = desc
+            lookup[name] = {"display_name": display_name or name, "description": desc}
     return lookup
 
 
@@ -118,12 +164,13 @@ def render_cv_pdf(state: dict) -> str:
     facts = state.get("facts_json", {}) or {}
     personal = facts.get("personal", {}) or {}
 
-    # Tailored (Agent 3) content — falls back to raw facts_json if Agent 3
-    # hasn't produced a tailored version of something (e.g. partial failure).
+    # Tailored (Agent 3) content — falls back to raw facts_json (with
+    # deterministic display-case applied) if Agent 3 didn't produce a
+    # tailored version of something.
     bullet_lookup = _build_bullet_lookup(state.get("tailored_bullets", []))
     project_lookup = _build_project_lookup(state.get("tailored_projects", []))
     tailored_volunteer_work = state.get("tailored_volunteer_work", []) or []
-    tailored_additional_info = (state.get("tailored_additional_info") or "").strip()
+    tailored_skills = state.get("tailored_skills") or {}
     
     # 1. Header Section
     name = personal.get("name") or "Candidate Name"
@@ -163,7 +210,9 @@ def render_cv_pdf(state: dict) -> str:
     if experience:
         add_section_divider("Work Experience")
         for exp in experience:
-            left_text = f"<b>{exp.get('title', '')}</b> — {exp.get('company', '')}"
+            display_title = _smart_title_case(exp.get('title', ''))
+            display_company = _smart_title_case(exp.get('company', ''))
+            left_text = f"<b>{display_title}</b> — {display_company}"
             right_text = exp.get("dates", "") or ""
             
             exp_table = Table(
@@ -196,7 +245,10 @@ def render_cv_pdf(state: dict) -> str:
         for proj in projects:
             tech_stack = ", ".join(proj.get("tech_stack", []) or [])
             proj_name = proj.get("name", "")
-            left_text = f"<b>{proj_name}</b>"
+            tailored = project_lookup.get(proj_name.strip())
+
+            display_name = tailored["display_name"] if tailored else _smart_title_case(proj_name)
+            left_text = f"<b>{display_name}</b>"
             if tech_stack:
                 left_text += f" | <i>{tech_stack}</i>"
             
@@ -212,20 +264,26 @@ def render_cv_pdf(state: dict) -> str:
             # project name. Falls back to the raw candidate-typed description
             # if Agent 3 didn't produce a tailored version.
             raw_desc = proj.get("description", "") or ""
-            desc = project_lookup.get(proj_name.strip(), raw_desc)
+            desc = tailored["description"] if tailored else raw_desc
             if desc:
                 story.append(Paragraph(desc, styles['CV_Body']))
                 story.append(Spacer(1, 6))
 
     # 5. Skills Section
-    skills = facts.get("skills", {}) or {}
+    # Prefer Agent 3's cleaned/filtered tailored_skills (junk entries like
+    # "im cool" removed, capitalization fixed). Falls back to raw facts_json
+    # skills if Agent 3 didn't produce a tailored version.
+    skills = tailored_skills if tailored_skills else (facts.get("skills", {}) or {})
     if skills:
         add_section_divider("Skills")
         skills_lines = []
         for category, items in skills.items():
             if items:
                 formatted_items = ", ".join(items) if isinstance(items, list) else str(items)
-                skills_lines.append(f"<b>{category.title()}:</b> {formatted_items}")
+                # category is a dict key like "soft_skills" — replace underscore
+                # before title-casing, otherwise .title() renders "Soft_Skills".
+                category_label = _smart_title_case(category.replace("_", " "))
+                skills_lines.append(f"<b>{category_label}:</b> {formatted_items}")
         
         for line in skills_lines:
             story.append(Paragraph(line, styles['CV_Body']))
@@ -237,7 +295,9 @@ def render_cv_pdf(state: dict) -> str:
     if education:
         add_section_divider("Education")
         for edu in education:
-            left_text = f"<b>{edu.get('degree', '')}</b> — {edu.get('institution', '')}"
+            display_degree = _smart_title_case(edu.get('degree', ''))
+            display_institution = _smart_title_case(edu.get('institution', ''))
+            left_text = f"<b>{display_degree}</b> — {display_institution}"
             right_text = edu.get("graduation_year", "") or ""
             if edu.get("gpa"):
                 left_text += f" (GPA: {edu.get('gpa')})"
@@ -255,10 +315,7 @@ def render_cv_pdf(state: dict) -> str:
             story.append(Spacer(1, 4))
 
     # 7. Certifications Section
-    # NEW — this section didn't exist before, so certifications the candidate
-    # had (or added based on an ATS "add this certification" tip) never
-    # actually showed up on the CV. Rendered as-is since these are short,
-    # factual titles that don't need professional rewriting.
+    # Rendered as-is — short factual titles don't need professional rewriting.
     certifications = facts.get("certifications", []) or []
     if certifications:
         add_section_divider("Certifications")
@@ -266,9 +323,8 @@ def render_cv_pdf(state: dict) -> str:
         story.append(ListFlowable(list_items, bulletType='bullet', start='circle', bulletFontName='Helvetica', bulletFontSize=8, spaceAfter=8))
 
     # 8. Volunteer Work Section
-    # NEW — uses Agent 3's polished phrasing when available, since these are
-    # free-text entries the candidate typed themselves (same category of bug
-    # as project descriptions).
+    # Uses Agent 3's polished phrasing when available (same category of fix
+    # as project descriptions — these are free-text entries too).
     raw_volunteer_work = facts.get("volunteer_work", []) or []
     if raw_volunteer_work:
         add_section_divider("Volunteer Work")
@@ -277,22 +333,18 @@ def render_cv_pdf(state: dict) -> str:
         story.append(ListFlowable(list_items, bulletType='bullet', start='circle', bulletFontName='Helvetica', bulletFontSize=8, spaceAfter=8))
 
     # 9. Awards Section
-    # NEW — same reasoning as certifications: short factual titles, rendered as-is.
+    # Rendered as-is — short factual titles.
     awards = facts.get("awards", []) or []
     if awards:
         add_section_divider("Awards")
         list_items = [ListItem(Paragraph(a, styles['CV_Body']), leftIndent=12, bulletColor=colors.HexColor("#1A365D")) for a in awards]
         story.append(ListFlowable(list_items, bulletType='bullet', start='circle', bulletFontName='Helvetica', bulletFontSize=8, spaceAfter=8))
 
-    # 10. Additional Information Section
-    # NEW — this is the fix for "the additional info box just pastes whatever
-    # I write". Agent 3 (tailoring_engine.py) now produces a professionally
-    # rewritten version of whatever the candidate typed in that box; render
-    # that instead of the raw text.
-    if tailored_additional_info:
-        add_section_divider("Additional Information")
-        story.append(Paragraph(tailored_additional_info, styles['CV_Body']))
-        story.append(Spacer(1, 6))
+    # NOTE: there is intentionally no "Additional Information" section anymore.
+    # Agent 3 (tailoring_engine.py) now folds anything CV-worthy from the
+    # candidate's additional-info box into professional_summary, the relevant
+    # project's tailored_description, or tailored_skills — see the
+    # "ADDITIONAL INFO PLACEMENT" rule in tailoring_engine.py's prompt.
 
     doc.build(story)
     logger.info(f"✅ CV PDF saved via ReportLab → {output_path}")

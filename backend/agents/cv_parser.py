@@ -17,6 +17,20 @@ STRICT RULES:
 - All dates must be extracted exactly as written
 - All bullets must be extracted word-for-word
 
+EXPERIENCE BULLETS — read carefully, this is a common mistake:
+- "bullets" must ONLY contain lines that describe an action, responsibility, or achievement —
+  typically a sentence starting with a verb, or a line marked with a bullet symbol (•, -, ➢, *)
+  that describes something the candidate DID.
+- Do NOT include a venue name, department name, or location sub-line as a bullet. For example, if
+  the CV shows:
+    Sales Associate — Acme Corp    June 2025 – August 2025
+    Acme Flagship Store, Jeddah
+    ➢ Managed reception operations...
+  then "Acme Flagship Store, Jeddah" is NOT a bullet — it is a location/venue detail. Append it to
+  the "company" field instead, separated by " — " (e.g. "company": "Acme Corp — Acme Flagship Store,
+  Jeddah"). Only "➢ Managed reception operations..." belongs in "bullets".
+- A good test: if a line has no verb and is just a proper-noun name/place, it is NOT a bullet.
+
 Return your response as a single valid JSON object matching this exact structure:
 {{
   "personal": {{
@@ -37,10 +51,10 @@ Return your response as a single valid JSON object matching this exact structure
     "relevant_coursework": ["list of strings or empty list"]
   }}],
   "experience": [{{
-    "company": "string",
+    "company": "string — include venue/location sub-line here (see rule above) if present, do NOT put it in bullets",
     "title": "string",
     "dates": "string or null",
-    "bullets": ["exact bullet text or empty list"],
+    "bullets": ["exact action/responsibility bullet text only — see rule above — or empty list"],
     "metrics": ["any quantified achievements or empty list"]
   }}],
   "skills": {{
