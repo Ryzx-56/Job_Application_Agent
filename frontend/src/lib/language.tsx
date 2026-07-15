@@ -221,13 +221,13 @@ export const content = {
     payg: {
       eyebrow: "Pay as you go",
       title: "Pay as you go",
-      description: "Perfect for users who only need help with a few applications.",
-      perApp: "per application",
+      description: "Perfect for users who only need a few credits.",
+      perApp: "per credit",
       cta: "Buy pack",
       packs: [
-        { name: "Starter", slug: "starter", price: "$4.99", priceSar: null as string | null, credits: "5 applications", perAppValue: "≈ $1.00", badge: null as string | null, featured: false },
-        { name: "Best Value", slug: "best-value", price: "$11.99", priceSar: null as string | null, credits: "15 applications", perAppValue: "≈ $0.80", badge: "Best Value", featured: true },
-        { name: "Power", slug: "power", price: "$19.99", priceSar: null as string | null, credits: "30 applications", perAppValue: "≈ $0.67", badge: "Max Savings", featured: false },
+        { name: "Starter", slug: "starter", price: "$4.99", priceSar: null as string | null, credits: "5 credits", perAppValue: "≈ $1.00", badge: null as string | null, featured: false },
+        { name: "Best Value", slug: "best-value", price: "$11.99", priceSar: null as string | null, credits: "15 credits", perAppValue: "≈ $0.80", badge: "Best Value", featured: true },
+        { name: "Power", slug: "power", price: "$19.99", priceSar: null as string | null, credits: "30 credits", perAppValue: "≈ $0.67", badge: "Max Savings", featured: false },
       ],
     },
     faq: {
@@ -667,8 +667,8 @@ export const content = {
     payg: {
       eyebrow: "الدفع حسب الاستخدام",
       title: "الدفع حسب الاستخدام",
-      description: "مثالي لمن يحتاج مساعدة في عدد قليل من الطلبات فقط.",
-      perApp: "لكل طلب",
+      description: "مثالي لمن يحتاج عددًا قليلًا من النقاط فقط.",
+      perApp: "لكل نقطة",
       cta: "شراء الحزمة",
       packs: [
         {
@@ -676,7 +676,7 @@ export const content = {
           slug: "starter",
           price: "4.99$",
           priceSar: "≈ 18.71 ر.س",
-          credits: "5 طلبات",
+          credits: "5 نقاط",
           perAppValue: "≈ 1.00$",
           badge: null as string | null,
           featured: false,
@@ -686,7 +686,7 @@ export const content = {
           slug: "best-value",
           price: "11.99$",
           priceSar: "≈ 44.96 ر.س",
-          credits: "15 طلبًا",
+          credits: "15 نقطة",
           perAppValue: "≈ 0.80$",
           badge: "أفضل قيمة",
           featured: true,
@@ -696,7 +696,7 @@ export const content = {
           slug: "power",
           price: "19.99$",
           priceSar: "≈ 74.96 ر.س",
-          credits: "30 طلبًا",
+          credits: "30 نقطة",
           perAppValue: "≈ 0.67$",
           badge: "أعلى توفير",
           featured: false,

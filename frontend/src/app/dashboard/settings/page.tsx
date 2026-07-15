@@ -1,15 +1,18 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import Link from "next/link";
 import { useLang } from "@/lib/language";
 import { useAuth } from "@/lib/auth";
 import { DashboardButton } from "@/components/dashboard";
 import { createClient } from "@/lib/supabase/client";
+import { fetchCredits, Tier } from "@/lib/supabase/credits";
 
-// TODO: replace with the user's real subscription tier once billing is
-// wired up (e.g. read from a Supabase `subscriptions` table or Stripe).
-const mockPlan = "Free";
+const TIER_LABEL: Record<Tier, { en: string; ar: string }> = {
+  free: { en: "Free", ar: "مجانية" },
+  pro: { en: "Pro", ar: "برو" },
+  elite: { en: "Elite", ar: "إيليت" },
+};
 
 export default function SettingsPage() {
   const { t, lang, setLang } = useLang();
@@ -17,6 +20,15 @@ export default function SettingsPage() {
   const copy = t.dashboard.settings;
   const isAr = lang === "ar";
   const [languageJustSaved, setLanguageJustSaved] = useState(false);
+  const [tier, setTier] = useState<Tier | null>(null);
+
+  useEffect(() => {
+    fetchCredits()
+      .then((c) => setTier(c.tier))
+      .catch((err) => console.error("fetchCredits failed:", err));
+  }, []);
+
+  const planDisplayName = tier ? TIER_LABEL[tier][isAr ? "ar" : "en"] : isAr ? "جارٍ التحميل…" : "Loading…";
 
   function handleLanguageChange(newLang: "en" | "ar") {
     if (newLang === lang) return;
@@ -167,7 +179,7 @@ export default function SettingsPage() {
         <div>
           <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500">{copy.planSection}</h2>
           <p className="mt-1.5 text-sm text-slate-700">
-            {copy.planLabel}: <span className="font-medium text-slate-900">{mockPlan}</span>
+            {copy.planLabel}: <span className="font-medium text-slate-900">{planDisplayName}</span>
           </p>
         </div>
         <DashboardButton as={Link} href="/#pricing" variant="outline" size="sm">

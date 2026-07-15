@@ -15,10 +15,12 @@ import {
   Languages,
 } from "lucide-react";
 import { useLang } from "@/lib/language";
+import { CreditsButton } from "@/components/CreditsButton";
 import { DashboardButton, ScoreRing, ScoreBar, UploadZone, FileResultCard } from "@/components/dashboard";
 import { createClient } from "@/lib/supabase/client";
 import { ManualCvForm, ManualCvData, emptyManualCvData } from "@/components/manual-cv-form";
 import { saveResumeResult } from "@/lib/supabase/resumes";
+import { fetchCredits } from "@/lib/supabase/credits";
 
 type TailoredBullet = {
   original: string;
@@ -93,6 +95,21 @@ const API_URL = process.env.NEXT_PUBLIC_API_URL;
 // the job description textarea (rows=7 ≈ 188px) so it never dominates the form.
 const ADDITIONAL_INFO_MAX_HEIGHT = 220;
 
+export class InsufficientCreditsError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "InsufficientCreditsError";
+  }
+}
+
+async function throwForFailedResponse(res: Response): Promise<never> {
+  if (res.status === 402) {
+    const body = await res.json().catch(() => null);
+    throw new InsufficientCreditsError(body?.detail?.message ?? "Not enough credits.");
+  }
+  throw new Error(`Request failed: ${res.status}`);
+}
+
 function mapBackendResponse(raw: any): GenerateResult {
   return {
     atsScore: raw.ats_score ?? 0,
@@ -145,7 +162,7 @@ async function generateFromUpload(
   });
 
   if (!res.ok) {
-    throw new Error(`Request failed: ${res.status}`);
+    await throwForFailedResponse(res);
   }
 
   return mapBackendResponse(await res.json());
@@ -242,7 +259,7 @@ async function generateFromManual(
   });
 
   if (!res.ok) {
-    throw new Error(`Request failed: ${res.status}`);
+    await throwForFailedResponse(res);
   }
 
   return mapBackendResponse(await res.json());
@@ -276,6 +293,21 @@ export default function DashboardHomePage() {
   const [additionalInfo, setAdditionalInfo] = useState("");
   const [jobDescription, setJobDescription] = useState("");
   const [cvLanguage, setCvLanguage] = useState<"en" | "ar">("en");
+  const [creditsRemaining, setCreditsRemaining] = useState(0);
+  const [creditsTotal, setCreditsTotal] = useState(0);
+
+  const refreshCredits = () => {
+    fetchCredits()
+      .then((c) => {
+        setCreditsRemaining(c.creditsRemaining);
+        setCreditsTotal(c.creditsTotal);
+      })
+      .catch((err) => console.error("fetchCredits failed:", err));
+  };
+
+  useEffect(() => {
+    refreshCredits();
+  }, []);
   const [generating, setGenerating] = useState(false);
   const [result, setResult] = useState<GenerateResult | null>(null);
   const [cvFileUrl, setCvFileUrl] = useState<string | null>(null);
@@ -296,10 +328,12 @@ export default function DashboardHomePage() {
     el.style.height = `${Math.min(el.scrollHeight, ADDITIONAL_INFO_MAX_HEIGHT)}px`;
   }, [additionalInfo]);
 
+  const requiredCredits = cvLanguage === "ar" ? 2 : 1;
   const canGenerate =
     (cvMode === "upload" ? !!cvFile : manualData.name.trim().length > 0) &&
     jobDescription.trim().length > 0 &&
-    !generating;
+    !generating &&
+    creditsRemaining >= requiredCredits;
 
   // The preview/download endpoints now require Authorization, so plain
   // <a href> links to them won't work (a browser navigation can't attach a
@@ -383,22 +417,33 @@ export default function DashboardHomePage() {
       }).catch((err) => console.error("Failed to save resume to history:", err));
     } catch (err) {
       console.error(err);
-      setError(
-        lang === "ar"
-          ? "حدث خطأ ما أثناء إعداد طلبك. يرجى المحاولة مرة أخرى."
-          : "Something went wrong generating your application. Please try again."
-      );
+      if (err instanceof InsufficientCreditsError) {
+        setError(err.message);
+      } else {
+        setError(
+          lang === "ar"
+            ? "حدث خطأ ما أثناء إعداد طلبك. يرجى المحاولة مرة أخرى."
+            : "Something went wrong generating your application. Please try again."
+        );
+      }
     } finally {
       setGenerating(false);
+      // Covers both outcomes: a successful generation spent credits, and a
+      // failed one after reservation gets refunded server-side — either way
+      // the button should reflect the true balance right after this call.
+      refreshCredits();
     }
   }
 
   return (
     <div className="mx-auto max-w-4xl space-y-8" dir={dir}>
-      <div>
-        <span className="text-sm font-medium text-blue-600">{copy.eyebrow}</span>
-        <h1 className="mt-1.5 text-2xl font-semibold tracking-tight text-slate-900 sm:text-3xl">{copy.title}</h1>
-        <p className="mt-2 text-sm leading-relaxed text-slate-500 sm:text-base">{copy.sub}</p>
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <span className="text-sm font-medium text-blue-600">{copy.eyebrow}</span>
+          <h1 className="mt-1.5 text-2xl font-semibold tracking-tight text-slate-900 sm:text-3xl">{copy.title}</h1>
+          <p className="mt-2 text-sm leading-relaxed text-slate-500 sm:text-base">{copy.sub}</p>
+        </div>
+        <CreditsButton creditsRemaining={creditsRemaining} creditsTotal={creditsTotal} lang={lang} />
       </div>
 
       <div className="space-y-5 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-7">
@@ -560,6 +605,9 @@ export default function DashboardHomePage() {
           {lang === "ar"
             ? "سيتم إنشاء سيرتك الذاتية وخطاب التقديم باللغة المختارة، حتى لو كانت بياناتك المُدخلة بلغة أخرى."
             : "Your CV and cover letter will be generated in the selected language, even if your input is in the other language."}
+        </p>
+        <p className="-mt-1.5 text-xs text-slate-400">
+          {lang === "ar" ? "الإنجليزية: نقطة واحدة · العربية: نقطتان" : "English uses 1 credit · Arabic uses 2 credits"}
         </p>
       </div>
 

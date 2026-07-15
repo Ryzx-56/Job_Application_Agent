@@ -16,6 +16,7 @@ load_dotenv(find_dotenv(), override=True)
 from core.state import AgentState
 from core.orchestrator import app as graph
 from core.auth import get_current_user_id
+from core.credits import reserve_credits, refund_credits, get_credits, normalize_cv_language
 from utils.pdf_parser import extract_text_from_pdf
 from utils.pdf_generator import render_cv_pdf, render_cover_letter_pdf
 from schemas.manual_cv_request import ManualCVRequest
@@ -151,6 +152,13 @@ async def preview_cover_letter(user_id: str = Depends(get_current_user_id)):
     )
 
 
+@app.get("/api/v1/credits", tags=["Credits"])
+async def get_credits_balance(user_id: str = Depends(get_current_user_id)):
+    """Current tier + credit balance for the logged-in user. Read-only —
+    all writes happen server-side inside reserve_credits()/refund_credits()."""
+    return get_credits(user_id)
+
+
 @app.post("/api/v1/optimize", tags=["Agent Core"])
 async def optimize_application(
     cv: UploadFile = File(...),
@@ -168,8 +176,13 @@ async def optimize_application(
     initial_state = make_initial_state(final_cv_text, final_jd_text)
     initial_state["input_mode"] = "upload"
     initial_state["additional_info"] = additional_info or ""
-    initial_state["cv_language"] = "ar" if str(cv_language).lower().startswith("ar") else "en"
-    
+    initial_state["cv_language"] = normalize_cv_language(cv_language)
+
+    # Reserve credits BEFORE running the (expensive) pipeline. Atomic against
+    # concurrent requests — see reserve_credits() in core/credits.py.
+    # Raises 402 automatically if the user doesn't have enough.
+    reserved_amount = reserve_credits(user_id, initial_state["cv_language"])
+
     try:
         # Pipeline execution: graph.invoke is the standard LangGraph method
         logger.info("🧠 Commencing agent graph routing lifecycle...")
@@ -197,11 +210,13 @@ async def optimize_application(
             "cv_language": result.get("cv_language", "en"),
             "generated_cv_pdf": cv_pdf_path,
             "generated_cl_pdf": cl_pdf_path,
-            "error": result.get("error", None)
+            "error": result.get("error", None),
+            "credits_charged": reserved_amount,
         }
         
     except Exception as err:
         logger.error(f"❌ Pipeline Failure: {err}")
+        refund_credits(user_id, reserved_amount)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"An execution failure hit a core agent module: {str(err)}"
@@ -228,7 +243,9 @@ async def optimize_manual_application(
     initial_state["input_mode"] = "manual"
     initial_state["manual_cv_data"] = manual_data
     initial_state["additional_info"] = payload.additional_info or ""
-    initial_state["cv_language"] = "ar" if str(payload.cv_language or "en").lower().startswith("ar") else "en"
+    initial_state["cv_language"] = normalize_cv_language(payload.cv_language or "en")
+
+    reserved_amount = reserve_credits(user_id, initial_state["cv_language"])
 
     try:
         logger.info("🧠 Commencing agent graph routing lifecycle (manual entry)...")
@@ -256,11 +273,13 @@ async def optimize_manual_application(
             "cv_language": result.get("cv_language", "en"),
             "generated_cv_pdf": cv_pdf_path,
             "generated_cl_pdf": cl_pdf_path,
-            "error": result.get("error", None)
+            "error": result.get("error", None),
+            "credits_charged": reserved_amount,
         }
 
     except Exception as err:
         logger.error(f"❌ Pipeline Failure (manual): {err}")
+        refund_credits(user_id, reserved_amount)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"An execution failure hit a core agent module: {str(err)}"

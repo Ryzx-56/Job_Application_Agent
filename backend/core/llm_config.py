@@ -14,7 +14,7 @@ GEMINI_MODEL = "gemini-3.1-flash-lite"
 
 # Claude client — used for writing tasks only (tailoring, cover letter, scoring)
 claude_client = anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
-CLAUDE_MODEL = "claude-sonnet-4-6"
+CLAUDE_MODEL = "claude-sonnet-5"
 
 # Shared config for Gemini JSON responses
 gemini_json_config = types.GenerateContentConfig(
