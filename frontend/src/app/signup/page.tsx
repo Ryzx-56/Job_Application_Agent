@@ -7,6 +7,8 @@ import { Eye, EyeOff, ArrowRight, ArrowLeft, Lock, ScanSearch, BadgeCheck } from
 import { useLang } from "@/lib/language";
 import { Button, Logo, LangSwitcher } from "@/components/brand";
 import { createClient } from "@/lib/supabase/client";
+import { LegalModal } from "@/components/legal-modal";
+import { legalContent, LegalDocKey } from "@/lib/legal-content";
 
 function GoogleIcon(props: React.SVGProps<SVGSVGElement>) {
   return (
@@ -115,11 +117,12 @@ function SelectedPlanBanner({ planSlug }: { planSlug: string }) {
    SIGNUP FORM
 ======================================================================== */
 function SignupForm() {
-  const { t, isRTL } = useLang();
+  const { t, isRTL, lang } = useLang();
   const searchParams = useSearchParams();
   const planSlug = searchParams.get("plan") ?? "free";
 
   const ForwardIcon = isRTL ? ArrowLeft : ArrowRight;
+  const [openDoc, setOpenDoc] = useState<LegalDocKey | null>(null);
 
   const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
@@ -343,13 +346,13 @@ function SignupForm() {
                 />
                 <span>
                   {t.signup.termsPrefix}{" "}
-                  <Link href="/terms" className="font-medium text-blue-400 transition-colors hover:text-blue-300">
+                  <button type="button" onClick={() => setOpenDoc("terms")} className="font-medium text-blue-400 transition-colors hover:text-blue-300">
                     {t.form.termsLink}
-                  </Link>{" "}
+                  </button>{" "}
                   {t.form.and}{" "}
-                  <Link href="/privacy" className="font-medium text-blue-400 transition-colors hover:text-blue-300">
+                  <button type="button" onClick={() => setOpenDoc("privacy")} className="font-medium text-blue-400 transition-colors hover:text-blue-300">
                     {t.form.privacyLink}
-                  </Link>
+                  </button>
                 </span>
               </label>
 
@@ -379,15 +382,21 @@ function SignupForm() {
 
         <p className="mt-6 text-center text-xs leading-relaxed text-zinc-600">
           {t.form.terms}{" "}
-          <Link href="/terms" className="text-zinc-500 underline underline-offset-2 hover:text-zinc-300">
+          <button type="button" onClick={() => setOpenDoc("terms")} className="text-zinc-500 underline underline-offset-2 hover:text-zinc-300">
             {t.form.termsLink}
-          </Link>{" "}
+          </button>{" "}
           {t.form.and}{" "}
-          <Link href="/privacy" className="text-zinc-500 underline underline-offset-2 hover:text-zinc-300">
+          <button type="button" onClick={() => setOpenDoc("privacy")} className="text-zinc-500 underline underline-offset-2 hover:text-zinc-300">
             {t.form.privacyLink}
-          </Link>
+          </button>
         </p>
       </div>
+      <LegalModal
+        doc={openDoc ? legalContent[lang][openDoc] : null}
+        open={openDoc !== null}
+        onClose={() => setOpenDoc(null)}
+        isRTL={isRTL}
+      />
     </div>
   );
 }

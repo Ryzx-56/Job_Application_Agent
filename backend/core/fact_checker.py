@@ -204,6 +204,6 @@ def run_fact_checker(state: AgentState) -> dict:
 
     return {
         "tailored_bullets": verified_bullets,
-        "hallucination_logs": hallucination_flags,
+        "hallucination_flags": hallucination_flags,
         "fact_check_passed": fact_check_passed,
     }

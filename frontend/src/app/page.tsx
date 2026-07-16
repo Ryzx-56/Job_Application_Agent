@@ -24,10 +24,15 @@ import {
   Lock,
   ScanSearch,
   BadgeCheck,
+  Flame,
 } from "lucide-react";
 import { useLang } from "@/lib/language";
 import { Button, Logo, LangSwitcher } from "@/components/brand";
-import { useAuth, getStartedHref } from "@/lib/auth";
+import { useAuth } from "@/lib/auth";
+import { fetchCredits, Tier } from "@/lib/supabase/credits";
+import { cancelSubscription, resumeSubscription } from "@/lib/subscription";
+import { LegalModal } from "@/components/legal-modal";
+import { legalContent, LegalDocKey } from "@/lib/legal-content";
 
 /* Smooth-scrolls to a section by id, respecting that section's scroll-mt-*
    class so the heading never ends up hidden behind the fixed navbar. */
@@ -59,7 +64,7 @@ function SectionHeading({
 /* ========================================================================
    HEADER
 ======================================================================== */
-function SiteHeader() {
+function SiteHeader({ onOpenAbout }: { onOpenAbout: () => void }) {
   const { t, isRTL } = useLang();
   const { isLoggedIn } = useAuth();
   const [scrolled, setScrolled] = useState(false);
@@ -107,12 +112,23 @@ function SiteHeader() {
               {link.label}
             </a>
           ))}
+          <button
+            type="button"
+            onClick={onOpenAbout}
+            className="rounded-lg px-3 py-2 text-sm text-zinc-400 transition-colors hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400/60"
+          >
+            {t.nav.about}
+          </button>
         </nav>
 
         <div className="hidden items-center gap-2 md:flex">
           <LangSwitcher />
-          <Button variant="ghost" as={Link} href="/login">{t.nav.login}</Button>
-          <Button as={Link} href={getStartedHref(isLoggedIn)}>{t.nav.getStarted}</Button>
+          {!isLoggedIn && (
+            <Button variant="ghost" as={Link} href="/login">{t.nav.login}</Button>
+          )}
+          <Button as={Link} href={isLoggedIn ? "/dashboard" : "/signup"}>
+            {isLoggedIn ? t.nav.dashboard : t.nav.getStarted}
+          </Button>
         </div>
 
         <button
@@ -152,9 +168,23 @@ function SiteHeader() {
                   {link.label}
                 </a>
               ))}
+              <button
+                type="button"
+                onClick={() => {
+                  onOpenAbout();
+                  setOpen(false);
+                }}
+                className="rounded-lg px-3 py-3 text-start text-sm text-zinc-400 transition-colors hover:bg-white/5 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400/60"
+              >
+                {t.nav.about}
+              </button>
               <div className="mt-2 flex flex-col gap-2 border-t border-white/10 pt-3">
-                <Button variant="outline" as={Link} href="/login">{t.nav.login}</Button>
-                <Button as={Link} href="/signup?plan=free">{t.nav.getStarted}</Button>
+                {!isLoggedIn && (
+                  <Button variant="outline" as={Link} href="/login">{t.nav.login}</Button>
+                )}
+                <Button as={Link} href={isLoggedIn ? "/dashboard" : "/signup"}>
+                  {isLoggedIn ? t.nav.dashboard : t.nav.getStarted}
+                </Button>
               </div>
             </nav>
           </div>
@@ -512,12 +542,12 @@ function Features() {
 ======================================================================== */
 function HowItWorks() {
   const { t } = useLang();
-  const icons = [FileUp, PenLine, Download];
+  const icons = [FileUp, PenLine, ScanSearch, Download];
   return (
     <section id="how-it-works" className="scroll-mt-24 border-y border-white/10 bg-zinc-900/30">
       <div className="mx-auto max-w-6xl px-4 py-20 sm:px-6 sm:py-28">
         <SectionHeading eyebrow={t.howItWorks.eyebrow} title={t.howItWorks.title} description={t.howItWorks.description} />
-        <div className="relative mt-16 grid gap-8 md:grid-cols-3">
+        <div className="relative mt-16 grid gap-8 md:grid-cols-4">
           <div className="pointer-events-none absolute top-6 start-0 end-0 hidden h-px bg-white/10 md:block" />
           {t.howItWorks.steps.map((step, i) => {
             const Icon = icons[i];
@@ -572,69 +602,343 @@ function TrustSection() {
 /* ========================================================================
    PRICING
 ======================================================================== */
+const TIER_RANK: Record<Tier, number> = { free: 0, pro: 1, elite: 2 };
+
+/* ========================================================================
+   CONFIRM DIALOG — shared by "Cancel subscription" and "Switch to Free".
+   Both hit the same backend action (cancelSubscription), just triggered
+   from different buttons with different copy.
+======================================================================== */
+function ConfirmDialog({
+  open,
+  title,
+  body,
+  confirmLabel,
+  cancelLabel,
+  busy,
+  error,
+  onConfirm,
+  onDismiss,
+}: {
+  open: boolean;
+  title: string;
+  body: string;
+  confirmLabel: string;
+  cancelLabel: string;
+  busy: boolean;
+  error: string | null;
+  onConfirm: () => void;
+  onDismiss: () => void;
+}) {
+  if (!open) return null;
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 px-4" onClick={onDismiss}>
+      <div
+        className="w-full max-w-sm rounded-2xl border border-white/10 bg-zinc-900 p-6 shadow-2xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <h3 className="text-base font-semibold text-white">{title}</h3>
+        <p className="mt-2 text-sm leading-relaxed text-zinc-400">{body}</p>
+        {error && <p className="mt-3 text-sm text-rose-400">{error}</p>}
+        <div className="mt-6 flex gap-2">
+          <button
+            type="button"
+            onClick={onConfirm}
+            disabled={busy}
+            className="flex-1 rounded-lg bg-rose-600 px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-rose-500 disabled:opacity-60"
+          >
+            {busy ? "…" : confirmLabel}
+          </button>
+          <button
+            type="button"
+            onClick={onDismiss}
+            disabled={busy}
+            className="flex-1 rounded-lg border border-white/15 px-4 py-2.5 text-sm font-medium text-zinc-300 transition-colors hover:bg-white/5"
+          >
+            {cancelLabel}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function Pricing() {
-  const { t } = useLang();
+  const { t, lang } = useLang();
+  const { isLoggedIn } = useAuth();
+  const isAr = lang === "ar";
+
+  const [tier, setTier] = useState<Tier | null>(null);
+  const [pendingTier, setPendingTier] = useState<Tier | null>(null);
+  const [resetAt, setResetAt] = useState<string | null>(null);
+  const [tierLoaded, setTierLoaded] = useState(false);
+  const [confirmTarget, setConfirmTarget] = useState<"cancel" | "downgrade" | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [actionError, setActionError] = useState<string | null>(null);
+
+  const loadCredits = () => {
+    fetchCredits()
+      .then((c) => {
+        setTier(c.tier);
+        setPendingTier(c.pendingTier);
+        setResetAt(c.creditsResetAt);
+      })
+      .catch((err) => console.error("fetchCredits failed:", err))
+      .finally(() => setTierLoaded(true));
+  };
+
+  useEffect(() => {
+    if (!isLoggedIn) {
+      setTierLoaded(true);
+      return;
+    }
+    loadCredits();
+  }, [isLoggedIn]);
+
+  async function handleConfirm() {
+    setBusy(true);
+    setActionError(null);
+    try {
+      await cancelSubscription();
+      setPendingTier("free");
+      setConfirmTarget(null);
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : "Something went wrong. Please try again.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleUndo() {
+    setBusy(true);
+    setActionError(null);
+    try {
+      await resumeSubscription();
+      setPendingTier(null);
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const resetDateLabel = resetAt
+    ? new Date(resetAt).toLocaleDateString(isAr ? "ar-SA" : "en-US", { month: "short", day: "numeric" })
+    : "";
+
+  const PENDING_TIER_LABEL: Record<Tier, string> = {
+    free: isAr ? "المجانية" : "Free",
+    pro: "Pro",
+    elite: "Elite",
+  };
+
+  const copy = {
+    subscribed: isAr ? "مفعّل" : "Active",
+    currentPlan: isAr ? "خطتك الحالية" : "Current plan",
+    switchToFree: isAr ? "التبديل إلى المجانية" : "Switch to Free",
+    cancelSub: isAr ? "إلغاء الاشتراك" : "Cancel subscription",
+    undo: isAr ? "تراجع عن الإلغاء" : "Undo",
+    switchesOn: (target: string, date: string) =>
+      isAr ? `سيتحول إلى ${target} في ${date}` : `Switching to ${target} on ${date}`,
+    cancelTitle: isAr ? "تأكيد إلغاء الاشتراك" : "Confirm cancellation",
+    cancelBody: isAr
+      ? "ستحتفظ بخطتك الحالية ورصيدك الحالي حتى نهاية دورة الفوترة الحالية. بعدها ستنتقل إلى الخطة المجانية."
+      : "You'll keep your current plan and credits until the end of this billing cycle. After that, you'll move to the Free plan.",
+    downgradeTitle: isAr ? "تأكيد التبديل إلى المجانية" : "Confirm switch to Free",
+    downgradeBody: isAr
+      ? "ستحتفظ بخطتك الحالية ورصيدك الحالي حتى نهاية الدورة الحالية، ثم تنتقل إلى المجانية."
+      : "You'll keep your current plan and credits until the end of this cycle, then move to Free.",
+    confirm: isAr ? "نعم، تأكيد" : "Yes, confirm",
+    dismiss: isAr ? "تراجع" : "Never mind",
+  };
+
   return (
     <section id="pricing" className="mx-auto max-w-6xl scroll-mt-24 px-4 py-20 sm:px-6 sm:py-28">
       <SectionHeading eyebrow={t.pricing.eyebrow} title={t.pricing.title} description={t.pricing.description} />
+      {t.pricing.creditNote && (
+        <p className="mx-auto mt-4 max-w-2xl text-center text-sm text-zinc-500">{t.pricing.creditNote}</p>
+      )}
       <div className="mt-14 grid gap-4 lg:grid-cols-3">
-        {t.pricing.plans.map((plan) => (
-          <div
-            key={plan.name}
-            className={`relative flex flex-col rounded-2xl border bg-zinc-900/60 p-7 transition-all duration-300 ${
-              plan.featured
-                ? "border-blue-400/50 shadow-xl shadow-blue-950/20 lg:-translate-y-2"
-                : plan.premium
-                ? "border-white/20 bg-gradient-to-b from-zinc-900/80 to-zinc-900/40 shadow-lg shadow-black/30"
-                : "border-white/10 hover:border-blue-400/30"
-            }`}
-          >
-            {plan.badge && (
-              <span className="absolute -top-3 start-7 rounded-full bg-blue-600 px-3 py-1 text-xs font-medium text-white">
-                {plan.badge}
-              </span>
-            )}
-            {plan.premium && (
-              <span className="absolute -top-3 start-7 inline-flex items-center gap-1 rounded-full border border-white/20 bg-zinc-950 px-3 py-1 text-xs font-medium text-zinc-200">
-                <Sparkles className="size-3 text-blue-400" aria-hidden />
-                {t.pricing.premiumBadgeLabel}
-              </span>
-            )}
+        {t.pricing.plans.map((plan) => {
+          const planSlug = plan.slug as Tier;
+          const showTierState = isLoggedIn && tierLoaded && tier !== null;
+          const isCurrent = showTierState && tier === planSlug;
+          const hasPendingChange = showTierState && pendingTier !== null;
+          const isDowngradeTarget = showTierState && planSlug === "free" && tier !== "free" && !hasPendingChange;
+          const isUpgrade = showTierState && TIER_RANK[planSlug] > TIER_RANK[tier as Tier];
 
-            <h3 className="text-sm font-medium text-white">{plan.name}</h3>
-            <div className="mt-3 flex items-baseline gap-1.5">
-              <span className="text-4xl font-semibold tracking-tight text-white">{plan.price}</span>
-              <span className="text-sm text-zinc-500">{plan.period}</span>
-            </div>
-            {plan.priceSar && <p className="mt-1 text-xs text-zinc-500">{plan.priceSar}</p>}
-            <p className="mt-3 text-sm leading-relaxed text-zinc-400">{plan.description}</p>
-
-            <Button
-              variant={plan.featured ? "default" : "outline"}
-              as={Link}
-              href={`/signup?plan=${plan.slug}`}
-              className="mt-6 w-full"
+          return (
+            <div
+              key={plan.name}
+              className={`relative flex flex-col rounded-2xl border bg-zinc-900/60 p-7 transition-all duration-300 ${
+                plan.offerBanner
+                  ? "overflow-hidden border-amber-400/60 shadow-2xl shadow-amber-500/10 ring-1 ring-amber-400/30 lg:-translate-y-3 lg:scale-[1.03]"
+                  : plan.featured
+                  ? "border-blue-400/50 shadow-xl shadow-blue-950/20 lg:-translate-y-2"
+                  : plan.premium
+                  ? "border-white/20 bg-gradient-to-b from-zinc-900/80 to-zinc-900/40 shadow-lg shadow-black/30"
+                  : "border-white/10 hover:border-blue-400/30"
+              }`}
             >
-              {plan.cta}
-            </Button>
+              {plan.offerBanner ? (
+                <div className="-mx-7 -mt-7 mb-5 flex items-center justify-center gap-1.5 bg-gradient-to-r from-amber-500 to-orange-500 px-4 py-2 text-center text-xs font-bold uppercase tracking-wide text-zinc-950">
+                  <Flame className="size-3.5 shrink-0" aria-hidden />
+                  {plan.offerBanner}
+                </div>
+              ) : (
+                <>
+                  {plan.badge && (
+                    <span className="absolute -top-3 start-7 rounded-full bg-blue-600 px-3 py-1 text-xs font-medium text-white">
+                      {plan.badge}
+                    </span>
+                  )}
+                  {plan.premium && (
+                    <span className="absolute -top-3 start-7 inline-flex items-center gap-1 rounded-full border border-white/20 bg-zinc-950 px-3 py-1 text-xs font-medium text-zinc-200">
+                      <Sparkles className="size-3 text-blue-400" aria-hidden />
+                      {t.pricing.premiumBadgeLabel}
+                    </span>
+                  )}
+                </>
+              )}
 
-            <ul className="mt-7 space-y-3 border-t border-white/10 pt-6">
-              {plan.features.map((feature) => (
-                <li key={feature} className="flex items-start gap-2.5 text-sm">
-                  <span className="mt-0.5 grid size-4 shrink-0 place-items-center rounded-full bg-white/5 text-blue-400">
-                    <Check className="size-2.5" aria-hidden />
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center gap-2">
+                  <h3 className="text-sm font-medium text-white">{plan.name}</h3>
+                  {plan.offerBanner && plan.badge && (
+                    <span className="rounded-full bg-blue-600/90 px-2 py-0.5 text-[10px] font-medium text-white">
+                      {plan.badge}
+                    </span>
+                  )}
+                </div>
+                {isCurrent && planSlug !== "free" && !hasPendingChange && (
+                  <span className="inline-flex items-center gap-1 rounded-full border border-blue-400/25 bg-blue-400/10 px-2.5 py-0.5 text-[11px] font-medium tracking-wide text-blue-300">
+                    <span className="size-1.5 rounded-full bg-blue-400" aria-hidden />
+                    {copy.subscribed}
                   </span>
-                  <span className="text-zinc-300">{feature}</span>
-                </li>
-              ))}
-            </ul>
-          </div>
-        ))}
+                )}
+              </div>
+
+              <div className="mt-3 flex flex-wrap items-baseline gap-1.5">
+                {plan.originalPrice && (
+                  <span className="text-lg font-medium text-zinc-600 line-through">{plan.originalPrice}</span>
+                )}
+                <span className="text-4xl font-semibold tracking-tight text-white">{plan.price}</span>
+                <span className="text-sm text-zinc-500">{plan.period}</span>
+                {plan.discountLabel && (
+                  <span className="ms-1 rounded-full bg-amber-400/15 px-2 py-0.5 text-xs font-bold text-amber-300">
+                    {plan.discountLabel}
+                  </span>
+                )}
+              </div>
+              {plan.priceSar && <p className="mt-1 text-xs text-zinc-500">{plan.priceSar}</p>}
+              <p className="mt-3 text-sm leading-relaxed text-zinc-400">{plan.description}</p>
+              {plan.limitedOffer && (
+                <div className="mt-4 flex items-start gap-2 rounded-lg border border-amber-400/25 bg-amber-400/[0.07] px-3 py-2.5">
+                  <Sparkles className="mt-0.5 size-3.5 shrink-0 text-amber-400" aria-hidden />
+                  <p className="text-xs leading-relaxed text-amber-200/90">{plan.limitedOffer}</p>
+                </div>
+              )}
+
+              {!showTierState && (
+                <Button
+                  variant={plan.featured ? "default" : "outline"}
+                  as={Link}
+                  href={isLoggedIn ? `/dashboard/checkout?plan=${plan.slug}` : `/signup?plan=${plan.slug}`}
+                  className="mt-6 w-full"
+                >
+                  {plan.cta}
+                </Button>
+              )}
+
+              {isCurrent && planSlug === "free" && (
+                <div className="mt-6 w-full rounded-lg border border-white/10 bg-white/5 py-2.5 text-center text-sm font-medium text-zinc-400">
+                  {copy.currentPlan}
+                </div>
+              )}
+
+              {isCurrent && planSlug !== "free" && !hasPendingChange && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setActionError(null);
+                    setConfirmTarget("cancel");
+                  }}
+                  className="mt-6 text-xs font-medium text-rose-400/80 underline decoration-rose-400/30 underline-offset-4 transition-colors hover:text-rose-400"
+                >
+                  {copy.cancelSub}
+                </button>
+              )}
+
+              {isCurrent && planSlug !== "free" && hasPendingChange && (
+                <div className="mt-6 space-y-1.5">
+                  <p className="text-xs text-zinc-500">
+                    {copy.switchesOn(PENDING_TIER_LABEL[pendingTier as Tier], resetDateLabel)}
+                  </p>
+                  <button
+                    type="button"
+                    onClick={handleUndo}
+                    disabled={busy}
+                    className="text-xs font-medium text-blue-400/90 underline decoration-blue-400/30 underline-offset-4 transition-colors hover:text-blue-400 disabled:opacity-60"
+                  >
+                    {copy.undo}
+                  </button>
+                </div>
+              )}
+
+              {isDowngradeTarget && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setActionError(null);
+                    setConfirmTarget("downgrade");
+                  }}
+                  className="mt-6 w-full rounded-lg border border-white/15 py-2.5 text-sm font-medium text-zinc-200 transition-colors hover:bg-white/5"
+                >
+                  {copy.switchToFree}
+                </button>
+              )}
+
+              {isUpgrade && (
+                <Button
+                  variant={plan.featured ? "default" : "outline"}
+                  as={Link}
+                  href={`/dashboard/checkout?plan=${plan.slug}`}
+                  className="mt-6 w-full"
+                >
+                  {plan.cta}
+                </Button>
+              )}
+
+              <ul className="mt-7 space-y-3 border-t border-white/10 pt-6">
+                {plan.features.map((feature) => (
+                  <li key={feature} className="flex items-start gap-2.5 text-sm">
+                    <span className="mt-0.5 grid size-4 shrink-0 place-items-center rounded-full bg-white/5 text-blue-400">
+                      <Check className="size-2.5" aria-hidden />
+                    </span>
+                    <span className="text-zinc-300">{feature}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          );
+        })}
       </div>
 
       {t.pricing.currencyNote && (
         <p className="mt-6 text-center text-xs text-zinc-500">{t.pricing.currencyNote}</p>
       )}
+
+      <ConfirmDialog
+        open={confirmTarget !== null}
+        title={confirmTarget === "cancel" ? copy.cancelTitle : copy.downgradeTitle}
+        body={confirmTarget === "cancel" ? copy.cancelBody : copy.downgradeBody}
+        confirmLabel={copy.confirm}
+        cancelLabel={copy.dismiss}
+        busy={busy}
+        error={actionError}
+        onConfirm={handleConfirm}
+        onDismiss={() => (busy ? null : setConfirmTarget(null))}
+      />
     </section>
   );
 }
@@ -644,12 +948,18 @@ function Pricing() {
 ======================================================================== */
 function PayAsYouGo() {
   const { t } = useLang();
+  const packIcons = [Zap, Sparkles, Gauge];
   return (
     <section className="border-y border-white/10 bg-zinc-900/30">
       <div className="mx-auto max-w-6xl px-4 py-20 sm:px-6 sm:py-28">
         <SectionHeading eyebrow={t.payg.eyebrow} title={t.payg.title} description={t.payg.description} />
+        {t.pricing.creditNote && (
+          <p className="mx-auto mt-4 max-w-2xl text-center text-sm text-zinc-500">{t.pricing.creditNote}</p>
+        )}
         <div className="mt-14 grid gap-4 sm:grid-cols-3">
-          {t.payg.packs.map((pack) => (
+          {t.payg.packs.map((pack, i) => {
+            const PackIcon = packIcons[i] ?? Zap;
+            return (
             <div
               key={pack.name}
               className={`relative flex flex-col rounded-2xl border bg-zinc-900/60 p-6 transition-all duration-300 ${
@@ -666,7 +976,7 @@ function PayAsYouGo() {
                 </span>
               )}
               <div className="grid size-10 place-items-center rounded-xl border border-white/10 bg-white/5 text-blue-400">
-                <Zap className="size-5" aria-hidden />
+                <PackIcon className="size-5" aria-hidden />
               </div>
               <h3 className="mt-4 text-sm font-medium text-white">{pack.name}</h3>
               <div className="mt-2 flex items-baseline gap-1.5">
@@ -674,6 +984,7 @@ function PayAsYouGo() {
               </div>
               {pack.priceSar && <p className="mt-1 text-xs text-zinc-500">{pack.priceSar}</p>}
               <p className="mt-3 text-sm text-zinc-300">{pack.credits}</p>
+              {pack.blurb && <p className="mt-1 text-xs text-zinc-500">{pack.blurb}</p>}
               <p className="mt-1 text-xs text-zinc-500">
                 {pack.perAppValue} {t.payg.perApp}
               </p>
@@ -687,7 +998,8 @@ function PayAsYouGo() {
                 {t.payg.cta}
               </Button>
             </div>
-          ))}
+            );
+          })}
         </div>
       </div>
     </section>
@@ -782,7 +1094,7 @@ function FinalCta() {
 /* ========================================================================
    FOOTER
 ======================================================================== */
-function SiteFooter() {
+function SiteFooter({ openDoc, setOpenDoc }: { openDoc: LegalDocKey | null; setOpenDoc: (key: LegalDocKey | null) => void }) {
   const { t } = useLang();
   return (
     <footer className="border-t border-white/10">
@@ -797,21 +1109,33 @@ function SiteFooter() {
               <div key={col.title}>
                 <h3 className="text-sm font-medium text-white">{col.title}</h3>
                 <ul className="mt-4 space-y-3">
-                  {col.links.map((link) => (
-                    <li key={link.label}>
-                      <a
-                        href={link.href}
-                        onClick={
-                          link.href.startsWith("#") && link.href.length > 1
-                            ? (e) => scrollToSection(e, link.href.replace("#", ""))
-                            : undefined
-                        }
-                        className="rounded text-sm text-zinc-400 transition-colors hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400/60"
-                      >
-                        {link.label}
-                      </a>
-                    </li>
-                  ))}
+                  {col.links.map((link) =>
+                    link.doc ? (
+                      <li key={link.label}>
+                        <button
+                          type="button"
+                          onClick={() => setOpenDoc(link.doc as LegalDocKey)}
+                          className="rounded text-sm text-zinc-400 transition-colors hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400/60"
+                        >
+                          {link.label}
+                        </button>
+                      </li>
+                    ) : (
+                      <li key={link.label}>
+                        <a
+                          href={link.href}
+                          onClick={
+                            link.href.startsWith("#") && link.href.length > 1
+                              ? (e) => scrollToSection(e, link.href.replace("#", ""))
+                              : undefined
+                          }
+                          className="rounded text-sm text-zinc-400 transition-colors hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400/60"
+                        >
+                          {link.label}
+                        </a>
+                      </li>
+                    )
+                  )}
                 </ul>
               </div>
             ))}
@@ -820,9 +1144,9 @@ function SiteFooter() {
         <div className="mt-12 flex flex-col items-center justify-between gap-4 border-t border-white/10 pt-6 sm:flex-row">
           <p className="text-sm text-zinc-500">{t.footer.rights(new Date().getFullYear())}</p>
           <div className="flex items-center gap-6 text-sm text-zinc-400">
-            <a href="#" className="rounded transition-colors hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400/60">{t.footer.terms}</a>
-            <a href="#" className="rounded transition-colors hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400/60">{t.footer.privacy}</a>
-            <a href="#" className="rounded transition-colors hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400/60">{t.footer.security}</a>
+            <button type="button" onClick={() => setOpenDoc("terms")} className="rounded transition-colors hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400/60">{t.footer.terms}</button>
+            <button type="button" onClick={() => setOpenDoc("privacy")} className="rounded transition-colors hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400/60">{t.footer.privacy}</button>
+            <button type="button" onClick={() => setOpenDoc("security")} className="rounded transition-colors hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400/60">{t.footer.security}</button>
           </div>
         </div>
       </div>
@@ -834,9 +1158,11 @@ function SiteFooter() {
    PAGE — route: "/"
 ======================================================================== */
 export default function LandingPage() {
+  const { lang, isRTL } = useLang();
+  const [openDoc, setOpenDoc] = useState<LegalDocKey | null>(null);
   return (
     <>
-      <SiteHeader />
+      <SiteHeader onOpenAbout={() => setOpenDoc("about")} />
       <main id="main">
         <Hero />
         <TrustBar />
@@ -848,7 +1174,13 @@ export default function LandingPage() {
         <Faq />
         <FinalCta />
       </main>
-      <SiteFooter />
+      <SiteFooter openDoc={openDoc} setOpenDoc={setOpenDoc} />
+      <LegalModal
+        doc={openDoc ? legalContent[lang][openDoc] : null}
+        open={openDoc !== null}
+        onClose={() => setOpenDoc(null)}
+        isRTL={isRTL}
+      />
     </>
   );
 }

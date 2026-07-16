@@ -117,7 +117,7 @@ def get_credits(user_id: str) -> dict:
     admin.rpc("reset_credits_if_due", {"p_user_id": user_id}).execute()
     profile = (
         admin.table("profiles")
-        .select("tier, credits_remaining, credits_total")
+        .select("tier, credits_remaining, credits_total, pending_tier, credits_reset_at")
         .eq("id", user_id)
         .single()
         .execute()

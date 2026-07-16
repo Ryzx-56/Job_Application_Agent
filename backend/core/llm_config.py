@@ -88,9 +88,21 @@ def generate_claude_text(prompt: str, max_tokens: int = 2000, max_retries: int =
             response = claude_client.messages.create(
                 model=CLAUDE_MODEL,
                 max_tokens=max_tokens,
-                messages=[{"role": "user", "content": prompt}],
+                messages=[
+                    {
+                        "role": "user",
+                        "content": prompt,
+                    }
+                ],
             )
-            return response.content[0].text
+
+            text = "".join(
+                block.text
+                for block in response.content
+                if getattr(block, "type", None) == "text"
+            )
+
+            return text.strip()
         except Exception as e:
             last_error = e
             if _is_retryable_anthropic_error(e) and attempt < max_retries:

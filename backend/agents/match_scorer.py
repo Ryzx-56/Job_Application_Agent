@@ -6,35 +6,66 @@ from core.state import AgentState
 from core.llm_config import generate_claude_text
 
 MATCH_SCORER_PROMPT = """
-You are an expert recruiter and career coach. Given the candidate's tailored CV summary,
-the job description, and specific gaps already identified by an automated ATS scorer, do three things:
+You are an expert recruiter and career coach.
 
-1. Score how well the candidate's real background fits this specific role (0-100) and give a short reason.
-2. Turn the gaps below into a prioritized "how to improve your CV" list (max 5 items, most impactful first).
-   For each gap, state what's missing and one concrete, honest way to close it — either by genuinely
-   adding a skill/project/certification, or by rephrasing existing real experience to surface it.
-   NEVER suggest the candidate claim something they don't have. If a gap can't be closed honestly,
-   suggest the closest truthful alternative (e.g. "mention any coursework or personal project involving X").
-3. Write one short (1-2 sentence) overall recommendation for this specific application.
+Using the candidate's tailored CV, the job description, and the ATS gaps below, complete these tasks:
 
-WRITING STYLE: never use em dashes (—) or en dashes as punctuation in "reason", "how_to_close", or
-"overall_recommendation". Use a comma, colon, or write two sentences instead. Plain, direct language only.
+1. Give an overall candidate-to-job match score from 0 to 100.Use : ATS Score:{ats_score} Use this as one signal,but independently judge technical fit,
+experience fit,
+education fit,
+and project relevance.
 
-CV Summary: {cv_content}
-Job Description: {jd_content}
+The final score does NOT have to equal ATS.
+2. Write ONE short reason explaining the score.
+3. Generate up to FIVE CV improvement suggestions, ordered from most important to least important.
+4. Write ONE short overall recommendation for this application.
 
-Missing skills (from ATS scoring): {missing_skills}
-Unmatched keywords (from ATS scoring): {unmatched_keywords}
-Candidate's current skills: {current_skills}
+RULES:
 
-Return ONLY JSON, no markdown fences, in exactly this shape:
+• Never invent experience, achievements, certifications, employers, technologies, or skills.
+• Never suggest the candidate lie or exaggerate.
+• If a gap cannot honestly be closed, recommend a truthful alternative such as a project, coursework, certification, or better wording of existing experience.
+• Prioritize required skills over preferred skills.
+• Ignore gaps that already appear in the CV.
+
+WRITING STYLE:
+
+• Keep everything concise.
+• The "reason" must be ONE sentence (maximum 35 words).
+• Every "how_to_close" must be ONE sentence (maximum 20 words).
+• The "overall_recommendation" must be ONE or TWO short sentences (maximum 35 words).
+• Never use em dashes (—) or en dashes (–). Use commas or periods instead.
+• Do not include markdown.
+• Return ONLY valid JSON.
+
+CV Summary:
+{cv_content}
+
+Job Description:
+{jd_content}
+
+Missing Skills:
+{missing_skills}
+
+Missing Keywords:
+{unmatched_keywords}
+
+Candidate Skills:
+{current_skills}
+
+Return EXACTLY this JSON structure:
+
 {{
-  "score": 85,
-  "reason": "Reason here",
+  "score": 0,
+  "reason": "",
   "gap_analysis": [
-    {{"skill": "SQL", "importance": "required", "how_to_close": "Add a project or course where you queried or cleaned data. Even a class assignment counts if it's real."}}
+    {{
+      "skill": "",
+      "importance": "required",
+      "how_to_close": ""
+    }}
   ],
-  "overall_recommendation": "One or two sentence takeaway."
+  "overall_recommendation": ""
 }}
 """
 
@@ -48,7 +79,7 @@ def _strip_dashes(text: str) -> str:
 
 def run_match_scorer(state: AgentState) -> AgentState:
     """
-    Agent 5 — Match Scorer (Claude Sonnet 4.6).
+    Agent 5 — Match Scorer (Claude Sonnet 5).
     Calculates alignment between the tailored CV and the job description, AND
     turns Agent 2's (ats_scorer.py) raw missing_skills / unmatched_keywords into
     actionable "how to improve your CV" guidance the frontend renders directly.
@@ -59,9 +90,15 @@ def run_match_scorer(state: AgentState) -> AgentState:
     if state.get("error"):
         return state
 
-    logger.info("🎯 Agent 5 — Scoring match + building improvement guidance (Claude Sonnet 4.6)...")
+    logger.info("🎯 Agent 5 — Scoring match + building improvement guidance (Claude Sonnet 5)...")
 
-    cv_content = state.get("tailored_summary", "")
+    cv_content = {
+    "summary": state.get("tailored_summary"),
+    "projects": state.get("tailored_projects"),
+    "skills": state.get("tailored_skills"),
+    "experience": state.get("tailored_bullets"),
+    }
+    cv_content=json.dumps(cv_content, ensure_ascii=False)
     jd_content = state.get("job_description", "Not provided")
 
     score_breakdown = state.get("score_breakdown", {}) or {}
@@ -84,8 +121,26 @@ def run_match_scorer(state: AgentState) -> AgentState:
 
     try:
         raw = generate_claude_text(prompt, max_tokens=900)
+        print("\n================ CLAUDE RAW RESPONSE ================\n")
+        print(raw)
+        print("\n=====================================================\n")
         raw = re.sub(r"```json|```", "", raw).strip()
-        data = json.loads(raw)
+        MAX_RETRIES = 3
+
+        for attempt in range(MAX_RETRIES):
+            try:
+                data = json.loads(raw)
+                break
+            except json.JSONDecodeError:
+                if attempt == MAX_RETRIES - 1:
+                    raise
+
+                logger.warning(
+                    f"Agent 5 JSON parse failed ({attempt+1}/{MAX_RETRIES}), retrying..."
+                )
+
+                raw = generate_claude_text(prompt, max_tokens=900)
+                raw = re.sub(r"```json|```", "", raw).strip()
 
         match_score = data.get("score", 0)
         match_reason = _strip_dashes(data.get("reason", "No analysis provided."))

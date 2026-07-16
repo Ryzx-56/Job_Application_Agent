@@ -6,6 +6,8 @@ export type CreditsInfo = {
   tier: Tier;
   creditsRemaining: number;
   creditsTotal: number;
+  pendingTier: Tier | null;
+  creditsResetAt: string;
 };
 
 /* ========================================================================
@@ -22,7 +24,7 @@ export async function fetchCredits(): Promise<CreditsInfo> {
 
   const { data, error } = await supabase
     .from("profiles")
-    .select("tier, credits_remaining, credits_total")
+    .select("tier, credits_remaining, credits_total, pending_tier, credits_reset_at")
     .eq("id", user.id)
     .single();
 
@@ -32,5 +34,7 @@ export async function fetchCredits(): Promise<CreditsInfo> {
     tier: data.tier,
     creditsRemaining: data.credits_remaining,
     creditsTotal: data.credits_total,
+    pendingTier: data.pending_tier,
+    creditsResetAt: data.credits_reset_at,
   };
 }

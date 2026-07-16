@@ -17,6 +17,7 @@ from core.state import AgentState
 from core.orchestrator import app as graph
 from core.auth import get_current_user_id
 from core.credits import reserve_credits, refund_credits, get_credits, normalize_cv_language
+from core.subscription import cancel_subscription, resume_subscription
 from utils.pdf_parser import extract_text_from_pdf
 from utils.pdf_generator import render_cv_pdf, render_cover_letter_pdf
 from schemas.manual_cv_request import ManualCVRequest
@@ -157,6 +158,21 @@ async def get_credits_balance(user_id: str = Depends(get_current_user_id)):
     """Current tier + credit balance for the logged-in user. Read-only —
     all writes happen server-side inside reserve_credits()/refund_credits()."""
     return get_credits(user_id)
+
+
+@app.post("/api/v1/subscription/cancel", tags=["Credits"])
+async def cancel_subscription_endpoint(user_id: str = Depends(get_current_user_id)):
+    """
+    Schedules a downgrade to Free at the end of the current cycle. Does NOT
+    touch tier or credits immediately — see core/subscription.py.
+    """
+    return cancel_subscription(user_id)
+
+
+@app.post("/api/v1/subscription/resume", tags=["Credits"])
+async def resume_subscription_endpoint(user_id: str = Depends(get_current_user_id)):
+    """Undoes a scheduled cancellation/downgrade."""
+    return resume_subscription(user_id)
 
 
 @app.post("/api/v1/optimize", tags=["Agent Core"])

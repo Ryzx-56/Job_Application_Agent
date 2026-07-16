@@ -155,13 +155,19 @@ def run_tailoring_engine(state: AgentState) -> dict:
         language_instruction = _build_language_instruction(cv_language),
     )
 
-    logger.info("🧠 Agent 3 — Tailoring Engine running (Claude Sonnet 4.6)...")
+    logger.info("🧠 Agent 3 — Tailoring Engine running (Claude Sonnet 5)...")
 
     MAX_RETRIES = 3
     for attempt in range(1, MAX_RETRIES + 1):
         try:
-            raw  = generate_claude_text(prompt, max_tokens=2800)
-            raw  = re.sub(r"```json|```", "", raw).strip()
+            raw = generate_claude_text(prompt, max_tokens=3600)
+
+            print("\n========== RAW CLAUDE ==========\n")
+            print(raw)
+            print("\n===============================\n")
+
+            raw = re.sub(r"```json|```", "", raw).strip()
+
             data = json.loads(raw)
 
             core_data = {
