@@ -159,6 +159,9 @@ async def get_credits_balance(user_id: str = Depends(get_current_user_id)):
     all writes happen server-side inside reserve_credits()/refund_credits()."""
     return get_credits(user_id)
 
+@app.get("/")
+async def root():
+    return {"message": "Job Application Agent API is running", "docs": "/docs"}
 
 @app.post("/api/v1/subscription/cancel", tags=["Credits"])
 async def cancel_subscription_endpoint(user_id: str = Depends(get_current_user_id)):
