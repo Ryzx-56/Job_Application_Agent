@@ -110,3 +110,4 @@ zstandard==0.25.0
 arabic-reshaper==3.0.0
 python-bidi==0.6.6
 PyJWT[crypto]
+supabase==2.31.0
