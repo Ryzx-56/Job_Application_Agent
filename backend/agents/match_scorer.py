@@ -10,33 +10,29 @@ You are an expert recruiter and career coach.
 
 Using the candidate's tailored CV, the job description, and the ATS gaps below, complete these tasks:
 
-1. Give an overall candidate-to-job match score from 0 to 100.Use : ATS Score:{ats_score} Use this as one signal,but independently judge technical fit,
-experience fit,
-education fit,
-and project relevance.
-
-The final score does NOT have to equal ATS.
-2. Write ONE short reason explaining the score.
-3. Generate up to FIVE CV improvement suggestions, ordered from most important to least important.
-4. Write ONE short overall recommendation for this application.
+1. Give an overall candidate-to-job match score from 0 to 100. Use ATS Score: {ats_score} as one signal, but independently judge technical fit, experience fit, education fit, and project relevance. The final score does NOT have to equal ATS.
+2. Write a reason explaining the score. Cover BOTH sides: what genuinely supports the candidate (specific transferable skills, relevant experience, or strengths) AND what specifically works against them (the concrete gaps, missing direct experience, or mismatches with core duties). Name real specifics from the CV and job description, not generic phrases.
+3. Generate 3 to 5 CV improvement suggestions, ordered from most important to least important. Base these on the Missing Skills / Missing Keywords below. If there are fewer than 3 genuine gaps, it's fine to return fewer, but never return an empty list if any missing skills or keywords exist.
+4. Write ONE overall recommendation for this application, direct and actionable.
 
 RULES:
 
-• Never invent experience, achievements, certifications, employers, technologies, or skills.
-• Never suggest the candidate lie or exaggerate.
-• If a gap cannot honestly be closed, recommend a truthful alternative such as a project, coursework, certification, or better wording of existing experience.
-• Prioritize required skills over preferred skills.
-• Ignore gaps that already appear in the CV.
+- Never invent experience, achievements, certifications, employers, technologies, or skills.
+- Never suggest the candidate lie or exaggerate.
+- If a gap cannot honestly be closed, recommend a truthful alternative such as a project, coursework, certification, or better wording of existing experience.
+- Prioritize required skills over preferred skills.
+- Ignore gaps that already appear in the CV.
+- Be specific — name the actual skill, tool, duty, or experience gap rather than giving generic advice.
 
 WRITING STYLE:
 
-• Keep everything concise.
-• The "reason" must be ONE sentence (maximum 35 words).
-• Every "how_to_close" must be ONE sentence (maximum 20 words).
-• The "overall_recommendation" must be ONE or TWO short sentences (maximum 35 words).
-• Never use em dashes (—) or en dashes (–). Use commas or periods instead.
-• Do not include markdown.
-• Return ONLY valid JSON.
+- Clear and complete, not padded. Say what's actually useful, don't cut it short just to hit a word count.
+- The "reason" should be 2-3 full sentences (roughly 50-90 words) — enough to cover both the strengths and the gaps with real specifics, not just one or the other.
+- Each "how_to_close" should be 1 sentence (roughly 15-30 words) — enough room to name the concrete action, not just the gap.
+- The "overall_recommendation" should be 2-3 sentences (roughly 40-70 words).
+- Never use em dashes (—) or en dashes (–). Use commas or periods instead.
+- Do not include markdown.
+- Return ONLY valid JSON.
 
 CV Summary:
 {cv_content}
@@ -69,7 +65,6 @@ Return EXACTLY this JSON structure:
 }}
 """
 
-
 def _strip_dashes(text: str) -> str:
     """Defensive safety net — see tailoring_engine.py's version of this for why."""
     if not text:
@@ -85,7 +80,11 @@ def run_match_scorer(state: AgentState) -> AgentState:
     actionable "how to improve your CV" guidance the frontend renders directly.
 
     NOTE: this node must run AFTER run_ats_scorer in the graph, since it reads
-    state["score_breakdown"] which run_ats_scorer populates.
+    state["score_breakdown"] (and now state["ats_score"]) which run_ats_scorer
+    populates. In orchestrator.py this is wired as a direct sequential edge
+    (ats_scorer -> match_scorer), NOT part of the parallel fan-out — do not
+    move this back into the fan-out list, or it'll silently read stale state
+    again (see the note there for why).
     """
     if state.get("error"):
         return state
@@ -104,6 +103,7 @@ def run_match_scorer(state: AgentState) -> AgentState:
     score_breakdown = state.get("score_breakdown", {}) or {}
     missing_skills = score_breakdown.get("missing_skills", [])
     unmatched_keywords = score_breakdown.get("unmatched_keywords", [])
+    ats_score = state.get("ats_score", 0)
 
     facts_json = state.get("facts_json", {}) or {}
     current_skills = []
@@ -112,6 +112,7 @@ def run_match_scorer(state: AgentState) -> AgentState:
             current_skills.extend(category)
 
     prompt = MATCH_SCORER_PROMPT.format(
+        ats_score=ats_score,
         cv_content=cv_content,
         jd_content=jd_content,
         missing_skills=json.dumps(missing_skills, ensure_ascii=False),
@@ -121,9 +122,7 @@ def run_match_scorer(state: AgentState) -> AgentState:
 
     try:
         raw = generate_claude_text(prompt, max_tokens=900)
-        print("\n================ CLAUDE RAW RESPONSE ================\n")
-        print(raw)
-        print("\n=====================================================\n")
+        #logger.debug(f"Agent 5 raw response:\n{raw}")
         raw = re.sub(r"```json|```", "", raw).strip()
         MAX_RETRIES = 3
 

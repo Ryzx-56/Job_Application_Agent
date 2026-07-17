@@ -161,6 +161,11 @@ export const content = {
       title: "Simple pricing that grows with your search",
       description: "Start free and upgrade only when you need more credits. Cancel anytime.",
       creditNote: "1 credit = 1 English CV + cover letter · 2 credits = 1 Arabic CV + cover letter.",
+      founderNote: {
+        title: "One person, paying for every plan you see",
+        body: "Tarshih is built and run solo, and every generation, on every tier, costs real AI-processing money. Free isn't just unprofitable, it's a loss covered on purpose so you can try Tarshih before paying anything. Pro and Elite subscribers are what keep the whole thing running.",
+        cta: "Read the full story",
+      },
       mostPopular: "Most popular",
       premiumBadgeLabel: "Premium tier",
       currencyNote: null as string | null,
@@ -654,6 +659,11 @@ export const content = {
       description:
         "ابدأ مجانًا وطوّر خطتك فقط عند الحاجة لمزيد من النقاط. ألغِ الاشتراك في أي وقت.",
       creditNote: "نقطة واحدة = سيرة ذاتية إنجليزية + خطاب تقديم · نقطتان = سيرة ذاتية عربية + خطاب تقديم.",
+      founderNote: {
+        title: "شخص واحد يدفع تكلفة كل خطة تراها هنا",
+        body: "ترشيح مبنية ومُدارة من شخص واحد، وكل توليد، في كل فئة، يكلّف مالًا حقيقيًا لمعالجة الذكاء الاصطناعي. الفئة المجانية ليست فقط غير مربحة، بل خسارة أتحملها عمدًا لتتمكن من تجربة ترشيح قبل أن تدفع أي شيء. مشتركو برو والنخبة هم من يبقون كل شيء قائمًا.",
+        cta: "اقرأ القصة كاملة",
+      },
       mostPopular: "الأكثر رواجًا",
       premiumBadgeLabel: "الفئة المميزة",
       currencyNote: "الأسعار بالدولار الأمريكي، والقيمة المقابلة بالريال السعودي للمرجعية فقط (1$ ≈ 3.75 ر.س).",

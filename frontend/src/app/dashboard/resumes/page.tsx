@@ -1,10 +1,10 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
-import { ChevronDown, ChevronUp, FileText, Mail, Loader2, AlertCircle } from "lucide-react";
+import { ChevronDown, ChevronUp, FileText, Mail, Loader2, AlertCircle, Trash2 } from "lucide-react";
 import { useLang } from "@/lib/language";
 import { EmptyState, ScoreRing, ScoreBar, FileResultCard } from "@/components/dashboard";
-import { fetchResumes, getSignedFileUrl, ResumeRecord } from "@/lib/supabase/resumes";
+import { fetchResumes, getSignedFileUrl, deleteResume, ResumeRecord } from "@/lib/supabase/resumes";
 
 // Mirrors WEIGHTS in utils/ats_scorer.py — fallback only, used if an older
 // saved row doesn't have ats_breakdown.weights yet.
@@ -173,6 +173,8 @@ export default function MyResumesPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -194,12 +196,46 @@ export default function MyResumesPage() {
     };
   }, []);
 
+  async function handleDelete(resume: ResumeRecord) {
+    const label = resume.role || copy.untitledRole;
+    const confirmMsg =
+      lang === "ar"
+        ? `حذف "${label}"؟ لا يمكن التراجع عن هذا الإجراء.`
+        : `Delete "${label}"? This can't be undone.`;
+    if (!window.confirm(confirmMsg)) return;
+
+    setDeleteError(null);
+    setDeletingId(resume.id);
+
+    // Optimistic removal — snapshot in case we need to roll back.
+    const previous = resumes;
+    setResumes((prev) => prev.filter((r) => r.id !== resume.id));
+    if (expandedId === resume.id) setExpandedId(null);
+
+    try {
+      await deleteResume(resume.id, resume.cv_storage_path, resume.cover_letter_storage_path);
+    } catch (err: any) {
+      console.error("deleteResume failed:", err);
+      setResumes(previous);
+      setDeleteError(err?.message || "Failed to delete resume.");
+    } finally {
+      setDeletingId(null);
+    }
+  }
+
   return (
     <div className="mx-auto max-w-4xl space-y-6" dir={dir}>
       <div>
         <h1 className="text-2xl font-semibold tracking-tight text-slate-900 sm:text-3xl">{copy.title}</h1>
         <p className="mt-2 text-sm leading-relaxed text-slate-500 sm:text-base">{copy.sub}</p>
       </div>
+
+      {deleteError && (
+        <div className="flex items-center gap-2 rounded-xl border border-rose-200 bg-rose-50/60 px-4 py-3 text-sm text-rose-600">
+          <AlertCircle className="size-4 shrink-0" aria-hidden />
+          <span>{deleteError}</span>
+        </div>
+      )}
 
       {loading ? (
         <div className="flex items-center justify-center gap-2 rounded-2xl border border-slate-200 bg-white py-16 text-sm text-slate-400">
@@ -226,11 +262,13 @@ export default function MyResumesPage() {
                 <th className="px-5 py-3 text-start font-medium">{copy.columns.score}</th>
                 <th className="px-5 py-3 text-start font-medium">{copy.columns.match}</th>
                 <th className="px-5 py-3 text-end font-medium">{copy.columns.download}</th>
+                <th className="px-5 py-3 text-end font-medium" />
               </tr>
             </thead>
             <tbody>
               {resumes.map((resume) => {
                 const isExpanded = expandedId === resume.id;
+                const isDeleting = deletingId === resume.id;
                 return (
                   <React.Fragment key={resume.id}>
                     <tr className="border-b border-slate-100 last:border-0 hover:bg-slate-50/60">
@@ -264,10 +302,25 @@ export default function MyResumesPage() {
                           {isExpanded ? copy.hideDetails : copy.viewDetails}
                         </button>
                       </td>
+                      <td className="px-5 py-3.5 text-end">
+                        <button
+                          type="button"
+                          onClick={() => handleDelete(resume)}
+                          disabled={isDeleting}
+                          aria-label={lang === "ar" ? "حذف" : "Delete"}
+                          className="inline-flex items-center justify-center rounded-lg p-1.5 text-slate-400 hover:bg-rose-50 hover:text-rose-600 disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                          {isDeleting ? (
+                            <Loader2 className="size-4 animate-spin" aria-hidden />
+                          ) : (
+                            <Trash2 className="size-4" aria-hidden />
+                          )}
+                        </button>
+                      </td>
                     </tr>
                     {isExpanded && (
                       <tr>
-                        <td colSpan={7} className="p-0">
+                        <td colSpan={8} className="p-0">
                           <ResumeDetail resume={resume} lang={lang} copy={copy} generateCopy={generateCopy} />
                         </td>
                       </tr>

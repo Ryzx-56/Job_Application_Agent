@@ -49,6 +49,86 @@
   --radius-4xl: calc(var(--radius) * 2.6);
 }
 
+/*
+ * FONT-SIZE SCALE — single source of truth.
+ *
+ * Every `text-sm`, `text-base`, `text-lg`, etc. class anywhere in the app
+ * (page.tsx, legal-modal.tsx, everywhere) reads its pixel size from these
+ * variables at runtime, that's how Tailwind v4's CSS-first theme works.
+ * So this is the ONE place to change to resize type across the whole
+ * site, nothing is hardcoded per-component anymore.
+ *
+ * IMPORTANT: html's root font-size stays at the normal 16px (see the
+ * `html` rule further down) — it is NOT used to scale type anymore.
+ * Tailwind's spacing scale (padding, gap, margin, border-radius, etc.)
+ * is also rem-based off that same root, so bumping the root font-size
+ * used to scale spacing right along with text, which is what made the
+ * whole layout look "chunky"/zoomed in even though only the text was
+ * meant to get bigger. Text size is now controlled purely by the actual
+ * rem values below (each already resolves to the same pixel size as the
+ * old 18px-root setup, just computed against the normal 16px root
+ * instead), so spacing stays at its normal proportions while text stays
+ * exactly as sized as it already was.
+ */
+:root {
+  --text-xs: 0.9844rem;      /* was 0.875rem @ 18px root → same 15.75px */
+  --text-xs--line-height: 1.4063rem;
+  --text-sm: 1.125rem;       /* was 1rem @ 18px root → same 18px */
+  --text-sm--line-height: 1.6875rem;
+  --text-base: 1.2656rem;    /* was 1.125rem @ 18px root → same 20.25px */
+  --text-base--line-height: 1.9688rem;
+  --text-lg: 1.4063rem;      /* was 1.25rem @ 18px root → same 22.5px */
+  --text-lg--line-height: 2.1094rem;
+  --text-xl: 1.5469rem;      /* was 1.375rem @ 18px root → same 24.75px */
+  --text-xl--line-height: 2.1094rem;
+  --text-2xl: 1.8281rem;     /* was 1.625rem @ 18px root → same 29.25px */
+  --text-2xl--line-height: 2.3906rem;
+  --text-3xl: 2.25rem;       /* was 2rem @ 18px root → same 36px */
+  --text-3xl--line-height: 2.6719rem;
+  --text-4xl: 2.6719rem;     /* was 2.375rem @ 18px root → same 42.75px */
+  --text-4xl--line-height: 2.9531rem;
+  --text-5xl: 3.5156rem;     /* was 3.125rem @ 18px root → same 56.25px */
+  --text-5xl--line-height: 1.1;
+  --text-6xl: 4.3594rem;     /* was 3.875rem @ 18px root → same 69.75px */
+  --text-6xl--line-height: 1.05;
+  --text-7xl: 5.2031rem;     /* was 4.625rem @ 18px root → same 83.25px */
+  --text-7xl--line-height: 1.05;
+}
+
+/*
+ * Arabic gets an additional bump on top of the base scale above. Cairo
+ * reads visually smaller than the Latin font at the same rem size, and
+ * Arabic script generally needs more room to stay comfortable. This
+ * overrides the same variables scoped to [dir="rtl"], so every text-*
+ * class automatically picks up the larger size for Arabic, no per
+ * element changes needed, and no compounding since it's set once at
+ * this boundary rather than on every nested element.
+ */
+[dir="rtl"] {
+  --text-xs: 1.125rem;       /* was 1rem @ 18px root → same 18px */
+  --text-xs--line-height: 1.6875rem;
+  --text-sm: 1.2656rem;      /* was 1.125rem @ 18px root → same 20.25px */
+  --text-sm--line-height: 1.9688rem;
+  --text-base: 1.4063rem;    /* was 1.25rem @ 18px root → same 22.5px */
+  --text-base--line-height: 2.1938rem;
+  --text-lg: 1.5469rem;      /* was 1.375rem @ 18px root → same 24.75px */
+  --text-lg--line-height: 2.3063rem;
+  --text-xl: 1.6875rem;      /* was 1.5rem @ 18px root → same 27px */
+  --text-xl--line-height: 2.3063rem;
+  --text-2xl: 1.9688rem;     /* was 1.75rem @ 18px root → same 31.5px */
+  --text-2xl--line-height: 2.5875rem;
+  --text-3xl: 2.3906rem;     /* was 2.125rem @ 18px root → same 38.25px */
+  --text-3xl--line-height: 2.8688rem;
+  --text-4xl: 2.8125rem;     /* was 2.5rem @ 18px root → same 45px */
+  --text-4xl--line-height: 3.15rem;
+  --text-5xl: 3.6563rem;     /* was 3.25rem @ 18px root → same 58.5px */
+  --text-5xl--line-height: 1.15;
+  --text-6xl: 4.5rem;        /* was 4rem @ 18px root → same 72px */
+  --text-6xl--line-height: 1.1;
+  --text-7xl: 5.3438rem;     /* was 4.75rem @ 18px root → same 85.5px */
+  --text-7xl--line-height: 1.1;
+}
+
 :root {
   --card: oklch(1 0 0);
   --card-foreground: oklch(0.145 0 0);
@@ -127,5 +207,25 @@
   }
   html {
     @apply font-sans;
+    /* Root stays at the normal browser default (16px) on purpose now —
+       see the big comment at the top of the FONT-SIZE SCALE block above
+       for why. Text sizing lives entirely in the --text-* variables,
+       not here. */
+  }
+
+  /*
+   * Targeted Fix for Arabic/RTL scaling
+   * Line-height and heading spacing still need a manual bump for
+   * Arabic on top of the font-size scale above, since Cairo needs more
+   * vertical breathing room than the Latin font at the same size.
+   */
+  [dir="rtl"], [lang="ar"], :host([dir="rtl"]) {
+    line-height: 1.7 !important;
+  }
+
+  /* Keeps heading elements well-proportioned so they don't visually overlap */
+  [dir="rtl"] h1, [dir="rtl"] h2, [dir="rtl"] h3, [dir="rtl"] h4 {
+    line-height: 1.45 !important;
+    margin-bottom: 0.75rem;
   }
 }

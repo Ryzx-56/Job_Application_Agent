@@ -13,7 +13,7 @@ Tone guidance from JD: {culture_signals}
   - If culture is 'corporate / enterprise': write slightly more formal
   - If culture is 'research / academic': lead with curiosity and depth
 
-Structure (3 paragraphs only):
+Structure (3 paragraphs only, body text ONLY — see HARD RULES below):
   Paragraph 1: Why THIS company specifically. Use the company name.
                Reference something real about them if possible.
   Paragraph 2: 2 specific achievements from FACTS_JSON that
@@ -26,7 +26,14 @@ HARD RULES:
   - Never use the phrase 'passion for' (or its equivalent)
   - Never write more than 3 paragraphs
   - Every achievement mentioned must come from FACTS_JSON
-  - Sign off with the candidate's actual name from FACTS_JSON
+  - Do NOT include a greeting or salutation line (e.g. "Dear Hiring Manager," / "Dear Hiring Team,").
+    Start directly with paragraph 1's content. The document template adds the greeting separately —
+    if you include one too, it will appear twice in the final letter.
+  - Do NOT include a complimentary close, sign-off, or the candidate's name anywhere in your output
+    (e.g. no "Sincerely," and no name at the end). The document template adds this separately. End
+    paragraph 3 with the actual closing sentence and stop there, do not add anything after it.
+  - Output ONLY the 3 body paragraphs, nothing else, no header, no date, no subject line, no greeting,
+    no sign-off.
   - NEVER use em dashes (—) or en dashes as punctuation, anywhere in the letter. This reads as generic
     AI-generated text. Use a comma, period, colon, or "and" instead. Write two sentences if you need to.
     Ordinary hyphens inside compound words are fine (e.g. "well-suited"), just not as a standalone dash.
@@ -50,6 +57,48 @@ _AR_COVER_LETTER_LANGUAGE_INSTRUCTION = """OUTPUT LANGUAGE — READ CAREFULLY:
 _EN_COVER_LETTER_LANGUAGE_INSTRUCTION = """OUTPUT LANGUAGE:
   - Write the entire letter in professional English, regardless of what language FACTS_JSON or
     WEIGHT_FACTORS are written in. Translate any non-English source content into natural English."""
+
+
+_GREETING_PREFIXES = ("dear ", "السادة", "عزيزي", "الأفاضل")
+_SIGNOFF_MARKERS = ("sincerely", "regards", "best regards", "مع خالص التقدير", "مع تحياتي", "وتفضلوا بقبول")
+
+
+def _strip_leaked_greeting_and_signoff(text: str, candidate_name: str) -> str:
+    """
+    Defensive safety net — mirrors the em-dash stripping below. The prompt
+    now tells Claude not to write a greeting/sign-off (the PDF/DOCX template
+    already adds both), but LLM output isn't 100% guaranteed to follow that,
+    so this catches a leaked "Dear ..." opening paragraph or a leaked
+    "Sincerely, {name}" closing paragraph without touching real body content.
+    """
+    if not text:
+        return text
+
+    paragraphs = [p.strip() for p in text.split("\n") if p.strip()]
+    if not paragraphs:
+        return text
+
+    # Drop a leading greeting paragraph, e.g. "Dear Hiring Manager,"
+    if paragraphs and paragraphs[0].lower().startswith(_GREETING_PREFIXES):
+        paragraphs = paragraphs[1:]
+
+    # Drop trailing sign-off paragraph(s): a "Sincerely,"-style line, and/or
+    # a short final line that's just the candidate's name (or a fragment of
+    # it, e.g. a truncated "S" from a cut-off signature).
+    name_norm = (candidate_name or "").strip().lower()
+    while paragraphs:
+        last = paragraphs[-1].strip().rstrip(",")
+        last_lower = last.lower()
+        is_signoff_word = any(m in last_lower for m in _SIGNOFF_MARKERS)
+        is_name_fragment = bool(last) and len(last) <= max(len(name_norm), 3) and (
+            name_norm.startswith(last_lower) or last_lower == name_norm
+        )
+        if is_signoff_word or is_name_fragment:
+            paragraphs.pop()
+        else:
+            break
+
+    return "\n".join(paragraphs).strip()
 
 
 def generate_cover_letter(state: AgentState) -> str:
@@ -84,6 +133,8 @@ def generate_cover_letter(state: AgentState) -> str:
         # the prompt rule, replacing with a comma so sentences stay readable
         # instead of just deleting the character and running words together.
         text = text.replace(" — ", ", ").replace(" – ", ", ").replace("—", ",").replace("–", "-")
+        candidate_name = (facts_json.get("personal", {}) or {}).get("name", "")
+        text = _strip_leaked_greeting_and_signoff(text, candidate_name)
         logger.info("✅ Cover letter generated.")
         return text
     except anthropic.APIError as e:

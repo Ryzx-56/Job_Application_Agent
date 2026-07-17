@@ -162,9 +162,7 @@ def run_tailoring_engine(state: AgentState) -> dict:
         try:
             raw = generate_claude_text(prompt, max_tokens=3600)
 
-            print("\n========== RAW CLAUDE ==========\n")
-            print(raw)
-            print("\n===============================\n")
+            
 
             raw = re.sub(r"```json|```", "", raw).strip()
 

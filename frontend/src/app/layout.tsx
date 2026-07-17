@@ -35,7 +35,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className={`${latinFont.variable} ${arabicFont.variable}`} style={{ fontSize: "17px" }}>
+    <html lang="en" className={`${latinFont.variable} ${arabicFont.variable}`}>
       <body>
         <LangProvider>{children}</LangProvider>
       </body>

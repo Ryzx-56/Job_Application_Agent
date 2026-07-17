@@ -25,6 +25,7 @@ import {
   ScanSearch,
   BadgeCheck,
   Flame,
+  User,
 } from "lucide-react";
 import { useLang } from "@/lib/language";
 import { Button, Logo, LangSwitcher } from "@/components/brand";
@@ -663,7 +664,7 @@ function ConfirmDialog({
   );
 }
 
-function Pricing() {
+function Pricing({ onOpenAbout }: { onOpenAbout: () => void }) {
   const { t, lang } = useLang();
   const { isLoggedIn } = useAuth();
   const isAr = lang === "ar";
@@ -757,6 +758,26 @@ function Pricing() {
       <SectionHeading eyebrow={t.pricing.eyebrow} title={t.pricing.title} description={t.pricing.description} />
       {t.pricing.creditNote && (
         <p className="mx-auto mt-4 max-w-2xl text-center text-sm text-zinc-500">{t.pricing.creditNote}</p>
+      )}
+      {t.pricing.founderNote && (
+        <div className="mx-auto mt-8 flex max-w-2xl flex-col items-start gap-3 rounded-xl border border-white/10 bg-white/[0.03] px-5 py-4 sm:flex-row sm:items-center sm:gap-4">
+          <span className="grid size-9 shrink-0 place-items-center rounded-full border border-white/10 bg-white/5 text-blue-400">
+            <User className="size-4" aria-hidden />
+          </span>
+          <div className="flex-1">
+            <p className="text-sm font-medium text-white">{t.pricing.founderNote.title}</p>
+            <p className="mt-1 text-sm leading-relaxed text-zinc-400">
+              {t.pricing.founderNote.body}{" "}
+              <button
+                type="button"
+                onClick={onOpenAbout}
+                className="font-medium text-blue-400 underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400/60"
+              >
+                {t.pricing.founderNote.cta}
+              </button>
+            </p>
+          </div>
+        </div>
       )}
       <div className="mt-14 grid gap-4 lg:grid-cols-3">
         {t.pricing.plans.map((plan) => {
@@ -1169,7 +1190,7 @@ export default function LandingPage() {
         <Features />
         <HowItWorks />
         <TrustSection />
-        <Pricing />
+        <Pricing onOpenAbout={() => setOpenDoc("about")} />
         <PayAsYouGo />
         <Faq />
         <FinalCta />

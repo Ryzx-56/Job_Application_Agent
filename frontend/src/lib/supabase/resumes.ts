@@ -199,3 +199,37 @@ export async function getSignedFileUrl(
   if (error || !data) return null;
   return data.signedUrl;
 }
+
+/* ========================================================================
+   DELETE — removes the associated PDFs from Storage (best-effort — a
+   failure here shouldn't block the row delete, since an orphaned file in
+   a private bucket is harmless while a row the user can't get rid of in
+   the UI is a real problem) and then deletes the row itself. RLS scopes
+   the delete to rows owned by the caller, so this is safe to call with
+   just an id — see the policy note below if the delete silently no-ops.
+======================================================================== */
+export async function deleteResume(
+  id: string,
+  cvStoragePath?: string | null,
+  coverLetterStoragePath?: string | null
+): Promise<void> {
+  const supabase = createClient();
+
+  const paths = [cvStoragePath, coverLetterStoragePath].filter((p): p is string => !!p);
+  if (paths.length) {
+    await supabase.storage.from(BUCKET).remove(paths).catch(() => {});
+  }
+
+  const { error, count } = await supabase
+    .from("resumes")
+    .delete({ count: "exact" })
+    .eq("id", id);
+
+  if (error) throw error;
+  if (!count) {
+    // 0 rows affected almost always means there's no RLS DELETE policy on
+    // `resumes` yet — Supabase returns success with nothing deleted rather
+    // than an error in that case.
+    throw new Error("Delete did not remove any rows — check the RLS DELETE policy on `resumes`.");
+  }
+}

@@ -352,17 +352,27 @@ def render_cover_letter_pdf(state: dict) -> str:
     story.append(Paragraph(date.today().strftime("%B %d, %Y"), styles['CV_Body']))
     story.append(Spacer(1, 15))
 
-    company = wf.get("company") or "Company Name"
-    job_title = wf.get("job_title") or "Position"
-    
+    def _known_or_none(value):
+        # jd_analyzer stores the literal string "Unknown" (not None/empty)
+        # when it can't extract a field from the JD, which slips right past
+        # a plain `or` fallback since "Unknown" is truthy. Treat it the same
+        # as missing.
+        v = str(value or "").strip()
+        return None if (not v or v.lower() == "unknown") else v
+
+    company = _known_or_none(wf.get("company"))
+    job_title = _known_or_none(wf.get("job_title"))
+
     hiring_team = "فريق التوظيف" if is_arabic else "Hiring Team"
     story.append(Paragraph(T(hiring_team), styles['CV_Body']))
-    story.append(Paragraph(T(company), styles['CV_Body']))
+    if company:
+        story.append(Paragraph(T(company), styles['CV_Body']))
     story.append(Spacer(1, 15))
 
-    subject = f"الموضوع: التقديم على وظيفة {T(job_title)}" if is_arabic else f"RE: Application for {job_title}"
-    story.append(Paragraph(f"<b>{T(subject)}</b>", styles['CV_Body']))
-    story.append(Spacer(1, 15))
+    if job_title:
+        subject = f"الموضوع: التقديم على وظيفة {T(job_title)}" if is_arabic else f"RE: Application for {job_title}"
+        story.append(Paragraph(f"<b>{T(subject)}</b>", styles['CV_Body']))
+        story.append(Spacer(1, 15))
 
     salutation = "السادة الأفاضل في فريق التوظيف المحترمين،" if is_arabic else "Dear Hiring Team,"
     story.append(Paragraph(T(salutation), styles['CV_Body']))

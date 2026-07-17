@@ -59,9 +59,18 @@ MAX_TAILORING_ATTEMPTS = 2  # hard ceiling — if fact-checking still hasn't
                              # retrying forever (e.g. if Gemini is down/exhausted)
 
 def route_after_fact_check(state: AgentState):
+    # NOTE: match_scorer is NOT in this fan-out. It depends on ats_scorer's
+    # output (state["score_breakdown"]), and LangGraph runs everything in a
+    # single fan-out list from the SAME state snapshot — parallel siblings
+    # never see each other's writes until the whole batch finishes. Putting
+    # match_scorer here would mean it always reads a stale/empty
+    # score_breakdown. Instead ats_scorer has a direct edge into
+    # match_scorer below, so match_scorer only starts once ats_scorer's
+    # result has actually been merged back into state.
     if state.get("fact_check_passed", False):
-        # Trigger Document Generator, Match Scorer, ATS Scorer, AND Jobs Finder in PARALLEL
-        return ["document_generator", "match_scorer", "ats_scorer", "jobs_finder"]
+        # Trigger Document Generator, ATS Scorer, AND Jobs Finder in PARALLEL
+        # (these three are independent of each other).
+        return ["document_generator", "ats_scorer", "jobs_finder"]
 
     if state.get("error"):
         # tailoring_engine already exhausted its own internal retries and
@@ -70,13 +79,13 @@ def route_after_fact_check(state: AgentState):
         # tailoring_attempts would never increment again and this router
         # would loop back to it forever. Stop looping and proceed with
         # best-effort results; the error is still visible to the frontend.
-        return ["document_generator", "match_scorer", "ats_scorer", "jobs_finder"]
+        return ["document_generator", "ats_scorer", "jobs_finder"]
 
     if state.get("tailoring_attempts", 0) >= MAX_TAILORING_ATTEMPTS:
         # Give up looping — proceed with best-effort results rather than
         # retrying indefinitely. fact_check_passed=False is still visible
         # to the frontend so the user knows to double check the output.
-        return ["document_generator", "match_scorer", "ats_scorer", "jobs_finder"]
+        return ["document_generator", "ats_scorer", "jobs_finder"]
 
     return "tailoring_engine" # Loop back to rewrite hallucinations
 
@@ -85,17 +94,20 @@ workflow.add_conditional_edges(
     route_after_fact_check,
     {
         "document_generator": "document_generator",
-        "match_scorer": "match_scorer",
         "ats_scorer": "ats_scorer",
         "jobs_finder": "jobs_finder",
         "tailoring_engine": "tailoring_engine"
     }
 )
 
+# match_scorer must run AFTER ats_scorer completes and its output has been
+# merged into shared state — see the note in route_after_fact_check above.
+# This is a normal (sequential) edge, not part of the parallel fan-out.
+workflow.add_edge("ats_scorer", "match_scorer")
+
 # Connect everything out to final execution sink step
 workflow.add_edge("document_generator", END)
 workflow.add_edge("match_scorer", END)
-workflow.add_edge("ats_scorer", END)
 workflow.add_edge("jobs_finder", END)
 
 # Compile Graph Structure
