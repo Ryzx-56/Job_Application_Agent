@@ -1012,7 +1012,7 @@ function PayAsYouGo() {
               <Button
                 variant={pack.featured ? "default" : "outline"}
                 as={Link}
-                href={`/checkout?pack=${pack.slug}`}
+                href={`/dashboard/checkout?pack=${pack.slug}`}
                 size="md"
                 className="mt-5 w-full"
               >
