@@ -30,6 +30,14 @@ export function updateConsent(state: ConsentState) {
   pushToDataLayer("consent", "update", {
     analytics_storage: state,
   });
+
+  // The page's initial pageview fired before the user had a chance to
+  // consent, so it went out as a limited "denied" ping (no client ID,
+  // won't show in Realtime/DebugView). Once granted, send one real
+  // pageview so GA actually has a proper, fully-consented hit to show.
+  if (state === "granted" && GA_MEASUREMENT_ID) {
+    pushToDataLayer("event", "page_view");
+  }
 }
 
 /** Manual pageview — only needed if you later add client-side route
