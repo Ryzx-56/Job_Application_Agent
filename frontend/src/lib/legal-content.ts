@@ -239,7 +239,9 @@ export const legalContent: Record<Lang, Record<LegalDocKey, LegalDoc>> = {
         {
           heading: "9. Cookies and similar technologies",
           body: [
-            "We use essential cookies and local storage to keep you signed in and to remember your language preference. We may use limited, privacy-conscious analytics to understand how the Service is used in aggregate. We do not use advertising trackers or sell data derived from cookies to advertisers.",
+            "We use essential cookies and local storage to keep you signed in and to remember your language preference. These are required for the Service to function and are not subject to consent.",
+            "With your consent, given through the cookie banner shown when you first visit, we use Google Analytics to understand in aggregate how the Service is used, for example which pages are visited and how the CV-tailoring flow is used, so we can improve it. If you decline, or later withdraw consent, Google Analytics is not loaded and no analytics cookies are set. You can change your choice at any time from the cookie preferences link in the site footer.",
+            "We do not use advertising trackers or sell data derived from cookies to advertisers.",
           ],
         },
         {
@@ -629,7 +631,9 @@ export const legalContent: Record<Lang, Record<LegalDocKey, LegalDoc>> = {
         {
           heading: "9. ملفات تعريف الارتباط والتقنيات المشابهة",
           body: [
-            "نستخدم ملفات تعريف ارتباط أساسية وتخزينًا محليًا للحفاظ على تسجيل دخولك وتذكّر لغتك المفضلة. قد نستخدم أدوات تحليل محدودة تراعي الخصوصية لفهم استخدام الخدمة إجماليًا. نحن لا نستخدم متعقبات إعلانية ولا نبيع بيانات مستمدة من ملفات تعريف الارتباط لمعلنين.",
+            "نستخدم ملفات تعريف ارتباط أساسية وتخزينًا محليًا للحفاظ على تسجيل دخولك وتذكّر لغتك المفضلة. هذه ضرورية لعمل الخدمة ولا تخضع للموافقة.",
+            "بموافقتك، عبر شريط ملفات تعريف الارتباط الذي يظهر عند أول زيارة لك، نستخدم Google Analytics لفهم كيفية استخدام الخدمة إجماليًا، مثل الصفحات التي تُزار وكيفية استخدام عملية تخصيص السيرة الذاتية، لنتمكن من تحسينها. إذا رفضت الموافقة، أو سحبتها لاحقًا، لن يتم تحميل Google Analytics ولن تُوضع أي ملفات تعريف ارتباط تحليلية. يمكنك تغيير اختيارك في أي وقت من رابط تفضيلات ملفات تعريف الارتباط في تذييل الموقع.",
+            "نحن لا نستخدم متعقبات إعلانية ولا نبيع بيانات مستمدة من ملفات تعريف الارتباط لمعلنين.",
           ],
         },
         {

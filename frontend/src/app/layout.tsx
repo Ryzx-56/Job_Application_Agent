@@ -2,6 +2,8 @@ import type { Metadata } from "next";
 import { Plus_Jakarta_Sans, Cairo } from "next/font/google";
 import "./globals.css";
 import { LangProvider } from "@/lib/language";
+import Analytics from "@/components/analytics";
+import GlobalChrome from "@/components/global-chrome";
 
 /**
  * Font loading.
@@ -37,7 +39,11 @@ export default function RootLayout({
   return (
     <html lang="en" className={`${latinFont.variable} ${arabicFont.variable}`}>
       <body>
-        <LangProvider>{children}</LangProvider>
+        <Analytics />
+        <LangProvider>
+          {children}
+          <GlobalChrome />
+        </LangProvider>
       </body>
     </html>
   );
