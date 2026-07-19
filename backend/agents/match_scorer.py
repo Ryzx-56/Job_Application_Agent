@@ -121,7 +121,14 @@ def run_match_scorer(state: AgentState) -> AgentState:
     )
 
     try:
-        raw = generate_claude_text(prompt, max_tokens=900)
+        # 900 -> 2500: on Sonnet 5, adaptive thinking runs by default and its
+        # tokens count against max_tokens. This task needs the model to
+        # actually reason about fit before answering (that's the point of
+        # Agent 5), so we keep thinking ON rather than disabling it — just
+        # give it enough headroom that reasoning doesn't crowd out the JSON
+        # it still has to return. generate_claude_text auto-escalates further
+        # if even this gets truncated.
+        raw = generate_claude_text(prompt, max_tokens=2500)
         #logger.debug(f"Agent 5 raw response:\n{raw}")
         raw = re.sub(r"```json|```", "", raw).strip()
         MAX_RETRIES = 3
@@ -138,7 +145,7 @@ def run_match_scorer(state: AgentState) -> AgentState:
                     f"Agent 5 JSON parse failed ({attempt+1}/{MAX_RETRIES}), retrying..."
                 )
 
-                raw = generate_claude_text(prompt, max_tokens=900)
+                raw = generate_claude_text(prompt, max_tokens=2500)
                 raw = re.sub(r"```json|```", "", raw).strip()
 
         match_score = data.get("score", 0)

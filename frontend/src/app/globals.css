@@ -70,28 +70,38 @@
  * instead), so spacing stays at its normal proportions while text stays
  * exactly as sized as it already was.
  */
+/*
+ * 2025-07 UPDATE — "90% zoom" pass.
+ * The values above were sized to match an old 18px root, which made every
+ * text-* class 12-28% bigger than normal Tailwind while padding/gaps/radius
+ * stayed at normal 16px-root sizing. That mismatch (big text, normal-size
+ * boxes around it) is what read as "chunky/zoomed in" at 100%. Browser zoom
+ * scales text and spacing together, so to visually match a 90% zoom we only
+ * need to bring text size back down ~10% — spacing doesn't need touching.
+ * Every value below is the old value * 0.9.
+ */
 :root {
-  --text-xs: 0.9844rem;      /* was 0.875rem @ 18px root → same 15.75px */
-  --text-xs--line-height: 1.4063rem;
-  --text-sm: 1.125rem;       /* was 1rem @ 18px root → same 18px */
-  --text-sm--line-height: 1.6875rem;
-  --text-base: 1.2656rem;    /* was 1.125rem @ 18px root → same 20.25px */
-  --text-base--line-height: 1.9688rem;
-  --text-lg: 1.4063rem;      /* was 1.25rem @ 18px root → same 22.5px */
-  --text-lg--line-height: 2.1094rem;
-  --text-xl: 1.5469rem;      /* was 1.375rem @ 18px root → same 24.75px */
-  --text-xl--line-height: 2.1094rem;
-  --text-2xl: 1.8281rem;     /* was 1.625rem @ 18px root → same 29.25px */
-  --text-2xl--line-height: 2.3906rem;
-  --text-3xl: 2.25rem;       /* was 2rem @ 18px root → same 36px */
-  --text-3xl--line-height: 2.6719rem;
-  --text-4xl: 2.6719rem;     /* was 2.375rem @ 18px root → same 42.75px */
-  --text-4xl--line-height: 2.9531rem;
-  --text-5xl: 3.5156rem;     /* was 3.125rem @ 18px root → same 56.25px */
+  --text-xs: 0.886rem;
+  --text-xs--line-height: 1.2657rem;
+  --text-sm: 1.0125rem;
+  --text-sm--line-height: 1.5188rem;
+  --text-base: 1.139rem;
+  --text-base--line-height: 1.7719rem;
+  --text-lg: 1.2657rem;
+  --text-lg--line-height: 1.8985rem;
+  --text-xl: 1.3922rem;
+  --text-xl--line-height: 1.8985rem;
+  --text-2xl: 1.6453rem;
+  --text-2xl--line-height: 2.1515rem;
+  --text-3xl: 2.025rem;
+  --text-3xl--line-height: 2.4047rem;
+  --text-4xl: 2.4047rem;
+  --text-4xl--line-height: 2.6578rem;
+  --text-5xl: 3.164rem;
   --text-5xl--line-height: 1.1;
-  --text-6xl: 4.3594rem;     /* was 3.875rem @ 18px root → same 69.75px */
+  --text-6xl: 3.9235rem;
   --text-6xl--line-height: 1.05;
-  --text-7xl: 5.2031rem;     /* was 4.625rem @ 18px root → same 83.25px */
+  --text-7xl: 4.6828rem;
   --text-7xl--line-height: 1.05;
 }
 
@@ -104,28 +114,39 @@
  * element changes needed, and no compounding since it's set once at
  * this boundary rather than on every nested element.
  */
+/*
+ * 2025-07 UPDATE — "90% zoom" pass, Arabic.
+ * IMPORTANT: --text-sm, --text-base, and --text-lg are left exactly as they
+ * were — those are the sizes actually used for Arabic paragraph/body copy
+ * across the app (descriptions, nav, faq, footer). Shrinking those makes
+ * Arabic harder to read, which is the one thing we're not doing here.
+ * Only the heading/display sizes (xs, and xl and up — nothing in normal
+ * reading flow) are scaled down 10%, same factor as the LTR scale above, so
+ * Arabic headings shrink to match the rest of the site instead of looking
+ * oversized next to it.
+ */
 [dir="rtl"] {
-  --text-xs: 1.125rem;       /* was 1rem @ 18px root → same 18px */
-  --text-xs--line-height: 1.6875rem;
-  --text-sm: 1.2656rem;      /* was 1.125rem @ 18px root → same 20.25px */
+  --text-xs: 1.0125rem;
+  --text-xs--line-height: 1.5188rem;
+  --text-sm: 1.2656rem;      /* unchanged — Arabic body text */
   --text-sm--line-height: 1.9688rem;
-  --text-base: 1.4063rem;    /* was 1.25rem @ 18px root → same 22.5px */
+  --text-base: 1.4063rem;    /* unchanged — Arabic body text */
   --text-base--line-height: 2.1938rem;
-  --text-lg: 1.5469rem;      /* was 1.375rem @ 18px root → same 24.75px */
+  --text-lg: 1.5469rem;      /* unchanged — Arabic body text */
   --text-lg--line-height: 2.3063rem;
-  --text-xl: 1.6875rem;      /* was 1.5rem @ 18px root → same 27px */
-  --text-xl--line-height: 2.3063rem;
-  --text-2xl: 1.9688rem;     /* was 1.75rem @ 18px root → same 31.5px */
-  --text-2xl--line-height: 2.5875rem;
-  --text-3xl: 2.3906rem;     /* was 2.125rem @ 18px root → same 38.25px */
-  --text-3xl--line-height: 2.8688rem;
-  --text-4xl: 2.8125rem;     /* was 2.5rem @ 18px root → same 45px */
-  --text-4xl--line-height: 3.15rem;
-  --text-5xl: 3.6563rem;     /* was 3.25rem @ 18px root → same 58.5px */
+  --text-xl: 1.5188rem;
+  --text-xl--line-height: 2.0757rem;
+  --text-2xl: 1.7719rem;
+  --text-2xl--line-height: 2.3288rem;
+  --text-3xl: 2.1515rem;
+  --text-3xl--line-height: 2.5819rem;
+  --text-4xl: 2.5313rem;
+  --text-4xl--line-height: 2.835rem;
+  --text-5xl: 3.2907rem;
   --text-5xl--line-height: 1.15;
-  --text-6xl: 4.5rem;        /* was 4rem @ 18px root → same 72px */
+  --text-6xl: 4.05rem;
   --text-6xl--line-height: 1.1;
-  --text-7xl: 5.3438rem;     /* was 4.75rem @ 18px root → same 85.5px */
+  --text-7xl: 4.8094rem;
   --text-7xl--line-height: 1.1;
 }
 

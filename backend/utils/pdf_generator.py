@@ -1,5 +1,6 @@
 # utils/pdf_generator.py
 import os
+import re
 from datetime import date
 from loguru import logger
 
@@ -21,6 +22,8 @@ except ImportError:
 OUTPUT_DIR = "outputs"
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
+# Word renders Arabic shaping/bidi natively, so unlike docx_generator.py we
+# DO need reshaping + bidi here (ReportLab has no built-in Arabic support).
 ARABIC_FONT_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "assets", "fonts")
 ARABIC_FONT_REGULAR_PATH = os.path.join(ARABIC_FONT_DIR, "NotoNaskhArabic-Regular.ttf")
 ARABIC_FONT_BOLD_PATH = os.path.join(ARABIC_FONT_DIR, "NotoNaskhArabic-Bold.ttf")
@@ -48,17 +51,28 @@ def _ensure_arabic_fonts():
 
 
 def _shape(text: str, is_arabic: bool) -> str:
+    """Reshape + apply BiDi so Arabic renders correctly in ReportLab. Uses
+    Eastern Arabic (Hindi) numerals for any digit in the text, generically —
+    not tied to any specific candidate's numbers."""
     if not is_arabic or not text:
         return text
     if not _ARABIC_SHAPING_AVAILABLE:
         return text
     try:
-        # Normalize text variations and enforce Eastern Arabic Numerals natively
-        text = text.replace("4.27", "٤.٢٧").replace("4.37", "٤.٣٧").replace("2025", "٢٠٢٥").replace("2027", "٢٠٢٧")
-        return get_display(arabic_reshaper.reshape(str(text)))
+        text = _to_eastern_arabic_numerals(str(text))
+        return get_display(arabic_reshaper.reshape(text))
     except Exception as e:
         logger.error(f"BiDi error: {e}")
         return text
+
+
+_EASTERN_ARABIC_DIGITS = str.maketrans("0123456789", "٠١٢٣٤٥٦٧٨٩")
+
+
+def _to_eastern_arabic_numerals(text: str) -> str:
+    """Generic digit transliteration — converts every 0-9 digit found in the
+    string, regardless of what number it's part of (GPA, year, phone, etc.)."""
+    return text.translate(_EASTERN_ARABIC_DIGITS)
 
 
 _SECTION_LABELS_AR = {
@@ -69,22 +83,26 @@ _SECTION_LABELS_AR = {
     "Education": "التعليم",
 }
 
-# Bullet Translation fallback to enforce Arabic text when LLM pipelines return raw English values
-_BULLET_TRANS_FALLBACK = {
-    "managed reception": "أدار عمليات الاستقبال ومبيعات التذاكر وتسجيل الزوار والمفقودات والتعامل مع الشكاوى في بيئة متحف ذات حركة زوار عالية.",
-    "sold and marketed": "باع وسوق البضائع في متجر الهدايا للزوار بالاعتماد على معرفة المنتجات والمحادثة المباشرة لزيادة المبيعات.",
-    "supported the training": "دعم تدريب الموظفين الجدد من خلال إرشادهم عبر بروتوكولات خدمة العملاء والإجراءات التشغيلية اليومية."
+_MONTH_AR = {
+    "january": "يناير", "february": "فبراير", "march": "مارس", "april": "أبريل",
+    "may": "مايو", "june": "يونيو", "july": "يوليو", "august": "أغسطس",
+    "september": "سبتمبر", "october": "أكتوبر", "november": "نوفمبر", "december": "ديسمبر",
+    "present": "حتى الآن",
 }
 
 
-def _clean_and_translate_date(date_str: str, is_arabic: bool) -> str:
-    if not is_arabic:
+def _translate_date_terms(date_str: str, is_arabic: bool) -> str:
+    """Generic English month-name / 'Present' translation for Arabic CVs.
+    Only swaps known date vocabulary via word-boundary regex — years,
+    separators, and anything else in the string pass through untouched.
+    This replaces a previous version that overwrote entire date strings with
+    one hardcoded date range regardless of the candidate's actual dates."""
+    if not is_arabic or not date_str:
         return date_str
-    # Sweep out any english characters, broken formatting, or summer tags dynamically
-    lowered = str(date_str).lower()
-    if "june" in lowered or "august" in lowered or "summer" in lowered:
-        return "يونيو ٢٠٢٥ – أغسطس ٢٠٢٥ (وظيفة صيفية)"
-    return date_str
+    result = str(date_str)
+    for en, ar in _MONTH_AR.items():
+        result = re.sub(rf"\b{en}\b", ar, result, flags=re.IGNORECASE)
+    return result
 
 
 def build_pdf_styles(is_arabic: bool = False):
@@ -144,15 +162,31 @@ def render_cv_pdf(state: dict) -> str:
 
     facts = state.get("facts_json", {}) or {}
     personal = facts.get("personal", {}) or {}
-    tailored_bullets = state.get("tailored_bullets", []) or []
-    tailored_projects = state.get("tailored_projects", []) or []
-    tailored_skills = state.get("tailored_skills", {}) or {}
+
+    # Tailored (Agent 3) content, falling back to raw facts_json — mirrors
+    # utils/docx_generator.py's lookup pattern so PDF and DOCX stay in sync,
+    # and so every bullet/project is matched by its actual content instead
+    # of by list position (position-based matching breaks the moment Agent 3
+    # reorders bullets to lead with the most relevant ones, which the
+    # tailoring prompt explicitly allows it to do).
+    tailored_skills = state.get("tailored_skills") or facts.get("skills", {}) or {}
+    bullet_lookup = {
+        (b.get("original") or "").strip(): (b.get("tailored") or "").strip()
+        for b in state.get("tailored_bullets", []) or []
+        if b.get("original") and b.get("tailored")
+    }
+    project_lookup = {
+        (p.get("name") or "").strip(): p
+        for p in state.get("tailored_projects", []) or []
+        if p.get("name")
+    }
+    tailored_volunteer_work = state.get("tailored_volunteer_work", []) or []
 
     def T(text):
         return _shape(str(text or "").strip(), is_arabic)
 
     # Header
-    raw_name = personal.get("name") or "Abdulmalik Yousef Hawsawi"
+    raw_name = personal.get("name") or "Candidate Name"
     story.append(Paragraph(T(raw_name), styles['CV_Name']))
     story.append(Spacer(1, 4))
 
@@ -178,7 +212,6 @@ def render_cv_pdf(state: dict) -> str:
         story.append(Spacer(1, 6))
 
     # Summary Section
-    # Fixed first sentence constraint by explicitly aligning layout values
     summary_text = state.get("tailored_summary") or facts.get("summary") or ""
     if summary_text:
         add_section_divider("Professional Summary")
@@ -189,11 +222,10 @@ def render_cv_pdf(state: dict) -> str:
     experience = facts.get("experience", []) or []
     if experience:
         add_section_divider("Work Experience")
-        for exp_idx, exp in enumerate(experience):
-            # Dynamic text translation enforcement for corporate data
-            title = "مساعد المبيعات وخدمة العملاء" if is_arabic else exp.get('title', '')
-            company = "شركة تيم لاب" if is_arabic else exp.get('company', '')
-            dates = _clean_and_translate_date(exp.get("dates", ""), is_arabic)
+        for exp in experience:
+            title = exp.get('title', '')
+            company = exp.get('company', '')
+            dates = _translate_date_terms(exp.get("dates", ""), is_arabic)
 
             left_html = f"<b>{T(title)}</b> — {T(company)}" if is_arabic else f"<b>{title}</b> · {company}"
             main_p = Paragraph(left_html, styles['CV_Body'])
@@ -202,25 +234,9 @@ def render_cv_pdf(state: dict) -> str:
             story.append(build_structural_row(main_p, side_p, is_arabic))
             story.append(Spacer(1, 4))
 
-            raw_bullets = exp.get("bullets", []) or []
-            
-            # Enforce full item count preservation (3 items instead of 2 items pruned down)
-            if len(raw_bullets) < 3 and is_arabic:
-                raw_bullets = list(_BULLET_TRANS_FALLBACK.keys())
-
-            for b_idx, rb in enumerate(raw_bullets):
-                bullet_content = rb
-                if exp_idx == 0 and b_idx < len(tailored_bullets):
-                    bullet_content = tailored_bullets[b_idx].get("tailored", rb)
-                
-                # Check absolute fallback definitions if pipeline outputs leaked raw english text
-                if is_arabic and (not bullet_content or any(x in str(bullet_content).lower() for x in ["managed", "sold", "supported", "staff"])):
-                    for k, manual_v in _BULLET_TRANS_FALLBACK.items():
-                        if k[:10] in str(rb).lower() or b_idx == list(_BULLET_TRANS_FALLBACK.keys()).index(k):
-                            bullet_content = manual_v
-                            break
-
-                if not bullet_content or "led team leader" in str(bullet_content).lower():
+            for raw_bullet in exp.get("bullets", []) or []:
+                bullet_content = bullet_lookup.get(raw_bullet.strip(), raw_bullet)
+                if not bullet_content:
                     continue
 
                 bullet_text = f"• {bullet_content}"
@@ -230,51 +246,35 @@ def render_cv_pdf(state: dict) -> str:
 
     # Projects Section
     base_projects = facts.get("projects", []) or []
-    if base_projects or tailored_projects:
+    if base_projects:
         add_section_divider("Projects")
-        items_to_render = tailored_projects if tailored_projects else base_projects
-        for proj in items_to_render:
-            p_name = proj.get("display_name") or proj.get("name", "")
-            
-            tech_items = []
-            ref_name = str(proj.get("name", "")).strip().lower()
-            for bp in base_projects:
-                bp_name = str(bp.get("name", "")).strip().lower()
-                if bp_name in ref_name or ref_name in bp_name or "demand" in bp_name or "agent" in bp_name:
-                    tech_items = bp.get("tech_stack") or bp.get("technologies") or []
-                    break
-            
-            if not tech_items:
-                tech_items = proj.get("tech_stack") or proj.get("technologies") or []
+        for base_proj in base_projects:
+            name = (base_proj.get("name") or "").strip()
+            tailored = project_lookup.get(name)
+            display_name = (tailored.get("display_name") if tailored else None) or name
+            desc = (tailored.get("tailored_description") if tailored else None) or base_proj.get("description", "")
 
+            tech_items = base_proj.get("tech_stack") or base_proj.get("technologies") or []
             if isinstance(tech_items, str):
                 tech_items = [t.strip() for t in tech_items.split(",") if t.strip()]
+            cleaned_tech = [str(t).strip() for t in tech_items if str(t).strip()]
+            tech_string = "، ".join(cleaned_tech) if is_arabic else ", ".join(
+                t.title() for t in cleaned_tech
+            )
 
+            # Project title and tech tags go in separate structural table
+            # cells (rather than one concatenated string) so ReportLab
+            # doesn't mangle right-to-left ordering when mixing Latin tech
+            # names into an Arabic line.
             if is_arabic:
-                # Force dynamic translation formatting for technology tokens to avoid flipping alignment order
-                if "demand" in ref_name or "رحلات" in ref_name:
-                    tech_string = "بايثون، برمجة، تعلم الآلة، بانداس"
-                else:
-                    tech_string = "بايثons، أنظمة متعددة الوكلاء، واجهة برمجة التطبيقات"
-            else:
-                cleaned_tech = [str(t).strip().title() for t in tech_items if str(t).strip()]
-                tech_string = ", ".join(cleaned_tech)
-
-            # FIXED ROW ASSIGNMENT: Split project title and technical tags into separate structural boxes 
-            # to keep ReportLab from mixing right-to-left layout order.
-            if is_arabic:
-                title_p = Paragraph(f"<b>{T(p_name)}</b>", styles['CV_Body'])
-                tech_p = Paragraph(f"<i>{T(tech_string)}</i>", styles['CV_ItemRight'])
+                title_p = Paragraph(f"<b>{T(display_name)}</b>", styles['CV_Body'])
+                tech_p = Paragraph(f"<i>{T(tech_string)}</i>" if tech_string else "", styles['CV_ItemRight'])
                 story.append(build_structural_row(title_p, tech_p, is_arabic))
             else:
-                left_html = f"<b>{p_name}</b> — <i>{tech_string}</i>"
+                left_html = f"<b>{display_name}</b>" + (f" — <i>{tech_string}</i>" if tech_string else "")
                 story.append(build_structural_row(Paragraph(left_html, styles['CV_Body']), Paragraph("", styles['CV_ItemRight']), is_arabic))
-            
-            story.append(Spacer(1, 2))
 
-            desc = proj.get("tailored_description") or proj.get("description") or ""
-            if not desc and "details" in proj:
-                desc = proj.get("details")
+            story.append(Spacer(1, 2))
 
             if desc:
                 story.append(Paragraph(T(desc), styles['CV_Body']))
@@ -284,19 +284,19 @@ def render_cv_pdf(state: dict) -> str:
     active_skills = tailored_skills if tailored_skills else facts.get("skills", {})
     if active_skills:
         add_section_divider("Skills")
+        category_labels_ar = {
+            "languages": "اللغات البرمجية",
+            "frameworks": "أطر العمل",
+            "tools": "الأدوات",
+            "soft_skills": "المهارات الشخصية",
+            "other": "أخرى",
+        }
         for category, items in active_skills.items():
             if items:
                 formatted_items = ", ".join([str(i) for i in items]) if isinstance(items, list) else str(items)
-                
                 if is_arabic:
-                    # Enforce strict manual values for technical strings inside arabic view bounds
-                    formatted_items = formatted_items.replace("Python", "بايثون").replace("Api integration", "تكامل واجهة برمجة التطبيقات")
-                    if "language" in category.lower(): line_str = f"اللغات: {formatted_items}"
-                    elif "framework" in category.lower(): line_str = f"إطارات العمل: {formatted_items}"
-                    elif "tool" in category.lower(): line_str = f"الأدوات التقنية: {formatted_items}"
-                    elif "soft" in category.lower(): line_str = f"المهارات الشخصية: {formatted_items}"
-                    else: line_str = f"مهارات أخرى: {formatted_items}"
-                    
+                    label = category_labels_ar.get(category, category)
+                    line_str = f"{label}: {formatted_items}"
                     story.append(Paragraph(_shape(line_str, True), styles['CV_Body']))
                 else:
                     cat_label = category.replace("_", " ").title()
@@ -304,27 +304,47 @@ def render_cv_pdf(state: dict) -> str:
                 story.append(Spacer(1, 3))
         story.append(Spacer(1, 6))
 
+    # Volunteer Work Section
+    raw_volunteer_work = facts.get("volunteer_work", []) or []
+    if raw_volunteer_work:
+        add_section_divider("Volunteer Work" if not is_arabic else "الأعمال التطوعية")
+        display_volunteer = (
+            tailored_volunteer_work
+            if len(tailored_volunteer_work) == len(raw_volunteer_work)
+            else raw_volunteer_work
+        )
+        for v in display_volunteer:
+            story.append(Paragraph(T(f"• {v}"), styles['CV_Body']))
+            story.append(Spacer(1, 2))
+        story.append(Spacer(1, 6))
+
     # Education Section
     education = facts.get("education", []) or []
     if education:
         add_section_divider("Education")
         for edu in education:
-            degree = "درجة البكالوريوس في الذكاء الاصطناعي" if is_arabic else edu.get('degree', '')
-            inst = "جامعة جدة" if is_arabic else edu.get('institution', '')
-            
-            # TOTAL GPA TEXT OVERHAUL: Separate the unreadable layout string cell out from the university fields
-            # into independent right-to-left layout containers to stop character corruption.
+            degree = edu.get('degree', '')
+            inst = edu.get('institution', '')
+            gpa = edu.get('gpa')
+            grad_year = edu.get('graduation_year', '') or ''
+
             if is_arabic:
                 left_para = Paragraph(f"<b>{T(degree)}</b> — {T(inst)}", styles['CV_Body'])
-                right_para = Paragraph(_shape("المعدل التراكمي: ٤.٢٧  |  ٢٠٢٧", True), styles['CV_ItemRight'])
+                right_bits = []
+                if gpa:
+                    right_bits.append(f"{_shape('المعدل التراكمي', True)}: {_shape(str(gpa), True)}")
+                if grad_year:
+                    right_bits.append(_shape(str(grad_year), True))
+                right_para = Paragraph("  |  ".join(right_bits), styles['CV_ItemRight'])
                 story.append(build_structural_row(left_para, right_para, is_arabic))
             else:
-                left_html = f"<b>{degree}</b> · {inst} (GPA: 4.27)"
-                side_p = Paragraph(T("2027"), styles['CV_ItemRight'])
+                left_html = f"<b>{degree}</b> · {inst}" + (f" (GPA: {gpa})" if gpa else "")
+                side_p = Paragraph(T(grad_year), styles['CV_ItemRight'])
                 story.append(build_structural_row(Paragraph(left_html, styles['CV_Body']), side_p, is_arabic))
             story.append(Spacer(1, 4))
 
     doc.build(story)
+    logger.info(f"✅ CV PDF saved → {output_path}")
     return output_path
 
 
@@ -389,4 +409,5 @@ def render_cover_letter_pdf(state: dict) -> str:
     story.append(Paragraph(T(name), styles['CV_Body']))
 
     doc.build(story)
+    logger.info(f"✅ Cover letter PDF saved → {output_path}")
     return output_path

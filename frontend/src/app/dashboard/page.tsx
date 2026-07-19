@@ -17,6 +17,8 @@ import {
 import { useLang } from "@/lib/language";
 import { CreditsButton } from "@/components/CreditsButton";
 import { DashboardButton, ScoreRing, ScoreBar, UploadZone, FileResultCard } from "@/components/dashboard";
+import { AgentProgress } from "@/components/agent-progress";
+import { useOptimizeStream } from "@/lib/useOptimizeStream";
 import { createClient } from "@/lib/supabase/client";
 import { ManualCvForm, ManualCvData, emptyManualCvData } from "@/components/manual-cv-form";
 import { saveResumeResult } from "@/lib/supabase/resumes";
@@ -129,43 +131,33 @@ function mapBackendResponse(raw: any): GenerateResult {
 }
 
 /**
- * Upload flow — sends an actual CV file + job description (+ optional
- * additional info) to the backend as multipart form data.
+ * Grabs the current Supabase access token, throwing the same way the old
+ * generateFromUpload/generateFromManual did if there's no session.
  */
-async function generateFromUpload(
-  cv: File,
-  jobDescription: string,
-  additionalInfo: string,
-  cvLanguage: "en" | "ar"
-): Promise<GenerateResult> {
+async function getAccessToken(): Promise<string> {
   const supabase = createClient();
   const {
     data: { session },
   } = await supabase.auth.getSession();
-
   if (!session?.access_token) {
     throw new Error("Not authenticated");
   }
+  return session.access_token;
+}
 
+/** Builds the multipart form body for the upload-CV flow. */
+function buildUploadFormData(
+  cv: File,
+  jobDescription: string,
+  additionalInfo: string,
+  cvLanguage: "en" | "ar"
+): FormData {
   const formData = new FormData();
   formData.append("cv", cv);
   formData.append("job_description", jobDescription);
   formData.append("additional_info", additionalInfo);
   formData.append("cv_language", cvLanguage);
-
-  const res = await fetch(`${API_URL}/api/v1/optimize`, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${session.access_token}`,
-    },
-    body: formData,
-  });
-
-  if (!res.ok) {
-    await throwForFailedResponse(res);
-  }
-
-  return mapBackendResponse(await res.json());
+  return formData;
 }
 
 /**
@@ -229,43 +221,6 @@ function buildManualPayload(
 }
 
 /**
- * Manual entry flow — sends structured form data as JSON to the
- * dedicated manual-entry endpoint.
- */
-async function generateFromManual(
-  data: ManualCvData,
-  jobDescription: string,
-  additionalInfo: string,
-  cvLanguage: "en" | "ar"
-): Promise<GenerateResult> {
-  const supabase = createClient();
-  const {
-    data: { session },
-  } = await supabase.auth.getSession();
-
-  if (!session?.access_token) {
-    throw new Error("Not authenticated");
-  }
-
-  const payload = buildManualPayload(data, jobDescription, additionalInfo, cvLanguage);
-
-  const res = await fetch(`${API_URL}/api/v1/optimize-manual`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${session.access_token}`,
-    },
-    body: JSON.stringify(payload),
-  });
-
-  if (!res.ok) {
-    await throwForFailedResponse(res);
-  }
-
-  return mapBackendResponse(await res.json());
-}
-
-/**
  * Color-codes a similar-job match label into a glassy badge style.
  * jobs_finder.py emits exactly one of: "Strong Match", "Partial Match", "Stretch Role".
  */
@@ -286,6 +241,22 @@ function getMatchBadgeStyle(label?: string): { classes: string; dot: string } {
 export default function DashboardHomePage() {
   const { t, dir, lang } = useLang();
   const copy = t.dashboard.generate;
+  const progressCopy = copy.progress;
+
+  // Pre-combined "Agent N · Label" strings for each pipeline step, in the
+  // active UI language — built once per render from language.tsx so the
+  // hook and component below stay i18n-agnostic.
+  const stepLabels = {
+    cvParse: `${progressCopy.agentLabel(1)} · ${progressCopy.steps.cvParse}`,
+    jdAnalyze: `${progressCopy.agentLabel(2)} · ${progressCopy.steps.jdAnalyze}`,
+    tailor: `${progressCopy.agentLabel(3)} · ${progressCopy.steps.tailor}`,
+    factCheck: `${progressCopy.agentLabel(4)} · ${progressCopy.steps.factCheck}`,
+    atsScore: `${progressCopy.agentLabel(5)} · ${progressCopy.steps.atsScore}`,
+    coverLetter: `${progressCopy.agentLabel(6)} · ${progressCopy.steps.coverLetter}`,
+    matchScore: `${progressCopy.agentLabel(7)} · ${progressCopy.steps.matchScore}`,
+    similarJobs: `${progressCopy.agentLabel(8)} · ${progressCopy.steps.similarJobs}`,
+  };
+  const { steps: agentSteps, run: runOptimizeStream } = useOptimizeStream(stepLabels);
 
   const [cvMode, setCvMode] = useState<"upload" | "manual">("upload");
   const [cvFile, setCvFile] = useState<File | null>(null);
@@ -400,10 +371,20 @@ export default function DashboardHomePage() {
     setGenerating(true);
     setResult(null);
     try {
-      const data =
+      const accessToken = await getAccessToken();
+      const raw =
         cvMode === "upload"
-          ? await generateFromUpload(cvFile!, jobDescription, additionalInfo, cvLanguage)
-          : await generateFromManual(manualData, jobDescription, additionalInfo, cvLanguage);
+          ? await runOptimizeStream(
+              `${API_URL}/api/v1/optimize/stream`,
+              buildUploadFormData(cvFile!, jobDescription, additionalInfo, cvLanguage),
+              accessToken
+            )
+          : await runOptimizeStream(
+              `${API_URL}/api/v1/optimize-manual/stream`,
+              JSON.stringify(buildManualPayload(manualData, jobDescription, additionalInfo, cvLanguage)),
+              accessToken
+            );
+      const data = mapBackendResponse(raw);
       setResult(data);
 
       // Persist so it shows up in "My Resumes" and survives sign-out/back-in.
@@ -417,8 +398,8 @@ export default function DashboardHomePage() {
       }).catch((err) => console.error("Failed to save resume to history:", err));
     } catch (err) {
       console.error(err);
-      if (err instanceof InsufficientCreditsError) {
-        setError(err.message);
+      if (err instanceof InsufficientCreditsError || (err as Error & { status?: number })?.status === 402) {
+        setError((err as Error).message);
       } else {
         setError(
           lang === "ar"
@@ -649,6 +630,8 @@ export default function DashboardHomePage() {
               <div className="h-full w-1/3 rounded-full bg-blue-600 animate-jbaa-loading-bar" />
             </div>
           )}
+
+          <AgentProgress steps={agentSteps} expanded={generating} />
 
           <style>{`
             @keyframes jbaa-loading-bar-slide {

@@ -103,7 +103,7 @@ def _strip_leaked_greeting_and_signoff(text: str, candidate_name: str) -> str:
 
 def generate_cover_letter(state: AgentState) -> str:
     """
-    Agent 4a — Cover Letter Writer (Claude Sonnet 4.6).
+    Agent 4a — Cover Letter Writer (Claude Sonnet 5).
     Retry/backoff logic for transient errors lives in generate_claude_text.
     """
     weight_factors = state["weight_factors"]
@@ -125,10 +125,16 @@ def generate_cover_letter(state: AgentState) -> str:
         language_instruction = language_instruction,
     )
 
-    logger.info("✍️  Agent 4a — Generating cover letter via Claude Sonnet 4.6...")
+    logger.info("✍️  Agent 4a — Generating cover letter via Claude Sonnet 5...")
 
     try:
-        text = generate_claude_text(prompt, max_tokens=800).strip()
+        # 800 -> 2000: on Sonnet 5, adaptive thinking runs by default and its
+        # tokens count against max_tokens (thinking + visible text share one
+        # budget). 800 was sized for Sonnet 4.6, which didn't think unless
+        # asked. generate_claude_text also auto-escalates further if this
+        # still isn't enough, so this is a safe starting point, not a hard
+        # ceiling.
+        text = generate_claude_text(prompt, max_tokens=2000).strip()
         # Defensive cleanup: strip any em/en dashes that slip through despite
         # the prompt rule, replacing with a comma so sentences stay readable
         # instead of just deleting the character and running words together.

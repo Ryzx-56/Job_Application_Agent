@@ -3,7 +3,7 @@ import json
 import uvicorn
 from fastapi import FastAPI, HTTPException, status, UploadFile, File, Form, Depends
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, StreamingResponse
 from dotenv import load_dotenv
 from loguru import logger
 
@@ -86,6 +86,103 @@ def make_initial_state(cv_text: str, jd_text: str) -> AgentState:
         error=None,
         current_step="start",
     )
+
+# ─── LIVE PROGRESS STREAMING (dashboard "Agent N" UI) ─────────────────────
+#
+# Maps LangGraph node names -> a stable "Agent N" number the frontend shows.
+# This is deliberately NOT 1:1 with orchestrator.py's node names in either
+# count or order of execution:
+#   - cv_parser / manual_cv_parser collapse to the same Agent 1 (only one of
+#     the two ever runs per request, depending on input_mode).
+#   - tailoring_engine can loop back on itself via fact_checker (see
+#     route_after_fact_check in orchestrator.py) — repeated completions of
+#     the same node are ignored here so the frontend only ever sees it go
+#     from running -> done once, not flicker on retries.
+#   - ats_scorer / document_generator / jobs_finder run in TRUE parallel
+#     (LangGraph fan-out), so they can complete in any order. Each is still
+#     reported under its own fixed Agent number the moment IT finishes,
+#     regardless of the order events actually arrive in.
+# The label strings are intentionally generic ("Reading your CV") — no
+# model names, no internal node names — that's the whole point of this
+# endpoint vs. what you see in the local dev logs.
+_STEP_NODE_TO_AGENT = {
+    "cv_parser": (1, "cvParse"),
+    "manual_cv_parser": (1, "cvParse"),
+    "jd_analyzer": (2, "jdAnalyze"),
+    "tailoring_engine": (3, "tailor"),
+    "fact_checker": (4, "factCheck"),
+    "ats_scorer": (5, "atsScore"),
+    "document_generator": (6, "coverLetter"),
+    "match_scorer": (7, "matchScore"),
+    "jobs_finder": (8, "similarJobs"),
+}
+
+
+def _sse(event: str, data: dict) -> str:
+    """Formats one Server-Sent Event frame."""
+    return f"event: {event}\ndata: {json.dumps(data)}\n\n"
+
+
+def _stream_pipeline(initial_state: AgentState, user_id: str, reserved_amount: int):
+    """
+    Shared generator for both streaming endpoints below. Runs the exact same
+    LangGraph as the blocking /optimize routes, just via .stream() instead
+    of .invoke() so we can emit a `step` event after each node completes.
+    Ends with one `complete` event carrying the identical payload shape
+    /optimize already returns (or an `error` event on failure), so the
+    frontend can reuse its existing result-rendering code either way.
+    """
+    seen_agents = set()
+    result_state = dict(initial_state)
+
+    try:
+        for update in graph.stream(initial_state, stream_mode="updates"):
+            for node_name, partial in update.items():
+                if partial:
+                    result_state.update(partial)
+
+                step = _STEP_NODE_TO_AGENT.get(node_name)
+                if not step:
+                    continue
+                agent_num, step_key = step
+                if agent_num in seen_agents:
+                    continue
+                seen_agents.add(agent_num)
+                yield _sse("step", {"agent": agent_num, "step": step_key})
+
+        logger.info("✅ Multi-agent execution phase completed (stream).")
+
+        cv_pdf_path = render_cv_pdf(result_state)
+        cl_pdf_path = render_cover_letter_pdf(result_state)
+
+        payload = {
+            "success": True,
+            "ats_score": result_state.get("ats_score", 0),
+            "ats_breakdown": result_state.get("score_breakdown", {}),
+            "job_match_score": result_state.get("job_match_score", 0),
+            "job_match_reason": result_state.get("job_match_reason", ""),
+            "gap_analysis": result_state.get("gap_analysis", []),
+            "overall_recommendation": result_state.get("overall_recommendation", ""),
+            "tailored_summary": result_state.get("tailored_summary", ""),
+            "tailored_bullets": result_state.get("tailored_bullets", []),
+            "cover_letter_text": result_state.get("cover_letter_text", ""),
+            "similar_jobs": result_state.get("similar_jobs", []),
+            "fact_check_passed": result_state.get("fact_check_passed", False),
+            "job_title": result_state.get("weight_factors", {}).get("job_title", ""),
+            "company": result_state.get("weight_factors", {}).get("company", ""),
+            "cv_language": result_state.get("cv_language", "en"),
+            "generated_cv_pdf": cv_pdf_path,
+            "generated_cl_pdf": cl_pdf_path,
+            "error": result_state.get("error", None),
+            "credits_charged": reserved_amount,
+        }
+        yield _sse("complete", payload)
+
+    except Exception as err:
+        logger.error(f"❌ Pipeline Failure (stream): {err}")
+        refund_credits(user_id, reserved_amount)
+        yield _sse("error", {"detail": f"An execution failure hit a core agent module: {str(err)}"})
+
 
 @app.get("/health", status_code=status.HTTP_200_OK, tags=["System Health"])
 async def health_check():
@@ -240,6 +337,81 @@ async def optimize_application(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"An execution failure hit a core agent module: {str(err)}"
         )
+
+
+@app.post("/api/v1/optimize/stream", tags=["Agent Core"])
+async def optimize_application_stream(
+    cv: UploadFile = File(...),
+    job_description: str = Form(...),
+    additional_info: str = Form(""),
+    cv_language: str = Form("en"),
+    user_id: str = Depends(get_current_user_id),
+):
+    """
+    Same pipeline as /api/v1/optimize, but streams progress over
+    Server-Sent Events instead of blocking until everything is done.
+    Powers the dashboard's live "Agent N" progress UI. Emits a `step` event
+    each time a pipeline stage completes, then one final `complete` event
+    with the exact same payload /optimize returns (or an `error` event).
+
+    Credits are reserved up front exactly like /optimize; refunds on
+    failure happen inside _stream_pipeline.
+    """
+    logger.info("🚀 API Gateway received a STREAMING application optimization request.")
+
+    cv_bytes = await cv.read()
+    final_cv_text = extract_text_from_pdf(pdf_bytes=cv_bytes)
+    final_jd_text = job_description or SHORT_SAMPLE_JD
+
+    initial_state = make_initial_state(final_cv_text, final_jd_text)
+    initial_state["input_mode"] = "upload"
+    initial_state["additional_info"] = additional_info or ""
+    initial_state["cv_language"] = normalize_cv_language(cv_language)
+
+    reserved_amount = reserve_credits(user_id, initial_state["cv_language"])
+
+    return StreamingResponse(
+        _stream_pipeline(initial_state, user_id, reserved_amount),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            # Disable proxy/CDN buffering (nginx in particular) so events
+            # flush to the client as they're generated instead of arriving
+            # all at once at the end, which would defeat the whole feature.
+            "X-Accel-Buffering": "no",
+            "Connection": "keep-alive",
+        },
+    )
+
+
+@app.post("/api/v1/optimize-manual/stream", tags=["Agent Core"])
+async def optimize_manual_application_stream(
+    payload: ManualCVRequest,
+    user_id: str = Depends(get_current_user_id),
+):
+    """Streaming variant of /api/v1/optimize-manual — see optimize_application_stream."""
+    logger.info("🚀 API Gateway received a STREAMING manual optimization request.")
+
+    manual_data = payload.model_dump(exclude={"job_description", "additional_info", "cv_language"})
+    final_jd_text = payload.job_description or SHORT_SAMPLE_JD
+
+    initial_state = make_initial_state("", final_jd_text)
+    initial_state["input_mode"] = "manual"
+    initial_state["manual_cv_data"] = manual_data
+    initial_state["additional_info"] = payload.additional_info or ""
+    initial_state["cv_language"] = normalize_cv_language(payload.cv_language or "en")
+
+    reserved_amount = reserve_credits(user_id, initial_state["cv_language"])
+
+    return StreamingResponse(
+        _stream_pipeline(initial_state, user_id, reserved_amount),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+            "Connection": "keep-alive",
+        },
+    )
 
 
 @app.post("/api/v1/optimize-manual", tags=["Agent Core"])

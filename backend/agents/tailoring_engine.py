@@ -160,7 +160,14 @@ def run_tailoring_engine(state: AgentState) -> dict:
     MAX_RETRIES = 3
     for attempt in range(1, MAX_RETRIES + 1):
         try:
-            raw = generate_claude_text(prompt, max_tokens=3600)
+            # 3600 -> 6000: this is the single most content-heavy generation
+            # in the pipeline (summary + every bullet + every project +
+            # volunteer work + skills, all as one JSON object), and on
+            # Sonnet 5, adaptive thinking (on by default) shares this same
+            # budget with the visible output. generate_claude_text will
+            # keep escalating automatically if 6000 still isn't enough for
+            # a particularly long CV.
+            raw = generate_claude_text(prompt, max_tokens=6000)
 
             
 
@@ -252,6 +259,10 @@ def make_regeneration_fn(facts_json: dict, cv_language: str = "en"):
             facts_json     = json.dumps(facts_json, ensure_ascii=False),
             language_line  = language_line,
         )
-        return generate_claude_text(prompt, max_tokens=300).strip()
+        # 300 -> 1000: same Sonnet 5 thinking-shares-the-budget issue as the
+        # main call above. A single rewritten bullet is short, but if
+        # thinking eats most of a 300-token budget there's nothing left for
+        # the actual sentence.
+        return generate_claude_text(prompt, max_tokens=1000).strip()
 
     return regenerate

@@ -460,6 +460,20 @@ export const content = {
         preview: "Preview",
         missingFields: "Upload a CV and paste a job description to generate.",
       },
+      progress: {
+        title: "Preparing your application",
+        agentLabel: (n: number) => `Agent ${n}`,
+        steps: {
+          cvParse: "Reading your CV",
+          jdAnalyze: "Analyzing the job description",
+          tailor: "Tailoring your experience",
+          factCheck: "Verifying accuracy",
+          atsScore: "Scoring ATS match",
+          coverLetter: "Writing your cover letter",
+          matchScore: "Calculating job match",
+          similarJobs: "Finding similar roles",
+        },
+      },
       resumes: {
         title: "My Resumes",
         sub: "Every tailored version you've generated, in one place.",
@@ -987,6 +1001,20 @@ export const content = {
         download: "تنزيل PDF",
         preview: "معاينة",
         missingFields: "ارفع سيرتك الذاتية والصق وصفًا وظيفيًا لإنشاء الطلب.",
+      },
+      progress: {
+        title: "جارٍ تجهيز طلبك",
+        agentLabel: (n: number) => `الوكيل ${n}`,
+        steps: {
+          cvParse: "قراءة سيرتك الذاتية",
+          jdAnalyze: "تحليل الوصف الوظيفي",
+          tailor: "تخصيص خبراتك",
+          factCheck: "التحقق من الدقة",
+          atsScore: "حساب توافق ATS",
+          coverLetter: "كتابة خطاب التقديم",
+          matchScore: "حساب نسبة التوافق الوظيفي",
+          similarJobs: "البحث عن وظائف مشابهة",
+        },
       },
       resumes: {
         title: "سيري الذاتية",
