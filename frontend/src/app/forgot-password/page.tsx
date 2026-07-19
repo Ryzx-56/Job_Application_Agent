@@ -74,7 +74,7 @@ export default function ForgotPasswordPage() {
           <>
             <Link
               href="/login"
-              className="mb-6 inline-flex items-center gap-1.5 rounded text-sm font-medium text-zinc-400 transition-colors hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400/60"
+              className="mb-6 flex w-fit items-center gap-1.5 rounded text-sm font-medium text-zinc-400 transition-colors hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400/60"
             >
               <BackIcon className="size-4" aria-hidden />
               {c.backToLogin}
