@@ -26,11 +26,18 @@ from core.credits import get_admin_client
 def cancel_subscription(user_id: str) -> dict:
     admin = get_admin_client()
 
+    # BUG FIX: .single() raises instead of returning None when a query
+    # matches zero rows — e.g. a user whose signup partially failed and
+    # never got a profile row. That made the "if not profile: raise 404"
+    # check below unreachable; a missing profile crashed with an
+    # unhandled 500 instead. .maybe_single() returns None for zero rows
+    # like this code already assumed. Same fix applied everywhere else in
+    # this file and in core/credits.py.
     profile = (
         admin.table("profiles")
         .select("tier, pending_tier, credits_reset_at")
         .eq("id", user_id)
-        .single()
+        .maybe_single()
         .execute()
         .data
     )
@@ -52,7 +59,7 @@ def cancel_subscription(user_id: str) -> dict:
         .update({"pending_tier": "free", "subscription_status": "canceling"})
         .eq("id", user_id)
         .select()
-        .single()
+        .maybe_single()
         .execute()
     )
 
@@ -68,7 +75,8 @@ def resume_subscription(user_id: str) -> dict:
     user's current tier just continues as normal at the next renewal."""
     admin = get_admin_client()
 
-    profile = admin.table("profiles").select("pending_tier").eq("id", user_id).single().execute().data
+    # Same .single() -> .maybe_single() fix as cancel_subscription above.
+    profile = admin.table("profiles").select("pending_tier").eq("id", user_id).maybe_single().execute().data
     if not profile:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Profile not found.")
 
@@ -83,9 +91,8 @@ def resume_subscription(user_id: str) -> dict:
         .update({"pending_tier": None, "subscription_status": "active"})
         .eq("id", user_id)
         .select()
-        .single()
+        .maybe_single()
         .execute()
     )
     logger.info(f"↩️ Cancellation undone for user {user_id}.")
     return result.data
-

@@ -168,8 +168,10 @@ function SignupForm() {
       options: {
         // `plan` rides along on the user record so you can read it back
         // later (e.g. from a webhook or onboarding step) to put the account
-        // on the right tier.
-        data: { full_name: fullName.trim(), selected_plan: planSlug },
+        // on the right tier. `preferred_language` is sent here (not just via
+        // persistLanguageToAccount, which needs a session) so it's already
+        // set when the "Send Email" auth hook fires the confirmation email.
+        data: { full_name: fullName.trim(), selected_plan: planSlug, preferred_language: lang },
         emailRedirectTo: `${window.location.origin}/auth/callback`,
       },
     });

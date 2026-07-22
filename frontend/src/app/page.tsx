@@ -1168,6 +1168,7 @@ function SiteFooter({ openDoc, setOpenDoc }: { openDoc: LegalDocKey | null; setO
             <button type="button" onClick={() => setOpenDoc("terms")} className="rounded transition-colors hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400/60">{t.footer.terms}</button>
             <button type="button" onClick={() => setOpenDoc("privacy")} className="rounded transition-colors hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400/60">{t.footer.privacy}</button>
             <button type="button" onClick={() => setOpenDoc("security")} className="rounded transition-colors hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400/60">{t.footer.security}</button>
+            <button type="button" onClick={() => setOpenDoc("returnPolicy")} className="rounded transition-colors hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400/60">{t.footer.returnPolicy}</button>
           </div>
         </div>
       </div>

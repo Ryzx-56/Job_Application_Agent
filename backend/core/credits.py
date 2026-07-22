@@ -70,11 +70,18 @@ def reserve_credits(user_id: str, cv_language: str) -> int:
     reserved = bool(result.data)
 
     if not reserved:
+        # BUG FIX: .single() raises an exception (instead of returning a
+        # None/empty result) when the query matches zero rows — e.g. a user
+        # whose signup partially failed and never got a profile row. That
+        # made this code's intended "no profile" handling unreachable; a
+        # missing profile crashed with an unhandled 500 instead of the
+        # clear message below. .maybe_single() returns None for zero rows
+        # like this code already assumed.
         profile = (
             admin.table("profiles")
             .select("credits_remaining, tier")
             .eq("id", user_id)
-            .single()
+            .maybe_single()
             .execute()
             .data
         )
@@ -115,11 +122,14 @@ def get_credits(user_id: str) -> dict:
     frontend has a live source of truth beyond direct Supabase reads."""
     admin = get_admin_client()
     admin.rpc("reset_credits_if_due", {"p_user_id": user_id}).execute()
+    # BUG FIX: same .single() -> .maybe_single() issue as above — a missing
+    # profile row previously crashed with an unhandled 500 instead of
+    # reaching the "if not profile" 404 handling right below.
     profile = (
         admin.table("profiles")
         .select("tier, credits_remaining, credits_total, pending_tier, credits_reset_at")
         .eq("id", user_id)
-        .single()
+        .maybe_single()
         .execute()
         .data
     )

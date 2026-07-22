@@ -51,19 +51,32 @@ def _ensure_arabic_fonts():
 
 
 def _shape(text: str, is_arabic: bool) -> str:
-    """Reshape + apply BiDi so Arabic renders correctly in ReportLab. Uses
-    Eastern Arabic (Hindi) numerals for any digit in the text, generically —
-    not tied to any specific candidate's numbers."""
-    if not is_arabic or not text:
+    """Reshape + apply BiDi so Arabic renders correctly in ReportLab, and
+    convert digits to Eastern Arabic (Hindi) numerals for genuinely-Arabic
+    prose content (dates, GPA, section labels, etc).
+
+    IMPORTANT: never call this on identifiers — emails, URLs, GitHub/LinkedIn
+    handles, usernames. Those must render byte-for-byte as entered, in every
+    language, or they stop working (a corrupted email/link is silently
+    broken). See render_cv_pdf's contact-info block, which deliberately
+    builds those strings WITHOUT passing them through this function.
+
+    For an English-mode CV (is_arabic=False), this instead checks for any
+    embedded Arabic-script text (e.g. a company name a candidate typed in
+    Arabic even though the CV overall is English) and font-switches just
+    that portion — see _shape_mixed_latin_doc for why that's needed."""
+    if not text:
         return text
-    if not _ARABIC_SHAPING_AVAILABLE:
-        return text
-    try:
-        text = _to_eastern_arabic_numerals(str(text))
-        return get_display(arabic_reshaper.reshape(text))
-    except Exception as e:
-        logger.error(f"BiDi error: {e}")
-        return text
+    if is_arabic:
+        if not _ARABIC_SHAPING_AVAILABLE:
+            return text
+        try:
+            digit_swapped = _to_eastern_arabic_numerals(str(text))
+            return get_display(arabic_reshaper.reshape(digit_swapped))
+        except Exception as e:
+            logger.error(f"BiDi error: {e}")
+            return text
+    return _shape_mixed_latin_doc(str(text))
 
 
 _EASTERN_ARABIC_DIGITS = str.maketrans("0123456789", "٠١٢٣٤٥٦٧٨٩")
@@ -71,8 +84,53 @@ _EASTERN_ARABIC_DIGITS = str.maketrans("0123456789", "٠١٢٣٤٥٦٧٨٩")
 
 def _to_eastern_arabic_numerals(text: str) -> str:
     """Generic digit transliteration — converts every 0-9 digit found in the
-    string, regardless of what number it's part of (GPA, year, phone, etc.)."""
+    string, regardless of what number it's part of (GPA, year, phone, etc.).
+    Only ever call this (via _shape) on prose content, never on identifiers —
+    see the warning on _shape above."""
     return text.translate(_EASTERN_ARABIC_DIGITS)
+
+
+# Matches any run of Arabic-script characters (main block + presentation
+# forms), used only to find Arabic text embedded inside an otherwise-Latin
+# (English-mode) document — see _shape_mixed_latin_doc.
+_ARABIC_CHAR_RE = re.compile(r"[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\uFB50-\uFDFF\uFE70-\uFEFF]+")
+
+
+def _shape_mixed_latin_doc(text: str) -> str:
+    """
+    Bug #4 fix: a candidate sometimes types one field (most often a company
+    name) in Arabic even though the CV as a whole is generated in English.
+    Helvetica (the font used for English-mode CVs) has no Arabic glyphs at
+    all, so that text was rendering as solid, unreadable boxes — the
+    "notdef" glyph a font shows for a character it can't draw — instead of
+    silently failing loud, it silently failed ugly.
+
+    This finds any Arabic-script run inside an otherwise-Latin string,
+    shapes + bidi-reorders just that run (still required for ReportLab to
+    draw Arabic correctly at all), and wraps it in a ReportLab inline
+    <font> tag pointing at the Arabic font, so that specific run renders
+    correctly while the rest of the line stays in the document's normal
+    (Helvetica) font. No-op for strings with no Arabic characters at all.
+    """
+    if not text or not _ARABIC_CHAR_RE.search(text):
+        return text
+
+    _ensure_arabic_fonts()
+    if not _arabic_fonts_ready or not _ARABIC_SHAPING_AVAILABLE:
+        # Can't safely font-switch without the registered font + shaping
+        # lib — better to leave the raw text (readable to anyone who can
+        # read it) than half-apply a fix that still breaks.
+        return text
+
+    def _wrap(match: "re.Match") -> str:
+        try:
+            shaped = get_display(arabic_reshaper.reshape(match.group(0)))
+        except Exception as e:
+            logger.error(f"BiDi error shaping embedded Arabic run: {e}")
+            return match.group(0)
+        return f'<font name="{ARABIC_FONT_NAME}">{shaped}</font>'
+
+    return _ARABIC_CHAR_RE.sub(_wrap, text)
 
 
 _SECTION_LABELS_AR = {
@@ -190,14 +248,28 @@ def render_cv_pdf(state: dict) -> str:
     story.append(Paragraph(T(raw_name), styles['CV_Name']))
     story.append(Spacer(1, 4))
 
-    contact_info = []
-    if personal.get("email"): contact_info.append(personal["email"])
-    if personal.get("location"): contact_info.append(personal["location"])
-    if personal.get("linkedin"): contact_info.append(f"LinkedIn: {personal['linkedin']}")
-    if personal.get("github"): contact_info.append(f"GitHub: {personal['github']}")
+    # Contact info: email / LinkedIn / GitHub / portfolio are IDENTIFIERS,
+    # not prose — they must render byte-for-byte in every language or they
+    # silently stop working (e.g. an Arabic-numeral email is undeliverable,
+    # a mangled GitHub link 404s). Only "location" is genuine free-text and
+    # safe to run through the Arabic shaper. This fixes a bug where the
+    # entire contact line was shaped together, converting digits inside the
+    # email/GitHub handle to Arabic-Indic numerals.
+    contact_parts = []
+    if personal.get("email"):
+        contact_parts.append(personal["email"])
+    if personal.get("location"):
+        contact_parts.append(T(personal["location"]))
+    if personal.get("linkedin"):
+        contact_parts.append(f"LinkedIn: {personal['linkedin']}")
+    if personal.get("github"):
+        contact_parts.append(f"GitHub: {personal['github']}")
+    if personal.get("portfolio"):
+        contact_parts.append(personal["portfolio"])
 
-    contact_str = "  |  ".join(reversed(contact_info) if is_arabic else contact_info)
-    story.append(Paragraph(T(contact_str), styles['CV_Contact']))
+    contact_str = "  |  ".join(reversed(contact_parts) if is_arabic else contact_parts)
+    # NOTE: no T()/_shape() wrapping the joined string anymore — see above.
+    story.append(Paragraph(contact_str, styles['CV_Contact']))
     story.append(Spacer(1, 10))
 
     def add_section_divider(en_title):
@@ -227,7 +299,7 @@ def render_cv_pdf(state: dict) -> str:
             company = exp.get('company', '')
             dates = _translate_date_terms(exp.get("dates", ""), is_arabic)
 
-            left_html = f"<b>{T(title)}</b> — {T(company)}" if is_arabic else f"<b>{title}</b> · {company}"
+            left_html = f"<b>{T(title)}</b> — {T(company)}" if is_arabic else f"<b>{T(title)}</b> · {T(company)}"
             main_p = Paragraph(left_html, styles['CV_Body'])
             side_p = Paragraph(T(dates), styles['CV_ItemRight'])
 
@@ -271,7 +343,7 @@ def render_cv_pdf(state: dict) -> str:
                 tech_p = Paragraph(f"<i>{T(tech_string)}</i>" if tech_string else "", styles['CV_ItemRight'])
                 story.append(build_structural_row(title_p, tech_p, is_arabic))
             else:
-                left_html = f"<b>{display_name}</b>" + (f" — <i>{tech_string}</i>" if tech_string else "")
+                left_html = f"<b>{T(display_name)}</b>" + (f" — <i>{T(tech_string)}</i>" if tech_string else "")
                 story.append(build_structural_row(Paragraph(left_html, styles['CV_Body']), Paragraph("", styles['CV_ItemRight']), is_arabic))
 
             story.append(Spacer(1, 2))
@@ -300,7 +372,7 @@ def render_cv_pdf(state: dict) -> str:
                     story.append(Paragraph(_shape(line_str, True), styles['CV_Body']))
                 else:
                     cat_label = category.replace("_", " ").title()
-                    story.append(Paragraph(f"<b>{cat_label}:</b> {formatted_items}", styles['CV_Body']))
+                    story.append(Paragraph(f"<b>{cat_label}:</b> {T(formatted_items)}", styles['CV_Body']))
                 story.append(Spacer(1, 3))
         story.append(Spacer(1, 6))
 
@@ -338,7 +410,7 @@ def render_cv_pdf(state: dict) -> str:
                 right_para = Paragraph("  |  ".join(right_bits), styles['CV_ItemRight'])
                 story.append(build_structural_row(left_para, right_para, is_arabic))
             else:
-                left_html = f"<b>{degree}</b> · {inst}" + (f" (GPA: {gpa})" if gpa else "")
+                left_html = f"<b>{T(degree)}</b> · {T(inst)}" + (f" (GPA: {gpa})" if gpa else "")
                 side_p = Paragraph(T(grad_year), styles['CV_ItemRight'])
                 story.append(build_structural_row(Paragraph(left_html, styles['CV_Body']), side_p, is_arabic))
             story.append(Spacer(1, 4))
@@ -366,6 +438,8 @@ def render_cover_letter_pdf(state: dict) -> str:
     name = personal.get("name") or "Candidate Name"
     story.append(Paragraph(f"<b>{T(name)}</b>", styles['CV_Body']))
     if personal.get("location"): story.append(Paragraph(T(personal["location"]), styles['CV_Body']))
+    # Email is an identifier — never run through the Arabic shaper (see
+    # render_cv_pdf's contact-info block for why).
     if personal.get("email"): story.append(Paragraph(personal["email"], styles['CV_Body']))
     story.append(Spacer(1, 15))
 
@@ -390,7 +464,7 @@ def render_cover_letter_pdf(state: dict) -> str:
     story.append(Spacer(1, 15))
 
     if job_title:
-        subject = f"الموضوع: التقديم على وظيفة {T(job_title)}" if is_arabic else f"RE: Application for {job_title}"
+        subject = f"الموضوع: التقديم على وظيفة {T(job_title)}" if is_arabic else f"RE: Application for {T(job_title)}"
         story.append(Paragraph(f"<b>{T(subject)}</b>", styles['CV_Body']))
         story.append(Spacer(1, 15))
 

@@ -17,6 +17,32 @@ STRICT RULES:
 - All dates must be extracted exactly as written
 - All bullets must be extracted word-for-word
 
+EDUCATION vs EXPERIENCE — read carefully, this is a common mistake:
+- An entry belongs under "education" if it describes the candidate's own enrollment, degree
+  program, or student status at an institution — even if the CV lists it in a section titled
+  "Experience" or similar. For example, a line like:
+    Student — King Abdulaziz University    Jan 2022 – Feb 2024
+  belongs under "education" (institution: "King Abdulaziz University"), NOT under "experience",
+  even though "Student" might look like a job title at first glance.
+- An entry belongs under "experience" ONLY if it describes actual work performed for an employer
+  or organization — a job, internship, or freelance role where the candidate did tasks for that
+  organization. "Intern" or "Internship" IS real experience and belongs under "experience", even
+  if it happened during or alongside a degree program — do not merge it into the education entry
+  or drop it.
+- A good test: if the line is just describing academic enrollment (no employer, no job duties),
+  it's education. If it describes tasks/responsibilities performed for an organization, it's
+  experience — regardless of which section heading the CV author put it under.
+
+DATES — read carefully, this is a common mistake:
+- Always extract the FULL date range exactly as written in the CV, including both the start and
+  end (e.g. "Jan 2022 – Feb 2024" or "June 2025 – August 2025"), not just a single year.
+- Do NOT substitute a graduation year or any other single year for the actual date range that
+  appears next to the entry. If the CV shows both a graduation year AND a separate date range for
+  an experience or education entry, use the date range that is actually attached to that specific
+  entry — do not pull in a graduation year from elsewhere in the CV instead.
+- If only a single date is genuinely written for an entry (no range), extract exactly that single
+  date — do not invent an end date.
+
 EXPERIENCE BULLETS — read carefully, this is a common mistake:
 - "bullets" must ONLY contain lines that describe an action, responsibility, or achievement —
   typically a sentence starting with a verb, or a line marked with a bullet symbol (•, -, ➢, *)

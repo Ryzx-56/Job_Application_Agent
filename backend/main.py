@@ -15,7 +15,7 @@ load_dotenv(find_dotenv(), override=True)
 # Import pipeline structures
 from core.state import AgentState
 from core.orchestrator import app as graph
-from core.auth import get_current_user_id
+from core.auth import get_current_user_id, get_current_user_id_query_or_header
 from core.credits import reserve_credits, refund_credits, get_credits, normalize_cv_language
 from core.subscription import cancel_subscription, resume_subscription
 from utils.pdf_parser import extract_text_from_pdf
@@ -87,6 +87,51 @@ def make_initial_state(cv_text: str, jd_text: str) -> AgentState:
         current_step="start",
     )
 
+
+def _pipeline_produced_usable_cv(result_state: dict) -> bool:
+    """
+    True signal that Agent 1 (cv_parser / manual_cv_parser) actually
+    extracted real data, rather than the pipeline running end-to-end on an
+    empty facts_json after a silent upstream failure (e.g. Gemini rate
+    limit exhausted all retries). personal.name is the one field Agent 1
+    is required to populate — checking it is a general, non-hardcoded
+    signal that works no matter *why* Agent 1 failed.
+    """
+    facts = result_state.get("facts_json") or {}
+    personal = facts.get("personal") or {}
+    return bool((personal.get("name") or "").strip())
+
+
+def _weight_factors_usable(result_state: dict) -> bool:
+    """
+    Same idea as _pipeline_produced_usable_cv, but for Agent 2
+    (jd_analyzer). job_title is the one field that's always meaningful
+    when the JD was genuinely parsed — required_skills / ats_keywords
+    being empty can legitimately happen on a very thin real JD, so
+    job_title is the safer signal that Agent 2 actually ran, rather than
+    silently shipping a CV that was never tailored to the job at all.
+    Without this check, a failed Agent 2 could even show a *misleadingly
+    high* ATS score, since ats_scorer.py's keyword-match rate defaults to
+    a perfect 1.0 when there are zero keywords to check against.
+    """
+    weight_factors = result_state.get("weight_factors") or {}
+    job_title = (weight_factors.get("job_title") or "").strip()
+    return bool(job_title)
+
+
+def _pipeline_ready(result_state: dict) -> tuple[bool, str]:
+    """
+    True only if BOTH Agent 1 and Agent 2 actually produced usable data.
+    Returns (ready, user_facing_error_message) so callers can raise/emit
+    a specific, honest message instead of a generic failure.
+    """
+    if not _pipeline_produced_usable_cv(result_state):
+        return False, "We couldn't read your CV — please try again in a moment."
+    if not _weight_factors_usable(result_state):
+        return False, "We couldn't analyze the job description — please try again in a moment."
+    return True, ""
+
+
 # ─── LIVE PROGRESS STREAMING (dashboard "Agent N" UI) ─────────────────────
 #
 # Maps LangGraph node names -> a stable "Agent N" number the frontend shows.
@@ -152,6 +197,17 @@ def _stream_pipeline(initial_state: AgentState, user_id: str, reserved_amount: i
 
         logger.info("✅ Multi-agent execution phase completed (stream).")
 
+        # Don't render/return a fake success if Agent 1 never actually
+        # extracted usable data (e.g. Gemini rate-limited out after all
+        # retries) — see _pipeline_produced_usable_cv for why this check
+        # is the reliable signal rather than just checking state["error"].
+        ready, error_detail = _pipeline_ready(result_state)
+        if not ready:
+            logger.error(f"❌ Pipeline did not produce usable output (stream): {error_detail} | state error: {result_state.get('error')}")
+            refund_credits(user_id, reserved_amount)
+            yield _sse("error", {"detail": error_detail})
+            return
+
         cv_pdf_path = render_cv_pdf(result_state)
         cl_pdf_path = render_cover_letter_pdf(result_state)
 
@@ -189,7 +245,7 @@ async def health_check():
     return {"status": "healthy", "environment": os.getenv("ENVIRONMENT", "development")}
 
 @app.get("/api/v1/download/cv", tags=["Downloads"])
-async def download_cv(user_id: str = Depends(get_current_user_id)):
+async def download_cv(user_id: str = Depends(get_current_user_id_query_or_header)):
     """Serves the most recently generated tailored CV as a downloadable file."""
     if not os.path.exists(RESUME_PDF_PATH):
         raise HTTPException(
@@ -205,7 +261,7 @@ async def download_cv(user_id: str = Depends(get_current_user_id)):
 
 
 @app.get("/api/v1/download/cover-letter", tags=["Downloads"])
-async def download_cover_letter(user_id: str = Depends(get_current_user_id)):
+async def download_cover_letter(user_id: str = Depends(get_current_user_id_query_or_header)):
     """Serves the most recently generated cover letter as a downloadable file."""
     if not os.path.exists(COVER_LETTER_PDF_PATH):
         raise HTTPException(
@@ -304,7 +360,19 @@ async def optimize_application(
         logger.info("🧠 Commencing agent graph routing lifecycle...")
         result = graph.invoke(initial_state)
         logger.info("✅ Multi-agent execution phase completed.")
-        
+
+        # Don't return a fake "success" if Agent 1 never actually extracted
+        # usable data — see _pipeline_produced_usable_cv for why this is the
+        # reliable check rather than just looking at state["error"].
+        ready, error_detail = _pipeline_ready(result)
+        if not ready:
+            logger.error(f"❌ Pipeline did not produce usable output: {error_detail} | state error: {result.get('error')}")
+            refund_credits(user_id, reserved_amount)
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail=error_detail,
+            )
+
         cv_pdf_path = render_cv_pdf(result)
         cl_pdf_path = render_cover_letter_pdf(result)
         
@@ -329,7 +397,9 @@ async def optimize_application(
             "error": result.get("error", None),
             "credits_charged": reserved_amount,
         }
-        
+
+    except HTTPException:
+        raise
     except Exception as err:
         logger.error(f"❌ Pipeline Failure: {err}")
         refund_credits(user_id, reserved_amount)
@@ -443,6 +513,15 @@ async def optimize_manual_application(
         result = graph.invoke(initial_state)
         logger.info("✅ Multi-agent execution phase completed.")
 
+        ready, error_detail = _pipeline_ready(result)
+        if not ready:
+            logger.error(f"❌ Pipeline did not produce usable output (manual): {error_detail} | state error: {result.get('error')}")
+            refund_credits(user_id, reserved_amount)
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail=error_detail,
+            )
+
         cv_pdf_path = render_cv_pdf(result)
         cl_pdf_path = render_cover_letter_pdf(result)
 
@@ -468,6 +547,8 @@ async def optimize_manual_application(
             "credits_charged": reserved_amount,
         }
 
+    except HTTPException:
+        raise
     except Exception as err:
         logger.error(f"❌ Pipeline Failure (manual): {err}")
         refund_credits(user_id, reserved_amount)

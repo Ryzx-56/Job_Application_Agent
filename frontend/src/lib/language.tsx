@@ -348,9 +348,10 @@ export const content = {
         },
       ],
       rights: (year: number) => `© ${year} Tarshih. All rights reserved.`,
-      terms: "Terms",
+      terms: "Terms & Conditions",
       privacy: "Privacy",
       security: "Security",
+      returnPolicy: "Return & Exchange Policy",
     },
     brandPanel: {
       headline: "Every application, sharper than the last.",
@@ -932,9 +933,10 @@ export const content = {
         },
       ],
       rights: (year: number) => `© ${year} ترشيح. جميع الحقوق محفوظة.`,
-      terms: "الشروط",
+      terms: "الشروط والأحكام",
       privacy: "الخصوصية",
       security: "الأمان",
+      returnPolicy: "سياسة الإرجاع والاستبدال",
     },
     brandPanel: {
       headline: "كل طلب توظيف، أفضل من سابقه.",

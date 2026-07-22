@@ -281,8 +281,24 @@ export default function DashboardHomePage() {
   }, []);
   const [generating, setGenerating] = useState(false);
   const [result, setResult] = useState<GenerateResult | null>(null);
-  const [cvFileUrl, setCvFileUrl] = useState<string | null>(null);
-  const [coverLetterFileUrl, setCoverLetterFileUrl] = useState<string | null>(null);
+
+  // BUG #14 FIX: previously these held blob: URLs built by fetching the PDF
+  // via JS (fetch() with an Authorization header) and calling
+  // URL.createObjectURL(). iOS Safari is unreliable with the `download`
+  // attribute on a blob: URL — instead of downloading, it often just
+  // navigates the tab to display the blob inline, wiping all React state,
+  // which is exactly what "the site refreshed and everything disappeared"
+  // reports described. Now these hold plain backend URLs with the access
+  // token as a `?token=` query param (see core/auth.py's
+  // get_current_user_id_query_or_header and main.py's download/preview
+  // routes), so the browser handles the download/preview natively via a
+  // real <a href download> — no JS blob involved at all.
+  const [accessToken, setAccessToken] = useState<string | null>(null);
+  const [cvPreviewUrl, setCvPreviewUrl] = useState<string | null>(null);
+  const [cvDownloadUrl, setCvDownloadUrl] = useState<string | null>(null);
+  const [clPreviewUrl, setClPreviewUrl] = useState<string | null>(null);
+  const [clDownloadUrl, setClDownloadUrl] = useState<string | null>(null);
+
   const [error, setError] = useState("");
   const [showAllBullets, setShowAllBullets] = useState(false);
   const [showAllGaps, setShowAllGaps] = useState(false);
@@ -306,57 +322,25 @@ export default function DashboardHomePage() {
     !generating &&
     creditsRemaining >= requiredCredits;
 
-  // The preview/download endpoints now require Authorization, so plain
-  // <a href> links to them won't work (a browser navigation can't attach a
-  // header). Fetch both files once with the session token and hand out
-  // local blob URLs instead — anchors work fine against those.
+  // BUG #14 FIX: builds plain, reliable preview/download URLs once a result
+  // and access token are both available — no fetch, no blob, no cleanup
+  // needed. Token is short-lived (Supabase access token), but still worth
+  // keeping this endpoint read-only-only — see the trade-off note in
+  // core/auth.py's get_current_user_id_query_or_header docstring.
   useEffect(() => {
-    if (!result) {
-      setCvFileUrl(null);
-      setCoverLetterFileUrl(null);
+    if (!result || !accessToken) {
+      setCvPreviewUrl(null);
+      setCvDownloadUrl(null);
+      setClPreviewUrl(null);
+      setClDownloadUrl(null);
       return;
     }
-
-    let cancelled = false;
-    const objectUrls: string[] = [];
-
-    (async () => {
-      const supabase = createClient();
-      const {
-        data: { session },
-      } = await supabase.auth.getSession();
-      if (!session?.access_token) return;
-
-      const fetchAsBlobUrl = async (endpoint: string) => {
-        try {
-          const res = await fetch(`${API_URL}${endpoint}`, {
-            headers: { Authorization: `Bearer ${session.access_token}` },
-          });
-          if (!res.ok) return null;
-          const blob = await res.blob();
-          const url = URL.createObjectURL(blob);
-          objectUrls.push(url);
-          return url;
-        } catch {
-          return null;
-        }
-      };
-
-      const [cvUrl, clUrl] = await Promise.all([
-        fetchAsBlobUrl("/api/v1/preview/cv"),
-        fetchAsBlobUrl("/api/v1/preview/cover-letter"),
-      ]);
-      if (cancelled) return;
-      setCvFileUrl(cvUrl);
-      setCoverLetterFileUrl(clUrl);
-    })();
-
-    return () => {
-      cancelled = true;
-      objectUrls.forEach((url) => URL.revokeObjectURL(url));
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [result]);
+    const tokenParam = encodeURIComponent(accessToken);
+    setCvPreviewUrl(`${API_URL}/api/v1/preview/cv?token=${tokenParam}`);
+    setCvDownloadUrl(`${API_URL}/api/v1/download/cv?token=${tokenParam}`);
+    setClPreviewUrl(`${API_URL}/api/v1/preview/cover-letter?token=${tokenParam}`);
+    setClDownloadUrl(`${API_URL}/api/v1/download/cover-letter?token=${tokenParam}`);
+  }, [result, accessToken]);
 
   async function handleGenerate() {
     setError("");
@@ -371,18 +355,19 @@ export default function DashboardHomePage() {
     setGenerating(true);
     setResult(null);
     try {
-      const accessToken = await getAccessToken();
+      const token = await getAccessToken();
+      setAccessToken(token);
       const raw =
         cvMode === "upload"
           ? await runOptimizeStream(
               `${API_URL}/api/v1/optimize/stream`,
               buildUploadFormData(cvFile!, jobDescription, additionalInfo, cvLanguage),
-              accessToken
+              token
             )
           : await runOptimizeStream(
               `${API_URL}/api/v1/optimize-manual/stream`,
               JSON.stringify(buildManualPayload(manualData, jobDescription, additionalInfo, cvLanguage)),
-              accessToken
+              token
             );
       const data = mapBackendResponse(raw);
       setResult(data);
@@ -867,9 +852,9 @@ export default function DashboardHomePage() {
                 readyLabel={lang === "ar" ? "جاهز" : "Ready"}
                 previewLabel={copy.preview}
                 downloadLabel={copy.download}
-                previewHref={cvFileUrl ?? "#"}
-                downloadHref={cvFileUrl ?? "#"}
-                disabled={!cvFileUrl}
+                previewHref={cvPreviewUrl ?? "#"}
+                downloadHref={cvDownloadUrl ?? "#"}
+                disabled={!cvPreviewUrl || !cvDownloadUrl}
               />
               <FileResultCard
                 icon={Mail}
@@ -877,9 +862,9 @@ export default function DashboardHomePage() {
                 readyLabel={lang === "ar" ? "جاهز" : "Ready"}
                 previewLabel={copy.preview}
                 downloadLabel={copy.download}
-                previewHref={coverLetterFileUrl ?? "#"}
-                downloadHref={coverLetterFileUrl ?? "#"}
-                disabled={!coverLetterFileUrl}
+                previewHref={clPreviewUrl ?? "#"}
+                downloadHref={clDownloadUrl ?? "#"}
+                disabled={!clPreviewUrl || !clDownloadUrl}
               />
             </div>
           </div>

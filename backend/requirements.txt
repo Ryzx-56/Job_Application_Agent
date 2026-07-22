@@ -102,7 +102,7 @@ urllib3==2.7.0
 uuid_utils==0.15.0
 uvicorn==0.46.0
 watchdog==6.0.0
-websockets>-13.0,<16.0
+websockets>=13.0,<16.0
 win32_setctime==1.2.0
 xxhash==3.7.0
 zstandard==0.25.0

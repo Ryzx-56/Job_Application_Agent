@@ -22,7 +22,17 @@ def find_similar_jobs(weight_factors: dict, facts_json: dict) -> list:
     
     # Take top 3 key skills to make the search targeted but flexible
     search_skills = " ".join(required_skills[:3])
-    query = f"{job_title} active job openings hiring {search_skills}"
+
+    # BUG FIX (#12): the candidate's location (from facts_json.personal.location,
+    # populated either from the uploaded CV or the manual-entry location field)
+    # was never actually included in the query before — Tavily had no signal
+    # to prefer local listings, which is why testers in Saudi Arabia were
+    # getting jobs recommended in the UK. Generic — uses whatever location
+    # string the candidate actually provided, nothing hardcoded to one country.
+    candidate_location = ((facts_json.get("personal", {}) or {}).get("location") or "").strip()
+    location_query_part = f" in {candidate_location}" if candidate_location else ""
+
+    query = f"{job_title} active job openings hiring {search_skills}{location_query_part}"
     
     logger.info(f"🔍 Agent 6 — Querying Tavily for listings matching: '{query}'...")
     

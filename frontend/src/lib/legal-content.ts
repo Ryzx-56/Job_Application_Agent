@@ -1,8 +1,9 @@
 // lib/legal-content.ts
 //
 // Structured content for every document opened from the footer (and the
-// auth pages): Terms & Conditions, Privacy Policy, Security, About,
-// Resume Guide, ATS Tips, and Contact. Kept separate from language.tsx
+// auth pages): Terms & Conditions, Privacy Policy, Security, Return &
+// Exchange Policy, About, Resume Guide, ATS Tips, and Contact. Kept
+// separate from language.tsx
 // because it's long-form and doesn't need to flow through the `t` object
 // used for UI chrome. Components pull the right language version off
 // `legalContent[lang][key]` directly.
@@ -15,7 +16,7 @@
 
 export type LegalSection = { heading: string; body: string[] };
 export type LegalDoc = { title: string; updated: string; intro?: string; sections: LegalSection[] };
-export type LegalDocKey = "terms" | "privacy" | "security" | "about" | "resumeGuide" | "atsTips" | "contact";
+export type LegalDocKey = "terms" | "privacy" | "security" | "returnPolicy" | "about" | "resumeGuide" | "atsTips" | "contact";
 export type Lang = "en" | "ar";
 
 export const legalContent: Record<Lang, Record<LegalDocKey, LegalDoc>> = {
@@ -308,6 +309,53 @@ export const legalContent: Record<Lang, Record<LegalDocKey, LegalDoc>> = {
           heading: "Reporting a security issue",
           body: [
             "If you believe you've found a security vulnerability in Tarshih, please report it to tarshih.dev@gmail.com with as much detail as possible. Please do not publicly disclose a suspected vulnerability before giving us a reasonable opportunity to address it. We appreciate responsible disclosure and will respond as quickly as we can.",
+          ],
+        },
+      ],
+    },
+    returnPolicy: {
+      title: "Return & Exchange Policy",
+      updated: "Last updated: July 2026",
+      intro:
+        "Tarshih is a digital service, not a physical product, so there is nothing to physically return or exchange. This page explains, in plain language, how refunds, cancellations, and plan changes work. It supplements, and does not replace, Sections 5 and 6 of our Terms & Conditions.",
+      sections: [
+        {
+          heading: "1. Digital goods, no physical returns",
+          body: [
+            "Every generated resume, cover letter, ATS score, and job match is delivered digitally the moment it's created. There is no physical product shipped to you, so standard \"return the item\" policies don't apply. Instead, this policy covers refunds and account-level changes.",
+          ],
+        },
+        {
+          heading: "2. Subscriptions",
+          body: [
+            "You can cancel or downgrade your Pro or Elite subscription at any time from your account settings. Cancelling or downgrading does not trigger an immediate refund for the current billing period: your plan and any remaining credits stay active until the end of that cycle, and the change takes effect at the next renewal.",
+            "Upgrading to a higher tier takes effect immediately and may involve a prorated charge for the remainder of the current cycle.",
+          ],
+        },
+        {
+          heading: "3. Pay-as-you-go credit packs",
+          body: [
+            "Credit packs are one-time purchases that do not expire on a monthly cycle. Once a credit has been used to generate a document, that charge is final. Unused credits from a pack you no longer want to use are not eligible for a cash refund, but remain available on your account for future use unless your account is terminated under Section 12 of the Terms & Conditions.",
+          ],
+        },
+        {
+          heading: "4. When a refund does apply",
+          body: [
+            "If a technical failure on our side prevents the Service from delivering something you paid for, for example a credit is deducted but no document is produced, email tarshih.dev@gmail.com with your account email and a brief description. We will restore the credit or, at our discretion, refund that specific charge.",
+            "Fees already paid and credits already consumed are otherwise non-refundable, except where required by applicable law.",
+          ],
+        },
+        {
+          heading: "5. Right of withdrawal under Saudi e-commerce law",
+          body: [
+            "Saudi Arabia's e-commerce regulations generally give consumers a right to withdraw from an online purchase within a set period. That right does not extend to digital content or services supplied on a non-tangible medium once performance has begun with your prior express consent and acknowledgment that you lose the right of withdrawal by doing so.",
+            "By purchasing a subscription or credit pack and generating at least one document with it, you expressly ask us to begin performing the Service immediately and acknowledge that your right of withdrawal ends once that generation is delivered. If you haven't used any credit from a purchase yet, contact tarshih.dev@gmail.com within a reasonable time and we'll review the request under applicable consumer protection law.",
+          ],
+        },
+        {
+          heading: "6. How to request a refund",
+          body: [
+            "Email tarshih.dev@gmail.com from the address on your account, describe what happened, and we'll respond as quickly as we can. Approved refunds are returned to the original payment method through our payment processor.",
           ],
         },
       ],
@@ -688,6 +736,53 @@ export const legalContent: Record<Lang, Record<LegalDocKey, LegalDoc>> = {
           heading: "الإبلاغ عن مشكلة أمنية",
           body: [
             "إذا كنت تعتقد أنك عثرت على ثغرة أمنية في ترشيح، يرجى الإبلاغ عنها على tarshih.dev@gmail.com بأكبر قدر ممكن من التفاصيل. يرجى عدم الإفصاح علنًا عن ثغرة مشتبه بها قبل منحنا فرصة معقولة لمعالجتها. نقدّر الإفصاح المسؤول وسنرد بأسرع ما يمكن.",
+          ],
+        },
+      ],
+    },
+    returnPolicy: {
+      title: "سياسة الإرجاع والاستبدال",
+      updated: "آخر تحديث: يوليو 2026",
+      intro:
+        "ترشيح خدمة رقمية وليست منتجًا ماديًا، لذا لا يوجد ما يمكن إرجاعه أو استبداله ماديًا. توضّح هذه الصفحة، بلغة مبسّطة، كيفية عمل عمليات الاسترداد والإلغاء وتغيير الخطط. وهي مكمّلة للبندين 5 و6 من الشروط والأحكام، ولا تحل محلهما.",
+      sections: [
+        {
+          heading: "1. منتجات رقمية، لا إرجاع ماديًا",
+          body: [
+            "تُسلَّم كل سيرة ذاتية وخطاب تقديم ونتيجة ATS ومطابقة وظيفية رقميًا فور إنشائها. لا يوجد منتج مادي يُشحن إليك، لذا لا تنطبق سياسات \"إرجاع المنتج\" المعتادة. بدلًا من ذلك، تغطي هذه السياسة عمليات الاسترداد والتغييرات على مستوى الحساب.",
+          ],
+        },
+        {
+          heading: "2. الاشتراكات",
+          body: [
+            "يمكنك إلغاء اشتراكك في برو أو النخبة أو خفضه في أي وقت من إعدادات حسابك. لا يؤدي الإلغاء أو الخفض إلى استرداد فوري لفترة الفوترة الحالية: تبقى خطتك وأي رصيد متبقٍ فعّالين حتى نهاية تلك الدورة، ويسري التغيير عند التجديد التالي.",
+            "الترقية إلى فئة أعلى تسري فورًا وقد تتضمن رسومًا تناسبية عن باقي الدورة الحالية.",
+          ],
+        },
+        {
+          heading: "3. باقات الرصيد بالدفع حسب الاستخدام",
+          body: [
+            "باقات الرصيد عمليات شراء لمرة واحدة ولا تنتهي صلاحيتها على دورة شهرية. بمجرد استخدام رصيد لإنشاء مستند، تكون تلك العملية نهائية. الرصيد غير المستخدم من باقة لم تعد ترغب في استخدامها غير مؤهل لاسترداد نقدي، لكنه يبقى متاحًا في حسابك للاستخدام لاحقًا ما لم يُنهَ حسابك بموجب البند 12 من الشروط والأحكام.",
+          ],
+        },
+        {
+          heading: "4. متى ينطبق الاسترداد",
+          body: [
+            "إذا حال عطل تقني من جانبنا دون تسليم ما دفعت مقابله، كأن يُخصم رصيد دون إنتاج مستند، راسلنا على tarshih.dev@gmail.com مع بريد حسابك ووصف موجز لما حدث. سنعيد الرصيد أو، وفق تقديرنا، نسترد تلك العملية تحديدًا.",
+            "بخلاف ذلك، فإن الرسوم المدفوعة والرصيد المستهلك غير قابلة للاسترداد، إلا في الحالات التي يقتضيها القانون المعمول به.",
+          ],
+        },
+        {
+          heading: "5. حق التراجع بموجب نظام التجارة الإلكترونية السعودي",
+          body: [
+            "تمنح أنظمة التجارة الإلكترونية في المملكة العربية السعودية المستهلكين عمومًا حق التراجع عن عملية شراء إلكترونية خلال مدة محددة. لا يمتد هذا الحق إلى المحتوى الرقمي أو الخدمات التي تُقدَّم على وسيط غير ملموس متى بدأ التنفيذ بموافقتك الصريحة المسبقة وإقرارك بأنك تفقد بذلك حق التراجع.",
+            "بشرائك اشتراكًا أو باقة رصيد وإنشائك مستندًا واحدًا على الأقل بها، فإنك تطلب منا صراحةً البدء في تنفيذ الخدمة فورًا وتقرّ بأن حق تراجعك ينتهي بمجرد تسليم ذلك المستند. إن لم تكن قد استخدمت أي رصيد من عملية الشراء بعد، راسلنا على tarshih.dev@gmail.com خلال مدة معقولة وسنراجع طلبك وفق نظام حماية المستهلك المعمول به.",
+          ],
+        },
+        {
+          heading: "6. كيفية طلب الاسترداد",
+          body: [
+            "راسلنا على tarshih.dev@gmail.com من البريد الإلكتروني المسجّل في حسابك، مع وصف ما حدث، وسنرد بأسرع ما يمكن. تُعاد المبالغ المستردة المعتمدة إلى وسيلة الدفع الأصلية عبر معالج الدفع لدينا.",
           ],
         },
       ],

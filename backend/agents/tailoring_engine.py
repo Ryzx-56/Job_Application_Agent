@@ -115,7 +115,38 @@ Never use em dashes (—) or en dashes as punctuation. Use a comma or write two 
 Return ONLY the corrected bullet text, nothing else.
 """
 
+# Second-pass corrective prompt — only used when an Arabic generation still
+# has leftover Latin-script words after the first pass (see
+# _find_latin_leaks / _enforce_arabic_purity below). Sends back exactly the
+# JSON that was produced plus a pointer to which fields still have Latin
+# text, and asks for ONLY a translation fix — not a full regeneration — so
+# it can't accidentally re-introduce a fabrication the first pass avoided.
+ARABIC_PURITY_FIX_PROMPT = """
+You previously produced this JSON for an Arabic-language CV, but some fields
+still contain English/Latin-script words that must not be there.
+
+RULE: every string value in this JSON must be fully Modern Standard Arabic.
+Technical terms, tool names, and framework names must be translated into
+Arabic (e.g. "بايثون" not "Python", "واجهة برمجة التطبيقات" not "API").
+Do not translate or alter anything under the "original" key of any bullet —
+leave those exactly as they are. Do not add, remove, or invent any new
+information — this is a translation pass only, not a rewrite.
+
+FIELDS STILL CONTAINING LATIN TEXT: {offending_fields}
+
+CURRENT JSON:
+{current_json}
+
+Return the corrected JSON in the exact same structure, with every remaining
+Latin word replaced by its Arabic equivalent. Return ONLY the JSON, no
+markdown, no explanation.
+"""
+
 _SKILL_CATEGORIES = ("languages", "frameworks", "tools", "soft_skills", "other")
+
+# Matches any run of Latin letters. Used only for the Arabic-purity check —
+# never applied to English-mode output.
+_LATIN_WORD_RE = re.compile(r"[A-Za-z]{2,}")
 
 
 def _build_language_instruction(cv_language: str) -> str:
@@ -126,7 +157,8 @@ def _build_language_instruction(cv_language: str) -> str:
   - Translate everything: Job titles (e.g., "مساعد مبيعات وخدمة عملاء"), Company names (e.g., "تيم لاب"), Project names, and Frameworks/Languages (e.g., write "بايثون" instead of "Python", and "واجهة برمجة التطبيقات" instead of "API").
   - Do not mix English words into Arabic strings as it breaks layout rendering engines.
   - Numbers, years, and GPAs must stay as regular numerical digits (e.g., "2025", "4.27").
-  - "original" inside each bullet object must remain exactly as it appears in FACTS_JSON without translation."""
+  - "original" inside each bullet object must remain exactly as it appears in FACTS_JSON without translation.
+  - This rule matters MORE than fluent phrasing — if you are ever unsure how to translate a term, still translate it as best you can rather than leaving it in English. A slightly awkward Arabic phrase is always better than any English word appearing in the output."""
     
     return """OUTPUT LANGUAGE:
   - Write ALL generated text in professional English, regardless of what language FACTS_JSON or RAW_ADDITIONAL_INFO are written in."""
@@ -136,6 +168,86 @@ def _strip_dashes(text: str) -> str:
     if not text:
         return text
     return text.replace(" — ", ", ").replace(" – ", ", ").replace("—", ",").replace("–", ",")
+
+
+def _find_latin_leaks(core_data: dict) -> list[str]:
+    """
+    Scans every generated field (except bullets[].original, which must stay
+    untranslated on purpose) for leftover Latin-script words. Returns the
+    list of field labels that still have Latin text, e.g.
+    ["professional_summary", "bullets[2].tailored", "tailored_skills.tools"].
+    Empty list means the output is clean.
+    """
+    offenders = []
+
+    if _LATIN_WORD_RE.search(core_data.get("professional_summary") or ""):
+        offenders.append("professional_summary")
+
+    for i, b in enumerate(core_data.get("bullets", [])):
+        if _LATIN_WORD_RE.search(b.get("tailored") or ""):
+            offenders.append(f"bullets[{i}].tailored")
+
+    for i, p in enumerate(core_data.get("tailored_projects", [])):
+        if _LATIN_WORD_RE.search(p.get("display_name") or "") or _LATIN_WORD_RE.search(p.get("tailored_description") or ""):
+            offenders.append(f"tailored_projects[{i}]")
+
+    for i, v in enumerate(core_data.get("tailored_volunteer_work", [])):
+        if _LATIN_WORD_RE.search(v or ""):
+            offenders.append(f"tailored_volunteer_work[{i}]")
+
+    tailored_skills = core_data.get("tailored_skills", {}) or {}
+    for cat, items in tailored_skills.items():
+        if isinstance(items, list) and any(_LATIN_WORD_RE.search(str(item)) for item in items):
+            offenders.append(f"tailored_skills.{cat}")
+
+    return offenders
+
+
+def _enforce_arabic_purity(core_data: dict) -> dict:
+    """
+    If the initial generation still has Latin-script leaks, sends ONE
+    corrective pass asking Claude to translate only the offending fields,
+    then re-parses and re-validates the result. If the fix call itself
+    fails or still doesn't come back clean, logs it and returns the best
+    version available rather than blocking the whole pipeline — same
+    best-effort philosophy as the rest of this file.
+    """
+    offenders = _find_latin_leaks(core_data)
+    if not offenders:
+        return core_data
+
+    logger.warning(f"🔤 Arabic purity check found leftover Latin text in: {offenders} — running corrective pass...")
+
+    prompt = ARABIC_PURITY_FIX_PROMPT.format(
+        offending_fields=json.dumps(offenders, ensure_ascii=False),
+        current_json=json.dumps(core_data, ensure_ascii=False),
+    )
+
+    try:
+        raw = generate_claude_text(prompt, max_tokens=6000)
+        raw = re.sub(r"```json|```", "", raw).strip()
+        fixed = json.loads(raw)
+
+        # Only accept the fix if it's still the same shape (same bullet
+        # count etc.) — if the model reshaped the JSON unexpectedly, keep
+        # the original rather than risk corrupting the structure.
+        if (
+            isinstance(fixed, dict)
+            and len(fixed.get("bullets", [])) == len(core_data.get("bullets", []))
+        ):
+            still_offending = _find_latin_leaks(fixed)
+            if still_offending:
+                logger.warning(f"🔤 Corrective pass still has Latin text in: {still_offending} — proceeding with best-effort result.")
+            else:
+                logger.info("✅ Arabic purity corrective pass succeeded — all fields now fully Arabic.")
+            return fixed
+        else:
+            logger.warning("🔤 Corrective pass returned an unexpected shape — keeping original output.")
+            return core_data
+
+    except Exception as e:
+        logger.error(f"🔤 Arabic purity corrective pass failed: {e} — proceeding with best-effort original output.")
+        return core_data
 
 
 def run_tailoring_engine(state: AgentState) -> dict:
@@ -187,12 +299,24 @@ def run_tailoring_engine(state: AgentState) -> dict:
                     for b in data.get("bullets", [])
                     if isinstance(b, dict)
                 ],
+                "tailored_projects": data.get("tailored_projects", []),
+                "tailored_volunteer_work": data.get("tailored_volunteer_work", []),
+                "tailored_skills": data.get("tailored_skills", {}),
             }
-            validated = TailoredCV.model_validate(core_data)
+
+            # Arabic-purity check + one corrective pass — see
+            # _enforce_arabic_purity docstring. No-op for English CVs.
+            if cv_language == "ar":
+                core_data = _enforce_arabic_purity(core_data)
+
+            validated = TailoredCV.model_validate({
+                "professional_summary": core_data["professional_summary"],
+                "bullets": core_data["bullets"],
+            })
             bullets = [b.model_dump() for b in validated.bullets]
 
             tailored_projects = []
-            for p in data.get("tailored_projects", []):
+            for p in core_data.get("tailored_projects", []):
                 if not isinstance(p, dict):
                     continue
                 name = str(p.get("name", "")).strip()
@@ -206,10 +330,10 @@ def run_tailoring_engine(state: AgentState) -> dict:
                     })
 
             tailored_volunteer_work = [
-                _strip_dashes(str(v).strip()) for v in data.get("tailored_volunteer_work", []) if str(v).strip()
+                _strip_dashes(str(v).strip()) for v in core_data.get("tailored_volunteer_work", []) if str(v).strip()
             ]
 
-            raw_skills = data.get("tailored_skills", {})
+            raw_skills = core_data.get("tailored_skills", {})
             tailored_skills = {}
             if isinstance(raw_skills, dict):
                 for cat in _SKILL_CATEGORIES:

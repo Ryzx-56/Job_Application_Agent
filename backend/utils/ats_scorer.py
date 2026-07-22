@@ -31,6 +31,61 @@ def tokenize(text: str) -> list[str]:
     return normalize(text).split()
 
 
+# ─── KEYWORD-VARIANT RECOGNITION ──────────────────────────────────────────────
+# These two helpers exist to catch keywords the candidate genuinely has —
+# just phrased slightly differently (a different grammatical form, or a
+# common abbreviation vs its spelled-out form) — that a strict substring
+# match would otherwise miss and undercount. Neither of these adds or
+# infers anything the candidate didn't actually write; they only recognize
+# different real forms of the same real content.
+
+_COMMON_SUFFIXES = ("ing", "ers", "er", "es", "ed", "s")
+
+
+def _stem(word: str) -> str:
+    """
+    Lightweight suffix stripping so a genuine grammatical variant of a
+    keyword still counts as a match — e.g. CV says "developed" or
+    "developing", JD keyword is "develop"/"development". Deliberately
+    conservative: only strips a suffix if at least 3 characters remain, to
+    avoid mangling short real words.
+    """
+    w = word.lower()
+    for suf in _COMMON_SUFFIXES:
+        if w.endswith(suf) and len(w) - len(suf) >= 3:
+            return w[: -len(suf)]
+    return w
+
+
+# Common abbreviation <-> full-term pairs. Recognizing "JS" as a match for
+# a JD asking for "JavaScript" (or vice versa) isn't fabrication — it's the
+# same real skill, just written differently on each side. Keep this list to
+# genuinely unambiguous, widely-standard equivalents only.
+_KNOWN_EQUIVALENTS: dict[str, set[str]] = {
+    "javascript": {"js"}, "js": {"javascript"},
+    "typescript": {"ts"}, "ts": {"typescript"},
+    "machine learning": {"ml"}, "ml": {"machine learning"},
+    "artificial intelligence": {"ai"}, "ai": {"artificial intelligence"},
+    "natural language processing": {"nlp"}, "nlp": {"natural language processing"},
+    "user interface": {"ui"}, "ui": {"user interface"},
+    "user experience": {"ux"}, "ux": {"user experience"},
+    "database": {"db"}, "db": {"database"},
+    "application programming interface": {"api"}, "api": {"application programming interface"},
+    "continuous integration": {"ci"}, "ci": {"continuous integration"},
+    "continuous deployment": {"cd"}, "cd": {"continuous deployment"},
+    "object oriented programming": {"oop"}, "oop": {"object oriented programming"},
+    "structured query language": {"sql"}, "sql": {"structured query language"},
+}
+
+
+def _stemmed_phrase_match(kw_norm: str, cv_token_stems: set[str]) -> bool:
+    """True if every stemmed word in the (normalized) keyword phrase is
+    present somewhere in the CV's stemmed tokens — i.e. the candidate used
+    a different grammatical form of every word in the keyword."""
+    kw_stems = {_stem(t) for t in kw_norm.split() if t}
+    return bool(kw_stems) and kw_stems.issubset(cv_token_stems)
+
+
 # ─── EXACT KEYWORD MATCHING ───────────────────────────────────────────────────
 
 def exact_keyword_match_rate(
@@ -38,18 +93,34 @@ def exact_keyword_match_rate(
     cv_text: str
 ) -> tuple[float, list[str], list[str]]:
     """
-    Check which keywords appear verbatim (case-insensitive) in the CV text.
+    Check which keywords appear verbatim (case-insensitive) in the CV text,
+    or as a recognized grammatical variant / known equivalent term (see
+    _stem and _KNOWN_EQUIVALENTS above — both only recognize real content
+    the candidate already wrote, never invented content).
     Returns: (rate 0-1, matched list, unmatched list)
     """
     matched = []
     unmatched = []
     cv_lower = normalize(cv_text)
+    cv_token_stems = {_stem(t) for t in cv_lower.split()}
 
     for kw in keywords:
-        if normalize(kw) in cv_lower:
+        kw_norm = normalize(kw)
+
+        if kw_norm in cv_lower:
             matched.append(kw)
-        else:
-            unmatched.append(kw)
+            continue
+
+        equivalents = _KNOWN_EQUIVALENTS.get(kw_norm, set())
+        if any(eq in cv_lower for eq in equivalents):
+            matched.append(kw)
+            continue
+
+        if _stemmed_phrase_match(kw_norm, cv_token_stems):
+            matched.append(kw)
+            continue
+
+        unmatched.append(kw)
 
     rate = len(matched) / len(keywords) if keywords else 1.0
     return rate, matched, unmatched
@@ -115,7 +186,8 @@ def combined_keyword_rate(
     High keywords weighted 2x vs medium.
     Returns: (weighted_rate 0-1, all_matched, all_unmatched)
     """
-    # Exact pass first
+    # Exact pass first (now includes variant/equivalent recognition — see
+    # exact_keyword_match_rate above)
     exact_rate_h, matched_h, unmatched_h = exact_keyword_match_rate(high_keywords, cv_text)
     exact_rate_m, matched_m, unmatched_m = exact_keyword_match_rate(medium_keywords, cv_text)
 
@@ -156,22 +228,36 @@ def required_skills_match_rate(
         if isinstance(category, list):
             all_candidate_skills.extend([normalize(s) for s in category])
 
+    candidate_skill_stems = {_stem(t) for s in all_candidate_skills for t in s.split()}
+
     matched = []
     missing = []
     for skill in required_skills:
-        if normalize(skill) in all_candidate_skills:
+        skill_norm = normalize(skill)
+
+        if skill_norm in all_candidate_skills:
+            matched.append(skill)
+            continue
+
+        equivalents = _KNOWN_EQUIVALENTS.get(skill_norm, set())
+        if any(eq in all_candidate_skills for eq in equivalents):
+            matched.append(skill)
+            continue
+
+        if _stemmed_phrase_match(skill_norm, candidate_skill_stems):
+            matched.append(skill)
+            continue
+
+        # Semantic fallback — check if similar skill exists
+        _, sem_match = semantic_keyword_match_rate(
+            [skill],
+            " ".join(all_candidate_skills),
+            threshold=0.5
+        )
+        if sem_match:
             matched.append(skill)
         else:
-            # Semantic fallback — check if similar skill exists
-            _, sem_match = semantic_keyword_match_rate(
-                [skill],
-                " ".join(all_candidate_skills),
-                threshold=0.5
-            )
-            if sem_match:
-                matched.append(skill)
-            else:
-                missing.append(skill)
+            missing.append(skill)
 
     rate = len(matched) / len(required_skills) if required_skills else 1.0
     return rate, matched, missing
