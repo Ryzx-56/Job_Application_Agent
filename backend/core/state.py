@@ -32,6 +32,15 @@ class AgentState(TypedDict):
     # tailoring_engine / document_generator translate as needed.
     cv_language:                str
 
+    # Which of the 11 CV templates to render with (see
+    # utils/template_registry.py). No graph node reads or writes this — it
+    # rides through state untouched from make_initial_state() all the way
+    # to result_state, purely so main.py can read result["template_id"]
+    # once at the end instead of threading a separate variable through
+    # _stream_pipeline's signature. Falls back to DEFAULT_TEMPLATE_ID if
+    # empty (see utils.template_registry.resolve_template_path).
+    template_id:                 str
+
     # ── AGENT 1 OUTPUT (Gemini) ─────────────────────────────
     facts_json:              dict
 

@@ -106,7 +106,15 @@ websockets>=13.0,<16.0
 win32_setctime==1.2.0
 xxhash==3.7.0
 zstandard==0.25.0
+# arabic-reshaper / python-bidi were only ever used by the old ReportLab
+# pdf_generator.py's manual glyph-shaping code, which the WeasyPrint
+# rewrite deletes entirely (Pango shapes Arabic natively). Left in place
+# rather than removed, since something else in the codebase may still
+# import them — confirm nothing else does before pruning.
 arabic-reshaper==3.0.0
 python-bidi==0.6.6
 PyJWT[crypto]
 supabase==2.31.0
+# --- added for template-driven PDF rendering (utils/pdf_generator.py rewrite) ---
+weasyprint==63.1
+pypdf==5.1.0

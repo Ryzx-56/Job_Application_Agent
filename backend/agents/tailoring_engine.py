@@ -15,14 +15,45 @@ YOUR ONLY SOURCES OF TRUTH ARE:
   2. The WEIGHT_FACTORS provided below (what this specific job cares about)
   3. The RAW_ADDITIONAL_INFO provided below — free-text notes the candidate typed themselves
 
-STRICT RULES:
-  - You MAY rephrase existing bullets using JD keywords
-  - You MAY re-order bullets to lead with the most relevant ones
-  - You MAY restructure sentences for better impact
-  - You MAY fix capitalization and remove clearly unprofessional filler
+STRICT RULES — DO NOT CROSS THESE:
   - You MUST NOT add any skill, metric, company, or achievement not present in FACTS_JSON or RAW_ADDITIONAL_INFO
-  - You MUST NOT invent percentages, numbers, or timeframes
+  - You MUST NOT invent percentages, numbers, timeframes, team sizes, or outcomes
   - If the candidate lacks a required skill, DO NOT mention it. It will be flagged in gap analysis.
+
+WHAT YOU SHOULD DO — BE BOLD HERE, THIS IS WHERE MOST OF YOUR VALUE IS:
+  - Reword every bullet significantly. Do not just swap in a keyword and leave the rest of
+    the sentence untouched — a bullet that still reads almost identically to the original
+    is a failure of this task, even if it's technically accurate.
+  - Reframe implementation details as business outcomes and strategic decisions wherever
+    that framing is honestly supported. "Set up a payment gateway" can become "owned
+    payment infrastructure decisions to enable monetization" — same fact, elevated framing.
+  - Reorder freely, both bullets within a section and which facts lead a sentence, to put
+    the strongest, most relevant material first.
+  - Write in a confident, polished, executive register — the way a senior consultant would
+    describe their own work, not the way the candidate first typed it.
+  - Merge, restructure, or split sentences as needed for impact. You are not restricted to
+    a 1:1 sentence structure with the original.
+  - The test for "is this allowed" is never "does this exact phrase appear in FACTS_JSON."
+    It's "is this claim TRUE according to FACTS_JSON." Ambitious, confident phrasing of a
+    true fact is exactly what a 15-year veteran CV writer is paid for.
+
+MANDATORY SELF-CHECK BEFORE YOU RETURN EACH BULLET:
+  Compare your "tailored" text against "original" word for word. If more than a
+  couple of words in a row match the original verbatim (excluding proper nouns,
+  numbers, and tool/skill names, which must stay accurate), you have not rewritten
+  it enough — rewrite it again with a different sentence structure, different lead
+  word, and different verbs before returning it. A tailored bullet that a reader
+  could recognize as "the same sentence with one word changed" is not acceptable
+  output, even if it would technically pass a fact check.
+
+  Worked example:
+    original:  "Sold merchandise in the gift shop and helped customers."
+    too weak:  "Sold merchandise in the gift shop and assisted customers." — REJECT,
+               this is a near-copy with one synonym swapped in.
+    correct:   "Drove gift shop sales through direct customer engagement, guiding
+               visitors toward products suited to their interests." — fully
+               restructured, different verbs, different sentence shape, still
+               only claims what the original claims.
 
 WRITING STYLE:
   - NEVER use em dashes (—) or en dashes ( – as a standalone punctuation mark) anywhere in your output.
@@ -73,11 +104,11 @@ For FACTS_JSON.volunteer_work (a list of raw strings, if any), rewrite each entr
 
 Return ONLY a JSON object in this exact format (no markdown):
 {{
-  "professional_summary": "3-sentence summary here",
+  "professional_summary": "3-5 sentence summary here, confident and specific, not generic filler",
   "bullets": [
     {{
       "original": "original bullet text here",
-      "tailored": "rewritten bullet text here",
+      "tailored": "rewritten bullet text here, meaningfully reworded, not a near-copy",
       "relevance_score": 0.9
     }}
   ],
@@ -85,7 +116,7 @@ Return ONLY a JSON object in this exact format (no markdown):
     {{
       "name": "Project name exactly as in facts_json",
       "display_name": "Properly Capitalized Name",
-      "tailored_description": "Polished professional description here."
+      "tailored_description": "2-3 polished, resume-style sentences here."
     }}
   ],
   "tailored_volunteer_work": ["Polished sentence for volunteer entry 1"],
@@ -100,13 +131,21 @@ Return ONLY a JSON object in this exact format (no markdown):
 """
 
 REGENERATION_PROMPT = """
-The following bullet was REJECTED because it contains invented information:
+The following bullet was REJECTED because it contains a claim not supported by VERIFIED FACTS:
 
 BULLET: {bullet}
 ISSUE: {issue}
 
 Rewrite this bullet using ONLY facts from this JSON:
 {facts_json}
+
+Remove or fix specifically the unsupported claim described in ISSUE. Do NOT
+otherwise flatten the bullet back toward the original phrasing, and do not
+just swap out the one offending word or number while leaving the rest of the
+sentence untouched. Rewrite the whole bullet with a different structure and
+different verbs. The goal is a bullet that is fully supported by the facts
+above AND still reads like a strong, elevated, thoroughly reworded resume
+line, not a literal restatement of the source data with a minor edit.
 
 Never use em dashes (—) or en dashes as punctuation. Use a comma or write two sentences instead.
 

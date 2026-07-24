@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<style>
+  :root { --cv-scale: {{ cv_scale|default(1) }}; }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: "Helvetica Neue", Arial, sans-serif; font-size: 10.5pt; color: #2b2b2b; line-height: 1.55; padding: 44px 56px; }
+  .header h1 { font-size: 24pt; font-weight: 300; letter-spacing: 1px; }
+  .header .tagline { font-size: 10.5pt; color: #777; margin-top: 4px; font-weight: 300; }
+  .header .contact { font-size: 9pt; color: #999; margin-top: 10px; letter-spacing: 0.3px; }
+  .header .contact a { color: #999; text-decoration: none; }
+  .section { margin-top: 22px; }
+  .section-title { font-size: 9.5pt; font-weight: 600; letter-spacing: 2px; text-transform: uppercase; color: #b0b0b0; margin-bottom: 10px; }
+  .entry { margin-bottom: 14px; page-break-inside: avoid; }
+  .entry-header { display: flex; justify-content: space-between; align-items: baseline; }
+  .entry-title { font-weight: 600; font-size: 11pt; color: #1a1a1a; }
+  .entry-sub { font-size: 10pt; color: #777; }
+  .entry-date { font-size: 9pt; color: #aaa; white-space: nowrap; }
+  ul.bullets { margin-top: 6px; margin-left: 0; list-style: none; }
+  ul.bullets li { font-size: 10pt; margin-bottom: 5px; padding-left: 14px; position: relative; }
+  ul.bullets li::before { content: "—"; position: absolute; left: 0; color: #c0c0c0; }
+  .skills-grid .row { margin-bottom: 4px; font-size: 10pt; }
+  .skills-grid .label { font-weight: 600; color: #555; }
+  .edu-gpa { font-size: 9.5pt; color: #888; }
+  body { zoom: var(--cv-scale, 1); }
+</style>
+</head>
+<body>
+  <div class="header">
+    <h1>{{ personal.name }}</h1>
+    {% if tagline %}<div class="tagline">{{ tagline }}</div>{% endif %}
+    <div class="contact">
+      {{ personal.email }}{% if personal.phone %} &nbsp;/&nbsp; {{ personal.phone }}{% endif %} &nbsp;/&nbsp; {{ personal.location }}
+      &nbsp;/&nbsp; <a href="https://linkedin.com/{{ personal.linkedin }}">LinkedIn</a>
+      &nbsp;/&nbsp; <a href="https://github.com/{{ personal.github }}">GitHub</a>
+    </div>
+  </div>
+
+  {% if tailored_summary %}
+  <div class="section">
+    <div class="section-title">Summary</div>
+    <p>{{ tailored_summary }}</p>
+  </div>
+  {% endif %}
+
+  {% if experience %}
+  <div class="section">
+    <div class="section-title">Experience</div>
+    {% for exp in experience %}
+    <div class="entry">
+      <div class="entry-header">
+        <div><span class="entry-title">{{ exp.title }}</span> <span class="entry-sub">{{ exp.company }}</span></div>
+        <div class="entry-date">{{ exp.dates }}</div>
+      </div>
+      {% if exp.bullets %}<ul class="bullets">{% for b in exp.bullets %}<li>{{ b }}</li>{% endfor %}</ul>{% endif %}
+    </div>
+    {% endfor %}
+  </div>
+  {% endif %}
+
+  {% if projects %}
+  <div class="section">
+    <div class="section-title">Projects</div>
+    {% for proj in projects %}
+    <div class="entry">
+      <div class="entry-header">
+        <span class="entry-title">{{ proj.name }}</span>
+        <span class="entry-date">{{ proj.tech_stack | join(" · ") }}</span>
+      </div>
+      {% if proj.description %}<p style="font-size:10pt; margin-top:4px; line-height:1.5;">{{ proj.description }}</p>{% endif %}
+    </div>
+    {% endfor %}
+  </div>
+  {% endif %}
+
+  {% if skills %}
+  <div class="section">
+    <div class="section-title">Skills</div>
+    <div class="skills-grid">
+      {% if skills.languages %}<div class="row"><span class="label">Languages </span>{{ skills.languages | join(", ") }}</div>{% endif %}
+      {% if skills.frameworks %}<div class="row"><span class="label">Frameworks </span>{{ skills.frameworks | join(", ") }}</div>{% endif %}
+      {% if skills.tools %}<div class="row"><span class="label">Tools </span>{{ skills.tools | join(", ") }}</div>{% endif %}
+    </div>
+  </div>
+  {% endif %}
+
+  {% if education %}
+  <div class="section">
+    <div class="section-title">Education</div>
+    {% for edu in education %}
+    <div class="entry">
+      <div class="entry-header">
+        <div><span class="entry-title">{{ edu.degree }}</span> <span class="entry-sub">{{ edu.institution }}</span></div>
+        <div class="entry-date">{{ edu.graduation_year }}</div>
+      </div>
+      <div class="edu-gpa">GPA {{ edu.gpa }}{% if edu.distinctions %} · {{ edu.distinctions | join(", ") }}{% endif %}</div>
+    </div>
+    {% endfor %}
+  </div>
+  {% endif %}
+
+  {% if certifications %}
+  <div class="section">
+    <div class="section-title">Certifications</div>
+    <ul class="bullets">{% for cert in certifications %}<li>{{ cert }}</li>{% endfor %}</ul>
+  </div>
+  {% endif %}
+</body>
+</html>

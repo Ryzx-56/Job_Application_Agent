@@ -20,6 +20,8 @@ from core.credits import reserve_credits, refund_credits, get_credits, normalize
 from core.subscription import cancel_subscription, resume_subscription
 from utils.pdf_parser import extract_text_from_pdf
 from utils.pdf_generator import render_cv_pdf, render_cover_letter_pdf
+from utils.docx_generator import generate_cv_docx
+from utils.template_registry import DEFAULT_TEMPLATE_ID
 from schemas.manual_cv_request import ManualCVRequest
 
 # 1. Initialize FastAPI Application Instance
@@ -38,9 +40,11 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Must stay in sync with utils/pdf_generator.py — both generator functions
-# always write to these exact paths (OUTPUT_DIR="outputs", fixed filenames).
+# Must stay in sync with utils/pdf_generator.py / utils/docx_generator.py —
+# all three generator functions always write to these exact paths
+# (OUTPUT_DIR="outputs", fixed filenames).
 RESUME_PDF_PATH = os.path.join("outputs", "tailored_cv.pdf")
+RESUME_DOCX_PATH = os.path.join("outputs", "tailored_cv.docx")
 COVER_LETTER_PDF_PATH = os.path.join("outputs", "cover_letter.pdf")
 
 SHORT_SAMPLE_JD = """
@@ -54,7 +58,7 @@ Key Responsibilities:
 - Collaborate with software development teams to integrate predictive endpoints into production APIs.
 """
 
-def make_initial_state(cv_text: str, jd_text: str) -> AgentState:
+def make_initial_state(cv_text: str, jd_text: str, template_id: str = DEFAULT_TEMPLATE_ID) -> AgentState:
     """Instantiates a structured state map adhering strictly to the AgentState definition."""
     return AgentState(
         raw_cv_text=cv_text,
@@ -63,6 +67,7 @@ def make_initial_state(cv_text: str, jd_text: str) -> AgentState:
         manual_cv_data={},
         additional_info="",
         cv_language="en",
+        template_id=template_id or DEFAULT_TEMPLATE_ID,
         facts_json={},
         weight_factors={},
         tailored_bullets=[],
@@ -208,7 +213,8 @@ def _stream_pipeline(initial_state: AgentState, user_id: str, reserved_amount: i
             yield _sse("error", {"detail": error_detail})
             return
 
-        cv_pdf_path = render_cv_pdf(result_state)
+        cv_pdf_path = render_cv_pdf(result_state, template_id=result_state.get("template_id"))
+        cv_docx_path = generate_cv_docx(result_state, template_id=result_state.get("template_id"))
         cl_pdf_path = render_cover_letter_pdf(result_state)
 
         payload = {
@@ -228,6 +234,7 @@ def _stream_pipeline(initial_state: AgentState, user_id: str, reserved_amount: i
             "company": result_state.get("weight_factors", {}).get("company", ""),
             "cv_language": result_state.get("cv_language", "en"),
             "generated_cv_pdf": cv_pdf_path,
+            "generated_cv_docx": cv_docx_path,
             "generated_cl_pdf": cl_pdf_path,
             "error": result_state.get("error", None),
             "credits_charged": reserved_amount,
@@ -257,6 +264,27 @@ async def download_cv(user_id: str = Depends(get_current_user_id_query_or_header
         media_type="application/pdf",
         filename="tailored_cv.pdf",
         headers={"Content-Disposition": "attachment; filename=tailored_cv.pdf"},
+    )
+
+
+@app.get("/api/v1/download/cv-docx", tags=["Downloads"])
+async def download_cv_docx(user_id: str = Depends(get_current_user_id_query_or_header)):
+    """
+    Serves the most recently generated tailored CV as a downloadable Word
+    file. Same ?token= auth pattern as download_cv above — see BUG #14 FIX
+    note in page.tsx for why this is a plain <a href download> target
+    rather than a JS fetch+blob download.
+    """
+    if not os.path.exists(RESUME_DOCX_PATH):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="No generated CV found yet. Run /api/v1/optimize first.",
+        )
+    return FileResponse(
+        RESUME_DOCX_PATH,
+        media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        filename="tailored_cv.docx",
+        headers={"Content-Disposition": "attachment; filename=tailored_cv.docx"},
     )
 
 
@@ -337,6 +365,7 @@ async def optimize_application(
     job_description: str = Form(...),
     additional_info: str = Form(""),
     cv_language: str = Form("en"),
+    template_id: str = Form(DEFAULT_TEMPLATE_ID),
     user_id: str = Depends(get_current_user_id),
 ):
     logger.info("🚀 API Gateway received an application optimization request.")
@@ -345,7 +374,7 @@ async def optimize_application(
     final_cv_text = extract_text_from_pdf(pdf_bytes=cv_bytes)
     final_jd_text = job_description or SHORT_SAMPLE_JD
 
-    initial_state = make_initial_state(final_cv_text, final_jd_text)
+    initial_state = make_initial_state(final_cv_text, final_jd_text, template_id=template_id)
     initial_state["input_mode"] = "upload"
     initial_state["additional_info"] = additional_info or ""
     initial_state["cv_language"] = normalize_cv_language(cv_language)
@@ -373,7 +402,8 @@ async def optimize_application(
                 detail=error_detail,
             )
 
-        cv_pdf_path = render_cv_pdf(result)
+        cv_pdf_path = render_cv_pdf(result, template_id=result.get("template_id"))
+        cv_docx_path = generate_cv_docx(result, template_id=result.get("template_id"))
         cl_pdf_path = render_cover_letter_pdf(result)
         
         return {
@@ -393,6 +423,7 @@ async def optimize_application(
             "company": result.get("weight_factors", {}).get("company", ""),
             "cv_language": result.get("cv_language", "en"),
             "generated_cv_pdf": cv_pdf_path,
+            "generated_cv_docx": cv_docx_path,
             "generated_cl_pdf": cl_pdf_path,
             "error": result.get("error", None),
             "credits_charged": reserved_amount,
@@ -415,6 +446,7 @@ async def optimize_application_stream(
     job_description: str = Form(...),
     additional_info: str = Form(""),
     cv_language: str = Form("en"),
+    template_id: str = Form(DEFAULT_TEMPLATE_ID),
     user_id: str = Depends(get_current_user_id),
 ):
     """
@@ -433,7 +465,7 @@ async def optimize_application_stream(
     final_cv_text = extract_text_from_pdf(pdf_bytes=cv_bytes)
     final_jd_text = job_description or SHORT_SAMPLE_JD
 
-    initial_state = make_initial_state(final_cv_text, final_jd_text)
+    initial_state = make_initial_state(final_cv_text, final_jd_text, template_id=template_id)
     initial_state["input_mode"] = "upload"
     initial_state["additional_info"] = additional_info or ""
     initial_state["cv_language"] = normalize_cv_language(cv_language)
@@ -462,10 +494,10 @@ async def optimize_manual_application_stream(
     """Streaming variant of /api/v1/optimize-manual — see optimize_application_stream."""
     logger.info("🚀 API Gateway received a STREAMING manual optimization request.")
 
-    manual_data = payload.model_dump(exclude={"job_description", "additional_info", "cv_language"})
+    manual_data = payload.model_dump(exclude={"job_description", "additional_info", "cv_language", "template_id"})
     final_jd_text = payload.job_description or SHORT_SAMPLE_JD
 
-    initial_state = make_initial_state("", final_jd_text)
+    initial_state = make_initial_state("", final_jd_text, template_id=getattr(payload, "template_id", None))
     initial_state["input_mode"] = "manual"
     initial_state["manual_cv_data"] = manual_data
     initial_state["additional_info"] = payload.additional_info or ""
@@ -497,10 +529,10 @@ async def optimize_manual_application(
     """
     logger.info("🚀 API Gateway received a MANUAL CV optimization request.")
 
-    manual_data = payload.model_dump(exclude={"job_description", "additional_info", "cv_language"})
+    manual_data = payload.model_dump(exclude={"job_description", "additional_info", "cv_language", "template_id"})
     final_jd_text = payload.job_description or SHORT_SAMPLE_JD
 
-    initial_state = make_initial_state("", final_jd_text)
+    initial_state = make_initial_state("", final_jd_text, template_id=getattr(payload, "template_id", None))
     initial_state["input_mode"] = "manual"
     initial_state["manual_cv_data"] = manual_data
     initial_state["additional_info"] = payload.additional_info or ""
@@ -522,7 +554,8 @@ async def optimize_manual_application(
                 detail=error_detail,
             )
 
-        cv_pdf_path = render_cv_pdf(result)
+        cv_pdf_path = render_cv_pdf(result, template_id=result.get("template_id"))
+        cv_docx_path = generate_cv_docx(result, template_id=result.get("template_id"))
         cl_pdf_path = render_cover_letter_pdf(result)
 
         return {
@@ -542,6 +575,7 @@ async def optimize_manual_application(
             "company": result.get("weight_factors", {}).get("company", ""),
             "cv_language": result.get("cv_language", "en"),
             "generated_cv_pdf": cv_pdf_path,
+            "generated_cv_docx": cv_docx_path,
             "generated_cl_pdf": cl_pdf_path,
             "error": result.get("error", None),
             "credits_charged": reserved_amount,

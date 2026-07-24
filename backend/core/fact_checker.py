@@ -13,14 +13,62 @@ client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
 
 # Batched prompt: checks ALL bullets in a single Gemini call instead of one call per bullet.
 BATCH_FACT_CHECK_PROMPT = """
-You are a strict fact checker.
+You are a fact checker for resume bullets. Your job is narrower than it sounds:
+you are NOT a style critic, and you are NOT checking whether the wording matches
+the original phrasing. You are checking ONE thing only — does every concrete
+claim in the bullet trace back to VERIFIED FACTS.
 
 VERIFIED FACTS:
 {facts_json}
 
+THE DISTINCTION THAT MATTERS:
+  ALLOWED — rewording, reframing, reordering, or elevating the TONE of a true
+  fact, even if it reads completely differently from how it's phrased in
+  VERIFIED FACTS. Business framing, stronger verbs, synthesized "strategy"
+  or "outcome" language ARE allowed as long as they describe something that
+  is actually true per VERIFIED FACTS.
+
+  NOT ALLOWED — a NEW concrete claim that cannot be derived from VERIFIED
+  FACTS: a metric/number that wasn't stated, a skill/tool/company/timeframe
+  that isn't listed, an outcome or scale that was never claimed, or a
+  responsibility/achievement invented from nothing.
+
+WORD-LEVEL SIMILARITY IS NEVER A REASON TO FAIL A BULLET. A tailored bullet is
+EXPECTED to share very few words with the original — different verbs, different
+sentence order, different structure, synonyms throughout, clauses merged or
+split, the whole thing reframed around a different angle (impact instead of
+task, outcome instead of activity). None of that is grounds for failure by
+itself. You are checking truth of claims, not resemblance to the source text.
+A bullet that has been completely rewritten, reordered, and reframed should
+PASS as long as it does not assert anything beyond VERIFIED FACTS.
+
+CALIBRATION EXAMPLES:
+  Fact: "Set three-tier pricing (Free/Pro/Elite) and picked a local payment gateway"
+    PASS: "Owned go-to-market strategy, defining a three-tier pricing model and
+           selecting a payment gateway for the local market" — same facts, elevated framing.
+    PASS: "Shaped the product's monetization path end to end, from structuring a
+           three-tier pricing model to choosing the payment infrastructure that
+           would support it" — heavily rewritten, reordered, restructured, still
+           only describes the same two facts. This should PASS even though almost
+           no words match the original.
+    FAIL: "Increased revenue by 40% after launching pricing tiers" — the 40% is invented.
+  Fact: "Sold merchandise in the gift shop"
+    PASS: "Drove gift shop revenue through proactive upselling and product recommendations"
+          — still just describes selling merchandise, no new claim.
+    FAIL: "Managed a team of 5 in the gift shop" — team size/management was never stated.
+  Fact: "Led a team analyzing 880K+ flight records to classify routes by demand"
+    PASS: "Spearheaded a data driven investigation into airline route viability,
+           interrogating 880K+ flight records to surface clear demand signals"
+          — very different wording and structure, same underlying facts (led,
+          analyzed 880K+ records, classified by demand). PASS.
+
+When in doubt whether something is a new claim or just a bolder, more heavily
+rewritten restatement of an existing one, ask: does this bullet assert something
+a reader could reasonably expect to see evidence for that ISN'T in VERIFIED
+FACTS? If yes, fail it. If it's the same underlying fact in different words, no
+matter how different those words are, pass it.
+
 Below is a JSON array of bullets to check, each with an "id".
-For EACH bullet, determine if it contains ANY information not present in VERIFIED FACTS.
-This includes invented metrics, skills, companies, or timeframes.
 
 BULLETS:
 {bullets_json}

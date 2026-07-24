@@ -3,6 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <style>
+  :root { --cv-scale: {{ cv_scale|default(1) }}; }
     * { margin: 0; padding: 0; box-sizing: border-box; }
 
     body {
@@ -86,11 +87,10 @@
         </div>
         <div class="entry-date">{{ exp.dates }}</div>
       </div>
-      {% set exp_bullets = tailored_bullets | selectattr("section", "equalto", "experience") | list %}
-      {% if exp_bullets %}
+      {% if exp.bullets %}
       <ul class="bullets">
-        {% for b in exp_bullets %}
-        <li>{{ b.text }}</li>
+        {% for b in exp.bullets %}
+        <li>{{ b }}</li>
         {% endfor %}
       </ul>
       {% endif %}
@@ -109,13 +109,8 @@
         <span class="entry-title">{{ proj.name }}</span>
         <span class="entry-date">{{ proj.tech_stack | join(", ") }}</span>
       </div>
-      {% set proj_bullets = tailored_bullets | selectattr("section", "equalto", "project") | list %}
-      {% if proj_bullets %}
-      <ul class="bullets">
-        {% for b in proj_bullets %}
-        <li>{{ b.text }}</li>
-        {% endfor %}
-      </ul>
+      {% if proj.description %}
+      <p style="font-size:10.5pt; margin-top:4px; line-height:1.5;">{{ proj.description }}</p>
       {% endif %}
     </div>
     {% endfor %}

@@ -57,3 +57,4 @@ class ManualCVRequest(BaseModel):
     additional_info: Optional[str] = ""
     job_description: str
     cv_language: Optional[str] = "en"  # "en" or "ar" — output language for the generated CV/cover letter
+    template_id: Optional[str] = None  # which of the 11 CV templates to render with — see utils/template_registry.py

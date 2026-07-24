@@ -13,6 +13,11 @@ import {
   TrendingUp,
   HelpCircle,
   Languages,
+  Palette,
+  X,
+  Download,
+  Eye,
+  FileType2,
 } from "lucide-react";
 import { useLang } from "@/lib/language";
 import { CreditsButton } from "@/components/CreditsButton";
@@ -92,6 +97,25 @@ type GenerateResult = {
 // Base URL for the FastAPI backend, e.g. http://127.0.0.1:8000 in dev.
 const API_URL = process.env.NEXT_PUBLIC_API_URL;
 
+// Mirrors utils/template_registry.py's TEMPLATE_REGISTRY keys exactly — if
+// you add a template on the backend, add its id/label pair here too so it
+// shows up in the picker. Deliberately does NOT include the cover letter
+// template; this list is CV-only.
+const CV_TEMPLATES: { id: string; label: string; labelAr: string; accent: string }[] = [
+  { id: "original_classic", label: "Classic (Default)", labelAr: "الكلاسيكي (الافتراضي)", accent: "#1a1a1a" },
+  { id: "classic_serif", label: "Classic Serif", labelAr: "كلاسيكي", accent: "#1a1a1a" },
+  { id: "modern_minimal", label: "Modern Minimal", labelAr: "بسيط عصري", accent: "#b0b0b0" },
+  { id: "navy_executive", label: "Navy Executive", labelAr: "تنفيذي كحلي", accent: "#1F3864" },
+  { id: "sidebar_dark", label: "Sidebar Dark", labelAr: "شريط جانبي داكن", accent: "#16223A" },
+  { id: "timeline", label: "Timeline", labelAr: "الجدول الزمني", accent: "#0284C7" },
+  { id: "elegant_gold", label: "Elegant Gold", labelAr: "أنيق ذهبي", accent: "#A9862E" },
+  { id: "compact_ats", label: "Compact ATS-Safe", labelAr: "متوافق مع الأنظمة الآلية", accent: "#000000" },
+  { id: "bold_banner", label: "Bold Banner", labelAr: "شريط جريء", accent: "#1C1C1C" },
+  { id: "geometric_creative", label: "Geometric Creative", labelAr: "إبداعي هندسي", accent: "#FF6B6B" },
+  { id: "letterhead_corporate", label: "Corporate Letterhead", labelAr: "ترويسة رسمية", accent: "#333333" },
+];
+const DEFAULT_CV_TEMPLATE_ID = "original_classic";
+
 // Max height (px) the "Additional information" textarea grows to before it
 // stops expanding and becomes scrollable instead. Kept slightly taller than
 // the job description textarea (rows=7 ≈ 188px) so it never dominates the form.
@@ -150,13 +174,15 @@ function buildUploadFormData(
   cv: File,
   jobDescription: string,
   additionalInfo: string,
-  cvLanguage: "en" | "ar"
+  cvLanguage: "en" | "ar",
+  templateId: string
 ): FormData {
   const formData = new FormData();
   formData.append("cv", cv);
   formData.append("job_description", jobDescription);
   formData.append("additional_info", additionalInfo);
   formData.append("cv_language", cvLanguage);
+  formData.append("template_id", templateId);
   return formData;
 }
 
@@ -168,7 +194,8 @@ function buildManualPayload(
   data: ManualCvData,
   jobDescription: string,
   additionalInfo: string,
-  cvLanguage: "en" | "ar"
+  cvLanguage: "en" | "ar",
+  templateId: string
 ) {
   return {
     personal: {
@@ -217,6 +244,7 @@ function buildManualPayload(
     job_description: jobDescription,
     additional_info: additionalInfo || "",
     cv_language: cvLanguage,
+    template_id: templateId,
   };
 }
 
@@ -264,6 +292,8 @@ export default function DashboardHomePage() {
   const [additionalInfo, setAdditionalInfo] = useState("");
   const [jobDescription, setJobDescription] = useState("");
   const [cvLanguage, setCvLanguage] = useState<"en" | "ar">("en");
+  const [templateId, setTemplateId] = useState<string>(DEFAULT_CV_TEMPLATE_ID);
+  const [templatePickerOpen, setTemplatePickerOpen] = useState(false);
   const [creditsRemaining, setCreditsRemaining] = useState(0);
   const [creditsTotal, setCreditsTotal] = useState(0);
 
@@ -296,8 +326,14 @@ export default function DashboardHomePage() {
   const [accessToken, setAccessToken] = useState<string | null>(null);
   const [cvPreviewUrl, setCvPreviewUrl] = useState<string | null>(null);
   const [cvDownloadUrl, setCvDownloadUrl] = useState<string | null>(null);
+  const [cvDownloadDocxUrl, setCvDownloadDocxUrl] = useState<string | null>(null);
   const [clPreviewUrl, setClPreviewUrl] = useState<string | null>(null);
   const [clDownloadUrl, setClDownloadUrl] = useState<string | null>(null);
+
+  // Format-picker popup for the CV download button (PDF vs Word) — see the
+  // modal markup near the end of the component.
+  const [cvFormatPickerOpen, setCvFormatPickerOpen] = useState(false);
+  const [cvSelectedFormat, setCvSelectedFormat] = useState<"pdf" | "docx">("pdf");
 
   const [error, setError] = useState("");
   const [showAllBullets, setShowAllBullets] = useState(false);
@@ -331,6 +367,7 @@ export default function DashboardHomePage() {
     if (!result || !accessToken) {
       setCvPreviewUrl(null);
       setCvDownloadUrl(null);
+      setCvDownloadDocxUrl(null);
       setClPreviewUrl(null);
       setClDownloadUrl(null);
       return;
@@ -338,6 +375,7 @@ export default function DashboardHomePage() {
     const tokenParam = encodeURIComponent(accessToken);
     setCvPreviewUrl(`${API_URL}/api/v1/preview/cv?token=${tokenParam}`);
     setCvDownloadUrl(`${API_URL}/api/v1/download/cv?token=${tokenParam}`);
+    setCvDownloadDocxUrl(`${API_URL}/api/v1/download/cv-docx?token=${tokenParam}`);
     setClPreviewUrl(`${API_URL}/api/v1/preview/cover-letter?token=${tokenParam}`);
     setClDownloadUrl(`${API_URL}/api/v1/download/cover-letter?token=${tokenParam}`);
   }, [result, accessToken]);
@@ -361,12 +399,12 @@ export default function DashboardHomePage() {
         cvMode === "upload"
           ? await runOptimizeStream(
               `${API_URL}/api/v1/optimize/stream`,
-              buildUploadFormData(cvFile!, jobDescription, additionalInfo, cvLanguage),
+              buildUploadFormData(cvFile!, jobDescription, additionalInfo, cvLanguage, templateId),
               token
             )
           : await runOptimizeStream(
               `${API_URL}/api/v1/optimize-manual/stream`,
-              JSON.stringify(buildManualPayload(manualData, jobDescription, additionalInfo, cvLanguage)),
+              JSON.stringify(buildManualPayload(manualData, jobDescription, additionalInfo, cvLanguage, templateId)),
               token
             );
       const data = mapBackendResponse(raw);
@@ -566,6 +604,18 @@ export default function DashboardHomePage() {
               العربية
             </button>
           </div>
+
+          <button
+            type="button"
+            onClick={() => setTemplatePickerOpen(true)}
+            className="inline-flex items-center gap-2 self-start rounded-full border-2 border-blue-200 bg-blue-50/70 px-4 py-2 text-sm font-semibold text-blue-700 shadow-sm transition-colors hover:border-blue-300 hover:bg-blue-100 sm:self-auto"
+          >
+            <Palette className="size-4" aria-hidden />
+            {lang === "ar" ? "اختر قالب السيرة الذاتية" : "Choose CV template"}
+            <span className="rounded-full bg-white px-2 py-0.5 text-xs font-medium text-blue-600 shadow-sm">
+              {CV_TEMPLATES.find((t) => t.id === templateId)?.[lang === "ar" ? "labelAr" : "label"] ?? ""}
+            </span>
+          </button>
         </div>
         <p className="-mt-1.5 text-xs text-slate-400">
           {lang === "ar"
@@ -846,16 +896,43 @@ export default function DashboardHomePage() {
               {lang === "ar" ? "ملفاتك جاهزة" : "Your files"}
             </p>
             <div className="grid gap-3 sm:grid-cols-2">
-              <FileResultCard
-                icon={FileText}
-                title={copy.resumeCardTitle}
-                readyLabel={lang === "ar" ? "جاهز" : "Ready"}
-                previewLabel={copy.preview}
-                downloadLabel={copy.download}
-                previewHref={cvPreviewUrl ?? "#"}
-                downloadHref={cvDownloadUrl ?? "#"}
-                disabled={!cvPreviewUrl || !cvDownloadUrl}
-              />
+              <div className="flex flex-col justify-between gap-3 rounded-xl border border-slate-200 bg-white px-4 py-4 shadow-sm">
+                <div className="flex items-center gap-3">
+                  <span className="grid size-9 shrink-0 place-items-center rounded-lg bg-blue-50 text-blue-600">
+                    <FileText className="size-4.5" aria-hidden />
+                  </span>
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium text-slate-900">{copy.resumeCardTitle}</p>
+                    <span className="inline-flex items-center gap-1 text-xs font-medium text-emerald-600">
+                      <CheckCircle2 className="size-3" aria-hidden />
+                      {lang === "ar" ? "جاهز" : "Ready"}
+                    </span>
+                  </div>
+                </div>
+                <div className="flex gap-2">
+                  <a
+                    href={cvPreviewUrl ?? "#"}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    aria-disabled={!cvPreviewUrl}
+                    className={`inline-flex flex-1 items-center justify-center gap-1.5 rounded-lg border border-slate-200 px-3 py-2 text-sm font-medium text-slate-600 transition-colors ${
+                      cvPreviewUrl ? "hover:border-slate-300 hover:bg-slate-50" : "pointer-events-none opacity-50"
+                    }`}
+                  >
+                    <Eye className="size-4" aria-hidden />
+                    {copy.preview}
+                  </a>
+                  <button
+                    type="button"
+                    disabled={!cvDownloadUrl || !cvDownloadDocxUrl}
+                    onClick={() => setCvFormatPickerOpen(true)}
+                    className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-blue-600 px-3 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-700 disabled:pointer-events-none disabled:opacity-50"
+                  >
+                    <Download className="size-4" aria-hidden />
+                    {copy.download}
+                  </button>
+                </div>
+              </div>
               <FileResultCard
                 icon={Mail}
                 title={copy.coverLetterCardTitle}
@@ -1048,6 +1125,176 @@ export default function DashboardHomePage() {
                 ? "نتيجة منخفضة لا تعني أنك مرشح ضعيف. غالبًا تعني فقط أن سيرتك لا تُظهر بعد المصطلحات التي تبحث عنها هذه الوظيفة تحديدًا. استخدم قسم «كيف تُحسّن سيرتك الذاتية» أعلاه لسد هذه الفجوة."
                 : "A low score doesn't mean you're a weak candidate. It usually just means your CV isn't yet surfacing the exact terms this specific job is scanning for. Use the “How to improve your CV” section above to close that gap."}
             </p>
+          </div>
+        </div>
+      )}
+
+      {templatePickerOpen && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4"
+          role="dialog"
+          aria-modal="true"
+          onClick={() => setTemplatePickerOpen(false)}
+        >
+          <div
+            className="max-h-[85vh] w-full max-w-3xl overflow-y-auto rounded-2xl bg-white p-6 shadow-xl sm:p-7"
+            onClick={(e) => e.stopPropagation()}
+            dir={dir}
+          >
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <h3 className="text-lg font-semibold text-slate-900">
+                  {lang === "ar" ? "اختر قالب السيرة الذاتية" : "Choose your CV template"}
+                </h3>
+                <p className="mt-1 text-sm text-slate-500">
+                  {lang === "ar"
+                    ? "إذا لم تختر، سيتم استخدام القالب الكلاسيكي الافتراضي."
+                    : "If you don't choose one, the default classic template is used."}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setTemplatePickerOpen(false)}
+                className="grid size-8 shrink-0 place-items-center rounded-full text-slate-400 hover:bg-slate-100 hover:text-slate-600"
+                aria-label={lang === "ar" ? "إغلاق" : "Close"}
+              >
+                <X className="size-4" aria-hidden />
+              </button>
+            </div>
+
+            <div className="mt-5 grid gap-3 sm:grid-cols-2 md:grid-cols-3">
+              {CV_TEMPLATES.map((tpl) => {
+                const selected = templateId === tpl.id;
+                return (
+                  <button
+                    key={tpl.id}
+                    type="button"
+                    onClick={() => {
+                      setTemplateId(tpl.id);
+                      setTemplatePickerOpen(false);
+                    }}
+                    className={`flex flex-col items-start gap-2 rounded-xl border-2 p-4 text-left transition-all ${
+                      lang === "ar" ? "text-right" : "text-left"
+                    } ${
+                      selected
+                        ? "border-blue-500 bg-blue-50/60 shadow-sm"
+                        : "border-slate-200 bg-white hover:border-slate-300"
+                    }`}
+                  >
+                    <span
+                      className="flex h-16 w-full items-center justify-center rounded-lg text-xs font-semibold text-white"
+                      style={{ backgroundColor: tpl.accent }}
+                    >
+                      Aa
+                    </span>
+                    <span className="flex w-full items-center justify-between gap-2">
+                      <span className="text-sm font-medium text-slate-900">
+                        {lang === "ar" ? tpl.labelAr : tpl.label}
+                      </span>
+                      {selected && <CheckCircle2 className="size-4 shrink-0 text-blue-600" aria-hidden />}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {cvFormatPickerOpen && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4"
+          role="dialog"
+          aria-modal="true"
+          onClick={() => setCvFormatPickerOpen(false)}
+        >
+          <div
+            className="w-full max-w-sm rounded-2xl bg-white p-6 shadow-xl"
+            onClick={(e) => e.stopPropagation()}
+            dir={dir}
+          >
+            <div className="flex items-start justify-between gap-4">
+              <h3 className="text-base font-semibold text-slate-900">
+                {lang === "ar" ? "اختر صيغة التنزيل" : "Choose a format"}
+              </h3>
+              <button
+                type="button"
+                onClick={() => setCvFormatPickerOpen(false)}
+                className="grid size-8 shrink-0 place-items-center rounded-full text-slate-400 hover:bg-slate-100 hover:text-slate-600"
+                aria-label={lang === "ar" ? "إغلاق" : "Close"}
+              >
+                <X className="size-4" aria-hidden />
+              </button>
+            </div>
+
+            <div className="mt-4 space-y-2">
+              <button
+                type="button"
+                onClick={() => setCvSelectedFormat("pdf")}
+                aria-pressed={cvSelectedFormat === "pdf"}
+                className={`flex w-full items-center gap-3 rounded-xl border-2 px-4 py-3 text-left transition-colors ${
+                  lang === "ar" ? "text-right" : "text-left"
+                } ${
+                  cvSelectedFormat === "pdf"
+                    ? "border-blue-500 bg-blue-50 text-blue-700"
+                    : "border-slate-200 bg-white text-slate-700 hover:border-blue-300 hover:bg-blue-50/60"
+                }`}
+              >
+                <span
+                  className={`grid size-9 shrink-0 place-items-center rounded-lg ${
+                    cvSelectedFormat === "pdf" ? "bg-blue-600 text-white" : "bg-slate-100 text-slate-500"
+                  }`}
+                >
+                  <FileText className="size-4" aria-hidden />
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="block text-sm font-medium">PDF</span>
+                  <span className="block text-xs text-slate-400">.pdf</span>
+                </span>
+                {cvSelectedFormat === "pdf" && <CheckCircle2 className="size-4 shrink-0 text-blue-600" aria-hidden />}
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setCvSelectedFormat("docx")}
+                aria-pressed={cvSelectedFormat === "docx"}
+                className={`flex w-full items-center gap-3 rounded-xl border-2 px-4 py-3 text-left transition-colors ${
+                  lang === "ar" ? "text-right" : "text-left"
+                } ${
+                  cvSelectedFormat === "docx"
+                    ? "border-blue-500 bg-blue-50 text-blue-700"
+                    : "border-slate-200 bg-white text-slate-700 hover:border-blue-300 hover:bg-blue-50/60"
+                }`}
+              >
+                <span
+                  className={`grid size-9 shrink-0 place-items-center rounded-lg ${
+                    cvSelectedFormat === "docx" ? "bg-blue-600 text-white" : "bg-slate-100 text-slate-500"
+                  }`}
+                >
+                  <FileType2 className="size-4" aria-hidden />
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="block text-sm font-medium">{lang === "ar" ? "وورد" : "Word"}</span>
+                  <span className="block text-xs text-slate-400">.docx</span>
+                </span>
+                {cvSelectedFormat === "docx" && <CheckCircle2 className="size-4 shrink-0 text-blue-600" aria-hidden />}
+              </button>
+            </div>
+
+            <a
+              href={(cvSelectedFormat === "pdf" ? cvDownloadUrl : cvDownloadDocxUrl) ?? "#"}
+              download
+              onClick={() => setCvFormatPickerOpen(false)}
+              aria-disabled={cvSelectedFormat === "pdf" ? !cvDownloadUrl : !cvDownloadDocxUrl}
+              className={`mt-4 flex w-full items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blue-700 ${
+                (cvSelectedFormat === "pdf" ? !cvDownloadUrl : !cvDownloadDocxUrl)
+                  ? "pointer-events-none opacity-50"
+                  : ""
+              }`}
+            >
+              <Download className="size-4" aria-hidden />
+              {lang === "ar" ? "تنزيل" : "Download"}
+            </a>
           </div>
         </div>
       )}
