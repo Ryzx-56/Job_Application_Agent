@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <style>
   :root { --cv-scale: {{ cv_scale|default(1) }}; }
+  @page { size: A4; margin: 0; }
   * { margin: 0; padding: 0; box-sizing: border-box; }
   body { font-family: "Times New Roman", "Cambria", serif; font-size: 11pt; color: #1a1a1a; padding: 36px 54px; }
   .letterhead { border-top: 3px solid #333; border-bottom: 1px solid #333; padding: 10px 0; display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 20px; }
@@ -33,10 +34,19 @@
       {% if tagline %}<div class="tagline">{{ tagline }}</div>{% endif %}
     </div>
     <div class="contact">
-      {{ personal.location }}<br>
-      {{ personal.phone }} &nbsp;|&nbsp; {{ personal.email }}<br>
-      <a href="https://linkedin.com/{{ personal.linkedin }}">LinkedIn</a> &nbsp;|&nbsp;
-      <a href="https://github.com/{{ personal.github }}">GitHub</a>
+      {%- set line1 = [] -%}
+      {%- if personal.location and personal.location != "None" %}{% set _ = line1.append(personal.location) %}{% endif -%}
+      {%- set line2 = [] -%}
+      {%- if personal.phone and personal.phone != "None" %}{% set _ = line2.append(personal.phone) %}{% endif -%}
+      {%- if personal.email and personal.email != "None" %}{% set _ = line2.append(personal.email) %}{% endif -%}
+      {%- set line3 = [] -%}
+      {%- if personal.linkedin and personal.linkedin != "None" %}{% set _ = line3.append('<a href="https://www.linkedin.com/in/' ~ personal.linkedin ~ '">linkedin.com/in/' ~ personal.linkedin ~ '</a>') %}{% endif -%}
+      {%- if personal.github and personal.github != "None" %}{% set _ = line3.append('<a href="https://github.com/' ~ personal.github ~ '">github.com/' ~ personal.github ~ '</a>') %}{% endif -%}
+      {%- set lines = [] -%}
+      {%- if line1 %}{% set _ = lines.append(line1 | join(" &nbsp;|&nbsp; ")) %}{% endif -%}
+      {%- if line2 %}{% set _ = lines.append(line2 | join(" &nbsp;|&nbsp; ")) %}{% endif -%}
+      {%- if line3 %}{% set _ = lines.append(line3 | join(" &nbsp;|&nbsp; ")) %}{% endif -%}
+      {{ lines | join("<br>") | safe }}
     </div>
   </div>
 

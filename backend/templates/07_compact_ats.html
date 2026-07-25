@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <style>
   :root { --cv-scale: {{ cv_scale|default(1) }}; }
+  @page { size: A4; margin: 0; }
   * { margin: 0; padding: 0; box-sizing: border-box; }
   body { font-family: "Arial", sans-serif; font-size: 10pt; color: #000; line-height: 1.35; padding: 30px 40px; }
   .header h1 { font-size: 15pt; font-weight: bold; }
@@ -26,8 +27,13 @@
   <div class="header">
     <h1>{{ personal.name }}</h1>
     <div class="contact">
-      {{ personal.email }} | {{ personal.phone }} | {{ personal.location }} |
-      linkedin.com/{{ personal.linkedin }} | github.com/{{ personal.github }}
+      {%- set contact_items = [] -%}
+      {%- if personal.email and personal.email != "None" %}{% set _ = contact_items.append(personal.email) %}{% endif -%}
+      {%- if personal.phone and personal.phone != "None" %}{% set _ = contact_items.append(personal.phone) %}{% endif -%}
+      {%- if personal.location and personal.location != "None" %}{% set _ = contact_items.append(personal.location) %}{% endif -%}
+      {%- if personal.linkedin and personal.linkedin != "None" %}{% set _ = contact_items.append("linkedin.com/in/" ~ personal.linkedin) %}{% endif -%}
+      {%- if personal.github and personal.github != "None" %}{% set _ = contact_items.append("github.com/" ~ personal.github) %}{% endif -%}
+      {{ contact_items | join(" | ") }}
     </div>
   </div>
 

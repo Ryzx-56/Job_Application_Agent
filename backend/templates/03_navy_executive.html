@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <style>
   :root { --cv-scale: {{ cv_scale|default(1) }}; }
+  @page { size: A4; margin: 0; }
   * { margin: 0; padding: 0; box-sizing: border-box; }
   body { font-family: "Calibri", "Segoe UI", sans-serif; font-size: 10.5pt; color: #1a1a1a; line-height: 1.5; padding: 40px 54px; }
   .header { text-align: center; margin-bottom: 14px; }
@@ -31,9 +32,13 @@
     <h1>{{ personal.name }}</h1>
     {% if tagline %}<div class="tagline">{{ tagline }}</div>{% endif %}
     <div class="contact">
-      {{ personal.location }} &nbsp;|&nbsp; {{ personal.phone }} &nbsp;|&nbsp; {{ personal.email }}
-      &nbsp;|&nbsp; <a href="https://linkedin.com/{{ personal.linkedin }}">LinkedIn</a>
-      &nbsp;|&nbsp; <a href="https://github.com/{{ personal.github }}">GitHub</a>
+      {%- set contact_items = [] -%}
+      {%- if personal.location and personal.location != "None" %}{% set _ = contact_items.append(personal.location) %}{% endif -%}
+      {%- if personal.phone and personal.phone != "None" %}{% set _ = contact_items.append(personal.phone) %}{% endif -%}
+      {%- if personal.email and personal.email != "None" %}{% set _ = contact_items.append(personal.email) %}{% endif -%}
+      {%- if personal.linkedin and personal.linkedin != "None" %}{% set _ = contact_items.append('<a href="https://www.linkedin.com/in/' ~ personal.linkedin ~ '">linkedin.com/in/' ~ personal.linkedin ~ '</a>') %}{% endif -%}
+      {%- if personal.github and personal.github != "None" %}{% set _ = contact_items.append('<a href="https://github.com/' ~ personal.github ~ '">github.com/' ~ personal.github ~ '</a>') %}{% endif -%}
+      {{ contact_items | join(" &nbsp;|&nbsp; ") | safe }}
     </div>
   </div>
 

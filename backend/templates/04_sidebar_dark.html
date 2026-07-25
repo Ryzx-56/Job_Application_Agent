@@ -4,8 +4,10 @@
 <meta charset="UTF-8">
 <style>
   :root { --cv-scale: {{ cv_scale|default(1) }}; }
+  @page { size: A4; margin: 0; }
   * { margin: 0; padding: 0; box-sizing: border-box; }
   body { font-family: "Segoe UI", Arial, sans-serif; font-size: 10.5pt; color: #222; }
+  html, body { height: 100%; }
   .page { display: flex; min-height: 100%; }
   .sidebar { width: 34%; background: #16223a; color: #eef1f7; padding: 40px 26px; }
   .sidebar h1 { font-size: 17pt; font-weight: 700; line-height: 1.25; }
@@ -35,11 +37,11 @@
 
     <div class="side-section">
       <div class="side-title">Contact</div>
-      <div class="side-row">{{ personal.email }}</div>
-      {% if personal.phone %}<div class="side-row">{{ personal.phone }}</div>{% endif %}
-      <div class="side-row">{{ personal.location }}</div>
-      <div class="side-row"><a href="https://linkedin.com/{{ personal.linkedin }}">LinkedIn</a></div>
-      <div class="side-row"><a href="https://github.com/{{ personal.github }}">GitHub</a></div>
+      {% if personal.email and personal.email != "None" %}<div class="side-row">{{ personal.email }}</div>{% endif %}
+      {% if personal.phone and personal.phone != "None" %}<div class="side-row">{{ personal.phone }}</div>{% endif %}
+      {% if personal.location and personal.location != "None" %}<div class="side-row">{{ personal.location }}</div>{% endif %}
+      {% if personal.linkedin and personal.linkedin != "None" %}<div class="side-row"><a href="https://www.linkedin.com/in/{{ personal.linkedin }}">linkedin.com/in/{{ personal.linkedin }}</a></div>{% endif %}
+      {% if personal.github and personal.github != "None" %}<div class="side-row"><a href="https://github.com/{{ personal.github }}">github.com/{{ personal.github }}</a></div>{% endif %}
     </div>
 
     {% if skills %}
