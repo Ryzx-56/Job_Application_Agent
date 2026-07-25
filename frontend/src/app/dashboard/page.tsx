@@ -1189,7 +1189,7 @@ export default function DashboardHomePage() {
                           summary + start of experience — that's where templates
                           look most different from each other — and shown large
                           so the layout, fonts, and colors are actually legible. */}
-                      <span className="block aspect-[4/3] w-full overflow-hidden">
+                      <span className="block aspect-[3/4] w-full overflow-hidden">
                         <img
                           src={tpl.thumbnail}
                           alt={lang === "ar" ? tpl.labelAr : tpl.label}
