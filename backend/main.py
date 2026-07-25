@@ -305,8 +305,17 @@ async def download_cover_letter(user_id: str = Depends(get_current_user_id_query
 
 
 @app.get("/api/v1/preview/cv", tags=["Downloads"])
-async def preview_cv(user_id: str = Depends(get_current_user_id)):
-    """Serves the tailored CV inline so the browser opens/renders it instead of downloading it."""
+async def preview_cv(user_id: str = Depends(get_current_user_id_query_or_header)):
+    """
+    Serves the tailored CV inline so the browser opens/renders it instead of
+    downloading it. Uses the query-or-header auth dependency (not the plain
+    get_current_user_id) because this route is opened via a link/fetch with
+    a ?token= query param and no Authorization header — same reasoning as
+    the /api/v1/download/* routes above. Previously used get_current_user_id,
+    which only reads the Authorization header, so every preview request was
+    silently failing auth (401) since the token only ever arrived as a query
+    param — this is why the preview "eye" buttons appeared broken.
+    """
     if not os.path.exists(RESUME_PDF_PATH):
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -320,8 +329,9 @@ async def preview_cv(user_id: str = Depends(get_current_user_id)):
 
 
 @app.get("/api/v1/preview/cover-letter", tags=["Downloads"])
-async def preview_cover_letter(user_id: str = Depends(get_current_user_id)):
-    """Serves the cover letter inline so the browser opens/renders it instead of downloading it."""
+async def preview_cover_letter(user_id: str = Depends(get_current_user_id_query_or_header)):
+    """Serves the cover letter inline. See preview_cv above for why this uses
+    get_current_user_id_query_or_header instead of get_current_user_id."""
     if not os.path.exists(COVER_LETTER_PDF_PATH):
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
