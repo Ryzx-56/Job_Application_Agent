@@ -96,13 +96,27 @@ def generate_claude_text(prompt: str, max_tokens: int = 3000, max_retries: int =
     "max_tokens") or thinking consumed the entire budget and left zero
     visible text, we automatically double the budget and retry rather than
     silently shipping a cut-off CV / cover letter / JSON blob.
+
+    STREAMING — this uses client.messages.stream(...) instead of a single
+    blocking .create() call. Not for UI purposes (the caller still just
+    gets a plain string back) — this is purely to keep the underlying HTTP
+    connection alive while Claude thinks. A long, heavy prompt (like
+    tailoring_engine.py's, with max_tokens=6000 and a large amount of
+    reasoning instruction) can leave a non-streaming request sitting
+    completely silent for 2+ minutes while adaptive thinking runs, and
+    Render's (or any platform's) outbound proxy will kill an idle
+    connection like that, which the SDK reports as a plain "Connection
+    error" — indistinguishable from a real network failure, but it isn't
+    one. Streaming sends data continuously as it's generated, so the
+    connection never goes idle long enough to get killed. The caller-facing
+    behavior (return a string, same retry/truncation logic) is unchanged.
     """
     last_error = None
     current_max_tokens = max_tokens
 
     for attempt in range(1, max_retries + 1):
         try:
-            response = claude_client.messages.create(
+            with claude_client.messages.stream(
                 model=CLAUDE_MODEL,
                 max_tokens=current_max_tokens,
                 messages=[
@@ -111,7 +125,14 @@ def generate_claude_text(prompt: str, max_tokens: int = 3000, max_retries: int =
                         "content": prompt,
                     }
                 ],
-            )
+            ) as stream:
+                # Draining the stream is what keeps the connection alive —
+                # we don't need the chunks themselves, get_final_message()
+                # below returns the same shape generate_claude_text always
+                # returned (content blocks + stop_reason).
+                for _ in stream.text_stream:
+                    pass
+                response = stream.get_final_message()
 
             text = "".join(
                 block.text
