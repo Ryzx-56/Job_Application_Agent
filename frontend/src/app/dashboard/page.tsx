@@ -101,18 +101,21 @@ const API_URL = process.env.NEXT_PUBLIC_API_URL;
 // you add a template on the backend, add its id/label pair here too so it
 // shows up in the picker. Deliberately does NOT include the cover letter
 // template; this list is CV-only.
-const CV_TEMPLATES: { id: string; label: string; labelAr: string; accent: string }[] = [
-  { id: "original_classic", label: "Classic (Default)", labelAr: "الكلاسيكي (الافتراضي)", accent: "#1a1a1a" },
-  { id: "classic_serif", label: "Classic Serif", labelAr: "كلاسيكي", accent: "#1a1a1a" },
-  { id: "modern_minimal", label: "Modern Minimal", labelAr: "بسيط عصري", accent: "#b0b0b0" },
-  { id: "navy_executive", label: "Navy Executive", labelAr: "تنفيذي كحلي", accent: "#1F3864" },
-  { id: "sidebar_dark", label: "Sidebar Dark", labelAr: "شريط جانبي داكن", accent: "#16223A" },
-  { id: "timeline", label: "Timeline", labelAr: "الجدول الزمني", accent: "#0284C7" },
-  { id: "elegant_gold", label: "Elegant Gold", labelAr: "أنيق ذهبي", accent: "#A9862E" },
-  { id: "compact_ats", label: "Compact ATS-Safe", labelAr: "متوافق مع الأنظمة الآلية", accent: "#000000" },
-  { id: "bold_banner", label: "Bold Banner", labelAr: "شريط جريء", accent: "#1C1C1C" },
-  { id: "geometric_creative", label: "Geometric Creative", labelAr: "إبداعي هندسي", accent: "#FF6B6B" },
-  { id: "letterhead_corporate", label: "Corporate Letterhead", labelAr: "ترويسة رسمية", accent: "#333333" },
+// `thumbnail` points at /public/templates/<id>.png — a real screenshot of
+// each template rendered with sample data (see scripts/generate-template-thumbs
+// or regenerate manually whenever a template's HTML changes).
+const CV_TEMPLATES: { id: string; label: string; labelAr: string; accent: string; thumbnail: string }[] = [
+  { id: "original_classic", label: "Classic (Default)", labelAr: "الكلاسيكي (الافتراضي)", accent: "#1a1a1a", thumbnail: "/templates/original_classic.png" },
+  { id: "classic_serif", label: "Classic Serif", labelAr: "كلاسيكي", accent: "#1a1a1a", thumbnail: "/templates/classic_serif.png" },
+  { id: "modern_minimal", label: "Modern Minimal", labelAr: "بسيط عصري", accent: "#b0b0b0", thumbnail: "/templates/modern_minimal.png" },
+  { id: "navy_executive", label: "Navy Executive", labelAr: "تنفيذي كحلي", accent: "#1F3864", thumbnail: "/templates/navy_executive.png" },
+  { id: "sidebar_dark", label: "Sidebar Dark", labelAr: "شريط جانبي داكن", accent: "#16223A", thumbnail: "/templates/sidebar_dark.png" },
+  { id: "timeline", label: "Timeline", labelAr: "الجدول الزمني", accent: "#0284C7", thumbnail: "/templates/timeline.png" },
+  { id: "elegant_gold", label: "Elegant Gold", labelAr: "أنيق ذهبي", accent: "#A9862E", thumbnail: "/templates/elegant_gold.png" },
+  { id: "compact_ats", label: "Compact ATS-Safe", labelAr: "متوافق مع الأنظمة الآلية", accent: "#000000", thumbnail: "/templates/compact_ats.png" },
+  { id: "bold_banner", label: "Bold Banner", labelAr: "شريط جريء", accent: "#1C1C1C", thumbnail: "/templates/bold_banner.png" },
+  { id: "geometric_creative", label: "Geometric Creative", labelAr: "إبداعي هندسي", accent: "#FF6B6B", thumbnail: "/templates/geometric_creative.png" },
+  { id: "letterhead_corporate", label: "Corporate Letterhead", labelAr: "ترويسة رسمية", accent: "#333333", thumbnail: "/templates/letterhead_corporate.png" },
 ];
 const DEFAULT_CV_TEMPLATE_ID = "original_classic";
 
@@ -1173,7 +1176,7 @@ export default function DashboardHomePage() {
                       setTemplateId(tpl.id);
                       setTemplatePickerOpen(false);
                     }}
-                    className={`flex flex-col items-start gap-2 rounded-xl border-2 p-4 text-left transition-all ${
+                    className={`flex flex-col items-start gap-2 rounded-xl border-2 p-3 text-left transition-all ${
                       lang === "ar" ? "text-right" : "text-left"
                     } ${
                       selected
@@ -1181,11 +1184,23 @@ export default function DashboardHomePage() {
                         : "border-slate-200 bg-white hover:border-slate-300"
                     }`}
                   >
-                    <span
-                      className="flex h-16 w-full items-center justify-center rounded-lg text-xs font-semibold text-white"
-                      style={{ backgroundColor: tpl.accent }}
-                    >
-                      Aa
+                    <span className="relative block w-full overflow-hidden rounded-lg border border-slate-200 bg-slate-50">
+                      {/* Real screenshot preview, cropped to show roughly the top
+                          two-thirds of the page (header + first sections) so the
+                          card stays compact while still being recognizable. */}
+                      <span className="block aspect-[3/4] w-full overflow-hidden">
+                        <img
+                          src={tpl.thumbnail}
+                          alt={lang === "ar" ? tpl.labelAr : tpl.label}
+                          loading="lazy"
+                          className="h-full w-full object-cover object-top"
+                        />
+                      </span>
+                      <span
+                        className="absolute inset-x-0 bottom-0 h-1.5"
+                        style={{ backgroundColor: tpl.accent }}
+                        aria-hidden
+                      />
                     </span>
                     <span className="flex w-full items-center justify-between gap-2">
                       <span className="text-sm font-medium text-slate-900">
