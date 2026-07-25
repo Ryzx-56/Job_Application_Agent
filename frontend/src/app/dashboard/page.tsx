@@ -1140,7 +1140,7 @@ export default function DashboardHomePage() {
           onClick={() => setTemplatePickerOpen(false)}
         >
           <div
-            className="max-h-[85vh] w-full max-w-3xl overflow-y-auto rounded-2xl bg-white p-6 shadow-xl sm:p-7"
+            className="max-h-[85vh] w-full max-w-4xl overflow-y-auto rounded-2xl bg-white p-6 shadow-xl sm:p-7"
             onClick={(e) => e.stopPropagation()}
             dir={dir}
           >
@@ -1165,7 +1165,7 @@ export default function DashboardHomePage() {
               </button>
             </div>
 
-            <div className="mt-5 grid gap-3 sm:grid-cols-2 md:grid-cols-3">
+            <div className="mt-5 grid gap-4 sm:grid-cols-2">
               {CV_TEMPLATES.map((tpl) => {
                 const selected = templateId === tpl.id;
                 return (
@@ -1185,10 +1185,11 @@ export default function DashboardHomePage() {
                     }`}
                   >
                     <span className="relative block w-full overflow-hidden rounded-lg border border-slate-200 bg-slate-50">
-                      {/* Real screenshot preview, cropped to show roughly the top
-                          two-thirds of the page (header + first sections) so the
-                          card stays compact while still being recognizable. */}
-                      <span className="block aspect-[3/4] w-full overflow-hidden">
+                      {/* Real screenshot preview, cropped tight to the header +
+                          summary + start of experience — that's where templates
+                          look most different from each other — and shown large
+                          so the layout, fonts, and colors are actually legible. */}
+                      <span className="block aspect-[4/3] w-full overflow-hidden">
                         <img
                           src={tpl.thumbnail}
                           alt={lang === "ar" ? tpl.labelAr : tpl.label}
