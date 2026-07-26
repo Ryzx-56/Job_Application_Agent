@@ -82,10 +82,32 @@ def _is_retryable_anthropic_error(exc: Exception) -> bool:
     return isinstance(exc, anthropic.APIConnectionError)
 
 
-def generate_claude_text(prompt: str, max_tokens: int = 3000, max_retries: int = 5) -> str:
+def generate_claude_text(prompt: str, max_tokens: int = 3000, max_retries: int = 5, on_usage=None, system: str | None = None) -> str:
     """
     Call Claude and return plain text. Retries on rate limits / transient
     server errors with backoff.
+
+    on_usage: optional callback `fn(input_tokens: int, output_tokens: int)`.
+    If provided, it's called once for every response actually received from
+    the API — including responses that get discarded and retried due to
+    truncation/empty output, since those still cost tokens. It is NOT
+    called for the transient-error retry path (rate limit / 5xx), since no
+    response was returned there. Default is None so existing callers are
+    unaffected.
+
+    system: optional static instruction text, sent via the API's `system`
+    parameter with `cache_control: {"type": "ephemeral"}` instead of being
+    concatenated into `prompt`. This is what makes prompt caching actually
+    work — Anthropic only caches content in `system` (or earlier `messages`
+    turns), never inside a single user-turn string. On a cache hit, that
+    block is billed at a fraction of normal input-token price instead of
+    full price. Only pass text here that is IDENTICAL across calls — if it
+    has any per-request data spliced in, every call becomes a fresh cache
+    write instead of a hit, and you get none of the saving. The cache also
+    only pays off on requests that come within the cache's TTL (~5 minutes
+    per Anthropic's ephemeral cache) of the previous one — the very first
+    call after a quiet period still pays full price to populate the cache.
+    Default None preserves the old behavior (no system prompt sent).
 
     IMPORTANT — Claude Sonnet 5 behavior change vs 4.6: adaptive thinking is
     ON BY DEFAULT (no `thinking` field needed to trigger it), and thinking
@@ -116,7 +138,7 @@ def generate_claude_text(prompt: str, max_tokens: int = 3000, max_retries: int =
 
     for attempt in range(1, max_retries + 1):
         try:
-            with claude_client.messages.stream(
+            call_kwargs = dict(
                 model=CLAUDE_MODEL,
                 max_tokens=current_max_tokens,
                 messages=[
@@ -125,7 +147,17 @@ def generate_claude_text(prompt: str, max_tokens: int = 3000, max_retries: int =
                         "content": prompt,
                     }
                 ],
-            ) as stream:
+            )
+            if system:
+                call_kwargs["system"] = [
+                    {
+                        "type": "text",
+                        "text": system,
+                        "cache_control": {"type": "ephemeral"},
+                    }
+                ]
+
+            with claude_client.messages.stream(**call_kwargs) as stream:
                 # Draining the stream is what keeps the connection alive —
                 # we don't need the chunks themselves, get_final_message()
                 # below returns the same shape generate_claude_text always
@@ -139,6 +171,22 @@ def generate_claude_text(prompt: str, max_tokens: int = 3000, max_retries: int =
                 for block in response.content
                 if getattr(block, "type", None) == "text"
             ).strip()
+
+            if on_usage is not None:
+                usage = getattr(response, "usage", None)
+                on_usage(
+                    getattr(usage, "input_tokens", 0) or 0,
+                    getattr(usage, "output_tokens", 0) or 0,
+                )
+            # NOTE: when `system` caching is in play, `usage` also carries
+            # `cache_creation_input_tokens` (first call, populates the
+            # cache — billed higher than normal input) and
+            # `cache_read_input_tokens` (subsequent calls, billed far
+            # lower). Not wired into on_usage/UsageEvent yet — the two
+            # numbers above already show your real spend either way — but
+            # logging those two fields separately later would let you see
+            # the cache hit rate directly instead of inferring it from the
+            # cost drop.
 
             truncated = response.stop_reason == "max_tokens"
             empty = not text
@@ -165,13 +213,13 @@ def generate_claude_text(prompt: str, max_tokens: int = 3000, max_retries: int =
     raise RuntimeError(f"Claude failed after {max_retries} attempts: {last_error}")
 
 
-def generate_claude_json(prompt: str, max_tokens: int = 3000, max_retries: int = 5) -> str:
+def generate_claude_json(prompt: str, max_tokens: int = 3000, max_retries: int = 5, on_usage=None) -> str:
     """
     Call Claude expecting a JSON object back. Claude doesn't have a native
     JSON response_mime_type like Gemini, so we instruct it in the prompt
     and the caller is responsible for stripping markdown fences if any slip through.
     """
-    return generate_claude_text(prompt, max_tokens=max_tokens, max_retries=max_retries)
+    return generate_claude_text(prompt, max_tokens=max_tokens, max_retries=max_retries, on_usage=on_usage)
 
 
 def generate_gemini_text(prompt: str, max_retries: int = 5) -> str:

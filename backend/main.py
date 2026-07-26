@@ -18,6 +18,7 @@ from core.orchestrator import app as graph
 from core.auth import get_current_user_id, get_current_user_id_query_or_header
 from core.credits import reserve_credits, refund_credits, get_credits, normalize_cv_language
 from core.subscription import cancel_subscription, resume_subscription
+from core.usage_tracker import UsageEvent
 from utils.pdf_parser import extract_text_from_pdf
 from utils.pdf_generator import render_cv_pdf, render_cover_letter_pdf
 from utils.docx_generator import generate_cv_docx
@@ -210,12 +211,20 @@ def _stream_pipeline(initial_state: AgentState, user_id: str, reserved_amount: i
         if not ready:
             logger.error(f"❌ Pipeline did not produce usable output (stream): {error_detail} | state error: {result_state.get('error')}")
             refund_credits(user_id, reserved_amount)
+            UsageEvent.from_pipeline_result(
+                result_state, input_mode=result_state.get("input_mode", "upload"),
+                pipeline_succeeded=False, error_message=error_detail
+            ).flush(user_id)
             yield _sse("error", {"detail": error_detail})
             return
 
         cv_pdf_path = render_cv_pdf(result_state, template_id=result_state.get("template_id"))
         cv_docx_path = generate_cv_docx(result_state, template_id=result_state.get("template_id"))
         cl_pdf_path = render_cover_letter_pdf(result_state)
+
+        UsageEvent.from_pipeline_result(
+            result_state, input_mode=result_state.get("input_mode", "upload"), pipeline_succeeded=True
+        ).flush(user_id)
 
         payload = {
             "success": True,
@@ -244,6 +253,10 @@ def _stream_pipeline(initial_state: AgentState, user_id: str, reserved_amount: i
     except Exception as err:
         logger.error(f"❌ Pipeline Failure (stream): {err}")
         refund_credits(user_id, reserved_amount)
+        UsageEvent.from_pipeline_result(
+            result_state, input_mode=result_state.get("input_mode", "upload"),
+            pipeline_succeeded=False, error_message=str(err)
+        ).flush(user_id)
         yield _sse("error", {"detail": f"An execution failure hit a core agent module: {str(err)}"})
 
 
@@ -393,6 +406,7 @@ async def optimize_application(
     # concurrent requests — see reserve_credits() in core/credits.py.
     # Raises 402 automatically if the user doesn't have enough.
     reserved_amount = reserve_credits(user_id, initial_state["cv_language"])
+    result = {}  # bound before the try so the outer except can still build a UsageEvent from it
 
     try:
         # Pipeline execution: graph.invoke is the standard LangGraph method
@@ -407,6 +421,9 @@ async def optimize_application(
         if not ready:
             logger.error(f"❌ Pipeline did not produce usable output: {error_detail} | state error: {result.get('error')}")
             refund_credits(user_id, reserved_amount)
+            UsageEvent.from_pipeline_result(
+                result, input_mode="upload", pipeline_succeeded=False, error_message=error_detail
+            ).flush(user_id)
             raise HTTPException(
                 status_code=status.HTTP_502_BAD_GATEWAY,
                 detail=error_detail,
@@ -415,7 +432,9 @@ async def optimize_application(
         cv_pdf_path = render_cv_pdf(result, template_id=result.get("template_id"))
         cv_docx_path = generate_cv_docx(result, template_id=result.get("template_id"))
         cl_pdf_path = render_cover_letter_pdf(result)
-        
+
+        UsageEvent.from_pipeline_result(result, input_mode="upload", pipeline_succeeded=True).flush(user_id)
+
         return {
             "success": True,
             "ats_score": result.get("ats_score", 0),
@@ -444,6 +463,9 @@ async def optimize_application(
     except Exception as err:
         logger.error(f"❌ Pipeline Failure: {err}")
         refund_credits(user_id, reserved_amount)
+        UsageEvent.from_pipeline_result(
+            result, input_mode="upload", pipeline_succeeded=False, error_message=str(err)
+        ).flush(user_id)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"An execution failure hit a core agent module: {str(err)}"
@@ -549,6 +571,7 @@ async def optimize_manual_application(
     initial_state["cv_language"] = normalize_cv_language(payload.cv_language or "en")
 
     reserved_amount = reserve_credits(user_id, initial_state["cv_language"])
+    result = {}  # bound before the try so the outer except can still build a UsageEvent from it
 
     try:
         logger.info("🧠 Commencing agent graph routing lifecycle (manual entry)...")
@@ -559,6 +582,9 @@ async def optimize_manual_application(
         if not ready:
             logger.error(f"❌ Pipeline did not produce usable output (manual): {error_detail} | state error: {result.get('error')}")
             refund_credits(user_id, reserved_amount)
+            UsageEvent.from_pipeline_result(
+                result, input_mode="manual", pipeline_succeeded=False, error_message=error_detail
+            ).flush(user_id)
             raise HTTPException(
                 status_code=status.HTTP_502_BAD_GATEWAY,
                 detail=error_detail,
@@ -567,6 +593,8 @@ async def optimize_manual_application(
         cv_pdf_path = render_cv_pdf(result, template_id=result.get("template_id"))
         cv_docx_path = generate_cv_docx(result, template_id=result.get("template_id"))
         cl_pdf_path = render_cover_letter_pdf(result)
+
+        UsageEvent.from_pipeline_result(result, input_mode="manual", pipeline_succeeded=True).flush(user_id)
 
         return {
             "success": True,
@@ -596,6 +624,9 @@ async def optimize_manual_application(
     except Exception as err:
         logger.error(f"❌ Pipeline Failure (manual): {err}")
         refund_credits(user_id, reserved_amount)
+        UsageEvent.from_pipeline_result(
+            result, input_mode="manual", pipeline_succeeded=False, error_message=str(err)
+        ).flush(user_id)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"An execution failure hit a core agent module: {str(err)}"

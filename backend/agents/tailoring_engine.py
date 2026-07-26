@@ -7,7 +7,18 @@ from core.state import AgentState
 from core.llm_config import generate_claude_text
 from schemas.tailored_cv_schema import TailoredCV
 
-TAILORING_PROMPT = """
+# Split into a static system block (identical on every single call —
+# English or Arabic, retry or first attempt — so it's what actually
+# benefits from cache_control in generate_claude_text) and a small dynamic
+# user block below (TAILORING_USER_TEMPLATE) carrying the parts that
+# genuinely change per request: language_instruction (2 fixed variants) and
+# the three data blobs. Keeping FACTS_JSON/WEIGHT_FACTORS/additional_info
+# OUT of this block is what makes it cacheable — if per-request data were
+# spliced in here, every call would be a fresh cache write instead of a
+# hit, and none of the saving would materialize. See the `system` param
+# docstring on generate_claude_text (core/llm_config.py) for how the cache
+# actually gets applied.
+TAILORING_SYSTEM_PROMPT = """
 You are a senior CV writer with 15 years of experience.
 
 YOUR ONLY SOURCES OF TRUTH ARE:
@@ -42,8 +53,6 @@ WRITING STYLE:
   - NEVER use em dashes (—) or en dashes ( – as a standalone punctuation mark) anywhere in your output.
   - Write in plain, direct, human resume language. Avoid generic filler phrases and empty buzzwords.
 
-{language_instruction}
-
 KEYWORD COVERAGE — this directly determines the candidate's ATS score, so it matters a lot:
   - Cross-reference every keyword in WEIGHT_FACTORS.ats_keywords_high, WEIGHT_FACTORS.ats_keywords_medium, and WEIGHT_FACTORS.required_skills against FACTS_JSON.
   - For every one of those keywords the candidate genuinely has real evidence for, work that keyword's EXACT wording into your output at least once. Exact wording matters: scoring is literal text matching.
@@ -61,15 +70,6 @@ SKILLS CLEANUP:
   - Return the SAME categories as FACTS_JSON.skills (languages, frameworks, tools, soft_skills, other).
   - DROP entries that are not genuine skills, competencies, or tools.
   - Fix capitalization and light phrasing on entries you keep (e.g. "fixing computers" -> "Computer hardware troubleshooting") — but do not invent skills that weren't already listed.
-
-FACTS_JSON:
-{facts_json}
-
-WEIGHT_FACTORS:
-{weight_factors}
-
-RAW_ADDITIONAL_INFO:
-{additional_info}
 
 Tailor the CV to match this job. Follow the strict rules.
 
@@ -111,6 +111,28 @@ Return ONLY a JSON object in this exact format (no markdown):
     "other": ["cleaned entries"]
   }}
 }}
+"""
+
+# The dynamic half of the tailoring call — everything here changes per
+# request, so none of it belongs in the cached system block above.
+# language_instruction only has 2 possible values (en/ar) but is still kept
+# here rather than in the system block, so that TAILORING_SYSTEM_PROMPT
+# stays byte-identical across every call regardless of language — that's
+# what makes English AND Arabic requests both hit the same cache instead of
+# splitting into two separately-cached variants.
+TAILORING_USER_TEMPLATE = """
+{language_instruction}
+
+FACTS_JSON:
+{facts_json}
+
+WEIGHT_FACTORS:
+{weight_factors}
+
+RAW_ADDITIONAL_INFO:
+{additional_info}
+
+Tailor the CV to match this job now, following the rules and output format given above.
 """
 
 REGENERATION_PROMPT = """
@@ -225,7 +247,23 @@ def _find_latin_leaks(core_data: dict) -> list[str]:
     return offenders
 
 
-def _enforce_arabic_purity(core_data: dict) -> dict:
+def _make_usage_recorder(usage_counters: dict):
+    """
+    Returns an on_usage callback for generate_claude_text that accumulates
+    into usage_counters in place. usage_counters is a plain dict (not a
+    class) so it survives being read after the function that created it
+    returns, and so run_tailoring_engine can fold its final values straight
+    into the dict it returns to LangGraph (see bottom of this file for why
+    state updates are plain dicts, not live objects).
+    """
+    def _record(input_tokens: int, output_tokens: int):
+        usage_counters["calls"] += 1
+        usage_counters["input_tokens"] += input_tokens
+        usage_counters["output_tokens"] += output_tokens
+    return _record
+
+
+def _enforce_arabic_purity(core_data: dict, usage_counters: dict) -> dict:
     """
     If the initial generation still has Latin-script leaks, sends ONE
     corrective pass asking Claude to translate only the offending fields,
@@ -233,11 +271,17 @@ def _enforce_arabic_purity(core_data: dict) -> dict:
     fails or still doesn't come back clean, logs it and returns the best
     version available rather than blocking the whole pipeline — same
     best-effort philosophy as the rest of this file.
+
+    usage_counters is mutated in place: "arabic_purity_fired" is set True
+    the moment we decide to run the corrective pass (regardless of whether
+    it ends up succeeding), and "arabic_purity_still_bad" reflects whether
+    leaks remained afterward.
     """
     offenders = _find_latin_leaks(core_data)
     if not offenders:
         return core_data
 
+    usage_counters["arabic_purity_fired"] = True
     logger.warning(f"🔤 Arabic purity check found leftover Latin text in: {offenders} — running corrective pass...")
 
     prompt = ARABIC_PURITY_FIX_PROMPT.format(
@@ -246,7 +290,7 @@ def _enforce_arabic_purity(core_data: dict) -> dict:
     )
 
     try:
-        raw = generate_claude_text(prompt, max_tokens=6000)
+        raw = generate_claude_text(prompt, max_tokens=6000, on_usage=_make_usage_recorder(usage_counters))
         raw = re.sub(r"```json|```", "", raw).strip()
         fixed = json.loads(raw)
 
@@ -258,16 +302,19 @@ def _enforce_arabic_purity(core_data: dict) -> dict:
             and len(fixed.get("bullets", [])) == len(core_data.get("bullets", []))
         ):
             still_offending = _find_latin_leaks(fixed)
+            usage_counters["arabic_purity_still_bad"] = bool(still_offending)
             if still_offending:
                 logger.warning(f"🔤 Corrective pass still has Latin text in: {still_offending} — proceeding with best-effort result.")
             else:
                 logger.info("✅ Arabic purity corrective pass succeeded — all fields now fully Arabic.")
             return fixed
         else:
+            usage_counters["arabic_purity_still_bad"] = True
             logger.warning("🔤 Corrective pass returned an unexpected shape — keeping original output.")
             return core_data
 
     except Exception as e:
+        usage_counters["arabic_purity_still_bad"] = True
         logger.error(f"🔤 Arabic purity corrective pass failed: {e} — proceeding with best-effort original output.")
         return core_data
 
@@ -282,7 +329,21 @@ def run_tailoring_engine(state: AgentState) -> dict:
     cv_language      = state.get("cv_language", "en") or "en"
     attempts         = state.get("tailoring_attempts", 0) + 1
 
-    prompt = TAILORING_PROMPT.format(
+    # Accumulates across every generate_claude_text call this node makes
+    # (main tailoring pass + Arabic purity pass, across however many of
+    # the MAX_RETRIES loop below actually fire) — folded into the return
+    # dict at the bottom so it merges into AgentState like everything else
+    # this node already returns. See usage_tracker.py / UsageEvent for how
+    # main.py reads these back out after the graph finishes.
+    usage_counters = {
+        "calls": 0,
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "arabic_purity_fired": False,
+        "arabic_purity_still_bad": False,
+    }
+
+    prompt = TAILORING_USER_TEMPLATE.format(
         facts_json      = json.dumps(facts_json, ensure_ascii=False),
         weight_factors  = json.dumps(weight_factors, ensure_ascii=False),
         additional_info = additional_info if additional_info.strip() else "(none provided)",
@@ -291,7 +352,8 @@ def run_tailoring_engine(state: AgentState) -> dict:
 
     logger.info("🧠 Agent 3 — Tailoring Engine running (Claude Sonnet 5)...")
 
-    MAX_RETRIES = 3
+    #
+    MAX_RETRIES = 2
     for attempt in range(1, MAX_RETRIES + 1):
         try:
             # 3600 -> 6000: this is the single most content-heavy generation
@@ -301,9 +363,18 @@ def run_tailoring_engine(state: AgentState) -> dict:
             # budget with the visible output. generate_claude_text will
             # keep escalating automatically if 6000 still isn't enough for
             # a particularly long CV.
-            raw = generate_claude_text(prompt, max_tokens=6000)
-
-            
+            #
+            # system=TAILORING_SYSTEM_PROMPT: this is the prompt-caching
+            # wire-up. Every call (English, Arabic, retry 1/2/3) sends the
+            # exact same static instruction block here, so after the first
+            # call in a ~5min window, subsequent calls read it from cache
+            # instead of paying full input-token price for it again.
+            raw = generate_claude_text(
+                prompt,
+                max_tokens=6000,
+                on_usage=_make_usage_recorder(usage_counters),
+                system=TAILORING_SYSTEM_PROMPT,
+            )
 
             raw = re.sub(r"```json|```", "", raw).strip()
 
@@ -329,7 +400,7 @@ def run_tailoring_engine(state: AgentState) -> dict:
             # Arabic-purity check + one corrective pass — see
             # _enforce_arabic_purity docstring. No-op for English CVs.
             if cv_language == "ar":
-                core_data = _enforce_arabic_purity(core_data)
+                core_data = _enforce_arabic_purity(core_data, usage_counters)
 
             validated = TailoredCV.model_validate({
                 "professional_summary": core_data["professional_summary"],
@@ -373,6 +444,11 @@ def run_tailoring_engine(state: AgentState) -> dict:
                 "tailored_skills": tailored_skills,
                 "tailoring_attempts": attempts,
                 "error": None,
+                "usage_tailoring_calls": usage_counters["calls"],
+                "usage_tailoring_input_tokens": usage_counters["input_tokens"],
+                "usage_tailoring_output_tokens": usage_counters["output_tokens"],
+                "usage_arabic_purity_fired": usage_counters["arabic_purity_fired"],
+                "usage_arabic_purity_still_bad": usage_counters["arabic_purity_still_bad"],
             }
 
         except (json.JSONDecodeError, KeyError, ValidationError) as e:
@@ -381,6 +457,12 @@ def run_tailoring_engine(state: AgentState) -> dict:
                 return {
                     "tailoring_attempts": attempts,
                     "error": f"Agent 3 failed after {MAX_RETRIES} retries (invalid output): {e}",
+                    "usage_tailoring_calls": usage_counters["calls"],
+                    "usage_tailoring_input_tokens": usage_counters["input_tokens"],
+                    "usage_tailoring_output_tokens": usage_counters["output_tokens"],
+                    "usage_arabic_purity_fired": usage_counters["arabic_purity_fired"],
+                    "usage_arabic_purity_still_bad": usage_counters["arabic_purity_still_bad"],
+                    "hit_max_retries": True,
                 }
         except Exception as e:
             logger.warning(f"Agent 3 attempt {attempt}/{MAX_RETRIES} failed — API error: {e}")
@@ -388,6 +470,12 @@ def run_tailoring_engine(state: AgentState) -> dict:
                 return {
                     "tailoring_attempts": attempts,
                     "error": f"Agent 3 failed after {MAX_RETRIES} retries (API error): {e}",
+                    "usage_tailoring_calls": usage_counters["calls"],
+                    "usage_tailoring_input_tokens": usage_counters["input_tokens"],
+                    "usage_tailoring_output_tokens": usage_counters["output_tokens"],
+                    "usage_arabic_purity_fired": usage_counters["arabic_purity_fired"],
+                    "usage_arabic_purity_still_bad": usage_counters["arabic_purity_still_bad"],
+                    "hit_max_retries": True,
                 }
 
 
