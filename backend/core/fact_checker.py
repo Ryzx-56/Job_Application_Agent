@@ -239,12 +239,46 @@ def run_fact_checker(state: AgentState) -> dict:
     tailored_bullets = state.get("tailored_bullets", []) or []
     facts_json = state.get("facts_json", {}) or {}
 
-    regenerate_bullet_fn = make_regeneration_fn(facts_json)
+    # Tracks how many bullets actually needed a regeneration call (business
+    # metric) separately from raw Claude call/token counts (cost metric) —
+    # a single regeneration can itself involve more than one underlying API
+    # call if generate_claude_text has to retry internally, so these two
+    # numbers legitimately diverge. Both get folded into the return dict
+    # below and read back out by UsageEvent.from_pipeline_result in
+    # core/usage_tracker.py.
+    usage_counters = {
+        "bullets_regenerated_count": 0,
+        "regen_calls": 0,
+        "regen_input_tokens": 0,
+        "regen_output_tokens": 0,
+    }
+
+    def _record_regen_usage(input_tokens: int, output_tokens: int):
+        usage_counters["regen_calls"] += 1
+        usage_counters["regen_input_tokens"] += input_tokens
+        usage_counters["regen_output_tokens"] += output_tokens
+
+    # BUG FIX: this previously called make_regeneration_fn(facts_json) with
+    # no cv_language, which defaults to "en" inside that function — meaning
+    # a bullet from an ARABIC CV that failed fact-checking was silently
+    # regenerated with "Write the corrected bullet in English." as its
+    # instruction. Passing cv_language through fixes that; flagging it here
+    # since it's a real correctness bug I found while wiring usage
+    # tracking, not something I introduced.
+    regenerate_bullet_fn = make_regeneration_fn(
+        facts_json,
+        cv_language=state.get("cv_language", "en") or "en",
+        on_usage=_record_regen_usage,
+    )
+
+    def _counted_tailoring_fn(bullet_text: str, issue: str) -> str:
+        usage_counters["bullets_regenerated_count"] += 1
+        return regenerate_bullet_fn(bullet_text, issue)
 
     verified_bullets, hallucination_flags = run_fact_check_loop(
         bullets=tailored_bullets,
         facts_json=facts_json,
-        tailoring_fn=regenerate_bullet_fn
+        tailoring_fn=_counted_tailoring_fn
     )
 
     fact_check_passed = len(verified_bullets) > 0
@@ -254,4 +288,13 @@ def run_fact_checker(state: AgentState) -> dict:
         "tailored_bullets": verified_bullets,
         "hallucination_flags": hallucination_flags,
         "fact_check_passed": fact_check_passed,
+        # Cumulative, not a fresh count — this node can run multiple times
+        # in the tailoring_engine <-> fact_checker loop (see
+        # MAX_TAILORING_ATTEMPTS in orchestrator.py), and LangGraph
+        # overwrites state keys per node return rather than summing them.
+        # Same reasoning as _cumulative_usage_fields() in tailoring_engine.py.
+        "usage_bullets_regenerated_count": state.get("usage_bullets_regenerated_count", 0) + usage_counters["bullets_regenerated_count"],
+        "usage_regen_calls": state.get("usage_regen_calls", 0) + usage_counters["regen_calls"],
+        "usage_regen_input_tokens": state.get("usage_regen_input_tokens", 0) + usage_counters["regen_input_tokens"],
+        "usage_regen_output_tokens": state.get("usage_regen_output_tokens", 0) + usage_counters["regen_output_tokens"],
     }

@@ -343,6 +343,28 @@ def run_tailoring_engine(state: AgentState) -> dict:
         "arabic_purity_still_bad": False,
     }
 
+    def _cumulative_usage_fields() -> dict:
+        """
+        Builds the usage_* fields to return, ADDING this invocation's
+        usage_counters on top of whatever was already in state — not
+        replacing it. Needed because the fact-checker can loop back into
+        this node up to MAX_TAILORING_ATTEMPTS times (see orchestrator.py),
+        and LangGraph overwrites state keys on each node return rather than
+        summing them (same reason `attempts` above is computed as
+        state.get(...) + 1 instead of just returning 1). Without this,
+        only the LAST round's token counts would survive in the final
+        state, silently undercounting total spend on any multi-round run.
+        arabic_purity_fired/still_bad are OR'd across rounds instead of
+        summed, since they're flags, not counts — once true, stays true.
+        """
+        return {
+            "usage_tailoring_calls": state.get("usage_tailoring_calls", 0) + usage_counters["calls"],
+            "usage_tailoring_input_tokens": state.get("usage_tailoring_input_tokens", 0) + usage_counters["input_tokens"],
+            "usage_tailoring_output_tokens": state.get("usage_tailoring_output_tokens", 0) + usage_counters["output_tokens"],
+            "usage_arabic_purity_fired": bool(state.get("usage_arabic_purity_fired", False)) or usage_counters["arabic_purity_fired"],
+            "usage_arabic_purity_still_bad": bool(state.get("usage_arabic_purity_still_bad", False)) or usage_counters["arabic_purity_still_bad"],
+        }
+
     prompt = TAILORING_USER_TEMPLATE.format(
         facts_json      = json.dumps(facts_json, ensure_ascii=False),
         weight_factors  = json.dumps(weight_factors, ensure_ascii=False),
@@ -352,7 +374,7 @@ def run_tailoring_engine(state: AgentState) -> dict:
 
     logger.info("🧠 Agent 3 — Tailoring Engine running (Claude Sonnet 5)...")
 
-    #
+    
     MAX_RETRIES = 2
     for attempt in range(1, MAX_RETRIES + 1):
         try:
@@ -444,11 +466,7 @@ def run_tailoring_engine(state: AgentState) -> dict:
                 "tailored_skills": tailored_skills,
                 "tailoring_attempts": attempts,
                 "error": None,
-                "usage_tailoring_calls": usage_counters["calls"],
-                "usage_tailoring_input_tokens": usage_counters["input_tokens"],
-                "usage_tailoring_output_tokens": usage_counters["output_tokens"],
-                "usage_arabic_purity_fired": usage_counters["arabic_purity_fired"],
-                "usage_arabic_purity_still_bad": usage_counters["arabic_purity_still_bad"],
+                **_cumulative_usage_fields(),
             }
 
         except (json.JSONDecodeError, KeyError, ValidationError) as e:
@@ -457,11 +475,7 @@ def run_tailoring_engine(state: AgentState) -> dict:
                 return {
                     "tailoring_attempts": attempts,
                     "error": f"Agent 3 failed after {MAX_RETRIES} retries (invalid output): {e}",
-                    "usage_tailoring_calls": usage_counters["calls"],
-                    "usage_tailoring_input_tokens": usage_counters["input_tokens"],
-                    "usage_tailoring_output_tokens": usage_counters["output_tokens"],
-                    "usage_arabic_purity_fired": usage_counters["arabic_purity_fired"],
-                    "usage_arabic_purity_still_bad": usage_counters["arabic_purity_still_bad"],
+                    **_cumulative_usage_fields(),
                     "hit_max_retries": True,
                 }
         except Exception as e:
@@ -470,16 +484,12 @@ def run_tailoring_engine(state: AgentState) -> dict:
                 return {
                     "tailoring_attempts": attempts,
                     "error": f"Agent 3 failed after {MAX_RETRIES} retries (API error): {e}",
-                    "usage_tailoring_calls": usage_counters["calls"],
-                    "usage_tailoring_input_tokens": usage_counters["input_tokens"],
-                    "usage_tailoring_output_tokens": usage_counters["output_tokens"],
-                    "usage_arabic_purity_fired": usage_counters["arabic_purity_fired"],
-                    "usage_arabic_purity_still_bad": usage_counters["arabic_purity_still_bad"],
+                    **_cumulative_usage_fields(),
                     "hit_max_retries": True,
                 }
 
 
-def make_regeneration_fn(facts_json: dict, cv_language: str = "en"):
+def make_regeneration_fn(facts_json: dict, cv_language: str = "en", on_usage=None):
     language_line = (
         "Write the corrected bullet completely in Modern Standard Arabic. Do not use English characters."
         if cv_language == "ar"
@@ -497,6 +507,6 @@ def make_regeneration_fn(facts_json: dict, cv_language: str = "en"):
         # main call above. A single rewritten bullet is short, but if
         # thinking eats most of a 300-token budget there's nothing left for
         # the actual sentence.
-        return generate_claude_text(prompt, max_tokens=1000).strip()
+        return generate_claude_text(prompt, max_tokens=1000, on_usage=on_usage).strip()
 
     return regenerate

@@ -16,17 +16,15 @@
 # fact_checker.py's regeneration loop the same way later, but main.py itself
 # only uses from_pipeline_result + flush.
 #
-# STILL TODO (needs core/fact_checker.py, which wasn't available when this
-# was written): bullets_regenerated_count is hardcoded to 0 in
-# from_pipeline_result. Have fact_checker.py's regeneration loop return a
-# "usage_bullets_regenerated_count" field the same way tailoring_engine.py
-# does, then read it in from_pipeline_result below.
+# bullets_regenerated_count, and its associated regen call/token counts,
+# now come from core/fact_checker.py the same way tailoring_engine.py
+# supplies its own — both are read together in from_pipeline_result below.
 #
-# Also note: total_calls/total_input_tokens/total_output_tokens currently
-# only cover tailoring_engine.py's Claude calls — jd_analyzer,
-# document_generator, and match_scorer aren't instrumented yet. Same pattern
-# (on_usage callback -> accumulate -> return as a state field) would extend
-# to them if you want full-pipeline token totals later.
+# Also note: total_calls/total_input_tokens/total_output_tokens still only
+# cover tailoring_engine.py + fact_checker.py's Claude calls — jd_analyzer,
+# document_generator, and match_scorer aren't instrumented yet. Same
+# pattern (on_usage callback -> accumulate -> return as a cumulative state
+# field) would extend to them if you want full-pipeline token totals later.
 
 from dataclasses import dataclass, field
 from loguru import logger
@@ -72,13 +70,10 @@ class UsageEvent:
         graph.invoke()/graph.stream() finishes. Reads the usage_* and
         hit_max_retries keys that tailoring_engine.py now returns.
 
-        NOTE: total_calls/total_input_tokens/total_output_tokens here only
-        cover tailoring_engine.py's own Claude calls (main pass + Arabic
-        purity pass) — jd_analyzer, document_generator, match_scorer, and
-        the fact-checker's per-bullet regeneration loop aren't wired into
-        this yet, since core/fact_checker.py wasn't available when this was
-        written. bullets_regenerated_count is left at 0 until that's wired
-        up too — see the note at the bottom of this file.
+        NOTE: total_calls/total_input_tokens/total_output_tokens cover both
+        tailoring_engine.py's Claude calls (main pass + Arabic purity pass)
+        AND fact_checker.py's regeneration calls — jd_analyzer,
+        document_generator, and match_scorer still aren't instrumented.
         """
         return cls(
             cv_language=result.get("cv_language", "en"),
@@ -87,10 +82,10 @@ class UsageEvent:
             hit_max_retries=bool(result.get("hit_max_retries", False)),
             arabic_purity_pass_fired=bool(result.get("usage_arabic_purity_fired", False)),
             arabic_purity_still_bad=bool(result.get("usage_arabic_purity_still_bad", False)),
-            bullets_regenerated_count=0,  # TODO: wire up once fact_checker.py is shared
-            total_input_tokens=result.get("usage_tailoring_input_tokens", 0) or 0,
-            total_output_tokens=result.get("usage_tailoring_output_tokens", 0) or 0,
-            total_calls=result.get("usage_tailoring_calls", 0) or 0,
+            bullets_regenerated_count=result.get("usage_bullets_regenerated_count", 0) or 0,
+            total_input_tokens=(result.get("usage_tailoring_input_tokens", 0) or 0) + (result.get("usage_regen_input_tokens", 0) or 0),
+            total_output_tokens=(result.get("usage_tailoring_output_tokens", 0) or 0) + (result.get("usage_regen_output_tokens", 0) or 0),
+            total_calls=(result.get("usage_tailoring_calls", 0) or 0) + (result.get("usage_regen_calls", 0) or 0),
             pipeline_succeeded=pipeline_succeeded,
             error_message=error_message,
         )
