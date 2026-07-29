@@ -11,16 +11,16 @@ class PersonalInfo(BaseModel):
     portfolio: Optional[str] = None    # designers, freelancers often have this
 
 class Education(BaseModel):
-    institution: str
-    degree: str
+    institution: Optional[str] = None
+    degree: Optional[str] = None
     gpa: Optional[str] = None
     graduation_year: Optional[str] = None
     distinctions: List[str] = []
     relevant_coursework: List[str] = []  # useful for students with no experience
 
 class Experience(BaseModel):
-    company: str
-    title: str
+    company: Optional[str] = None
+    title: Optional[str] = None
     dates: Optional[str] = None
     bullets: List[str] = []
     metrics: List[str] = []
@@ -33,7 +33,7 @@ class Skills(BaseModel):
     other: List[str] = []              # catch-all for anything that doesn't fit
 
 class Project(BaseModel):
-    name: str
+    name: Optional[str] = None
     tech_stack: List[str] = []         # empty for non-technical projects
     description: Optional[str] = None
     metrics: List[str] = []
