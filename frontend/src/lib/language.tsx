@@ -179,7 +179,7 @@ export const content = {
           period: "/ month",
           description: "Everything you need to try Tarshih on your next application.",
           features: [
-            "5 credits / month — 5 English CVs, or mix in Arabic",
+            "3 credits / month — 3 English CVs, or mix in Arabic",
             "Full ATS & job match scoring",
             "Tailored CV + matching cover letter",
             "Application history, saved",
@@ -293,7 +293,7 @@ export const content = {
         },
         {
           q: "What's a credit and how many do I get?",
-          a: "A credit is what you spend generating one tailored CV and cover letter. English applications cost 1 credit, Arabic applications cost 2, since they take more processing. Free includes 5 credits a month, Pro includes 40, and Elite includes 120.",
+          a: "A credit is what you spend generating one tailored CV and cover letter. English applications cost 1 credit, Arabic applications cost 2, since they take more processing. Free includes 3 credits a month, Pro includes 40, and Elite includes 120.",
         },
         {
           q: "Will my resume still sound like me?",
@@ -734,7 +734,7 @@ export const content = {
           period: "شهريًا",
           description: "كل ما تحتاجه لتجربة ترشيح في طلبك القادم.",
           features: [
-            "5 نقاط شهريًا — 5 سير ذاتية إنجليزية، أو مزيج مع العربية",
+            "3 نقاط شهريًا — 3 سير ذاتية إنجليزية، أو مزيج مع العربية",
             "نتيجة ATS وتوافق وظيفي كاملة",
             "سيرة ذاتية مخصصة + خطاب تقديم مطابق",
             "سجل الطلبات محفوظ",
@@ -878,7 +878,7 @@ export const content = {
         },
         {
           q: "ما هي النقطة (Credit) وكم أحصل منها؟",
-          a: "النقطة هي ما تستهلكه لتوليد سيرة ذاتية وخطاب تقديم مخصصين. الطلبات بالإنجليزية تكلّف نقطة واحدة، والطلبات بالعربية تكلّف نقطتين لأنها تتطلب معالجة أكبر. تشمل الخطة المجانية 5 نقاط شهريًا، وبرو 40 نقطة، والنخبة 120 نقطة.",
+          a: "النقطة هي ما تستهلكه لتوليد سيرة ذاتية وخطاب تقديم مخصصين. الطلبات بالإنجليزية تكلّف نقطة واحدة، والطلبات بالعربية تكلّف نقطتين لأنها تتطلب معالجة أكبر. تشمل الخطة المجانية 3 نقاط شهريًا، وبرو 40 نقطة، والنخبة 120 نقطة.",
         },
         {
           q: "هل ستبقى سيرتي الذاتية تعبّر عني فعلًا؟",

@@ -8,6 +8,8 @@ export type CreditsInfo = {
   creditsTotal: number;
   pendingTier: Tier | null;
   creditsResetAt: string;
+  isFoundingMember: boolean;
+  foundingMemberNumber: number | null;
 };
 
 /* ========================================================================
@@ -24,7 +26,7 @@ export async function fetchCredits(): Promise<CreditsInfo> {
 
   const { data, error } = await supabase
     .from("profiles")
-    .select("tier, credits_remaining, credits_total, pending_tier, credits_reset_at")
+    .select("tier, credits_remaining, credits_total, pending_tier, credits_reset_at, is_founding_member, founding_member_number")
     .eq("id", user.id)
     .single();
 
@@ -36,5 +38,7 @@ export async function fetchCredits(): Promise<CreditsInfo> {
     creditsTotal: data.credits_total,
     pendingTier: data.pending_tier,
     creditsResetAt: data.credits_reset_at,
+    isFoundingMember: data.is_founding_member,
+    foundingMemberNumber: data.founding_member_number,
   };
 }

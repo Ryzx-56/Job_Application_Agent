@@ -299,12 +299,16 @@ export default function DashboardHomePage() {
   const [templatePickerOpen, setTemplatePickerOpen] = useState(false);
   const [creditsRemaining, setCreditsRemaining] = useState(0);
   const [creditsTotal, setCreditsTotal] = useState(0);
+  const [isFoundingMember, setIsFoundingMember] = useState(false);
+  const [foundingMemberNumber, setFoundingMemberNumber] = useState<number | null>(null);
 
   const refreshCredits = () => {
     fetchCredits()
       .then((c) => {
         setCreditsRemaining(c.creditsRemaining);
         setCreditsTotal(c.creditsTotal);
+        setIsFoundingMember(c.isFoundingMember);
+        setFoundingMemberNumber(c.foundingMemberNumber);
       })
       .catch((err) => console.error("fetchCredits failed:", err));
   };
@@ -444,6 +448,18 @@ export default function DashboardHomePage() {
 
   return (
     <div className="mx-auto max-w-4xl space-y-8" dir={dir}>
+      {isFoundingMember && (
+        <div>
+          <span className="mb-2 block text-xs font-medium uppercase tracking-wide text-slate-400">
+            {lang === "ar" ? "الشارات" : "Badges"}
+          </span>
+          <span className="inline-flex items-center gap-1.5 rounded-full border border-amber-400/40 bg-gradient-to-r from-amber-400/15 to-orange-400/15 px-3 py-1 text-xs font-semibold text-amber-700">
+            <Sparkles className="size-3.5" aria-hidden />
+            {lang === "ar" ? `عضو مؤسس #${foundingMemberNumber}` : `Founding Member #${foundingMemberNumber}`}
+          </span>
+        </div>
+      )}
+
       <div className="flex items-start justify-between gap-4">
         <div>
           <span className="text-sm font-medium text-blue-600">{copy.eyebrow}</span>

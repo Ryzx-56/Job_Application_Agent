@@ -54,9 +54,14 @@ def cancel_subscription(user_id: str) -> dict:
     # Moyasar here, using the stored payment_subscription_id. If that call
     # fails, raise before scheduling the downgrade below.
 
+    # Founding-member price is locked in only while the subscription stays
+    # continuously active — clearing it here means a resubscribe later goes
+    # through at the normal list price, not the offer price. If you decide
+    # the offer should be truly permanent regardless of cancellation, drop
+    # "locked_price": None from this update.
     result = (
         admin.table("profiles")
-        .update({"pending_tier": "free", "subscription_status": "canceling"})
+        .update({"pending_tier": "free", "subscription_status": "canceling", "locked_price": None})
         .eq("id", user_id)
         .select()
         .maybe_single()

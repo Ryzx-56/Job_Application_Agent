@@ -23,7 +23,7 @@ CREDIT_COST = {"en": 1, "ar": 2}
 
 # Monthly credit allotment per tier. Must stay in sync with
 # reset_credits_if_due() in the SQL migration (001_profiles_credits.sql).
-TIER_CREDITS = {"free": 5, "pro": 40, "elite": 120}
+TIER_CREDITS = {"free": 3, "pro": 40, "elite": 120}
 
 
 @lru_cache(maxsize=1)

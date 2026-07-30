@@ -10,8 +10,23 @@ from loguru import logger
 from reportlab.lib.pagesizes import letter
 from reportlab.lib import colors
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-from reportlab.lib.enums import TA_LEFT
+from reportlab.lib.enums import TA_LEFT, TA_RIGHT
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
+from reportlab.pdfbase import pdfmetrics
+from reportlab.pdfbase.ttfonts import TTFont
+
+# NOTE: the cover letter is still ReportLab (see comment further down), so
+# unlike the CV path it does NOT get Pango's automatic Arabic shaping/bidi
+# for free from WeasyPrint. It needs its own shaping step, same as the old
+# pre-WeasyPrint CV code used to. If arabic_reshaper/python-bidi aren't
+# installed, Arabic cover letters fall back to unshaped text rather than
+# crashing - isolated letters are a visible bug, a 500 is a worse one.
+try:
+    import arabic_reshaper
+    from bidi.algorithm import get_display
+    _ARABIC_SHAPING_AVAILABLE = True
+except ImportError:
+    _ARABIC_SHAPING_AVAILABLE = False
 
 from utils.template_registry import resolve_template_path, DEFAULT_TEMPLATE_ID
 from utils.cv_context import build_cv_context
@@ -86,6 +101,47 @@ def _arabicize_prose(context: dict) -> None:
 ASSETS_FONT_DIR = Path(__file__).parent.parent / "assets" / "fonts"
 _ARABIC_FONT_REGULAR = ASSETS_FONT_DIR / "NotoNaskhArabic-Regular.ttf"
 _ARABIC_FONT_BOLD = ASSETS_FONT_DIR / "NotoNaskhArabic-Bold.ttf"
+
+
+# Register the same font files with ReportLab (separate registry from
+# WeasyPrint/Pango) so render_cover_letter_pdf can reference them by name.
+# This runs once at import time; failures are logged, not raised, since a
+# missing font asset shouldn't take down English cover letters too.
+_ARABIC_FONT_NAME = "NotoNaskhArabic"
+_ARABIC_FONT_NAME_BOLD = "NotoNaskhArabic-Bold"
+_ARABIC_REPORTLAB_FONT_REGISTERED = False
+
+if _ARABIC_FONT_REGULAR.exists():
+    try:
+        pdfmetrics.registerFont(TTFont(_ARABIC_FONT_NAME, str(_ARABIC_FONT_REGULAR)))
+        pdfmetrics.registerFont(TTFont(
+            _ARABIC_FONT_NAME_BOLD,
+            str(_ARABIC_FONT_BOLD if _ARABIC_FONT_BOLD.exists() else _ARABIC_FONT_REGULAR),
+        ))
+        _ARABIC_REPORTLAB_FONT_REGISTERED = True
+    except Exception as e:
+        logger.error(f"❌ Failed to register Arabic font with ReportLab: {e}")
+else:
+    logger.warning(f"Arabic font asset missing at: {_ARABIC_FONT_REGULAR} (cover letter Arabic will fall back to Helvetica)")
+
+
+def _shape_arabic(text: str) -> str:
+    """
+    ReportLab draws Unicode glyphs left-to-right in logical order and does
+    NOT do Arabic contextual shaping or bidi reordering on its own (unlike
+    WeasyPrint/Pango on the CV path). Without this step, Arabic text either
+    shows as isolated, unconnected letters or - if paired with a font that
+    truly has no Arabic glyphs at all, as with the old Helvetica default -
+    as tofu boxes. Run every Arabic prose string through this before handing
+    it to a Paragraph().
+    """
+    if not text or not _ARABIC_SHAPING_AVAILABLE:
+        return text
+    try:
+        return get_display(arabic_reshaper.reshape(text))
+    except Exception as e:
+        logger.error(f"❌ Arabic shaping failed, rendering unshaped: {e}")
+        return text
 
 
 def _arabic_override_css() -> str:
@@ -166,64 +222,106 @@ def render_cv_pdf(state: dict, template_id: str | None = None) -> str:
 
 
 # ---------------------------------------------------------------------------
-# Cover letter PDF - UNCHANGED for now, still ReportLab.
+# Cover letter PDF - still ReportLab (unlike the CV, which moved to
+# WeasyPrint). cover_letter_template.html exists in templates/ but its
+# content hasn't been shared yet, so a full WeasyPrint conversion is still
+# pending - send it over for that treatment, including a template picker.
 #
-# cover_letter_template.html exists in templates/ but its content hasn't
-# been shared yet, so it can't be safely converted without either guessing
-# its structure (risking a silently-wrong render) or actually seeing it.
-# Send it over and this gets the same WeasyPrint + template treatment,
-# including an optional cover-letter template picker.
+# FIXED here: Arabic cover letters were rendering as tofu boxes because
+# CL_Body was hardcoded to fontName="Helvetica", which has no Arabic
+# glyphs at all - this is a different bug from the old "isolated letters"
+# CV issue (font simply couldn't draw the characters, vs. drawing them
+# unshaped). Now uses the same NotoNaskhArabic asset as the CV, registered
+# separately for ReportLab, plus manual shaping/bidi (see _shape_arabic)
+# since ReportLab - unlike WeasyPrint/Pango - doesn't do that automatically.
 # ---------------------------------------------------------------------------
 
-def _cover_letter_styles():
+def _cover_letter_styles(is_arabic: bool):
     styles = getSampleStyleSheet()
     TEXT_COLOR = colors.HexColor("#2D3748")
-    styles.add(ParagraphStyle(name='CL_Body', fontName="Helvetica", fontSize=10, leading=15, alignment=TA_LEFT, textColor=TEXT_COLOR))
+
+    if is_arabic and _ARABIC_REPORTLAB_FONT_REGISTERED:
+        styles.add(ParagraphStyle(
+            name='CL_Body', fontName=_ARABIC_FONT_NAME, fontSize=11, leading=18,
+            alignment=TA_RIGHT, textColor=TEXT_COLOR,
+        ))
+        styles.add(ParagraphStyle(
+            name='CL_Bold', fontName=_ARABIC_FONT_NAME_BOLD, fontSize=11, leading=18,
+            alignment=TA_RIGHT, textColor=TEXT_COLOR,
+        ))
+    else:
+        styles.add(ParagraphStyle(name='CL_Body', fontName="Helvetica", fontSize=10, leading=15, alignment=TA_LEFT, textColor=TEXT_COLOR))
+        styles.add(ParagraphStyle(name='CL_Bold', fontName="Helvetica-Bold", fontSize=10, leading=15, alignment=TA_LEFT, textColor=TEXT_COLOR))
+
     return styles
 
 
 def render_cover_letter_pdf(state: dict) -> str:
     output_path = os.path.join(OUTPUT_DIR, "cover_letter.pdf")
+
+    is_arabic = str(state.get("cv_language", "en")).lower().startswith("ar")
+    if is_arabic and not _ARABIC_REPORTLAB_FONT_REGISTERED:
+        logger.warning("Arabic cover letter requested but the Arabic font isn't registered — falling back to Helvetica (will show tofu boxes).")
+
+    def body(text: str) -> str:
+        """Shape+reorder Arabic prose; pass English straight through."""
+        return _shape_arabic(text) if is_arabic else text
+
+    # RTL documents still read left-to-right for the page margins ReportLab
+    # itself lays out (it's the text direction *inside* each paragraph that
+    # flips, via TA_RIGHT + shaping) - margins stay symmetric either way.
     doc = SimpleDocTemplate(output_path, pagesize=letter, leftMargin=54, rightMargin=54, topMargin=54, bottomMargin=54)
-    styles = _cover_letter_styles()
+    styles = _cover_letter_styles(is_arabic)
     story = []
 
     facts = state.get("facts_json", {}) or {}
     personal = facts.get("personal", {}) or {}
     wf = state.get("weight_factors", {}) or {}
 
-    name = personal.get("name") or "Candidate Name"
-    story.append(Paragraph(f"<b>{name}</b>", styles['CL_Body']))
+    name = personal.get("name") or ("اسم المتقدم" if is_arabic else "Candidate Name")
+    story.append(Paragraph(f"<b>{body(name)}</b>", styles['CL_Bold']))
     if personal.get("location"):
-        story.append(Paragraph(personal["location"], styles['CL_Body']))
+        story.append(Paragraph(body(personal["location"]), styles['CL_Body']))
     if personal.get("email"):
+        # Identifiers stay LTR and unshaped even inside an Arabic letter -
+        # same rule the CV path enforces for email/LinkedIn/GitHub.
         story.append(Paragraph(personal["email"], styles['CL_Body']))
     story.append(Spacer(1, 15))
-    story.append(Paragraph(date.today().strftime("%B %d, %Y"), styles['CL_Body']))
+
+    today_str = date.today().strftime("%B %d, %Y")
+    if is_arabic:
+        today_str = _to_eastern_arabic_numerals(_translate_date_terms(today_str))
+    story.append(Paragraph(body(today_str) if is_arabic else today_str, styles['CL_Body']))
     story.append(Spacer(1, 15))
 
     company = wf.get("company")
     job_title = wf.get("job_title")
-    story.append(Paragraph("Hiring Team", styles['CL_Body']))
+    hiring_team_label = "فريق التوظيف" if is_arabic else "Hiring Team"
+    story.append(Paragraph(body(hiring_team_label), styles['CL_Body']))
     if company:
-        story.append(Paragraph(company, styles['CL_Body']))
+        # Company names are usually proper nouns/Latin script even in an
+        # Arabic letter - shaping is a harmless no-op on non-Arabic text.
+        story.append(Paragraph(body(company) if is_arabic else company, styles['CL_Body']))
     story.append(Spacer(1, 15))
     if job_title:
-        story.append(Paragraph(f"<b>RE: Application for {job_title}</b>", styles['CL_Body']))
+        re_label = f"الموضوع: التقديم على وظيفة {job_title}" if is_arabic else f"RE: Application for {job_title}"
+        story.append(Paragraph(f"<b>{body(re_label)}</b>", styles['CL_Bold']))
         story.append(Spacer(1, 15))
 
-    story.append(Paragraph("Dear Hiring Team,", styles['CL_Body']))
+    dear_label = "السادة فريق التوظيف المحترمين،" if is_arabic else "Dear Hiring Team,"
+    story.append(Paragraph(body(dear_label), styles['CL_Body']))
     story.append(Spacer(1, 10))
 
     letter_text = state.get("cover_letter_text") or ""
     for para in [p.strip() for p in letter_text.split('\n') if p.strip()]:
-        story.append(Paragraph(para, styles['CL_Body']))
+        story.append(Paragraph(body(para), styles['CL_Body']))
         story.append(Spacer(1, 12))
 
     story.append(Spacer(1, 8))
-    story.append(Paragraph("Sincerely,", styles['CL_Body']))
+    sincerely_label = "مع خالص التقدير،" if is_arabic else "Sincerely,"
+    story.append(Paragraph(body(sincerely_label), styles['CL_Body']))
     story.append(Spacer(1, 20))
-    story.append(Paragraph(name, styles['CL_Body']))
+    story.append(Paragraph(body(name), styles['CL_Body']))
 
     doc.build(story)
     logger.info(f"✅ Cover letter PDF saved → {output_path}")
