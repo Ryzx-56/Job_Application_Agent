@@ -499,7 +499,8 @@ export const content = {
         suggestionsLabel: "AI suggestions",
         resumeCardTitle: "Tailored resume",
         coverLetterCardTitle: "Cover letter",
-        download: "Download PDF",
+        downloadCv: "Download CV",
+        downloadCoverLetter: "Download Cover Letter",
         preview: "Preview",
         missingFields: "Upload a CV and paste a job description to generate.",
         progress: {
@@ -1083,7 +1084,8 @@ export const content = {
         suggestionsLabel: "اقتراحات الذكاء الاصطناعي",
         resumeCardTitle: "السيرة الذاتية المخصصة",
         coverLetterCardTitle: "خطاب التقديم",
-        download: "تنزيل PDF",
+        downloadCv: "تنزيل السيرة الذاتية",
+        downloadCoverLetter: "تنزيل خطاب التقديم",
         preview: "معاينة",
         missingFields: "ارفع سيرتك الذاتية والصق وصفًا وظيفيًا لإنشاء الطلب.",
         progress: {

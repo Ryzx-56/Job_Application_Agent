@@ -69,7 +69,24 @@ SKILLS CLEANUP:
   FACTS_JSON.skills was extracted verbatim and may contain unprofessional filler. For "tailored_skills":
   - Return the SAME categories as FACTS_JSON.skills (languages, frameworks, tools, soft_skills, other).
   - DROP entries that are not genuine skills, competencies, or tools.
-  - Fix capitalization and light phrasing on entries you keep (e.g. "fixing computers" -> "Computer hardware troubleshooting") — but do not invent skills that weren't already listed.
+  - Fix capitalization and light phrasing on entries you keep (e.g. "fixing computers" -> "Computer hardware troubleshooting") — but do not invent a skill that has zero support anywhere in FACTS_JSON.
+
+  MISSING/EMPTY SKILLS — infer from evidence, do not leave it blank:
+  - If FACTS_JSON.skills is empty or very thin (fewer than ~3 total entries across all categories),
+    you MUST still populate "tailored_skills" by inferring skills that are clearly and specifically
+    demonstrated in FACTS_JSON.experience, FACTS_JSON.projects, or RAW_ADDITIONAL_INFO — even though
+    they weren't listed under skills. Example: a bullet or project description saying "built a
+    website" supports adding "HTML" and "CSS"; "analyzed sales data in spreadsheets" supports
+    "Microsoft Excel" or "Data analysis"; it does NOT support adding "Python" unless a
+    language/tool is actually named or unambiguously implied.
+  - This is NOT an exception to the no-fabrication rule — it's the same "is this claim TRUE
+    according to FACTS_JSON" test used everywhere else in this prompt, just reading the evidence
+    from a different field. Every inferred skill must be traceable to a specific sentence in
+    FACTS_JSON if someone asked you to justify it. If you can't point to that sentence, leave the
+    skill out.
+  - "tailored_skills" being completely empty across every category is only acceptable if
+    FACTS_JSON.skills, FACTS_JSON.experience, FACTS_JSON.projects, and RAW_ADDITIONAL_INFO all
+    genuinely contain nothing to infer a skill from — this should be rare in practice.
 
 Tailor the CV to match this job. Follow the strict rules.
 
@@ -84,6 +101,10 @@ For each project in FACTS_JSON.projects (if any), return in "tailored_projects":
   - "tailored_description": 1-2 professional, resume-style sentences.
 
 For FACTS_JSON.volunteer_work (a list of raw strings, if any), rewrite each entry into one polished, resume-style sentence. Return the SAME NUMBER of items, IN THE SAME ORDER, in "tailored_volunteer_work".
+
+For each entry in FACTS_JSON.experience (if any), return in "tailored_experience_titles":
+  - "company": the "company" field EXACTLY as given in FACTS_JSON for that entry (used to match it back up — do not alter this one, including any " — venue" suffix it may have)
+  - "title": the job title, localized/translated per the OUTPUT LANGUAGE instruction below. In English output this can be the same title cleaned up for capitalization; in Arabic output this MUST be an actual Arabic translation of the title, not the English title left as-is.
 
 Return ONLY a JSON object in this exact format (no markdown):
 {{
@@ -103,6 +124,12 @@ Return ONLY a JSON object in this exact format (no markdown):
     }}
   ],
   "tailored_volunteer_work": ["Polished sentence for volunteer entry 1"],
+  "tailored_experience_titles": [
+    {{
+      "company": "Company field exactly as in facts_json",
+      "title": "Localized/translated job title"
+    }}
+  ],
   "tailored_skills": {{
     "languages": ["cleaned entries"],
     "frameworks": ["cleaned entries"],
@@ -198,7 +225,7 @@ def _build_language_instruction(cv_language: str) -> str:
         return """OUTPUT LANGUAGE — MANDATORY ARABIC RULES:
   - You MUST write ALL values completely in fluent, professional Modern Standard Arabic.
   - Absolutely NO English or Latin script characters are allowed in the generated fields.
-  - Translate everything: Job titles (e.g., "مساعد مبيعات وخدمة عملاء"), Company names (e.g., "تيم لاب"), Project names, and Frameworks/Languages (e.g., write "بايثون" instead of "Python", and "واجهة برمجة التطبيقات" instead of "API").
+  - Translate everything: Job titles (e.g., "مساعد مبيعات وخدمة عملاء"), Company names (e.g., "تيم لاب"), Project names, and Frameworks/Languages (e.g., write "بايثون" instead of "Python", and "واجهة برمجة التطبيقات" instead of "API"). This includes every "title" in "tailored_experience_titles" — do not leave a job title in English.
   - Do not mix English words into Arabic strings as it breaks layout rendering engines.
   - Numbers, years, and GPAs must stay as regular numerical digits (e.g., "2025", "4.27").
   - "original" inside each bullet object must remain exactly as it appears in FACTS_JSON without translation.
@@ -238,6 +265,10 @@ def _find_latin_leaks(core_data: dict) -> list[str]:
     for i, v in enumerate(core_data.get("tailored_volunteer_work", [])):
         if _LATIN_WORD_RE.search(v or ""):
             offenders.append(f"tailored_volunteer_work[{i}]")
+
+    for i, t in enumerate(core_data.get("tailored_experience_titles", [])):
+        if _LATIN_WORD_RE.search(t.get("title") or ""):
+            offenders.append(f"tailored_experience_titles[{i}].title")
 
     tailored_skills = core_data.get("tailored_skills", {}) or {}
     for cat, items in tailored_skills.items():
@@ -416,6 +447,7 @@ def run_tailoring_engine(state: AgentState) -> dict:
                 ],
                 "tailored_projects": data.get("tailored_projects", []),
                 "tailored_volunteer_work": data.get("tailored_volunteer_work", []),
+                "tailored_experience_titles": data.get("tailored_experience_titles", []),
                 "tailored_skills": data.get("tailored_skills", {}),
             }
 
@@ -448,6 +480,15 @@ def run_tailoring_engine(state: AgentState) -> dict:
                 _strip_dashes(str(v).strip()) for v in core_data.get("tailored_volunteer_work", []) if str(v).strip()
             ]
 
+            tailored_experience_titles = []
+            for t in core_data.get("tailored_experience_titles", []):
+                if not isinstance(t, dict):
+                    continue
+                company = str(t.get("company", "")).strip()
+                title = _strip_dashes(str(t.get("title", "")).strip())
+                if company and title:
+                    tailored_experience_titles.append({"company": company, "title": title})
+
             raw_skills = core_data.get("tailored_skills", {})
             tailored_skills = {}
             if isinstance(raw_skills, dict):
@@ -463,6 +504,7 @@ def run_tailoring_engine(state: AgentState) -> dict:
                 "tailored_summary": validated.professional_summary,
                 "tailored_projects": tailored_projects,
                 "tailored_volunteer_work": tailored_volunteer_work,
+                "tailored_experience_titles": tailored_experience_titles,
                 "tailored_skills": tailored_skills,
                 "tailoring_attempts": attempts,
                 "error": None,

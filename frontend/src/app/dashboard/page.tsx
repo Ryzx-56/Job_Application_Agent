@@ -948,7 +948,7 @@ export default function DashboardHomePage() {
                     className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-blue-600 px-3 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-700 disabled:pointer-events-none disabled:opacity-50"
                   >
                     <Download className="size-4" aria-hidden />
-                    {copy.download}
+                    {copy.downloadCv}
                   </button>
                 </div>
               </div>
@@ -957,7 +957,7 @@ export default function DashboardHomePage() {
                 title={copy.coverLetterCardTitle}
                 readyLabel={lang === "ar" ? "جاهز" : "Ready"}
                 previewLabel={copy.preview}
-                downloadLabel={copy.download}
+                downloadLabel={copy.downloadCoverLetter}
                 previewHref={clPreviewUrl ?? "#"}
                 downloadHref={clDownloadUrl ?? "#"}
                 disabled={!clPreviewUrl || !clDownloadUrl}

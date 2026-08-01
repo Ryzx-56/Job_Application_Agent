@@ -30,6 +30,17 @@ def build_cv_context(state: dict, template_id: str | None = None) -> dict:
         for p in state.get("tailored_projects", []) or []
         if p.get("name")
     }
+    # Job titles: tailoring_engine.py now returns a localized title per
+    # experience entry (see tailored_experience_titles), matched back by the
+    # "company" field the same way tailored_projects matches by "name". This
+    # exists specifically for Arabic CVs — without it, the title would stay
+    # in whatever language the original uploaded CV was written in, even
+    # while the bullets underneath it were freshly translated to Arabic.
+    title_lookup = {
+        (t.get("company") or "").strip(): (t.get("title") or "").strip()
+        for t in state.get("tailored_experience_titles", []) or []
+        if t.get("company") and t.get("title")
+    }
     raw_volunteer_work = facts.get("volunteer_work", []) or []
     tailored_volunteer_work = state.get("tailored_volunteer_work", []) or []
     display_volunteer = (
@@ -50,7 +61,7 @@ def build_cv_context(state: dict, template_id: str | None = None) -> dict:
             if raw and raw.strip()
         ]
         experience.append({
-            "title": exp.get("title", ""),
+            "title": title_lookup.get((exp.get("company") or "").strip(), exp.get("title", "")),
             "company": exp.get("company", ""),
             "dates": exp.get("dates", ""),
             "bullets": resolved_bullets,
