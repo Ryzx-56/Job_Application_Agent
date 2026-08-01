@@ -33,9 +33,39 @@ MAX_SCALE = 1.25
 STEP = 0.02
 MAX_ITERATIONS = 14
 
+# Rescue pass: MIN_SCALE is a floor chosen for readability on genuinely long
+# CVs — going below it would make a dense, content-heavy page uncomfortably
+# small. But a CV that only spills a couple of lines onto an otherwise-empty
+# final page (e.g. just "Certifications") isn't "genuinely long," it's a
+# near-miss, and deserves a bit more squeeze rather than the same 2-page
+# fallback as someone with a genuinely overflowing CV. This only ever
+# engages after MIN_SCALE has already failed AND the overflow page is
+# sparse — a real long CV still stops at MIN_SCALE exactly like before.
+RESCUE_MIN_SCALE = 0.76
+RESCUE_STEP = 0.01
+SPARSE_PAGE_CHAR_THRESHOLD = 300  # ~a section heading plus one or two short lines
+
 
 def _page_count(pdf_bytes: bytes) -> int:
     return len(PdfReader(BytesIO(pdf_bytes)).pages)
+
+
+def _trailing_page_char_count(pdf_bytes: bytes) -> int:
+    """
+    How much real text is on the LAST page of the current render. Used only
+    to decide whether a 2-page result is a "near miss" (a handful of
+    leftover characters, like a single spilled section) worth rescuing, vs.
+    a genuinely long CV where forcing one page would make the text too
+    small to read. pypdf's extract_text() is a coarse, whitespace-heavy
+    signal, not exact — that's fine here, this only needs to distinguish
+    "a little" from "a lot," not measure precisely.
+    """
+    try:
+        reader = PdfReader(BytesIO(pdf_bytes))
+        return len((reader.pages[-1].extract_text() or "").strip())
+    except Exception as e:
+        logger.warning(f"fit_to_page: couldn't measure trailing page content, skipping rescue pass: {e}")
+        return SPARSE_PAGE_CHAR_THRESHOLD + 1  # treat as "not sparse" — safe default, no rescue attempted
 
 
 def _render(html: str, base_url: str | None) -> bytes:
@@ -90,10 +120,31 @@ def render_html_fit_to_page(jinja_env, template_name: str, context: dict,
                 break
         else:
             if scale <= MIN_SCALE:
-                logger.warning(
-                    f"fit_to_page: content still spans {pages} pages at MIN_SCALE "
-                    f"({MIN_SCALE}). Returning as-is rather than shrinking further."
-                )
+                sparse_chars = _trailing_page_char_count(pdf_bytes)
+                if sparse_chars <= SPARSE_PAGE_CHAR_THRESHOLD:
+                    logger.info(
+                        f"fit_to_page: {pages} pages at MIN_SCALE ({MIN_SCALE}), but the "
+                        f"trailing page only has ~{sparse_chars} chars — attempting a rescue "
+                        f"pass down to {RESCUE_MIN_SCALE} to reclaim it onto one page."
+                    )
+                    rescue_scale = scale
+                    while rescue_scale > RESCUE_MIN_SCALE:
+                        rescue_scale = round(max(rescue_scale - RESCUE_STEP, RESCUE_MIN_SCALE), 3)
+                        rescue_pdf = render_at(rescue_scale)
+                        if _page_count(rescue_pdf) == 1:
+                            logger.info(f"fit_to_page: rescue succeeded at scale {rescue_scale}.")
+                            return rescue_pdf
+                    logger.warning(
+                        f"fit_to_page: rescue pass reached {RESCUE_MIN_SCALE} and still "
+                        f"didn't fit — returning the {pages}-page MIN_SCALE result as-is."
+                    )
+                else:
+                    logger.warning(
+                        f"fit_to_page: content still spans {pages} pages at MIN_SCALE "
+                        f"({MIN_SCALE}), and the trailing page has real content "
+                        f"(~{sparse_chars} chars) — not a rescue candidate. Returning as-is "
+                        f"rather than shrinking a genuinely long CV to an unreadable size."
+                    )
                 break
             scale = round(max(scale - STEP, MIN_SCALE), 3)
 

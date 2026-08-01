@@ -216,15 +216,27 @@ def combined_keyword_rate(
 
 def required_skills_match_rate(
     required_skills: list[str],
-    facts_json: dict
+    effective_skills: dict
 ) -> tuple[float, list[str], list[str]]:
     """
-    Check required skills against the skills section of facts_json.
+    Check required skills against the candidate's skills.
+
+    BUG FIX: this used to always read facts_json.get("skills", {}) directly
+    — the RAW, pre-tailoring skills extracted by cv_parser.py. That means
+    it completely ignored tailored_skills from tailoring_engine.py, which
+    is the actual skills content that ends up rendered on the CV (and,
+    since a recent fix, the only place skills get inferred at all for a
+    CV that listed none). A CV could look complete with a full Skills
+    section and still score 0 here, because this function was scoring
+    against what the candidate originally wrote, not what's actually on
+    their tailored CV. Caller now passes whichever skills dict is
+    actually authoritative (tailored if present, else raw) — see
+    calculate_ats_score below.
+
     Returns: (rate 0-1, matched, missing)
     """
     all_candidate_skills = []
-    skills = facts_json.get("skills", {})
-    for category in skills.values():
+    for category in effective_skills.values():
         if isinstance(category, list):
             all_candidate_skills.extend([normalize(s) for s in category])
 
@@ -337,12 +349,18 @@ def experience_years_match(
 def calculate_ats_score(
     facts_json: dict,
     weight_factors: dict,
-    tailored_cv_text: str  # Full text of the tailored CV (bullets joined)
+    tailored_cv_text: str,  # Full text of the tailored CV (bullets joined)
+    tailored_skills: dict | None = None,
 ) -> dict:
     """
     Master function. Calculates the full ATS score breakdown.
     Returns the score_breakdown dict that Agent 5 (Claude) uses for gap analysis.
     """
+    # Prefer tailoring_engine.py's cleaned/inferred skills (what's actually
+    # on the rendered CV) over the raw facts_json extraction — see the bug
+    # note on required_skills_match_rate above.
+    effective_skills = tailored_skills or (facts_json.get("skills", {}) or {})
+
     # 1. Keyword match
     kw_rate, matched_kw, unmatched_kw = combined_keyword_rate(
         high_keywords=weight_factors.get("ats_keywords_high", []),
@@ -353,7 +371,7 @@ def calculate_ats_score(
     # 2. Required skills match
     skills_rate, matched_skills, missing_skills = required_skills_match_rate(
         required_skills=weight_factors.get("required_skills", []),
-        facts_json=facts_json
+        effective_skills=effective_skills
     )
 
     # 3. Education match
@@ -456,7 +474,7 @@ def run_ats_scorer(state: dict) -> dict:
         skills_text,
     ]))
 
-    result = calculate_ats_score(facts_json, weight_factors, tailored_cv_text)
+    result = calculate_ats_score(facts_json, weight_factors, tailored_cv_text, tailored_skills=skills_source)
 
     logger.info(f"📋 ATS score: {result['ats_score']}/100")
 

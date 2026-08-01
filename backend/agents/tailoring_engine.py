@@ -88,6 +88,14 @@ SKILLS CLEANUP:
     FACTS_JSON.skills, FACTS_JSON.experience, FACTS_JSON.projects, and RAW_ADDITIONAL_INFO all
     genuinely contain nothing to infer a skill from — this should be rare in practice.
 
+FINAL CONSISTENCY CHECK before you output:
+  - Skim what you're about to return as if you were reading the finished CV top to bottom. Bullets,
+    project descriptions, and skills should read like one coherent document, not independently
+    rewritten fragments — consistent tense (past tense for past roles), no two bullets claiming
+    contradictory things, no term used one way in Skills and a different way in a bullet.
+  - This is a coherence check on wording only, not a chance to add new claims — every fact still
+    has to trace back to FACTS_JSON exactly as the rest of this prompt requires.
+
 Tailor the CV to match this job. Follow the strict rules.
 
 For each work-experience bullet, include:
@@ -97,8 +105,23 @@ For each work-experience bullet, include:
 
 For each project in FACTS_JSON.projects (if any), return in "tailored_projects":
   - "name": the project's name EXACTLY as given in FACTS_JSON (used to match it back up — do not alter this one)
-  - "display_name": a properly capitalized, resume-ready version of the name.
+  - "display_name": a resume-ready version of the name. Two different cases:
+      1. If the original name is already a real, specific title (a product name, a branded project
+         name, something with actual identity), just fix capitalization/spacing — do not rewrite it.
+      2. If the original name is really just a vague description of what was done rather than an
+         actual title (e.g. "i created a website", "made a todo app", "school project 3"), rewrite
+         it into a short, proper title that names what the thing IS, grounded only in what
+         "description" and "tech_stack" actually say it does — e.g. "i created a website" with a
+         description mentioning a portfolio becomes "Personal Portfolio Website", not a generic
+         invented name unrelated to the actual project. Never invent a purpose or feature that
+         isn't in the description just to make the title sound more impressive.
   - "tailored_description": 1-2 professional, resume-style sentences.
+  - "tech_stack": the technologies/tools used on this project. Start from FACTS_JSON.projects[].tech_stack
+    if it has entries. If it's empty or thin, infer additional entries from what the project's own
+    "description" text actually says was built or used — same grounded-inference rule as SKILLS
+    CLEANUP below (a specific sentence in FACTS_JSON must support each entry; do not guess a
+    technology that was never named or clearly implied). Do not leave "tech_stack" empty if the
+    project description gives you anything concrete to work with.
 
 For FACTS_JSON.volunteer_work (a list of raw strings, if any), rewrite each entry into one polished, resume-style sentence. Return the SAME NUMBER of items, IN THE SAME ORDER, in "tailored_volunteer_work".
 
@@ -120,7 +143,8 @@ Return ONLY a JSON object in this exact format (no markdown):
     {{
       "name": "Project name exactly as in facts_json",
       "display_name": "Properly Capitalized Name",
-      "tailored_description": "2-3 polished, resume-style sentences here."
+      "tailored_description": "2-3 polished, resume-style sentences here.",
+      "tech_stack": ["Technology 1", "Technology 2"]
     }}
   ],
   "tailored_volunteer_work": ["Polished sentence for volunteer entry 1"],
@@ -261,6 +285,8 @@ def _find_latin_leaks(core_data: dict) -> list[str]:
     for i, p in enumerate(core_data.get("tailored_projects", [])):
         if _LATIN_WORD_RE.search(p.get("display_name") or "") or _LATIN_WORD_RE.search(p.get("tailored_description") or ""):
             offenders.append(f"tailored_projects[{i}]")
+        if any(_LATIN_WORD_RE.search(str(t)) for t in (p.get("tech_stack") or [])):
+            offenders.append(f"tailored_projects[{i}].tech_stack")
 
     for i, v in enumerate(core_data.get("tailored_volunteer_work", [])):
         if _LATIN_WORD_RE.search(v or ""):
@@ -469,11 +495,17 @@ def run_tailoring_engine(state: AgentState) -> dict:
                 name = str(p.get("name", "")).strip()
                 display_name = _strip_dashes(str(p.get("display_name", "")).strip()) or name
                 desc = _strip_dashes(str(p.get("tailored_description", "")).strip())
+                raw_tech = p.get("tech_stack", [])
+                tech_stack = (
+                    [_strip_dashes(str(t).strip()) for t in raw_tech if str(t).strip()]
+                    if isinstance(raw_tech, list) else []
+                )
                 if name and desc:
                     tailored_projects.append({
                         "name": name,
                         "display_name": display_name,
                         "tailored_description": desc,
+                        "tech_stack": tech_stack,
                     })
 
             tailored_volunteer_work = [

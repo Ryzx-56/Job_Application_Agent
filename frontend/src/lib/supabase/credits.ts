@@ -10,12 +10,14 @@ export type CreditsInfo = {
   creditsResetAt: string;
   isFoundingMember: boolean;
   foundingMemberNumber: number | null;
+  location: string | null;
 };
 
 /* ========================================================================
    FETCH — reads the logged-in user's own profile row. RLS only grants
    SELECT on this table (see 001_profiles_credits.sql), so this can never
-   be used to change tier/credits — only the backend can do that.
+   be used to change tier/credits — only the backend can do that. Same
+   applies to `location` — see lib/supabase/location.ts for the write path.
 ======================================================================== */
 export async function fetchCredits(): Promise<CreditsInfo> {
   const supabase = createClient();
@@ -26,7 +28,7 @@ export async function fetchCredits(): Promise<CreditsInfo> {
 
   const { data, error } = await supabase
     .from("profiles")
-    .select("tier, credits_remaining, credits_total, pending_tier, credits_reset_at, is_founding_member, founding_member_number")
+    .select("tier, credits_remaining, credits_total, pending_tier, credits_reset_at, is_founding_member, founding_member_number, location")
     .eq("id", user.id)
     .single();
 
@@ -40,5 +42,6 @@ export async function fetchCredits(): Promise<CreditsInfo> {
     creditsResetAt: data.credits_reset_at,
     isFoundingMember: data.is_founding_member,
     foundingMemberNumber: data.founding_member_number,
+    location: data.location,
   };
 }

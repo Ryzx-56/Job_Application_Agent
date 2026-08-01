@@ -7,6 +7,8 @@ import { useAuth } from "@/lib/auth";
 import { DashboardButton } from "@/components/dashboard";
 import { createClient } from "@/lib/supabase/client";
 import { fetchCredits, Tier } from "@/lib/supabase/credits";
+import { updateLocation } from "@/lib/supabase/location";
+import { SAUDI_CITIES, OTHER_CITY_VALUE } from "@/lib/saudi-cities";
 
 const TIER_LABEL: Record<Tier, { en: string; ar: string }> = {
   free: { en: "Free", ar: "مجانية" },
@@ -21,12 +23,59 @@ export default function SettingsPage() {
   const isAr = lang === "ar";
   const [languageJustSaved, setLanguageJustSaved] = useState(false);
   const [tier, setTier] = useState<Tier | null>(null);
+  const [location, setLocation] = useState("");
+  const [locationOther, setLocationOther] = useState("");
+  const [locationSaving, setLocationSaving] = useState(false);
+  const [locationJustSaved, setLocationJustSaved] = useState(false);
+  const [locationError, setLocationError] = useState("");
 
   useEffect(() => {
     fetchCredits()
-      .then((c) => setTier(c.tier))
+      .then((c) => {
+        setTier(c.tier);
+        const known = SAUDI_CITIES.some((city) => city.value === c.location);
+        if (c.location && known) {
+          setLocation(c.location);
+        } else if (c.location) {
+          // A value that isn't in the curated list — e.g. free-text "Other"
+          // from signup — show it under Other instead of silently dropping it.
+          setLocation(OTHER_CITY_VALUE);
+          setLocationOther(c.location);
+        }
+      })
       .catch((err) => console.error("fetchCredits failed:", err));
   }, []);
+
+  async function handleLocationChange(newValue: string) {
+    setLocationError("");
+    setLocation(newValue);
+    if (newValue === OTHER_CITY_VALUE) return; // wait for free-text entry before saving
+    setLocationSaving(true);
+    try {
+      await updateLocation(newValue);
+      setLocationJustSaved(true);
+      setTimeout(() => setLocationJustSaved(false), 2500);
+    } catch (err) {
+      setLocationError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setLocationSaving(false);
+    }
+  }
+
+  async function handleOtherLocationSave() {
+    if (!locationOther.trim()) return;
+    setLocationError("");
+    setLocationSaving(true);
+    try {
+      await updateLocation(locationOther.trim());
+      setLocationJustSaved(true);
+      setTimeout(() => setLocationJustSaved(false), 2500);
+    } catch (err) {
+      setLocationError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setLocationSaving(false);
+    }
+  }
 
   const planDisplayName = tier ? TIER_LABEL[tier][isAr ? "ar" : "en"] : isAr ? "جارٍ التحميل…" : "Loading…";
 
@@ -213,6 +262,61 @@ export default function SettingsPage() {
 
         {languageJustSaved && (
           <p className="mt-2.5 text-sm text-emerald-600">{copy.languageSaved}</p>
+        )}
+      </section>
+
+      {/* Location */}
+      <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-7">
+        <h2 className="mb-1.5 text-sm font-semibold uppercase tracking-wide text-slate-500">
+          {isAr ? "الموقع" : "Location"}
+        </h2>
+        <p className="mb-3 text-sm text-slate-500">
+          {isAr
+            ? "نستخدم هذا لعرض وظائف مناسبة لموقعك إذا لم تذكر سيرتك الذاتية موقعًا."
+            : "We use this to show you relevant job openings if your CV doesn't mention a location."}
+        </p>
+
+        <select
+          value={location}
+          onChange={(e) => handleLocationChange(e.target.value)}
+          disabled={locationSaving}
+          className="block w-full max-w-xs rounded-lg border border-slate-200 px-4 py-2.5 text-sm text-slate-900 focus:border-sky-400 focus:outline-none focus:ring-2 focus:ring-sky-500/20"
+        >
+          <option value="" disabled>
+            {isAr ? "اختر مدينتك" : "Select your city"}
+          </option>
+          {SAUDI_CITIES.map((city) => (
+            <option key={city.value} value={city.value}>
+              {isAr ? city.ar : city.en}
+            </option>
+          ))}
+          <option value={OTHER_CITY_VALUE}>{isAr ? "أخرى" : "Other"}</option>
+        </select>
+
+        {location === OTHER_CITY_VALUE && (
+          <div className="mt-2.5 flex max-w-xs gap-2">
+            <input
+              type="text"
+              value={locationOther}
+              onChange={(e) => setLocationOther(e.target.value)}
+              placeholder={isAr ? "اكتب مدينتك" : "Type your city"}
+              className="block w-full rounded-lg border border-slate-200 px-4 py-2.5 text-sm text-slate-900 focus:border-sky-400 focus:outline-none focus:ring-2 focus:ring-sky-500/20"
+            />
+            <DashboardButton
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={handleOtherLocationSave}
+              disabled={locationSaving || !locationOther.trim()}
+            >
+              {isAr ? "حفظ" : "Save"}
+            </DashboardButton>
+          </div>
+        )}
+
+        {locationError && <p className="mt-2.5 text-sm text-rose-600">{locationError}</p>}
+        {locationJustSaved && (
+          <p className="mt-2.5 text-sm text-emerald-600">{isAr ? "تم حفظ الموقع" : "Location saved"}</p>
         )}
       </section>
     </div>

@@ -9,6 +9,7 @@ import { Button, Logo, LangSwitcher } from "@/components/brand";
 import { createClient } from "@/lib/supabase/client";
 import { LegalModal } from "@/components/legal-modal";
 import { legalContent, LegalDocKey } from "@/lib/legal-content";
+import { SAUDI_CITIES, OTHER_CITY_VALUE } from "@/lib/saudi-cities";
 
 function GoogleIcon(props: React.SVGProps<SVGSVGElement>) {
   return (
@@ -128,6 +129,8 @@ function SignupForm() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
+  const [location, setLocation] = useState("");
+  const [otherLocation, setOtherLocation] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [agreedToTerms, setAgreedToTerms] = useState(false);
@@ -144,6 +147,10 @@ function SignupForm() {
     setSuccess("");
 
     if (!fullName.trim() || !email.trim() || !password || !confirmPassword) {
+      setError(t.signup.errors.missingFields);
+      return;
+    }
+    if (!location || (location === OTHER_CITY_VALUE && !otherLocation.trim())) {
       setError(t.signup.errors.missingFields);
       return;
     }
@@ -171,7 +178,15 @@ function SignupForm() {
         // on the right tier. `preferred_language` is sent here (not just via
         // persistLanguageToAccount, which needs a session) so it's already
         // set when the "Send Email" auth hook fires the confirmation email.
-        data: { full_name: fullName.trim(), selected_plan: planSlug, preferred_language: lang },
+        // `location` follows the same pattern — read by handle_new_user()
+        // (or equivalent) into profiles.location, so jobs_finder.py has a
+        // fallback for whenever an uploaded CV doesn't yield a location.
+        data: {
+          full_name: fullName.trim(),
+          selected_plan: planSlug,
+          preferred_language: lang,
+          location: location === OTHER_CITY_VALUE ? otherLocation.trim() : location,
+        },
         emailRedirectTo: `${window.location.origin}/auth/callback`,
       },
     });
@@ -283,6 +298,45 @@ function SignupForm() {
                   placeholder={t.signup.emailPlaceholder}
                   className="block w-full rounded-lg border border-white/10 bg-white/5 px-4 py-3 text-base text-white placeholder:text-zinc-600 outline-none transition-colors focus:border-blue-400/60 focus:bg-white/[0.07] focus:ring-2 focus:ring-blue-400/30"
                 />
+              </div>
+
+              <div>
+                <label htmlFor="location" className="mb-2 block text-base font-medium text-zinc-300">
+                  {isRTL ? "المدينة" : "City"}
+                </label>
+                <select
+                  id="location"
+                  name="location"
+                  value={location}
+                  onChange={(e) => setLocation(e.target.value)}
+                  className="block w-full rounded-lg border border-white/10 bg-white/5 px-4 py-3 text-base text-white outline-none transition-colors focus:border-blue-400/60 focus:bg-white/[0.07] focus:ring-2 focus:ring-blue-400/30"
+                >
+                  <option value="" disabled className="bg-zinc-900">
+                    {isRTL ? "اختر مدينتك" : "Select your city"}
+                  </option>
+                  {SAUDI_CITIES.map((city) => (
+                    <option key={city.value} value={city.value} className="bg-zinc-900">
+                      {isRTL ? city.ar : city.en}
+                    </option>
+                  ))}
+                  <option value={OTHER_CITY_VALUE} className="bg-zinc-900">
+                    {isRTL ? "أخرى" : "Other"}
+                  </option>
+                </select>
+                {location === OTHER_CITY_VALUE && (
+                  <input
+                    type="text"
+                    value={otherLocation}
+                    onChange={(e) => setOtherLocation(e.target.value)}
+                    placeholder={isRTL ? "اكتب مدينتك" : "Type your city"}
+                    className="mt-2.5 block w-full rounded-lg border border-white/10 bg-white/5 px-4 py-3 text-base text-white placeholder:text-zinc-600 outline-none transition-colors focus:border-blue-400/60 focus:bg-white/[0.07] focus:ring-2 focus:ring-blue-400/30"
+                  />
+                )}
+                <p className="mt-1.5 text-xs text-zinc-500">
+                  {isRTL
+                    ? "نستخدم هذا لعرض وظائف مناسبة لموقعك إذا لم تذكر سيرتك الذاتية موقعك."
+                    : "We use this to show you relevant job openings if your CV doesn't mention a location."}
+                </p>
               </div>
 
               <div>

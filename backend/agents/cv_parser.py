@@ -13,6 +13,13 @@ STRICT RULES:
 - Do NOT infer, guess, or add any information
 - Do NOT rephrase or improve anything
 - If a section is missing from the CV, return an empty list [] for it
+- LOCATION — read carefully, this is a common mistake: "personal.location" is not always next
+  to a "Location:" label or grouped with the other contact details at the top. It's often just a
+  bare city/country name (e.g. "Jeddah" or "Jeddah, Saudi Arabia") sitting on its own line
+  anywhere in the document — near the name, in a footer, under an address heading, or elsewhere.
+  Scan the ENTIRE document text for a standalone city/region/country name before concluding there
+  is no location — do not only check the lines immediately next to email/phone. Only return null
+  if no such text appears anywhere in the CV.
 - If a field is missing, return null for it
 - All dates must be extracted exactly as written
 - All bullets must be extracted word-for-word
@@ -56,6 +63,26 @@ EXPERIENCE BULLETS — read carefully, this is a common mistake:
   the "company" field instead, separated by " — " (e.g. "company": "Acme Corp — Acme Flagship Store,
   Jeddah"). Only "➢ Managed reception operations..." belongs in "bullets".
 - A good test: if a line has no verb and is just a proper-noun name/place, it is NOT a bullet.
+- STRIP any bullet/marker glyph from the START of the extracted text itself (•, ➢, -, *, ●, §, a
+  leading ".", or a number like "1)"/"1."). The "bullets" list is rendered inside a template that
+  already draws its own bullet marker in front of each item — if the extracted text also starts
+  with one of these symbols, the final CV shows two markers stacked together (e.g. "• • Performing
+  maintenance..."). Extract ONLY the sentence content, with no leading symbol of any kind.
+- Do NOT split ONE logical bullet point across multiple entries in the "bullets" list just because
+  it wraps onto several lines in the source PDF, or contains an internal comma/colon. If a single
+  bullet marker in the source CV is followed by one continuous sentence (even if that sentence
+  spans 2-3 lines of wrapped text), extract it as ONE bullet string, not several. A wrong example:
+  splitting "During the training period, I participated in a variety of technical and
+  administrative tasks, including:" and "Providing technical support to employees..." into two
+  separate bullets when the source only had one bullet marker in front of that whole passage.
+- Do NOT create a bullet out of a lead-in clause that only announces a list without describing a
+  concrete action itself — e.g. a line ending in "including:" or "as follows:" that exists purely
+  to introduce the bullets that come after it. Skip it; the itemized bullets that follow already
+  carry the actual information, and keeping the lead-in as its own bullet just duplicates it.
+- If you find yourself extracting more than 6-7 bullets for a single experience entry, stop and
+  re-check: it's more likely you've fragmented a smaller number of real bullets than that the
+  candidate genuinely wrote that many distinct points. Merge fragments of the same sentence back
+  together before finalizing.
 
 Return your response as a single valid JSON object matching this exact structure:
 {{

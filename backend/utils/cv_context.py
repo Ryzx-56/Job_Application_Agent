@@ -73,9 +73,18 @@ def build_cv_context(state: dict, template_id: str | None = None) -> dict:
     for proj in facts.get("projects", []) or []:
         name = (proj.get("name") or "").strip()
         tailored = project_lookup.get(name)
-        tech_items = proj.get("tech_stack") or proj.get("technologies") or []
-        if isinstance(tech_items, str):
-            tech_items = [t.strip() for t in tech_items.split(",") if t.strip()]
+        # tailored.tech_stack is tailoring_engine.py's cleaned/inferred version
+        # (also translated for Arabic) — prefer it over the raw facts_json
+        # pass-through, same "prefer the tailored version, fall back to raw"
+        # pattern used for title/description just above. Only fall back if
+        # tailoring_engine genuinely returned nothing usable.
+        tailored_tech = (tailored or {}).get("tech_stack") or []
+        if tailored_tech:
+            tech_items = tailored_tech
+        else:
+            tech_items = proj.get("tech_stack") or proj.get("technologies") or []
+            if isinstance(tech_items, str):
+                tech_items = [t.strip() for t in tech_items.split(",") if t.strip()]
         projects.append({
             "name": (tailored.get("display_name") if tailored else None) or name,
             "tech_stack": [str(t).strip() for t in tech_items if str(t).strip()],
