@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useLang } from "@/lib/language";
 import { useAuth } from "@/lib/auth";
@@ -8,7 +8,7 @@ import { DashboardButton } from "@/components/dashboard";
 import { createClient } from "@/lib/supabase/client";
 import { fetchCredits, Tier } from "@/lib/supabase/credits";
 import { updateLocation } from "@/lib/supabase/location";
-import { SAUDI_CITIES, OTHER_CITY_VALUE } from "@/lib/saudi-cities";
+import { getCountryList, getCitiesForCountry, formatLocation, parseLocation, OTHER_CITY_VALUE, CountryOption, CityOption } from "@/lib/countries";
 
 const TIER_LABEL: Record<Tier, { en: string; ar: string }> = {
   free: { en: "Free", ar: "مجانية" },
@@ -23,36 +23,48 @@ export default function SettingsPage() {
   const isAr = lang === "ar";
   const [languageJustSaved, setLanguageJustSaved] = useState(false);
   const [tier, setTier] = useState<Tier | null>(null);
-  const [location, setLocation] = useState("");
+  const [countryIso, setCountryIso] = useState("SA");
+  const [city, setCity] = useState("");
   const [locationOther, setLocationOther] = useState("");
   const [locationSaving, setLocationSaving] = useState(false);
   const [locationJustSaved, setLocationJustSaved] = useState(false);
   const [locationError, setLocationError] = useState("");
 
+  const countryOptions: CountryOption[] = useMemo(() => getCountryList(isAr ? "ar" : "en"), [isAr]);
+  const cityOptions: CityOption[] = useMemo(
+    () => (countryIso ? getCitiesForCountry(countryIso, isAr ? "ar" : "en") : []),
+    [countryIso, isAr]
+  );
+
   useEffect(() => {
     fetchCredits()
       .then((c) => {
         setTier(c.tier);
-        const known = SAUDI_CITIES.some((city) => city.value === c.location);
-        if (c.location && known) {
-          setLocation(c.location);
-        } else if (c.location) {
-          // A value that isn't in the curated list — e.g. free-text "Other"
-          // from signup — show it under Other instead of silently dropping it.
-          setLocation(OTHER_CITY_VALUE);
+        if (!c.location) return;
+
+        const parsed = parseLocation(c.location);
+        if (parsed) {
+          setCountryIso(parsed.countryIso);
+          setCity(parsed.city);
+        } else {
+          // Doesn't parse as a recognized "City, Country" — e.g. free-text
+          // "Other" entered at signup. Show it under Other rather than
+          // silently dropping it or guessing at a country.
+          setCity(OTHER_CITY_VALUE);
           setLocationOther(c.location);
         }
       })
       .catch((err) => console.error("fetchCredits failed:", err));
   }, []);
 
-  async function handleLocationChange(newValue: string) {
+  async function saveLocation(nextCity: string, nextCountryIso: string) {
     setLocationError("");
-    setLocation(newValue);
-    if (newValue === OTHER_CITY_VALUE) return; // wait for free-text entry before saving
     setLocationSaving(true);
     try {
-      await updateLocation(newValue);
+      const resolved =
+        nextCity === OTHER_CITY_VALUE ? locationOther.trim() : formatLocation(nextCity, nextCountryIso);
+      if (!resolved) return; // e.g. "Other" picked but no text typed yet
+      await updateLocation(resolved);
       setLocationJustSaved(true);
       setTimeout(() => setLocationJustSaved(false), 2500);
     } catch (err) {
@@ -62,19 +74,15 @@ export default function SettingsPage() {
     }
   }
 
-  async function handleOtherLocationSave() {
-    if (!locationOther.trim()) return;
-    setLocationError("");
-    setLocationSaving(true);
-    try {
-      await updateLocation(locationOther.trim());
-      setLocationJustSaved(true);
-      setTimeout(() => setLocationJustSaved(false), 2500);
-    } catch (err) {
-      setLocationError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setLocationSaving(false);
-    }
+  function handleCountryChange(newIso: string) {
+    setCountryIso(newIso);
+    setCity(""); // previous city no longer applies under the new country — wait for a new pick before saving
+  }
+
+  function handleCityChange(newCity: string) {
+    setCity(newCity);
+    if (newCity === OTHER_CITY_VALUE) return; // wait for free-text entry before saving
+    saveLocation(newCity, countryIso);
   }
 
   const planDisplayName = tier ? TIER_LABEL[tier][isAr ? "ar" : "en"] : isAr ? "جارٍ التحميل…" : "Loading…";
@@ -276,24 +284,39 @@ export default function SettingsPage() {
             : "We use this to show you relevant job openings if your CV doesn't mention a location."}
         </p>
 
-        <select
-          value={location}
-          onChange={(e) => handleLocationChange(e.target.value)}
-          disabled={locationSaving}
-          className="block w-full max-w-xs rounded-lg border border-slate-200 px-4 py-2.5 text-sm text-slate-900 focus:border-sky-400 focus:outline-none focus:ring-2 focus:ring-sky-500/20"
-        >
-          <option value="" disabled>
-            {isAr ? "اختر مدينتك" : "Select your city"}
-          </option>
-          {SAUDI_CITIES.map((city) => (
-            <option key={city.value} value={city.value}>
-              {isAr ? city.ar : city.en}
-            </option>
-          ))}
-          <option value={OTHER_CITY_VALUE}>{isAr ? "أخرى" : "Other"}</option>
-        </select>
+        <div className="flex max-w-md gap-2">
+          <select
+            value={countryIso}
+            onChange={(e) => handleCountryChange(e.target.value)}
+            disabled={locationSaving}
+            className="block w-1/2 rounded-lg border border-slate-200 px-4 py-2.5 text-sm text-slate-900 focus:border-sky-400 focus:outline-none focus:ring-2 focus:ring-sky-500/20"
+          >
+            {countryOptions.map((c) => (
+              <option key={c.isoCode} value={c.isoCode}>
+                {c.name}
+              </option>
+            ))}
+          </select>
 
-        {location === OTHER_CITY_VALUE && (
+          <select
+            value={city}
+            onChange={(e) => handleCityChange(e.target.value)}
+            disabled={locationSaving}
+            className="block w-1/2 rounded-lg border border-slate-200 px-4 py-2.5 text-sm text-slate-900 focus:border-sky-400 focus:outline-none focus:ring-2 focus:ring-sky-500/20"
+          >
+            <option value="" disabled>
+              {isAr ? "اختر مدينتك" : "Select your city"}
+            </option>
+            {cityOptions.map((c) => (
+              <option key={c.value} value={c.value}>
+                {c.label}
+              </option>
+            ))}
+            <option value={OTHER_CITY_VALUE}>{isAr ? "أخرى" : "Other"}</option>
+          </select>
+        </div>
+
+        {city === OTHER_CITY_VALUE && (
           <div className="mt-2.5 flex max-w-xs gap-2">
             <input
               type="text"
@@ -306,7 +329,7 @@ export default function SettingsPage() {
               type="button"
               variant="outline"
               size="sm"
-              onClick={handleOtherLocationSave}
+              onClick={() => saveLocation(OTHER_CITY_VALUE, countryIso)}
               disabled={locationSaving || !locationOther.trim()}
             >
               {isAr ? "حفظ" : "Save"}

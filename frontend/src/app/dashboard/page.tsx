@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useRef, useEffect } from "react";
+import Link from "next/link";
 import {
   Sparkles,
   CheckCircle2,
@@ -18,6 +19,8 @@ import {
   Download,
   Eye,
   FileType2,
+  MapPin,
+  AlertTriangle,
 } from "lucide-react";
 import { useLang } from "@/lib/language";
 import { CreditsButton } from "@/components/CreditsButton";
@@ -301,6 +304,7 @@ export default function DashboardHomePage() {
   const [creditsTotal, setCreditsTotal] = useState(0);
   const [isFoundingMember, setIsFoundingMember] = useState(false);
   const [foundingMemberNumber, setFoundingMemberNumber] = useState<number | null>(null);
+  const [location, setLocation] = useState<string | null | undefined>(undefined);
 
   const refreshCredits = () => {
     fetchCredits()
@@ -309,6 +313,7 @@ export default function DashboardHomePage() {
         setCreditsTotal(c.creditsTotal);
         setIsFoundingMember(c.isFoundingMember);
         setFoundingMemberNumber(c.foundingMemberNumber);
+        setLocation(c.location);
       })
       .catch((err) => console.error("fetchCredits failed:", err));
   };
@@ -448,6 +453,32 @@ export default function DashboardHomePage() {
 
   return (
     <div className="mx-auto max-w-4xl space-y-8" dir={dir}>
+      {location === null && (
+        <Link
+          href="/dashboard/settings"
+          className="flex items-center gap-2.5 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-medium text-rose-700 transition-colors hover:bg-rose-100"
+        >
+          <MapPin className="size-4 shrink-0" aria-hidden />
+          {lang === "ar"
+            ? "الرجاء إضافة موقعك حتى نتمكن من عرض وظائف مناسبة لك"
+            : "Please add your location so we can show you relevant jobs"}
+        </Link>
+      )}
+
+      {creditsRemaining <= 0 && (
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+          <span className="flex items-center gap-2.5 font-medium">
+            <AlertTriangle className="size-4 shrink-0" aria-hidden />
+            {lang === "ar"
+              ? "لا تملك أي رصيد متبقٍ. قم بالترقية للمتابعة."
+              : "You have 0 credits left. Upgrade to keep generating."}
+          </span>
+          <DashboardButton as={Link} href="/dashboard/checkout?plan=pro" variant="primary" size="sm">
+            {lang === "ar" ? "الترقية الآن" : "Upgrade Now"}
+          </DashboardButton>
+        </div>
+      )}
+
       {isFoundingMember && (
         <div>
           <span className="mb-2 block text-xs font-medium uppercase tracking-wide text-slate-400">

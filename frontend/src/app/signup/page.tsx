@@ -1,6 +1,6 @@
 "use client";
 
-import React, { Suspense, useState } from "react";
+import React, { Suspense, useState, useMemo } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Eye, EyeOff, ArrowRight, ArrowLeft, Lock, ScanSearch, BadgeCheck } from "lucide-react";
@@ -9,7 +9,7 @@ import { Button, Logo, LangSwitcher } from "@/components/brand";
 import { createClient } from "@/lib/supabase/client";
 import { LegalModal } from "@/components/legal-modal";
 import { legalContent, LegalDocKey } from "@/lib/legal-content";
-import { SAUDI_CITIES, OTHER_CITY_VALUE } from "@/lib/saudi-cities";
+import { getCountryList, getCitiesForCountry, formatLocation, OTHER_CITY_VALUE, CountryOption, CityOption } from "@/lib/countries";
 
 function GoogleIcon(props: React.SVGProps<SVGSVGElement>) {
   return (
@@ -129,11 +129,18 @@ function SignupForm() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
-  const [location, setLocation] = useState("");
+  const [countryIso, setCountryIso] = useState("SA"); // Saudi Arabia pre-selected — see getCountryList
+  const [city, setCity] = useState("");
   const [otherLocation, setOtherLocation] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [agreedToTerms, setAgreedToTerms] = useState(false);
+
+  const countryOptions: CountryOption[] = useMemo(() => getCountryList(lang), [lang]);
+  const cityOptions: CityOption[] = useMemo(
+    () => (countryIso ? getCitiesForCountry(countryIso, lang) : []),
+    [countryIso, lang]
+  );
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
@@ -150,7 +157,7 @@ function SignupForm() {
       setError(t.signup.errors.missingFields);
       return;
     }
-    if (!location || (location === OTHER_CITY_VALUE && !otherLocation.trim())) {
+    if (!countryIso || !city || (city === OTHER_CITY_VALUE && !otherLocation.trim())) {
       setError(t.signup.errors.missingFields);
       return;
     }
@@ -166,6 +173,11 @@ function SignupForm() {
       setError(t.signup.errors.termsRequired);
       return;
     }
+
+    // Canonical "City, Country" in English, regardless of signup language —
+    // see lib/countries.ts's storage-convention note.
+    const resolvedLocation =
+      city === OTHER_CITY_VALUE ? otherLocation.trim() : formatLocation(city, countryIso);
 
     setSubmitting(true);
     const supabase = createClient();
@@ -185,7 +197,7 @@ function SignupForm() {
           full_name: fullName.trim(),
           selected_plan: planSlug,
           preferred_language: lang,
-          location: location === OTHER_CITY_VALUE ? otherLocation.trim() : location,
+          location: resolvedLocation,
         },
         emailRedirectTo: `${window.location.origin}/auth/callback`,
       },
@@ -300,44 +312,69 @@ function SignupForm() {
                 />
               </div>
 
-              <div>
-                <label htmlFor="location" className="mb-2 block text-base font-medium text-zinc-300">
-                  {isRTL ? "المدينة" : "City"}
-                </label>
-                <select
-                  id="location"
-                  name="location"
-                  value={location}
-                  onChange={(e) => setLocation(e.target.value)}
-                  className="block w-full rounded-lg border border-white/10 bg-white/5 px-4 py-3 text-base text-white outline-none transition-colors focus:border-blue-400/60 focus:bg-white/[0.07] focus:ring-2 focus:ring-blue-400/30"
-                >
-                  <option value="" disabled className="bg-zinc-900">
-                    {isRTL ? "اختر مدينتك" : "Select your city"}
-                  </option>
-                  {SAUDI_CITIES.map((city) => (
-                    <option key={city.value} value={city.value} className="bg-zinc-900">
-                      {isRTL ? city.ar : city.en}
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label htmlFor="country" className="mb-2 block text-base font-medium text-zinc-300">
+                    {isRTL ? "الدولة" : "Country"}
+                  </label>
+                  <select
+                    id="country"
+                    name="country"
+                    value={countryIso}
+                    onChange={(e) => {
+                      setCountryIso(e.target.value);
+                      setCity(""); // country changed — previous city selection no longer applies
+                    }}
+                    className="block w-full rounded-lg border border-white/10 bg-white/5 px-4 py-3 text-base text-white outline-none transition-colors focus:border-blue-400/60 focus:bg-white/[0.07] focus:ring-2 focus:ring-blue-400/30"
+                  >
+                    {countryOptions.map((c) => (
+                      <option key={c.isoCode} value={c.isoCode} className="bg-zinc-900">
+                        {c.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label htmlFor="location" className="mb-2 block text-base font-medium text-zinc-300">
+                    {isRTL ? "المدينة" : "City"}
+                  </label>
+                  <select
+                    id="location"
+                    name="location"
+                    value={city}
+                    onChange={(e) => setCity(e.target.value)}
+                    className="block w-full rounded-lg border border-white/10 bg-white/5 px-4 py-3 text-base text-white outline-none transition-colors focus:border-blue-400/60 focus:bg-white/[0.07] focus:ring-2 focus:ring-blue-400/30"
+                  >
+                    <option value="" disabled className="bg-zinc-900">
+                      {isRTL ? "اختر مدينتك" : "Select your city"}
                     </option>
-                  ))}
-                  <option value={OTHER_CITY_VALUE} className="bg-zinc-900">
-                    {isRTL ? "أخرى" : "Other"}
-                  </option>
-                </select>
-                {location === OTHER_CITY_VALUE && (
-                  <input
-                    type="text"
-                    value={otherLocation}
-                    onChange={(e) => setOtherLocation(e.target.value)}
-                    placeholder={isRTL ? "اكتب مدينتك" : "Type your city"}
-                    className="mt-2.5 block w-full rounded-lg border border-white/10 bg-white/5 px-4 py-3 text-base text-white placeholder:text-zinc-600 outline-none transition-colors focus:border-blue-400/60 focus:bg-white/[0.07] focus:ring-2 focus:ring-blue-400/30"
-                  />
-                )}
-                <p className="mt-1.5 text-xs text-zinc-500">
-                  {isRTL
-                    ? "نستخدم هذا لعرض وظائف مناسبة لموقعك إذا لم تذكر سيرتك الذاتية موقعك."
-                    : "We use this to show you relevant job openings if your CV doesn't mention a location."}
-                </p>
+                    {cityOptions.map((c) => (
+                      <option key={c.value} value={c.value} className="bg-zinc-900">
+                        {c.label}
+                      </option>
+                    ))}
+                    <option value={OTHER_CITY_VALUE} className="bg-zinc-900">
+                      {isRTL ? "أخرى" : "Other"}
+                    </option>
+                  </select>
+                </div>
               </div>
+
+              {city === OTHER_CITY_VALUE && (
+                <input
+                  type="text"
+                  value={otherLocation}
+                  onChange={(e) => setOtherLocation(e.target.value)}
+                  placeholder={isRTL ? "اكتب مدينتك" : "Type your city"}
+                  className="block w-full rounded-lg border border-white/10 bg-white/5 px-4 py-3 text-base text-white placeholder:text-zinc-600 outline-none transition-colors focus:border-blue-400/60 focus:bg-white/[0.07] focus:ring-2 focus:ring-blue-400/30"
+                />
+              )}
+              <p className="text-xs text-zinc-500">
+                {isRTL
+                  ? "نستخدم هذا لعرض وظائف مناسبة لموقعك إذا لم تذكر سيرتك الذاتية موقعك."
+                  : "We use this to show you relevant job openings if your CV doesn't mention a location."}
+              </p>
 
               <div>
                 <label htmlFor="password" className="mb-2 block text-base font-medium text-zinc-300">

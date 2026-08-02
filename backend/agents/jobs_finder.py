@@ -158,6 +158,31 @@ def find_similar_jobs(weight_factors: dict, facts_json: dict, fallback_location:
     return processed_jobs
 
 
+_LOCATION_PLACEHOLDER_WORDS = {"n/a", "na", "none", "test", "asdf", "city", "location", "unknown", "-", "tbd"}
+
+
+def _looks_like_real_location(text: str) -> bool:
+    """
+    Coarse sanity check, NOT real geo-validation — that would need a bundled
+    cities dataset or a geocoding API call, neither of which this file has.
+    This only catches the obvious cases: empty, absurdly long, no letters at
+    all, or a common placeholder word. The real fix for garbage manual-entry
+    input is upstream — components/manual-cv-form.tsx's free-text location
+    field should use the same country+city dropdown as signup/Settings
+    (lib/countries.ts on the frontend) so bad input can't be typed in the
+    first place. This is a safety net for whatever gets past that, not a
+    replacement for it.
+    """
+    cleaned = (text or "").strip()
+    if not cleaned or len(cleaned) > 60:
+        return False
+    if not any(ch.isalpha() for ch in cleaned):
+        return False
+    if cleaned.lower() in _LOCATION_PLACEHOLDER_WORDS:
+        return False
+    return True
+
+
 def _fetch_profile_location(user_id: str | None) -> str | None:
     """
     Fallback source for a candidate's location, used ONLY when the CV
@@ -187,13 +212,17 @@ def run_jobs_finder(state: AgentState) -> dict:
     weight_factors = state.get("weight_factors", {})
     facts_json = state.get("facts_json", {})
 
-    # CV location always wins if present — this only kicks in when it's
-    # empty (e.g. an uploaded PDF with an unusual layout cv_parser.py
-    # couldn't extract from). NOTE: assumes state["user_id"] exists —
-    # confirm this key name against core/state.py's AgentState; adjust if
-    # main.py populates the authenticated user's id under a different key.
+    # CV location always wins if present AND it looks like a real location —
+    # this only falls back when it's empty OR obvious garbage (e.g. a manual
+    # CV form's free-text field with no format guardrails). See
+    # _looks_like_real_location's docstring for what this can't catch.
+    # NOTE: assumes state["user_id"] exists — confirm this key name against
+    # core/state.py's AgentState; adjust if main.py populates the
+    # authenticated user's id under a different key.
     cv_location = ((facts_json.get("personal", {}) or {}).get("location") or "").strip()
-    fallback_location = None if cv_location else _fetch_profile_location(state.get("user_id"))
+    fallback_location = (
+        None if _looks_like_real_location(cv_location) else _fetch_profile_location(state.get("user_id"))
+    )
 
     similar_jobs = find_similar_jobs(weight_factors, facts_json, fallback_location=fallback_location)
     

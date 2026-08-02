@@ -1,8 +1,17 @@
 "use client";
 
-import React from "react";
+import React, { useMemo, useState } from "react";
 import { Plus, Trash2, User, GraduationCap, Briefcase, FolderKanban, Award, Wrench } from "lucide-react";
 import { useLang } from "@/lib/language";
+import {
+  getCountryList,
+  getCitiesForCountry,
+  formatLocation,
+  parseLocation,
+  OTHER_CITY_VALUE,
+  CountryOption,
+  CityOption,
+} from "@/lib/countries";
 
 export type EducationEntry = {
   institution: string;
@@ -244,6 +253,44 @@ export function ManualCvForm({
     onChange({ ...value, ...patch });
   }
 
+  // Location: kept as one plain string on ManualCvData (unchanged shape, so
+  // nothing downstream that reads value.location breaks) — this just fixes
+  // HOW it's edited, replacing free text (which let anyone type unrecognized
+  // garbage that then couldn't be used for job-location matching) with the
+  // same country+city cascade used at signup/Settings. Lazy-initialized
+  // once from whatever's already in value.location, same as phoneCountry
+  // above being a plain field rather than continuously re-synced.
+  const [locationCountryIso, setLocationCountryIso] = useState(() => parseLocation(value.location)?.countryIso ?? "SA");
+  const [locationCity, setLocationCity] = useState(() => {
+    const parsed = parseLocation(value.location);
+    if (parsed) return parsed.city;
+    return value.location ? OTHER_CITY_VALUE : ""; // pre-existing free text that doesn't parse — keep it under Other
+  });
+  const [locationOther, setLocationOther] = useState(() => (parseLocation(value.location) ? "" : value.location));
+
+  const locationCountryOptions: CountryOption[] = useMemo(() => getCountryList(lang), [lang]);
+  const locationCityOptions: CityOption[] = useMemo(
+    () => (locationCountryIso ? getCitiesForCountry(locationCountryIso, lang) : []),
+    [locationCountryIso, lang]
+  );
+
+  function handleLocationCountryChange(iso: string) {
+    setLocationCountryIso(iso);
+    setLocationCity("");
+    set({ location: "" }); // previous city no longer applies under the new country — wait for a new pick
+  }
+
+  function handleLocationCityChange(city: string) {
+    setLocationCity(city);
+    if (city === OTHER_CITY_VALUE) return; // wait for free-text entry before writing to value.location
+    set({ location: formatLocation(city, locationCountryIso) });
+  }
+
+  function handleLocationOtherChange(text: string) {
+    setLocationOther(text);
+    set({ location: text.trim() });
+  }
+
   return (
     <div className="space-y-4" dir={dir}>
       <SectionCard icon={User} title={lang === "ar" ? "المعلومات الشخصية" : "Personal information"}>
@@ -317,13 +364,43 @@ export function ManualCvForm({
             />
           </div>
           <div className="sm:col-span-2">
-            <FieldLabel>{lang === "ar" ? "الموقع (المدينة، الدولة)" : "Location"}</FieldLabel>
-            <input
-              className={inputClass}
-              value={value.location}
-              onChange={(e) => set({ location: e.target.value })}
-              placeholder={lang === "ar" ? "المدينة، الدولة" : "City, Country"}
-            />
+            <FieldLabel>{lang === "ar" ? "الموقع" : "Location"}</FieldLabel>
+            <div className="grid gap-2 sm:grid-cols-2">
+              <select
+                className={inputClass}
+                value={locationCountryIso}
+                onChange={(e) => handleLocationCountryChange(e.target.value)}
+              >
+                {locationCountryOptions.map((c) => (
+                  <option key={c.isoCode} value={c.isoCode}>
+                    {c.name}
+                  </option>
+                ))}
+              </select>
+              <select
+                className={inputClass}
+                value={locationCity}
+                onChange={(e) => handleLocationCityChange(e.target.value)}
+              >
+                <option value="" disabled>
+                  {lang === "ar" ? "اختر مدينتك" : "Select your city"}
+                </option>
+                {locationCityOptions.map((c) => (
+                  <option key={c.value} value={c.value}>
+                    {c.label}
+                  </option>
+                ))}
+                <option value={OTHER_CITY_VALUE}>{lang === "ar" ? "أخرى" : "Other"}</option>
+              </select>
+            </div>
+            {locationCity === OTHER_CITY_VALUE && (
+              <input
+                className={`${inputClass} mt-2`}
+                value={locationOther}
+                onChange={(e) => handleLocationOtherChange(e.target.value)}
+                placeholder={lang === "ar" ? "اكتب مدينتك" : "Type your city"}
+              />
+            )}
           </div>
         </div>
       </SectionCard>
