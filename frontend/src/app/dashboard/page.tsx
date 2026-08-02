@@ -82,6 +82,7 @@ type GapItem = {
 };
 
 type GenerateResult = {
+  requestId: string;
   atsScore: number;
   atsBreakdown: AtsBreakdown;
   jobMatchScore: number;
@@ -144,6 +145,7 @@ async function throwForFailedResponse(res: Response): Promise<never> {
 
 function mapBackendResponse(raw: any): GenerateResult {
   return {
+    requestId: raw.request_id ?? "",
     atsScore: raw.ats_score ?? 0,
     atsBreakdown: raw.ats_breakdown ?? {},
     jobMatchScore: raw.job_match_score ?? 0,
@@ -352,6 +354,7 @@ export default function DashboardHomePage() {
   const [showAllGaps, setShowAllGaps] = useState(false);
 
   const additionalInfoRef = useRef<HTMLTextAreaElement>(null);
+  const agentProgressRef = useRef<HTMLDivElement>(null);
 
   // Auto-grow the "Additional information" textarea as the user types, capped
   // at ADDITIONAL_INFO_MAX_HEIGHT (slightly taller than the job description
@@ -384,12 +387,20 @@ export default function DashboardHomePage() {
       setClDownloadUrl(null);
       return;
     }
+    if (!result.requestId) {
+      // Older cached result predating the request_id fix, or the backend
+      // response genuinely didn't include one — don't build URLs that are
+      // guaranteed to 422 against the backend's now-required param.
+      console.error("mapBackendResponse: missing request_id — download/preview links will not work.");
+      return;
+    }
     const tokenParam = encodeURIComponent(accessToken);
-    setCvPreviewUrl(`${API_URL}/api/v1/preview/cv?token=${tokenParam}`);
-    setCvDownloadUrl(`${API_URL}/api/v1/download/cv?token=${tokenParam}`);
-    setCvDownloadDocxUrl(`${API_URL}/api/v1/download/cv-docx?token=${tokenParam}`);
-    setClPreviewUrl(`${API_URL}/api/v1/preview/cover-letter?token=${tokenParam}`);
-    setClDownloadUrl(`${API_URL}/api/v1/download/cover-letter?token=${tokenParam}`);
+    const reqParam = encodeURIComponent(result.requestId);
+    setCvPreviewUrl(`${API_URL}/api/v1/preview/cv?token=${tokenParam}&request_id=${reqParam}`);
+    setCvDownloadUrl(`${API_URL}/api/v1/download/cv?token=${tokenParam}&request_id=${reqParam}`);
+    setCvDownloadDocxUrl(`${API_URL}/api/v1/download/cv-docx?token=${tokenParam}&request_id=${reqParam}`);
+    setClPreviewUrl(`${API_URL}/api/v1/preview/cover-letter?token=${tokenParam}&request_id=${reqParam}`);
+    setClDownloadUrl(`${API_URL}/api/v1/download/cover-letter?token=${tokenParam}&request_id=${reqParam}`);
   }, [result, accessToken]);
 
   async function handleGenerate() {
@@ -404,6 +415,11 @@ export default function DashboardHomePage() {
     }
     setGenerating(true);
     setResult(null);
+    // Scroll the agent progress list into view immediately, before the
+    // first SSE `step` event even arrives — otherwise a user on a smaller
+    // screen (most Tarshih users are on mobile) has to manually scroll
+    // down to discover anything is happening at all.
+    agentProgressRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
     try {
       const token = await getAccessToken();
       setAccessToken(token);
@@ -716,7 +732,9 @@ export default function DashboardHomePage() {
             </div>
           )}
 
-          <AgentProgress steps={agentSteps} expanded={generating} />
+          <div ref={agentProgressRef}>
+            <AgentProgress steps={agentSteps} expanded={generating} />
+          </div>
 
           <style>{`
             @keyframes jbaa-loading-bar-slide {

@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useLang } from "@/lib/language";
 import { useAuth } from "@/lib/auth";
@@ -10,6 +10,8 @@ import { fetchCredits, Tier } from "@/lib/supabase/credits";
 import { updateLocation } from "@/lib/supabase/location";
 import { getCountryList, getCitiesForCountry, formatLocation, parseLocation, OTHER_CITY_VALUE, CountryOption, CityOption } from "@/lib/countries";
 import { SearchableSelect } from "@/components/searchable-select";
+import { LegalModal } from "@/components/legal-modal";
+import { legalContent, LegalDocKey } from "@/lib/legal-content";
 
 const TIER_LABEL: Record<Tier, { en: string; ar: string }> = {
   free: { en: "Free", ar: "مجانية" },
@@ -30,6 +32,8 @@ export default function SettingsPage() {
   const [locationSaving, setLocationSaving] = useState(false);
   const [locationJustSaved, setLocationJustSaved] = useState(false);
   const [locationError, setLocationError] = useState("");
+  const initialLocationRef = useRef<string>("");
+  const [openDoc, setOpenDoc] = useState<LegalDocKey | null>(null);
 
   const countryOptions: CountryOption[] = useMemo(() => getCountryList(isAr ? "ar" : "en"), [isAr]);
   const cityOptions: CityOption[] = useMemo(
@@ -47,25 +51,29 @@ export default function SettingsPage() {
         if (parsed) {
           setCountryIso(parsed.countryIso);
           setCity(parsed.city);
+          initialLocationRef.current = parsed.city;
         } else {
           // Doesn't parse as a recognized "City, Country" — e.g. free-text
           // "Other" entered at signup. Show it under Other rather than
           // silently dropping it or guessing at a country.
           setCity(OTHER_CITY_VALUE);
           setLocationOther(c.location);
+          initialLocationRef.current = OTHER_CITY_VALUE;
         }
       })
       .catch((err) => console.error("fetchCredits failed:", err));
   }, []);
 
-  async function saveLocation(nextCity: string, nextCountryIso: string) {
+  async function handleSaveLocation() {
+    if (!city) return;
+    const resolved = city === OTHER_CITY_VALUE ? locationOther.trim() : formatLocation(city, countryIso);
+    if (!resolved) return; // "Other" picked but no text typed yet
+
     setLocationError("");
     setLocationSaving(true);
     try {
-      const resolved =
-        nextCity === OTHER_CITY_VALUE ? locationOther.trim() : formatLocation(nextCity, nextCountryIso);
-      if (!resolved) return; // e.g. "Other" picked but no text typed yet
       await updateLocation(resolved);
+      initialLocationRef.current = city;
       setLocationJustSaved(true);
       setTimeout(() => setLocationJustSaved(false), 2500);
     } catch (err) {
@@ -77,13 +85,13 @@ export default function SettingsPage() {
 
   function handleCountryChange(newIso: string) {
     setCountryIso(newIso);
-    setCity(""); // previous city no longer applies under the new country — wait for a new pick before saving
+    setCity(""); // previous city no longer applies under the new country — pick a new one before saving
   }
 
   function handleCityChange(newCity: string) {
     setCity(newCity);
-    if (newCity === OTHER_CITY_VALUE) return; // wait for free-text entry before saving
-    saveLocation(newCity, countryIso);
+    // No auto-save here — this only updates the dropdowns. Nothing is
+    // written to the database until the Save button below is clicked.
   }
 
   const planDisplayName = tier ? TIER_LABEL[tier][isAr ? "ar" : "en"] : isAr ? "جارٍ التحميل…" : "Loading…";
@@ -311,36 +319,75 @@ export default function SettingsPage() {
               searchPlaceholder={isAr ? "ابحث..." : "Search..."}
               noResultsLabel={isAr ? "لا توجد نتائج" : "No results"}
               disabled={locationSaving}
+              dropUp
             />
           </div>
         </div>
 
         {city === OTHER_CITY_VALUE && (
-          <div className="mt-2.5 flex max-w-xs gap-2">
-            <input
-              type="text"
-              value={locationOther}
-              onChange={(e) => setLocationOther(e.target.value)}
-              placeholder={isAr ? "اكتب مدينتك" : "Type your city"}
-              className="block w-full rounded-lg border border-slate-200 px-4 py-2.5 text-sm text-slate-900 focus:border-sky-400 focus:outline-none focus:ring-2 focus:ring-sky-500/20"
-            />
-            <DashboardButton
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={() => saveLocation(OTHER_CITY_VALUE, countryIso)}
-              disabled={locationSaving || !locationOther.trim()}
-            >
-              {isAr ? "حفظ" : "Save"}
-            </DashboardButton>
-          </div>
+          <input
+            type="text"
+            value={locationOther}
+            onChange={(e) => setLocationOther(e.target.value)}
+            placeholder={isAr ? "اكتب مدينتك" : "Type your city"}
+            className="mt-2.5 block w-full max-w-xs rounded-lg border border-slate-200 px-4 py-2.5 text-sm text-slate-900 focus:border-sky-400 focus:outline-none focus:ring-2 focus:ring-sky-500/20"
+          />
         )}
 
-        {locationError && <p className="mt-2.5 text-sm text-rose-600">{locationError}</p>}
+        <div className="mt-3">
+          <DashboardButton
+            type="button"
+            variant="primary"
+            size="sm"
+            onClick={handleSaveLocation}
+            disabled={
+              locationSaving ||
+              !city ||
+              (city === OTHER_CITY_VALUE && !locationOther.trim()) ||
+              city === initialLocationRef.current
+            }
+          >
+            {locationSaving ? (isAr ? "جارٍ الحفظ..." : "Saving...") : isAr ? "حفظ الموقع" : "Save location"}
+          </DashboardButton>
+        </div>
+
+        {locationError && (
+          <p className="mt-2.5 text-sm text-rose-600">
+            {locationError.toLowerCase().includes("not found")
+              ? isAr
+                ? "تعذّر الحفظ حاليًا (خطأ في الخادم) — يرجى المحاولة لاحقًا"
+                : "Couldn't save right now (server error) — please try again later"
+              : locationError}
+          </p>
+        )}
         {locationJustSaved && (
           <p className="mt-2.5 text-sm text-emerald-600">{isAr ? "تم حفظ الموقع" : "Location saved"}</p>
         )}
       </section>
+
+      {/* Legal — compact links only, not the full marketing footer. See
+          note below on why this lives here and not on every dashboard page. */}
+      <div className="flex flex-wrap items-center justify-center gap-x-5 gap-y-1.5 pb-2 pt-1 text-xs text-slate-400">
+        <button type="button" onClick={() => setOpenDoc("terms")} className="rounded transition-colors hover:text-slate-600">
+          {isAr ? "الشروط والأحكام" : "Terms & Conditions"}
+        </button>
+        <button type="button" onClick={() => setOpenDoc("privacy")} className="rounded transition-colors hover:text-slate-600">
+          {isAr ? "سياسة الخصوصية" : "Privacy Policy"}
+        </button>
+        <button type="button" onClick={() => setOpenDoc("returnPolicy")} className="rounded transition-colors hover:text-slate-600">
+          {isAr ? "سياسة الاسترجاع" : "Return Policy"}
+        </button>
+        <button type="button" onClick={() => setOpenDoc("contact")} className="rounded transition-colors hover:text-slate-600">
+          {isAr ? "تواصل معنا" : "Contact"}
+        </button>
+      </div>
+
+      <LegalModal
+        doc={openDoc ? legalContent[lang][openDoc] : null}
+        open={openDoc !== null}
+        onClose={() => setOpenDoc(null)}
+        isRTL={isAr}
+      />
     </div>
   );
 }

@@ -77,12 +77,18 @@ def _bullet(doc, text, is_arabic, style):
     _set_rtl_run(p.runs[0], is_arabic)
 
 
-def generate_cv_docx(state: dict, template_id: str | None = None) -> str:
+def generate_cv_docx(state: dict, template_id: str | None = None, output_path: str | None = None) -> str:
     """
     Generates .docx version of the tailored CV, styled to match the chosen
     template_id (see utils/docx_styles.py for what "match" means for a
     format that can't render arbitrary CSS). Falls back to the default
     style if template_id is None or unrecognized.
+
+    output_path: pass a unique per-request path (see main.py) so concurrent
+    users' generations can't overwrite each other or be downloaded by the
+    wrong person — same fix already applied to pdf_generator.py's
+    render_cv_pdf/render_cover_letter_pdf. Falls back to the old fixed
+    filename only if not given.
     """
     doc = Document()
     resolved_template_id = template_id or DEFAULT_TEMPLATE_ID
@@ -191,7 +197,7 @@ def generate_cv_docx(state: dict, template_id: str | None = None) -> str:
         for cert in context["certifications"]:
             _bullet(doc, cert, is_arabic, style)
 
-    output_path = os.path.join(OUTPUT_DIR, "tailored_cv.docx")
+    output_path = output_path or os.path.join(OUTPUT_DIR, "tailored_cv.docx")
     doc.save(output_path)
     logger.info(f"✅ CV DOCX saved → {output_path} (template: {resolved_template_id})")
     return output_path

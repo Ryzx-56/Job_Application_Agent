@@ -24,6 +24,7 @@ export function SearchableSelect({
   disabled,
   dir,
   theme = "light",
+  dropUp = false,
 }: {
   options: SearchableSelectOption[];
   value: string;
@@ -34,6 +35,7 @@ export function SearchableSelect({
   disabled?: boolean;
   dir?: "ltr" | "rtl";
   theme?: "dark" | "light";
+  dropUp?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
@@ -59,9 +61,10 @@ export function SearchableSelect({
   const triggerClass = isDark
     ? "flex w-full items-center justify-between gap-2 rounded-lg border border-white/10 bg-white/5 px-4 py-3 text-base text-white outline-none transition-colors focus:border-blue-400/60 focus:bg-white/[0.07] focus:ring-2 focus:ring-blue-400/30"
     : "flex w-full items-center justify-between gap-2 rounded-lg border border-slate-200 px-4 py-2.5 text-sm text-slate-900 outline-none focus:border-sky-400 focus:ring-2 focus:ring-sky-500/20";
+  const positionClass = dropUp ? "absolute z-20 bottom-full mb-1.5" : "absolute z-20 mt-1.5";
   const panelClass = isDark
-    ? "absolute z-20 mt-1.5 w-full overflow-hidden rounded-lg border border-white/10 bg-zinc-900 shadow-xl"
-    : "absolute z-20 mt-1.5 w-full overflow-hidden rounded-lg border border-slate-200 bg-white shadow-lg";
+    ? `${positionClass} w-full overflow-hidden rounded-lg border border-white/10 bg-zinc-900 shadow-xl`
+    : `${positionClass} w-full overflow-hidden rounded-lg border border-slate-200 bg-white shadow-lg`;
   const searchBarClass = isDark
     ? "flex items-center gap-2 border-b border-white/10 px-3 py-2"
     : "flex items-center gap-2 border-b border-slate-200 px-3 py-2";

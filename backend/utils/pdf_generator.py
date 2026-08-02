@@ -188,14 +188,21 @@ _TEMPLATES_DIR = Path(__file__).parent.parent / "templates"
 _jinja_env = jinja2.Environment(loader=jinja2.FileSystemLoader(str(_TEMPLATES_DIR)))
 
 
-def render_cv_pdf(state: dict, template_id: str | None = None) -> str:
+def render_cv_pdf(state: dict, template_id: str | None = None, output_path: str | None = None) -> str:
     """
     Renders the tailored CV to PDF using the chosen template. Falls back to
     DEFAULT_TEMPLATE_ID if template_id is None or unrecognized (see
     resolve_template_path) - this is what makes "user didn't pick a
     template" behave correctly from the dashboard.
+
+    output_path: pass a unique per-request path (see main.py) so concurrent
+    users' generations can't overwrite each other or be downloaded by the
+    wrong person. Falls back to the old fixed filename only if not given -
+    that fallback is unsafe for concurrent real traffic, kept only so any
+    other caller (tests, scripts) doesn't break.
     """
-    output_path = os.path.join(OUTPUT_DIR, "tailored_cv.pdf")
+    if output_path is None:
+        output_path = os.path.join(OUTPUT_DIR, "tailored_cv.pdf")
 
     resolved_template_id = template_id or DEFAULT_TEMPLATE_ID
     template_filename = resolve_template_path(resolved_template_id).name
@@ -256,8 +263,9 @@ def _cover_letter_styles(is_arabic: bool):
     return styles
 
 
-def render_cover_letter_pdf(state: dict) -> str:
-    output_path = os.path.join(OUTPUT_DIR, "cover_letter.pdf")
+def render_cover_letter_pdf(state: dict, output_path: str | None = None) -> str:
+    if output_path is None:
+        output_path = os.path.join(OUTPUT_DIR, "cover_letter.pdf")
 
     is_arabic = str(state.get("cv_language", "en")).lower().startswith("ar")
     if is_arabic and not _ARABIC_REPORTLAB_FONT_REGISTERED:
