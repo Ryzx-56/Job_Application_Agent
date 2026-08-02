@@ -12,6 +12,7 @@ import {
   CountryOption,
   CityOption,
 } from "@/lib/countries";
+import { SearchableSelect } from "@/components/searchable-select";
 
 export type EducationEntry = {
   institution: string;
@@ -366,32 +367,29 @@ export function ManualCvForm({
           <div className="sm:col-span-2">
             <FieldLabel>{lang === "ar" ? "الموقع" : "Location"}</FieldLabel>
             <div className="grid gap-2 sm:grid-cols-2">
-              <select
-                className={inputClass}
+              <SearchableSelect
+                theme="light"
+                dir={dir}
                 value={locationCountryIso}
-                onChange={(e) => handleLocationCountryChange(e.target.value)}
-              >
-                {locationCountryOptions.map((c) => (
-                  <option key={c.isoCode} value={c.isoCode}>
-                    {c.name}
-                  </option>
-                ))}
-              </select>
-              <select
-                className={inputClass}
+                onChange={handleLocationCountryChange}
+                options={locationCountryOptions.map((c) => ({ value: c.isoCode, label: c.name }))}
+                placeholder={lang === "ar" ? "اختر دولتك" : "Select your country"}
+                searchPlaceholder={lang === "ar" ? "ابحث..." : "Search..."}
+                noResultsLabel={lang === "ar" ? "لا توجد نتائج" : "No results"}
+              />
+              <SearchableSelect
+                theme="light"
+                dir={dir}
                 value={locationCity}
-                onChange={(e) => handleLocationCityChange(e.target.value)}
-              >
-                <option value="" disabled>
-                  {lang === "ar" ? "اختر مدينتك" : "Select your city"}
-                </option>
-                {locationCityOptions.map((c) => (
-                  <option key={c.value} value={c.value}>
-                    {c.label}
-                  </option>
-                ))}
-                <option value={OTHER_CITY_VALUE}>{lang === "ar" ? "أخرى" : "Other"}</option>
-              </select>
+                onChange={handleLocationCityChange}
+                options={[
+                  ...locationCityOptions,
+                  { value: OTHER_CITY_VALUE, label: lang === "ar" ? "أخرى" : "Other" },
+                ]}
+                placeholder={lang === "ar" ? "اختر مدينتك" : "Select your city"}
+                searchPlaceholder={lang === "ar" ? "ابحث..." : "Search..."}
+                noResultsLabel={lang === "ar" ? "لا توجد نتائج" : "No results"}
+              />
             </div>
             {locationCity === OTHER_CITY_VALUE && (
               <input

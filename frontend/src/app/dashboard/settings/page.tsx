@@ -9,6 +9,7 @@ import { createClient } from "@/lib/supabase/client";
 import { fetchCredits, Tier } from "@/lib/supabase/credits";
 import { updateLocation } from "@/lib/supabase/location";
 import { getCountryList, getCitiesForCountry, formatLocation, parseLocation, OTHER_CITY_VALUE, CountryOption, CityOption } from "@/lib/countries";
+import { SearchableSelect } from "@/components/searchable-select";
 
 const TIER_LABEL: Record<Tier, { en: string; ar: string }> = {
   free: { en: "Free", ar: "مجانية" },
@@ -285,35 +286,33 @@ export default function SettingsPage() {
         </p>
 
         <div className="flex max-w-md gap-2">
-          <select
-            value={countryIso}
-            onChange={(e) => handleCountryChange(e.target.value)}
-            disabled={locationSaving}
-            className="block w-1/2 rounded-lg border border-slate-200 px-4 py-2.5 text-sm text-slate-900 focus:border-sky-400 focus:outline-none focus:ring-2 focus:ring-sky-500/20"
-          >
-            {countryOptions.map((c) => (
-              <option key={c.isoCode} value={c.isoCode}>
-                {c.name}
-              </option>
-            ))}
-          </select>
+          <div className="w-1/2">
+            <SearchableSelect
+              theme="light"
+              dir={isAr ? "rtl" : "ltr"}
+              value={countryIso}
+              onChange={handleCountryChange}
+              options={countryOptions.map((c) => ({ value: c.isoCode, label: c.name }))}
+              placeholder={isAr ? "اختر دولتك" : "Select your country"}
+              searchPlaceholder={isAr ? "ابحث..." : "Search..."}
+              noResultsLabel={isAr ? "لا توجد نتائج" : "No results"}
+              disabled={locationSaving}
+            />
+          </div>
 
-          <select
-            value={city}
-            onChange={(e) => handleCityChange(e.target.value)}
-            disabled={locationSaving}
-            className="block w-1/2 rounded-lg border border-slate-200 px-4 py-2.5 text-sm text-slate-900 focus:border-sky-400 focus:outline-none focus:ring-2 focus:ring-sky-500/20"
-          >
-            <option value="" disabled>
-              {isAr ? "اختر مدينتك" : "Select your city"}
-            </option>
-            {cityOptions.map((c) => (
-              <option key={c.value} value={c.value}>
-                {c.label}
-              </option>
-            ))}
-            <option value={OTHER_CITY_VALUE}>{isAr ? "أخرى" : "Other"}</option>
-          </select>
+          <div className="w-1/2">
+            <SearchableSelect
+              theme="light"
+              dir={isAr ? "rtl" : "ltr"}
+              value={city}
+              onChange={handleCityChange}
+              options={[...cityOptions, { value: OTHER_CITY_VALUE, label: isAr ? "أخرى" : "Other" }]}
+              placeholder={isAr ? "اختر مدينتك" : "Select your city"}
+              searchPlaceholder={isAr ? "ابحث..." : "Search..."}
+              noResultsLabel={isAr ? "لا توجد نتائج" : "No results"}
+              disabled={locationSaving}
+            />
+          </div>
         </div>
 
         {city === OTHER_CITY_VALUE && (

@@ -87,21 +87,39 @@ export function getCountryList(lang: "en" | "ar"): CountryOption[] {
 }
 
 /**
- * Cities for a given country ISO code. Saudi Arabia uses the curated
- * Arabic-aware list; everything else uses country-state-city's list
- * as-is (English names only, even in Arabic UI — see file header).
+ * Cities for a given country ISO code.
+ *
+ * Saudi Arabia: returns ONLY the curated SAUDI_CITIES_AR list above — NOT
+ * country-state-city's raw ~285-entry Saudi list. That raw list is small
+ * towns, has genuine duplicate entries (a known quality issue in that
+ * dataset), and — since it's English-only — was silently falling back to
+ * English for every city outside the curated ~23, even in Arabic UI. This
+ * was the actual bug behind all three symptoms reported at once (too many
+ * cities, duplicates, English-in-Arabic-UI): the curated list was only
+ * being used as a translation lookup, not as the list itself.
+ *
+ * Every other country: still country-state-city's raw list (no curated
+ * data exists for 194 other countries), but now deduplicated by name —
+ * that dataset has real duplicate entries outside Saudi too. City names
+ * stay English-only there; see the file-header note on why.
  */
 export function getCitiesForCountry(isoCode: string, lang: "en" | "ar"): CityOption[] {
-  const cities = City.getCitiesOfCountry(isoCode) || [];
-
   if (isoCode === SAUDI_ISO) {
-    return cities.map((city) => ({
-      value: city.name,
-      label: lang === "ar" ? SAUDI_CITIES_AR[city.name] || city.name : city.name,
-    }));
+    return Object.entries(SAUDI_CITIES_AR)
+      .map(([value, ar]) => ({ value, label: lang === "ar" ? ar : value }))
+      .sort((a, b) => a.label.localeCompare(b.label, lang));
   }
 
-  return cities.map((city) => ({ value: city.name, label: city.name }));
+  const cities = City.getCitiesOfCountry(isoCode) || [];
+  const seen = new Set<string>();
+  const deduped: CityOption[] = [];
+  for (const city of cities) {
+    const key = city.name.trim().toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    deduped.push({ value: city.name, label: city.name });
+  }
+  return deduped.sort((a, b) => a.label.localeCompare(b.label));
 }
 
 /** Builds the canonical "City, Country" string stored in profiles.location. */

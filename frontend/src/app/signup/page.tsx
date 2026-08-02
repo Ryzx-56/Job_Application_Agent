@@ -10,6 +10,7 @@ import { createClient } from "@/lib/supabase/client";
 import { LegalModal } from "@/components/legal-modal";
 import { legalContent, LegalDocKey } from "@/lib/legal-content";
 import { getCountryList, getCitiesForCountry, formatLocation, OTHER_CITY_VALUE, CountryOption, CityOption } from "@/lib/countries";
+import { SearchableSelect } from "@/components/searchable-select";
 
 function GoogleIcon(props: React.SVGProps<SVGSVGElement>) {
   return (
@@ -317,47 +318,38 @@ function SignupForm() {
                   <label htmlFor="country" className="mb-2 block text-base font-medium text-zinc-300">
                     {isRTL ? "الدولة" : "Country"}
                   </label>
-                  <select
-                    id="country"
-                    name="country"
+                  <SearchableSelect
+                    theme="dark"
+                    dir={isRTL ? "rtl" : "ltr"}
                     value={countryIso}
-                    onChange={(e) => {
-                      setCountryIso(e.target.value);
+                    onChange={(iso) => {
+                      setCountryIso(iso);
                       setCity(""); // country changed — previous city selection no longer applies
                     }}
-                    className="block w-full rounded-lg border border-white/10 bg-white/5 px-4 py-3 text-base text-white outline-none transition-colors focus:border-blue-400/60 focus:bg-white/[0.07] focus:ring-2 focus:ring-blue-400/30"
-                  >
-                    {countryOptions.map((c) => (
-                      <option key={c.isoCode} value={c.isoCode} className="bg-zinc-900">
-                        {c.name}
-                      </option>
-                    ))}
-                  </select>
+                    options={countryOptions.map((c) => ({ value: c.isoCode, label: c.name }))}
+                    placeholder={isRTL ? "اختر دولتك" : "Select your country"}
+                    searchPlaceholder={isRTL ? "ابحث..." : "Search..."}
+                    noResultsLabel={isRTL ? "لا توجد نتائج" : "No results"}
+                  />
                 </div>
 
                 <div>
                   <label htmlFor="location" className="mb-2 block text-base font-medium text-zinc-300">
                     {isRTL ? "المدينة" : "City"}
                   </label>
-                  <select
-                    id="location"
-                    name="location"
+                  <SearchableSelect
+                    theme="dark"
+                    dir={isRTL ? "rtl" : "ltr"}
                     value={city}
-                    onChange={(e) => setCity(e.target.value)}
-                    className="block w-full rounded-lg border border-white/10 bg-white/5 px-4 py-3 text-base text-white outline-none transition-colors focus:border-blue-400/60 focus:bg-white/[0.07] focus:ring-2 focus:ring-blue-400/30"
-                  >
-                    <option value="" disabled className="bg-zinc-900">
-                      {isRTL ? "اختر مدينتك" : "Select your city"}
-                    </option>
-                    {cityOptions.map((c) => (
-                      <option key={c.value} value={c.value} className="bg-zinc-900">
-                        {c.label}
-                      </option>
-                    ))}
-                    <option value={OTHER_CITY_VALUE} className="bg-zinc-900">
-                      {isRTL ? "أخرى" : "Other"}
-                    </option>
-                  </select>
+                    onChange={setCity}
+                    options={[
+                      ...cityOptions,
+                      { value: OTHER_CITY_VALUE, label: isRTL ? "أخرى" : "Other" },
+                    ]}
+                    placeholder={isRTL ? "اختر مدينتك" : "Select your city"}
+                    searchPlaceholder={isRTL ? "ابحث..." : "Search..."}
+                    noResultsLabel={isRTL ? "لا توجد نتائج" : "No results"}
+                  />
                 </div>
               </div>
 
