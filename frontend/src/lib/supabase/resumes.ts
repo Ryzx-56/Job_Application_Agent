@@ -61,21 +61,26 @@ export type ResumeRecord = {
   gap_analysis: GapItem[];
   similar_jobs: SimilarJob[];
   cover_letter_text: string;
-  cv_storage_path: string | null;
-  cover_letter_storage_path: string | null;
+  // Structured data the backend regenerates the PDF/DOCX from on demand —
+  // see backend/main.py's build_generation_snapshot. Opaque on the
+  // frontend; only ever round-tripped to the regenerate-document endpoint.
+  // null on legacy rows saved before this existed.
+  generation_snapshot: unknown | null;
+  is_archived: boolean;
   created_at: string;
 };
 
-const BUCKET = "resumes";
 const API_URL = process.env.NEXT_PUBLIC_API_URL;
 
 /* ========================================================================
-   SAVE — inserts the metadata row, then fetches the two just-generated
-   PDFs from the FastAPI backend and re-uploads them into private Supabase
-   Storage so they outlive the backend's single fixed-path outputs/*.pdf
-   files (which get overwritten by the very next generation, by anyone).
-   Best-effort on the file upload half: if that fails, the row still exists
-   with null storage paths rather than losing the whole result.
+   SAVE — inserts one row of structured generation data. No file upload:
+   the rendered PDF/DOCX are regenerated on demand from generation_snapshot
+   (see getDocumentUrl below) instead of being stored anywhere permanently
+   — that's the whole point of this rework, since a JSON snapshot is a
+   fraction of the size of the rendered files it replaces. Retention-cap
+   archiving (per-tier, oldest-first) happens server-side via a DB trigger
+   on insert — see the SQL migration notes — so nothing extra is needed
+   here for that.
 ======================================================================== */
 export async function saveResumeResult(params: {
   role: string;
@@ -94,6 +99,7 @@ export async function saveResumeResult(params: {
     gapAnalysis: GapItem[];
     similarJobs: SimilarJob[];
     coverLetterText: string;
+    generationSnapshot: unknown;
   };
 }): Promise<ResumeRecord> {
   const supabase = createClient();
@@ -121,6 +127,7 @@ export async function saveResumeResult(params: {
       gap_analysis: params.result.gapAnalysis,
       similar_jobs: params.result.similarJobs,
       cover_letter_text: params.result.coverLetterText,
+      generation_snapshot: params.result.generationSnapshot ?? null,
     })
     .select()
     .single();
@@ -129,96 +136,132 @@ export async function saveResumeResult(params: {
     throw insertError ?? new Error("Failed to save resume record");
   }
 
+  return row as ResumeRecord;
+}
+
+/* ========================================================================
+   FETCH — paginated list for the "My Resumes" page. RLS already scopes
+   this to the logged-in user. Archived rows (past the tier's retention
+   cap — see the retention trigger in the SQL migration notes) are
+   excluded from this list by default; their data isn't deleted, just
+   hidden from the main view, per the retention design.
+======================================================================== */
+export async function fetchResumes(
+  page: number,
+  pageSize: number
+): Promise<{ resumes: ResumeRecord[]; total: number }> {
+  const supabase = createClient();
+  const from = page * pageSize;
+  const to = from + pageSize - 1;
+
+  const { data, error, count } = await supabase
+    .from("resumes")
+    .select("*", { count: "exact" })
+    .eq("is_archived", false)
+    .order("created_at", { ascending: false })
+    .range(from, to);
+
+  if (error) throw error;
+  return { resumes: (data ?? []) as ResumeRecord[], total: count ?? 0 };
+}
+
+/* ========================================================================
+   DOCUMENT URLS — the PDF/DOCX no longer live in Storage; they're
+   regenerated on demand by the backend from generation_snapshot. These
+   build authenticated links to that endpoint the same way the live
+   generate flow's preview/download links already work (a `?token=`
+   query param, since a plain <a href> / <iframe src> can't send an
+   Authorization header — see core/auth.py's
+   get_current_user_id_query_or_header for the full reasoning).
+   docType: "cv-pdf" | "cv-docx" | "cover-letter-pdf"
+======================================================================== */
+export async function getDocumentUrl(
+  resumeId: string,
+  docType: "cv-pdf" | "cv-docx" | "cover-letter-pdf",
+  options?: { download?: boolean }
+): Promise<string | null> {
+  const supabase = createClient();
   const {
     data: { session },
   } = await supabase.auth.getSession();
+  if (!session?.access_token) return null;
 
-  const uploadOne = async (endpoint: string, filename: string): Promise<string | null> => {
-    try {
-      const res = await fetch(`${API_URL}${endpoint}`, {
-        headers: session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : undefined,
-      });
-      if (!res.ok) return null;
-      const blob = await res.blob();
-      const path = `${user.id}/${row.id}/${filename}`;
-      const { error: uploadError } = await supabase.storage.from(BUCKET).upload(path, blob, {
-        contentType: "application/pdf",
-        upsert: true,
-      });
-      return uploadError ? null : path;
-    } catch {
-      return null;
-    }
-  };
-
-  const [cvPath, coverLetterPath] = await Promise.all([
-    uploadOne("/api/v1/preview/cv", "cv.pdf"),
-    uploadOne("/api/v1/preview/cover-letter", "cover-letter.pdf"),
-  ]);
-
-  if (!cvPath && !coverLetterPath) {
-    return row as ResumeRecord;
-  }
-
-  const { data: updated } = await supabase
-    .from("resumes")
-    .update({ cv_storage_path: cvPath, cover_letter_storage_path: coverLetterPath })
-    .eq("id", row.id)
-    .select()
-    .single();
-
-  return (updated ?? { ...row, cv_storage_path: cvPath, cover_letter_storage_path: coverLetterPath }) as ResumeRecord;
+  const params = new URLSearchParams({ token: session.access_token });
+  if (options?.download) params.set("download", "true");
+  return `${API_URL}/api/v1/resumes/${resumeId}/document/${docType}?${params.toString()}`;
 }
 
 /* ========================================================================
-   FETCH — list, for the "My Resumes" table. RLS already scopes this to
-   the logged-in user, so no user_id filter is needed here.
+   ADMIN — debug tool for the founder to look at exactly what a specific
+   user/tester saw when they report a bug, now that rendered files aren't
+   stored anywhere (see PART 1 of the storage/retention rework). Every call
+   here hits the backend directly (not Supabase-RLS-scoped table access)
+   and is gated server-side by profiles.is_admin — see
+   core/auth.py::get_current_admin_user_id. A non-admin caller just gets a
+   403 from the backend; there is no separate frontend-side admin check.
 ======================================================================== */
-export async function fetchResumes(): Promise<ResumeRecord[]> {
+export type AdminResumeSummary = {
+  id: string;
+  user_id: string;
+  role: string | null;
+  company: string | null;
+  cv_language: "en" | "ar";
+  ats_score: number;
+  job_match_score: number;
+  is_archived: boolean;
+  created_at: string;
+};
+
+export async function fetchAdminResumes(params: {
+  page: number;
+  pageSize: number;
+  userId?: string;
+}): Promise<{ resumes: AdminResumeSummary[]; limit: number; offset: number }> {
   const supabase = createClient();
-  const { data, error } = await supabase.from("resumes").select("*").order("created_at", { ascending: false });
-  if (error) throw error;
-  return (data ?? []) as ResumeRecord[];
+  const {
+    data: { session },
+  } = await supabase.auth.getSession();
+  if (!session?.access_token) throw new Error("Not authenticated");
+
+  const query = new URLSearchParams({
+    limit: String(params.pageSize),
+    offset: String(params.page * params.pageSize),
+  });
+  if (params.userId) query.set("user_id", params.userId);
+
+  const res = await fetch(`${API_URL}/api/v1/admin/resumes?${query.toString()}`, {
+    headers: { Authorization: `Bearer ${session.access_token}` },
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => null);
+    throw new Error(body?.detail ?? `Request failed: ${res.status}`);
+  }
+  return res.json();
 }
 
-/* ========================================================================
-   SIGNED URLS — storage bucket is private, so preview/download links must
-   be generated on demand rather than being static hrefs. `download: true`
-   sets Content-Disposition: attachment so the download button actually
-   downloads instead of navigating.
-======================================================================== */
-export async function getSignedFileUrl(
-  path: string | null,
+export async function getAdminDocumentUrl(
+  resumeId: string,
+  docType: "cv-pdf" | "cv-docx" | "cover-letter-pdf",
   options?: { download?: boolean }
 ): Promise<string | null> {
-  if (!path) return null;
   const supabase = createClient();
-  const { data, error } = await supabase.storage
-    .from(BUCKET)
-    .createSignedUrl(path, 60 * 10, options?.download ? { download: true } : undefined);
-  if (error || !data) return null;
-  return data.signedUrl;
+  const {
+    data: { session },
+  } = await supabase.auth.getSession();
+  if (!session?.access_token) return null;
+
+  const params = new URLSearchParams({ token: session.access_token });
+  if (options?.download) params.set("download", "true");
+  return `${API_URL}/api/v1/admin/resumes/${resumeId}/document/${docType}?${params.toString()}`;
 }
 
 /* ========================================================================
-   DELETE — removes the associated PDFs from Storage (best-effort — a
-   failure here shouldn't block the row delete, since an orphaned file in
-   a private bucket is harmless while a row the user can't get rid of in
-   the UI is a real problem) and then deletes the row itself. RLS scopes
-   the delete to rows owned by the caller, so this is safe to call with
-   just an id — see the policy note below if the delete silently no-ops.
+   DELETE — removes the row itself. RLS scopes the delete to rows owned by
+   the caller. There's no associated Storage object to clean up anymore
+   (see the module comment above) — just the row.
 ======================================================================== */
-export async function deleteResume(
-  id: string,
-  cvStoragePath?: string | null,
-  coverLetterStoragePath?: string | null
-): Promise<void> {
+export async function deleteResume(id: string): Promise<void> {
   const supabase = createClient();
-
-  const paths = [cvStoragePath, coverLetterStoragePath].filter((p): p is string => !!p);
-  if (paths.length) {
-    await supabase.storage.from(BUCKET).remove(paths).catch(() => {});
-  }
 
   const { error, count } = await supabase
     .from("resumes")

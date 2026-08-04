@@ -35,13 +35,13 @@
     </div>
     <div class="contact">
       {%- set line1 = [] -%}
-      {%- if personal.location and personal.location != "None" %}{% set _ = line1.append(personal.location) %}{% endif -%}
+      {%- if personal.location %}{% set _ = line1.append(personal.location) %}{% endif -%}
       {%- set line2 = [] -%}
-      {%- if personal.phone and personal.phone != "None" %}{% set _ = line2.append(personal.phone) %}{% endif -%}
-      {%- if personal.email and personal.email != "None" %}{% set _ = line2.append(personal.email) %}{% endif -%}
+      {%- if personal.phone %}{% set _ = line2.append(personal.phone) %}{% endif -%}
+      {%- if personal.email %}{% set _ = line2.append(personal.email) %}{% endif -%}
       {%- set line3 = [] -%}
-      {%- if personal.linkedin and personal.linkedin != "None" %}{% set _ = line3.append('<a href="https://www.linkedin.com/in/' ~ personal.linkedin ~ '">linkedin.com/in/' ~ personal.linkedin ~ '</a>') %}{% endif -%}
-      {%- if personal.github and personal.github != "None" %}{% set _ = line3.append('<a href="https://github.com/' ~ personal.github ~ '">github.com/' ~ personal.github ~ '</a>') %}{% endif -%}
+      {%- if personal.linkedin %}{% set _ = line3.append('<a href="https://www.linkedin.com/in/' ~ personal.linkedin ~ '">linkedin.com/in/' ~ personal.linkedin ~ '</a>') %}{% endif -%}
+      {%- if personal.github %}{% set _ = line3.append('<a href="https://github.com/' ~ personal.github ~ '">github.com/' ~ personal.github ~ '</a>') %}{% endif -%}
       {%- set lines = [] -%}
       {%- if line1 %}{% set _ = lines.append(line1 | join(" &nbsp;|&nbsp; ")) %}{% endif -%}
       {%- if line2 %}{% set _ = lines.append(line2 | join(" &nbsp;|&nbsp; ")) %}{% endif -%}
@@ -96,9 +96,9 @@
   <div class="entry">
     <div class="entry-header">
       <div><span class="entry-title">{{ edu.degree }}</span> <span class="entry-sub">— {{ edu.institution }}</span></div>
-      <div class="entry-date">{{ edu.graduation_year }}</div>
+      {% if edu.graduation_year %}<div class="entry-date">{{ edu.graduation_year }}</div>{% endif %}
     </div>
-    <div class="edu-gpa">GPA: {{ edu.gpa }}{% if edu.distinctions %} | {{ edu.distinctions | join(", ") }}{% endif %}</div>
+    {% if edu.gpa or edu.distinctions %}<div class="edu-gpa">GPA: {{ edu.gpa }}{% if edu.distinctions %} | {{ edu.distinctions | join(", ") }}{% endif %}</div>{% endif %}
   </div>
   {% endfor %}
   {% endif %}

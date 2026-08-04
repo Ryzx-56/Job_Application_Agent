@@ -49,6 +49,14 @@ DATES — read carefully, this is a common mistake:
   entry — do not pull in a graduation year from elsewhere in the CV instead.
 - If only a single date is genuinely written for an entry (no range), extract exactly that single
   date — do not invent an end date.
+- IN-PROGRESS / ONGOING ENTRIES: an entry is not "missing" a date just because it hasn't finished
+  yet. If the CV shows an open-ended range for a still-ongoing degree or job — e.g.
+  "2022-Current", "2022 - Present", "Jan 2024 – Ongoing" — extract the ENTIRE range exactly as
+  written, including the "Current"/"Present"/"Ongoing" token (e.g. "2022-Current"), into that
+  entry's date field ("graduation_year" for education, "dates" for experience). Do NOT drop the
+  end token, do NOT truncate it to just the start year, and do NOT return null for a degree or job
+  that is clearly still in progress — a null/missing date here is only correct when the CV
+  genuinely shows no date information at all for that entry.
 
 EXPERIENCE BULLETS — read carefully, this is a common mistake:
 - "bullets" must ONLY contain lines that describe an action, responsibility, or achievement —

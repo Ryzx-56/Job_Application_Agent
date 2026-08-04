@@ -3,6 +3,8 @@ import json
 import re
 import os
 import time
+import threading
+import concurrent.futures
 from google import genai
 from google.genai import types
 from loguru import logger
@@ -172,6 +174,15 @@ def run_fact_check_loop(
     Batched fact-check loop.
     Round 1: check ALL bullets in a single Gemini call.
     Each subsequent round: only re-check bullets that failed, still batched into one call.
+
+    SPEED: when multiple bullets fail in the same round, their regeneration
+    calls (tailoring_fn -> a Claude API call each) used to run one at a time
+    in a plain for-loop — a CV with, say, 5 flagged bullets paid for 5
+    sequential network round-trips before the next fact-check round could
+    even start. Each regeneration is independent (bullet N's rewrite
+    doesn't depend on bullet M's), so they're fired concurrently via a
+    thread pool instead — wall-clock cost collapses to roughly the slowest
+    single call rather than the sum of all of them.
     """
     verified_bullets    = []
     hallucination_flags = []
@@ -191,6 +202,7 @@ def run_fact_check_loop(
         results = _call_gemini_batch(batch_input, facts_json)
 
         still_pending = {}
+        to_regenerate: dict[int, str] = {}  # id -> issue, for bullets getting one more attempt
         for i, p in pending.items():
             result = results.get(i, {"passes": False, "issue": "no result returned"})
 
@@ -213,7 +225,7 @@ def run_fact_check_loop(
                 })
 
                 if attempt < MAX_RETRIES:
-                    p["current_text"] = tailoring_fn(p["current_text"], issue)
+                    to_regenerate[i] = issue
                     still_pending[i] = p
                 else:
                     for flag in reversed(hallucination_flags):
@@ -221,6 +233,19 @@ def run_fact_check_loop(
                             flag["excluded"] = True
                             break
                     logger.error(f"❌ Bullet {i} excluded after {MAX_RETRIES} rounds.")
+
+        if to_regenerate:
+            with concurrent.futures.ThreadPoolExecutor(max_workers=len(to_regenerate)) as executor:
+                future_to_id = {
+                    executor.submit(tailoring_fn, still_pending[i]["current_text"], issue): i
+                    for i, issue in to_regenerate.items()
+                }
+                for future in concurrent.futures.as_completed(future_to_id):
+                    i = future_to_id[future]
+                    try:
+                        still_pending[i]["current_text"] = future.result()
+                    except Exception as e:
+                        logger.error(f"Bullet {i} regeneration failed, keeping prior text for next round: {e}")
 
         pending = still_pending
 
@@ -252,11 +277,19 @@ def run_fact_checker(state: AgentState) -> dict:
         "regen_input_tokens": 0,
         "regen_output_tokens": 0,
     }
+    # run_fact_check_loop now fires regeneration calls for a round's failing
+    # bullets concurrently (see its docstring) — these counters are shared
+    # mutable state read/written from multiple worker threads, so updates
+    # need a lock even though CPython's GIL makes each individual += "look"
+    # atomic; `dict[key] += 1` is actually read-modify-write across several
+    # bytecode ops, which IS a real race under real thread interleaving.
+    _usage_lock = threading.Lock()
 
     def _record_regen_usage(input_tokens: int, output_tokens: int):
-        usage_counters["regen_calls"] += 1
-        usage_counters["regen_input_tokens"] += input_tokens
-        usage_counters["regen_output_tokens"] += output_tokens
+        with _usage_lock:
+            usage_counters["regen_calls"] += 1
+            usage_counters["regen_input_tokens"] += input_tokens
+            usage_counters["regen_output_tokens"] += output_tokens
 
     # BUG FIX: this previously called make_regeneration_fn(facts_json) with
     # no cv_language, which defaults to "en" inside that function — meaning
@@ -272,7 +305,8 @@ def run_fact_checker(state: AgentState) -> dict:
     )
 
     def _counted_tailoring_fn(bullet_text: str, issue: str) -> str:
-        usage_counters["bullets_regenerated_count"] += 1
+        with _usage_lock:
+            usage_counters["bullets_regenerated_count"] += 1
         return regenerate_bullet_fn(bullet_text, issue)
 
     verified_bullets, hallucination_flags = run_fact_check_loop(

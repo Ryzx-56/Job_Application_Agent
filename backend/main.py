@@ -2,6 +2,8 @@ import os
 import json
 import re
 import uuid
+import threading
+import concurrent.futures
 import uvicorn
 from fastapi import FastAPI, HTTPException, status, UploadFile, File, Form, Depends, Query
 from fastapi.middleware.cors import CORSMiddleware
@@ -21,6 +23,7 @@ from core.auth import get_current_user_id, get_current_user_id_query_or_header
 from core.credits import reserve_credits, refund_credits, get_credits, normalize_cv_language
 from core.subscription import cancel_subscription, resume_subscription
 from core.location import router as location_router
+from core.documents import router as documents_router
 from core.usage_tracker import UsageEvent
 from utils.pdf_parser import extract_text_from_pdf
 from utils.pdf_generator import render_cv_pdf, render_cover_letter_pdf
@@ -45,6 +48,7 @@ app.add_middleware(
 )
 
 app.include_router(location_router)
+app.include_router(documents_router)
 
 OUTPUT_DIR = "outputs"
 
@@ -219,6 +223,104 @@ def _sse(event: str, data: dict) -> str:
     return f"event: {event}\ndata: {json.dumps(data)}\n\n"
 
 
+# ─── GENERATION SNAPSHOT (CV storage/retention) ────────────────────────────
+#
+# Everything render_cv_pdf / generate_cv_docx / render_cover_letter_pdf need
+# to re-render this exact CV and cover letter later, without re-running the
+# LLM pipeline. This is what gets saved to resumes.generation_snapshot
+# (small — a few KB of JSON) instead of permanently storing the rendered
+# PDF/DOCX files themselves (hundreds of KB each). See utils/cv_context.py's
+# build_cv_context for the full read-side of this contract — every key it
+# reads off `state` needs to be present here, or a later regenerate would
+# silently drop content.
+_SNAPSHOT_STATE_KEYS = [
+    "facts_json", "weight_factors", "cv_language", "template_id",
+    "tailored_summary", "tailored_bullets", "tailored_projects",
+    "tailored_volunteer_work", "tailored_skills", "tailored_experience_titles",
+    "cover_letter_text",
+]
+
+
+def build_generation_snapshot(result_state: dict) -> dict:
+    return {key: result_state.get(key) for key in _SNAPSHOT_STATE_KEYS}
+
+
+def generate_documents_parallel(result_state: dict, paths: dict) -> dict:
+    """
+    Renders the CV PDF, CV DOCX, and cover letter PDF concurrently instead
+    of sequentially. These three are fully independent of each other (each
+    reads result_state and writes its own file), so there's no reason a
+    user should wait for three renders back-to-back — this is a real chunk
+    of the "optimizing..." delay that shows up after every agent has
+    already finished (WeasyPrint/python-docx rendering, not LLM work).
+    Re-raises on failure exactly like calling each function directly would
+    (a thread pool future re-raises the worker's exception on .result()),
+    so callers' existing try/except handling doesn't need to change.
+    """
+    template_id = result_state.get("template_id")
+    with concurrent.futures.ThreadPoolExecutor(max_workers=3) as executor:
+        futures = {
+            "cv_pdf": executor.submit(render_cv_pdf, result_state, output_path=paths["cv_pdf"], template_id=template_id),
+            "cv_docx": executor.submit(generate_cv_docx, result_state, output_path=paths["cv_docx"], template_id=template_id),
+            "cover_letter_pdf": executor.submit(render_cover_letter_pdf, result_state, output_path=paths["cover_letter_pdf"]),
+        }
+        return {key: future.result() for key, future in futures.items()}
+
+
+def flush_usage_event_async(result_state: dict, input_mode: str, pipeline_succeeded: bool, user_id: str, error_message: str = ""):
+    """
+    Fire-and-forget analytics write. UsageEvent.flush() is a synchronous
+    Supabase insert that carries no information the response depends on —
+    there's no reason the user's request should wait on it. Runs on a
+    daemon thread so it can't block process shutdown; UsageEvent.flush()
+    already catches its own write failures and just logs them, so this
+    can never surface as a user-facing error either way.
+    """
+    def _run():
+        try:
+            UsageEvent.from_pipeline_result(
+                result_state, input_mode=input_mode, pipeline_succeeded=pipeline_succeeded, error_message=error_message
+            ).flush(user_id)
+        except Exception as e:
+            logger.error(f"❌ Background usage-event flush failed: {e}")
+
+    threading.Thread(target=_run, daemon=True).start()
+
+
+def build_success_payload(result_state: dict, request_id: str, reserved_amount: int, generated_paths: dict) -> dict:
+    """Shared response shape for /optimize, /optimize-manual, and both
+    /stream variants — was duplicated four times with the same 20 keys;
+    now the one place that shape can drift."""
+    return {
+        "success": True,
+        "request_id": request_id,
+        "ats_score": result_state.get("ats_score", 0),
+        "ats_breakdown": result_state.get("score_breakdown", {}),
+        "job_match_score": result_state.get("job_match_score", 0),
+        "job_match_reason": result_state.get("job_match_reason", ""),
+        "gap_analysis": result_state.get("gap_analysis", []),
+        "overall_recommendation": result_state.get("overall_recommendation", ""),
+        "tailored_summary": result_state.get("tailored_summary", ""),
+        "tailored_bullets": result_state.get("tailored_bullets", []),
+        "cover_letter_text": result_state.get("cover_letter_text", ""),
+        "similar_jobs": result_state.get("similar_jobs", []),
+        "fact_check_passed": result_state.get("fact_check_passed", False),
+        "job_title": result_state.get("weight_factors", {}).get("job_title", ""),
+        "company": result_state.get("weight_factors", {}).get("company", ""),
+        "cv_language": result_state.get("cv_language", "en"),
+        "generated_cv_pdf": generated_paths["cv_pdf"],
+        "generated_cv_docx": generated_paths["cv_docx"],
+        "generated_cl_pdf": generated_paths["cover_letter_pdf"],
+        "error": result_state.get("error", None),
+        "credits_charged": reserved_amount,
+        # Small structured payload the frontend persists verbatim as
+        # resumes.generation_snapshot — see build_generation_snapshot()
+        # and PART 1 of the storage/retention rework for why this replaces
+        # permanently storing the rendered files.
+        "generation_snapshot": build_generation_snapshot(result_state),
+    }
+
+
 def _stream_pipeline(initial_state: AgentState, user_id: str, reserved_amount: int, request_id: str):
     """
     Shared generator for both streaming endpoints below. Runs the exact same
@@ -260,53 +362,21 @@ def _stream_pipeline(initial_state: AgentState, user_id: str, reserved_amount: i
         if not ready:
             logger.error(f"❌ Pipeline did not produce usable output (stream): {error_detail} | state error: {result_state.get('error')}")
             refund_credits(user_id, reserved_amount)
-            UsageEvent.from_pipeline_result(
-                result_state, input_mode=result_state.get("input_mode", "upload"),
-                pipeline_succeeded=False, error_message=error_detail
-            ).flush(user_id)
+            flush_usage_event_async(result_state, input_mode=result_state.get("input_mode", "upload"), pipeline_succeeded=False, user_id=user_id, error_message=error_detail)
             yield _sse("error", {"detail": error_detail})
             return
 
-        cv_pdf_path = render_cv_pdf(result_state, template_id=result_state.get("template_id"), output_path=paths["cv_pdf"])
-        cv_docx_path = generate_cv_docx(result_state, template_id=result_state.get("template_id"), output_path=paths["cv_docx"])
-        cl_pdf_path = render_cover_letter_pdf(result_state, output_path=paths["cover_letter_pdf"])
+        generated_paths = generate_documents_parallel(result_state, paths)
 
-        UsageEvent.from_pipeline_result(
-            result_state, input_mode=result_state.get("input_mode", "upload"), pipeline_succeeded=True
-        ).flush(user_id)
+        flush_usage_event_async(result_state, input_mode=result_state.get("input_mode", "upload"), pipeline_succeeded=True, user_id=user_id)
 
-        payload = {
-            "success": True,
-            "request_id": request_id,
-            "ats_score": result_state.get("ats_score", 0),
-            "ats_breakdown": result_state.get("score_breakdown", {}),
-            "job_match_score": result_state.get("job_match_score", 0),
-            "job_match_reason": result_state.get("job_match_reason", ""),
-            "gap_analysis": result_state.get("gap_analysis", []),
-            "overall_recommendation": result_state.get("overall_recommendation", ""),
-            "tailored_summary": result_state.get("tailored_summary", ""),
-            "tailored_bullets": result_state.get("tailored_bullets", []),
-            "cover_letter_text": result_state.get("cover_letter_text", ""),
-            "similar_jobs": result_state.get("similar_jobs", []),
-            "fact_check_passed": result_state.get("fact_check_passed", False),
-            "job_title": result_state.get("weight_factors", {}).get("job_title", ""),
-            "company": result_state.get("weight_factors", {}).get("company", ""),
-            "cv_language": result_state.get("cv_language", "en"),
-            "generated_cv_pdf": cv_pdf_path,
-            "generated_cv_docx": cv_docx_path,
-            "generated_cl_pdf": cl_pdf_path,
-            "error": result_state.get("error", None),
-            "credits_charged": reserved_amount,
-        }
+        payload = build_success_payload(result_state, request_id, reserved_amount, generated_paths)
         yield _sse("complete", payload)
 
     except Exception as err:
         logger.error(f"❌ Pipeline Failure (stream): {err}")
         refund_credits(user_id, reserved_amount)
-        UsageEvent.from_pipeline_result(
-            result_state, input_mode=result_state.get("input_mode", "upload"),
-            pipeline_succeeded=False, error_message=str(err)
-        ).flush(user_id)
+        flush_usage_event_async(result_state, input_mode=result_state.get("input_mode", "upload"), pipeline_succeeded=False, user_id=user_id, error_message=str(err))
         yield _sse("error", {"detail": f"An execution failure hit a core agent module: {str(err)}"})
 
 
@@ -496,52 +566,24 @@ async def optimize_application(
         if not ready:
             logger.error(f"❌ Pipeline did not produce usable output: {error_detail} | state error: {result.get('error')}")
             refund_credits(user_id, reserved_amount)
-            UsageEvent.from_pipeline_result(
-                result, input_mode="upload", pipeline_succeeded=False, error_message=error_detail
-            ).flush(user_id)
+            flush_usage_event_async(result, input_mode="upload", pipeline_succeeded=False, user_id=user_id, error_message=error_detail)
             raise HTTPException(
                 status_code=status.HTTP_502_BAD_GATEWAY,
                 detail=error_detail,
             )
 
-        cv_pdf_path = render_cv_pdf(result, template_id=result.get("template_id"), output_path=paths["cv_pdf"])
-        cv_docx_path = generate_cv_docx(result, template_id=result.get("template_id"), output_path=paths["cv_docx"])
-        cl_pdf_path = render_cover_letter_pdf(result, output_path=paths["cover_letter_pdf"])
+        generated_paths = generate_documents_parallel(result, paths)
 
-        UsageEvent.from_pipeline_result(result, input_mode="upload", pipeline_succeeded=True).flush(user_id)
+        flush_usage_event_async(result, input_mode="upload", pipeline_succeeded=True, user_id=user_id)
 
-        return {
-            "success": True,
-            "request_id": request_id,
-            "ats_score": result.get("ats_score", 0),
-            "ats_breakdown": result.get("score_breakdown", {}),
-            "job_match_score": result.get("job_match_score", 0),
-            "job_match_reason": result.get("job_match_reason", ""),
-            "gap_analysis": result.get("gap_analysis", []),
-            "overall_recommendation": result.get("overall_recommendation", ""),
-            "tailored_summary": result.get("tailored_summary", ""),
-            "tailored_bullets": result.get("tailored_bullets", []),
-            "cover_letter_text": result.get("cover_letter_text", ""),
-            "similar_jobs": result.get("similar_jobs", []),
-            "fact_check_passed": result.get("fact_check_passed", False),
-            "job_title": result.get("weight_factors", {}).get("job_title", ""),
-            "company": result.get("weight_factors", {}).get("company", ""),
-            "cv_language": result.get("cv_language", "en"),
-            "generated_cv_pdf": cv_pdf_path,
-            "generated_cv_docx": cv_docx_path,
-            "generated_cl_pdf": cl_pdf_path,
-            "error": result.get("error", None),
-            "credits_charged": reserved_amount,
-        }
+        return build_success_payload(result, request_id, reserved_amount, generated_paths)
 
     except HTTPException:
         raise
     except Exception as err:
         logger.error(f"❌ Pipeline Failure: {err}")
         refund_credits(user_id, reserved_amount)
-        UsageEvent.from_pipeline_result(
-            result, input_mode="upload", pipeline_succeeded=False, error_message=str(err)
-        ).flush(user_id)
+        flush_usage_event_async(result, input_mode="upload", pipeline_succeeded=False, user_id=user_id, error_message=str(err))
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"An execution failure hit a core agent module: {str(err)}"
@@ -665,52 +707,24 @@ async def optimize_manual_application(
         if not ready:
             logger.error(f"❌ Pipeline did not produce usable output (manual): {error_detail} | state error: {result.get('error')}")
             refund_credits(user_id, reserved_amount)
-            UsageEvent.from_pipeline_result(
-                result, input_mode="manual", pipeline_succeeded=False, error_message=error_detail
-            ).flush(user_id)
+            flush_usage_event_async(result, input_mode="manual", pipeline_succeeded=False, user_id=user_id, error_message=error_detail)
             raise HTTPException(
                 status_code=status.HTTP_502_BAD_GATEWAY,
                 detail=error_detail,
             )
 
-        cv_pdf_path = render_cv_pdf(result, template_id=result.get("template_id"), output_path=paths["cv_pdf"])
-        cv_docx_path = generate_cv_docx(result, template_id=result.get("template_id"), output_path=paths["cv_docx"])
-        cl_pdf_path = render_cover_letter_pdf(result, output_path=paths["cover_letter_pdf"])
+        generated_paths = generate_documents_parallel(result, paths)
 
-        UsageEvent.from_pipeline_result(result, input_mode="manual", pipeline_succeeded=True).flush(user_id)
+        flush_usage_event_async(result, input_mode="manual", pipeline_succeeded=True, user_id=user_id)
 
-        return {
-            "success": True,
-            "request_id": request_id,
-            "ats_score": result.get("ats_score", 0),
-            "ats_breakdown": result.get("score_breakdown", {}),
-            "job_match_score": result.get("job_match_score", 0),
-            "job_match_reason": result.get("job_match_reason", ""),
-            "gap_analysis": result.get("gap_analysis", []),
-            "overall_recommendation": result.get("overall_recommendation", ""),
-            "tailored_summary": result.get("tailored_summary", ""),
-            "tailored_bullets": result.get("tailored_bullets", []),
-            "cover_letter_text": result.get("cover_letter_text", ""),
-            "similar_jobs": result.get("similar_jobs", []),
-            "fact_check_passed": result.get("fact_check_passed", False),
-            "job_title": result.get("weight_factors", {}).get("job_title", ""),
-            "company": result.get("weight_factors", {}).get("company", ""),
-            "cv_language": result.get("cv_language", "en"),
-            "generated_cv_pdf": cv_pdf_path,
-            "generated_cv_docx": cv_docx_path,
-            "generated_cl_pdf": cl_pdf_path,
-            "error": result.get("error", None),
-            "credits_charged": reserved_amount,
-        }
+        return build_success_payload(result, request_id, reserved_amount, generated_paths)
 
     except HTTPException:
         raise
     except Exception as err:
         logger.error(f"❌ Pipeline Failure (manual): {err}")
         refund_credits(user_id, reserved_amount)
-        UsageEvent.from_pipeline_result(
-            result, input_mode="manual", pipeline_succeeded=False, error_message=str(err)
-        ).flush(user_id)
+        flush_usage_event_async(result, input_mode="manual", pipeline_succeeded=False, user_id=user_id, error_message=str(err))
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"An execution failure hit a core agent module: {str(err)}"

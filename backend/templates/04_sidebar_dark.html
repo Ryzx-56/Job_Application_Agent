@@ -37,11 +37,11 @@
 
     <div class="side-section">
       <div class="side-title">Contact</div>
-      {% if personal.email and personal.email != "None" %}<div class="side-row">{{ personal.email }}</div>{% endif %}
-      {% if personal.phone and personal.phone != "None" %}<div class="side-row">{{ personal.phone }}</div>{% endif %}
-      {% if personal.location and personal.location != "None" %}<div class="side-row">{{ personal.location }}</div>{% endif %}
-      {% if personal.linkedin and personal.linkedin != "None" %}<div class="side-row"><a href="https://www.linkedin.com/in/{{ personal.linkedin }}">linkedin.com/in/{{ personal.linkedin }}</a></div>{% endif %}
-      {% if personal.github and personal.github != "None" %}<div class="side-row"><a href="https://github.com/{{ personal.github }}">github.com/{{ personal.github }}</a></div>{% endif %}
+      {% if personal.email %}<div class="side-row">{{ personal.email }}</div>{% endif %}
+      {% if personal.phone %}<div class="side-row">{{ personal.phone }}</div>{% endif %}
+      {% if personal.location %}<div class="side-row">{{ personal.location }}</div>{% endif %}
+      {% if personal.linkedin %}<div class="side-row"><a href="https://www.linkedin.com/in/{{ personal.linkedin }}">linkedin.com/in/{{ personal.linkedin }}</a></div>{% endif %}
+      {% if personal.github %}<div class="side-row"><a href="https://github.com/{{ personal.github }}">github.com/{{ personal.github }}</a></div>{% endif %}
     </div>
 
     {% if skills %}
@@ -58,7 +58,7 @@
       <div class="side-title">Education</div>
       {% for edu in education %}
       <div class="side-row" style="margin-bottom:10px;">
-        <strong>{{ edu.degree }}</strong><br>{{ edu.institution }}<br>{{ edu.graduation_year }}
+        <strong>{{ edu.degree }}</strong><br>{{ edu.institution }}{% if edu.graduation_year %}<br>{{ edu.graduation_year }}{% endif %}
         {% if edu.gpa %}<br>GPA {{ edu.gpa }}{% endif %}
       </div>
       {% endfor %}

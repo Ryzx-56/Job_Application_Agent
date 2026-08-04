@@ -35,11 +35,11 @@
     {% if tagline %}<div class="tagline">{{ tagline }}</div>{% endif %}
     <div class="contact">
       {%- set contact_items = [] -%}
-      {%- if personal.email and personal.email != "None" %}{% set _ = contact_items.append(personal.email) %}{% endif -%}
-      {%- if personal.phone and personal.phone != "None" %}{% set _ = contact_items.append(personal.phone) %}{% endif -%}
-      {%- if personal.location and personal.location != "None" %}{% set _ = contact_items.append(personal.location) %}{% endif -%}
-      {%- if personal.linkedin and personal.linkedin != "None" %}{% set _ = contact_items.append('<a href="https://www.linkedin.com/in/' ~ personal.linkedin ~ '">linkedin.com/in/' ~ personal.linkedin ~ '</a>') %}{% endif -%}
-      {%- if personal.github and personal.github != "None" %}{% set _ = contact_items.append('<a href="https://github.com/' ~ personal.github ~ '">github.com/' ~ personal.github ~ '</a>') %}{% endif -%}
+      {%- if personal.email %}{% set _ = contact_items.append(personal.email) %}{% endif -%}
+      {%- if personal.phone %}{% set _ = contact_items.append(personal.phone) %}{% endif -%}
+      {%- if personal.location %}{% set _ = contact_items.append(personal.location) %}{% endif -%}
+      {%- if personal.linkedin %}{% set _ = contact_items.append('<a href="https://www.linkedin.com/in/' ~ personal.linkedin ~ '">linkedin.com/in/' ~ personal.linkedin ~ '</a>') %}{% endif -%}
+      {%- if personal.github %}{% set _ = contact_items.append('<a href="https://github.com/' ~ personal.github ~ '">github.com/' ~ personal.github ~ '</a>') %}{% endif -%}
       {{ contact_items | join(" &nbsp;&middot;&nbsp; ") | safe }}
     </div>
   </div>
@@ -103,9 +103,9 @@
     <div class="t-entry" style="margin-left:0;">
       <div class="entry-header">
         <div><span class="entry-title">{{ edu.degree }}</span> <span class="entry-sub">{{ edu.institution }}</span></div>
-        <div class="entry-date">{{ edu.graduation_year }}</div>
+        {% if edu.graduation_year %}<div class="entry-date">{{ edu.graduation_year }}</div>{% endif %}
       </div>
-      <div class="edu-gpa">GPA {{ edu.gpa }}{% if edu.distinctions %} · {{ edu.distinctions | join(", ") }}{% endif %}</div>
+      {% if edu.gpa or edu.distinctions %}<div class="edu-gpa">GPA {{ edu.gpa }}{% if edu.distinctions %} · {{ edu.distinctions | join(", ") }}{% endif %}</div>{% endif %}
     </div>
     {% endfor %}
   </div>

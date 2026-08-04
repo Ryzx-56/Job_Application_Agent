@@ -56,6 +56,33 @@ def _add_run(paragraph, text, is_arabic, style, size=10.5, bold=False, color=Non
     return r
 
 
+def _add_bottom_border(paragraph, color_hex: str):
+    """Adds a single-rule bottom border to a paragraph, in the given accent
+    color — gives a heading real visual presence in a format with no CSS.
+    See docx_styles.py's module docstring for why this exists."""
+    pPr = paragraph._p.get_or_add_pPr()
+    pBdr = OxmlElement("w:pBdr")
+    bottom = OxmlElement("w:bottom")
+    bottom.set(qn("w:val"), "single")
+    bottom.set(qn("w:sz"), "6")     # eighths of a point
+    bottom.set(qn("w:space"), "4")
+    bottom.set(qn("w:color"), color_hex.lstrip("#"))
+    pBdr.append(bottom)
+    pPr.append(pBdr)
+
+
+def _shade_paragraph(paragraph, color_hex: str):
+    """Fills a paragraph's background — used for templates whose PDF
+    identity IS a solid color block behind the name (sidebar_dark,
+    bold_banner). See docx_styles.py's header_shade docstring."""
+    pPr = paragraph._p.get_or_add_pPr()
+    shd = OxmlElement("w:shd")
+    shd.set(qn("w:val"), "clear")
+    shd.set(qn("w:color"), "auto")
+    shd.set(qn("w:fill"), color_hex.lstrip("#"))
+    pPr.append(shd)
+
+
 def _heading(doc, title, is_arabic, style):
     p = doc.add_heading(title, level=2)
     run = p.runs[0]
@@ -64,6 +91,8 @@ def _heading(doc, title, is_arabic, style):
     run.underline = style["heading_underline"]
     p.paragraph_format.space_before = Pt(10)
     p.paragraph_format.space_after = Pt(4)
+    if style.get("heading_border"):
+        _add_bottom_border(p, style["accent_color"])
     _set_rtl_paragraph(p, is_arabic)
     _set_rtl_run(run, is_arabic)
 
@@ -77,18 +106,18 @@ def _bullet(doc, text, is_arabic, style):
     _set_rtl_run(p.runs[0], is_arabic)
 
 
-def generate_cv_docx(state: dict, template_id: str | None = None, output_path: str | None = None) -> str:
+def generate_cv_docx(state: dict, output_path: str, template_id: str | None = None) -> str:
     """
     Generates .docx version of the tailored CV, styled to match the chosen
     template_id (see utils/docx_styles.py for what "match" means for a
     format that can't render arbitrary CSS). Falls back to the default
     style if template_id is None or unrecognized.
 
-    output_path: pass a unique per-request path (see main.py) so concurrent
-    users' generations can't overwrite each other or be downloaded by the
-    wrong person — same fix already applied to pdf_generator.py's
-    render_cv_pdf/render_cover_letter_pdf. Falls back to the old fixed
-    filename only if not given.
+    output_path is REQUIRED (no static-filename fallback) — same reasoning
+    as pdf_generator.py's render_cv_pdf/render_cover_letter_pdf: a fixed
+    default path is exactly the bug that let concurrent users' generations
+    overwrite each other. Every caller, including tests, must supply a
+    unique per-request/per-call path.
     """
     doc = Document()
     resolved_template_id = template_id or DEFAULT_TEMPLATE_ID
@@ -98,15 +127,22 @@ def generate_cv_docx(state: dict, template_id: str | None = None, output_path: s
     is_arabic = context["is_arabic"]
     personal = context["personal"]
 
-    # Header
+    # Header — templates with a header_shade get a filled color block behind
+    # the name/contact block (evokes their PDF sidebar/banner identity);
+    # header_text_color keeps the text readable against that fill.
+    header_shade = style.get("header_shade")
+    header_text_rgb = style.get("header_text_color_rgb") or style["heading_color_rgb"]
+
     name_p = doc.add_heading(personal.get("name", ""), level=1)
     name_p.alignment = WD_ALIGN_PARAGRAPH.CENTER
     _set_rtl_paragraph(name_p, is_arabic)
     if name_p.runs:
         name_p.runs[0].font.name = style["font_name"] if not is_arabic else ARABIC_FONT
-        name_p.runs[0].font.color.rgb = style["heading_color_rgb"]
+        name_p.runs[0].font.color.rgb = header_text_rgb if header_shade else style["heading_color_rgb"]
         _set_rtl_run(name_p.runs[0], is_arabic)
         name_p.alignment = WD_ALIGN_PARAGRAPH.CENTER  # keep centered even after RTL flag
+    if header_shade:
+        _shade_paragraph(name_p, header_shade)
 
     contact = " · ".join(filter(None, [
         personal.get("email", ""),
@@ -116,9 +152,12 @@ def generate_cv_docx(state: dict, template_id: str | None = None, output_path: s
     ]))
     cp = doc.add_paragraph()
     cp.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    _add_run(cp, contact, is_arabic, style, size=9.5)
+    _add_run(cp, contact, is_arabic, style, size=9.5, color=header_text_rgb if header_shade else None)
     _set_rtl_paragraph(cp, is_arabic)
     cp.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    if header_shade:
+        _shade_paragraph(cp, header_shade)
+        cp.paragraph_format.space_after = Pt(10)
 
     # Summary
     if context["tailored_summary"]:
@@ -197,7 +236,6 @@ def generate_cv_docx(state: dict, template_id: str | None = None, output_path: s
         for cert in context["certifications"]:
             _bullet(doc, cert, is_arabic, style)
 
-    output_path = output_path or os.path.join(OUTPUT_DIR, "tailored_cv.docx")
     doc.save(output_path)
     logger.info(f"✅ CV DOCX saved → {output_path} (template: {resolved_template_id})")
     return output_path

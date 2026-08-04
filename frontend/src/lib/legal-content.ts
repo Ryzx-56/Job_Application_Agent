@@ -10,7 +10,7 @@
 //
 // IMPORTANT: The Terms & Privacy content was drafted to be thorough and
 // KSA-aware (PDPL references, freelance-certificate operating structure,
-// Moyasar as payment processor, etc.), but it is not a substitute for
+// Tap Payments as payment processor, etc.), but it is not a substitute for
 // review by a licensed Saudi lawyer before this goes live in production,
 // especially around consumer protection and refund-window requirements.
 

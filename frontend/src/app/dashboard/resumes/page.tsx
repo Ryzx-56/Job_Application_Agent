@@ -1,10 +1,10 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
-import { ChevronDown, ChevronUp, FileText, Mail, Loader2, AlertCircle, Trash2 } from "lucide-react";
+import { ChevronDown, ChevronUp, ChevronLeft, ChevronRight, FileText, FileType2, Mail, Loader2, AlertCircle, Trash2 } from "lucide-react";
 import { useLang } from "@/lib/language";
 import { EmptyState, ScoreRing, ScoreBar, FileResultCard } from "@/components/dashboard";
-import { fetchResumes, getSignedFileUrl, deleteResume, ResumeRecord } from "@/lib/supabase/resumes";
+import { fetchResumes, getDocumentUrl, deleteResume, ResumeRecord } from "@/lib/supabase/resumes";
 
 // Mirrors WEIGHTS in utils/ats_scorer.py — fallback only, used if an older
 // saved row doesn't have ats_breakdown.weights yet.
@@ -14,6 +14,11 @@ const DEFAULT_ATS_WEIGHTS = {
   education_match: 15,
   experience_match: 10,
 };
+
+// Rows per "My Resumes" page. Keeps each page's query/render cost bounded
+// no matter how many resumes a Pro/Elite user has accumulated — see PART 1
+// of the storage/retention rework.
+const PAGE_SIZE = 20;
 
 function formatDate(iso: string, lang: "en" | "ar") {
   try {
@@ -48,34 +53,51 @@ function LanguageBadge({ cvLanguage, copy }: { cvLanguage: "en" | "ar"; copy: an
    ROW DETAIL — expands under a clicked row with the same shape of summary
    the user sees right after a run: score ring + breakdown, job match
    reasoning, overall recommendation, and preview/download for both files.
+
+   Files are no longer pulled from Storage — they're regenerated on demand
+   from the saved generation_snapshot (see PART 1 of the storage/retention
+   rework), via authenticated links to the backend's regenerate-document
+   endpoint. Building the link itself is fast (just signs a URL with the
+   current session token); the actual render happens when the link is
+   opened/downloaded, same latency profile as the original generate flow's
+   preview/download links.
 ======================================================================== */
 function ResumeDetail({ resume, lang, copy, generateCopy }: { resume: ResumeRecord; lang: "en" | "ar"; copy: any; generateCopy: any }) {
   const [cvUrl, setCvUrl] = useState<string | null>(null);
   const [clUrl, setClUrl] = useState<string | null>(null);
   const [cvDownloadUrl, setCvDownloadUrl] = useState<string | null>(null);
   const [clDownloadUrl, setClDownloadUrl] = useState<string | null>(null);
+  const [cvDocxDownloadUrl, setCvDocxDownloadUrl] = useState<string | null>(null);
   const [loadingFiles, setLoadingFiles] = useState(true);
 
+  const hasSnapshot = !!resume.generation_snapshot;
+
   useEffect(() => {
+    if (!hasSnapshot) {
+      setLoadingFiles(false);
+      return;
+    }
     let cancelled = false;
     setLoadingFiles(true);
     Promise.all([
-      getSignedFileUrl(resume.cv_storage_path),
-      getSignedFileUrl(resume.cover_letter_storage_path),
-      getSignedFileUrl(resume.cv_storage_path, { download: true }),
-      getSignedFileUrl(resume.cover_letter_storage_path, { download: true }),
-    ]).then(([cv, cl, cvDl, clDl]) => {
+      getDocumentUrl(resume.id, "cv-pdf"),
+      getDocumentUrl(resume.id, "cover-letter-pdf"),
+      getDocumentUrl(resume.id, "cv-pdf", { download: true }),
+      getDocumentUrl(resume.id, "cover-letter-pdf", { download: true }),
+      getDocumentUrl(resume.id, "cv-docx", { download: true }),
+    ]).then(([cv, cl, cvDl, clDl, cvDocxDl]) => {
       if (cancelled) return;
       setCvUrl(cv);
       setClUrl(cl);
       setCvDownloadUrl(cvDl);
       setClDownloadUrl(clDl);
+      setCvDocxDownloadUrl(cvDocxDl);
       setLoadingFiles(false);
     });
     return () => {
       cancelled = true;
     };
-  }, [resume.id, resume.cv_storage_path, resume.cover_letter_storage_path]);
+  }, [resume.id, hasSnapshot]);
 
   const weights = resume.ats_breakdown?.weights ?? DEFAULT_ATS_WEIGHTS;
 
@@ -130,13 +152,22 @@ function ResumeDetail({ resume, lang, copy, generateCopy }: { resume: ResumeReco
         </p>
       )}
 
-      <div className="grid gap-3 sm:grid-cols-2">
-        {loadingFiles ? (
-          <div className="col-span-2 flex items-center justify-center gap-2 py-6 text-sm text-slate-400">
-            <Loader2 className="size-4 animate-spin" aria-hidden /> {copy.loading}
-          </div>
-        ) : (
-          <>
+      {!hasSnapshot ? (
+        <div className="flex items-center gap-2 rounded-xl border border-amber-200 bg-amber-50/60 px-4 py-3 text-sm text-amber-700">
+          <AlertCircle className="size-4 shrink-0" aria-hidden />
+          <span>
+            {lang === "ar"
+              ? "هذه السيرة الذاتية أُنشئت قبل توفر إعادة التوليد عند الطلب، ولا تتوفر لها بيانات لإعادة إنشاء الملفات."
+              : "This resume was saved before on-demand regeneration existed, so there's no saved data to rebuild the files from."}
+          </span>
+        </div>
+      ) : loadingFiles ? (
+        <div className="flex items-center justify-center gap-2 py-6 text-sm text-slate-400">
+          <Loader2 className="size-4 animate-spin" aria-hidden /> {copy.loading}
+        </div>
+      ) : (
+        <div className="grid gap-3 sm:grid-cols-2">
+          <div className="space-y-1.5">
             <FileResultCard
               icon={FileText}
               title={generateCopy.resumeCardTitle}
@@ -147,19 +178,28 @@ function ResumeDetail({ resume, lang, copy, generateCopy }: { resume: ResumeReco
               downloadHref={cvDownloadUrl ?? "#"}
               disabled={!cvUrl}
             />
-            <FileResultCard
-              icon={Mail}
-              title={generateCopy.coverLetterCardTitle}
-              readyLabel={lang === "ar" ? "جاهز" : "Ready"}
-              previewLabel={generateCopy.preview}
-              downloadLabel={generateCopy.download}
-              previewHref={clUrl ?? "#"}
-              downloadHref={clDownloadUrl ?? "#"}
-              disabled={!clUrl}
-            />
-          </>
-        )}
-      </div>
+            {cvDocxDownloadUrl && (
+              <a
+                href={cvDocxDownloadUrl}
+                className="ms-1 inline-flex items-center gap-1 text-xs font-medium text-blue-600 hover:text-blue-700"
+              >
+                <FileType2 className="size-3" aria-hidden />
+                {lang === "ar" ? "تنزيل بصيغة Word" : "Download as Word"}
+              </a>
+            )}
+          </div>
+          <FileResultCard
+            icon={Mail}
+            title={generateCopy.coverLetterCardTitle}
+            readyLabel={lang === "ar" ? "جاهز" : "Ready"}
+            previewLabel={generateCopy.preview}
+            downloadLabel={generateCopy.download}
+            previewHref={clUrl ?? "#"}
+            downloadHref={clDownloadUrl ?? "#"}
+            disabled={!clUrl}
+          />
+        </div>
+      )}
     </div>
   );
 }
@@ -170,6 +210,8 @@ export default function MyResumesPage() {
   const generateCopy = t.dashboard.generate;
 
   const [resumes, setResumes] = useState<ResumeRecord[]>([]);
+  const [total, setTotal] = useState(0);
+  const [page, setPage] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [expandedId, setExpandedId] = useState<string | null>(null);
@@ -180,9 +222,11 @@ export default function MyResumesPage() {
     let cancelled = false;
     setLoading(true);
     setError(null);
-    fetchResumes()
-      .then((data) => {
-        if (!cancelled) setResumes(data);
+    fetchResumes(page, PAGE_SIZE)
+      .then(({ resumes, total }) => {
+        if (cancelled) return;
+        setResumes(resumes);
+        setTotal(total);
       })
       .catch((err) => {
         console.error("fetchResumes failed:", err);
@@ -194,7 +238,9 @@ export default function MyResumesPage() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [page]);
+
+  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
   async function handleDelete(resume: ResumeRecord) {
     const label = resume.role || copy.untitledRole;
@@ -213,7 +259,8 @@ export default function MyResumesPage() {
     if (expandedId === resume.id) setExpandedId(null);
 
     try {
-      await deleteResume(resume.id, resume.cv_storage_path, resume.cover_letter_storage_path);
+      await deleteResume(resume.id);
+      setTotal((prev) => Math.max(0, prev - 1));
     } catch (err: any) {
       console.error("deleteResume failed:", err);
       setResumes(previous);
@@ -251,86 +298,118 @@ export default function MyResumesPage() {
       ) : resumes.length === 0 ? (
         <EmptyState icon={FileText} title={copy.emptyTitle} body={copy.emptyBody} ctaLabel={copy.emptyCta} ctaHref="/dashboard" />
       ) : (
-        <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
-          <table className="w-full text-start text-sm">
-            <thead>
-              <tr className="border-b border-slate-200 bg-slate-50 text-xs font-medium uppercase tracking-wide text-slate-500">
-                <th className="px-5 py-3 text-start font-medium">{copy.columns.role}</th>
-                <th className="px-5 py-3 text-start font-medium">{copy.columns.company}</th>
-                <th className="px-5 py-3 text-start font-medium">{copy.columns.date}</th>
-                <th className="px-5 py-3 text-start font-medium">{copy.columns.language}</th>
-                <th className="px-5 py-3 text-start font-medium">{copy.columns.score}</th>
-                <th className="px-5 py-3 text-start font-medium">{copy.columns.match}</th>
-                <th className="px-5 py-3 text-end font-medium">{copy.columns.download}</th>
-                <th className="px-5 py-3 text-end font-medium" />
-              </tr>
-            </thead>
-            <tbody>
-              {resumes.map((resume) => {
-                const isExpanded = expandedId === resume.id;
-                const isDeleting = deletingId === resume.id;
-                return (
-                  <React.Fragment key={resume.id}>
-                    <tr className="border-b border-slate-100 last:border-0 hover:bg-slate-50/60">
-                      <td className="px-5 py-3.5">
-                        <button
-                          type="button"
-                          onClick={() => setExpandedId(isExpanded ? null : resume.id)}
-                          className="flex items-center gap-1.5 font-medium text-slate-900 hover:text-blue-600"
-                        >
-                          {resume.role || copy.untitledRole}
-                          {isExpanded ? (
-                            <ChevronUp className="size-3.5 shrink-0 text-slate-400" aria-hidden />
-                          ) : (
-                            <ChevronDown className="size-3.5 shrink-0 text-slate-400" aria-hidden />
-                          )}
-                        </button>
-                      </td>
-                      <td className="px-5 py-3.5 text-slate-600">{resume.company || copy.unknownCompany}</td>
-                      <td className="px-5 py-3.5 text-slate-500">{formatDate(resume.created_at, lang)}</td>
-                      <td className="px-5 py-3.5">
-                        <LanguageBadge cvLanguage={resume.cv_language} copy={copy} />
-                      </td>
-                      <td className="px-5 py-3.5 text-slate-600">{resume.ats_score}%</td>
-                      <td className="px-5 py-3.5 text-slate-600">{resume.job_match_score}%</td>
-                      <td className="px-5 py-3.5 text-end">
-                        <button
-                          type="button"
-                          onClick={() => setExpandedId(isExpanded ? null : resume.id)}
-                          className="ms-auto text-xs font-medium text-blue-600 hover:text-blue-700"
-                        >
-                          {isExpanded ? copy.hideDetails : copy.viewDetails}
-                        </button>
-                      </td>
-                      <td className="px-5 py-3.5 text-end">
-                        <button
-                          type="button"
-                          onClick={() => handleDelete(resume)}
-                          disabled={isDeleting}
-                          aria-label={lang === "ar" ? "حذف" : "Delete"}
-                          className="inline-flex items-center justify-center rounded-lg p-1.5 text-slate-400 hover:bg-rose-50 hover:text-rose-600 disabled:cursor-not-allowed disabled:opacity-50"
-                        >
-                          {isDeleting ? (
-                            <Loader2 className="size-4 animate-spin" aria-hidden />
-                          ) : (
-                            <Trash2 className="size-4" aria-hidden />
-                          )}
-                        </button>
-                      </td>
-                    </tr>
-                    {isExpanded && (
-                      <tr>
-                        <td colSpan={8} className="p-0">
-                          <ResumeDetail resume={resume} lang={lang} copy={copy} generateCopy={generateCopy} />
+        <>
+          <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+            <table className="w-full text-start text-sm">
+              <thead>
+                <tr className="border-b border-slate-200 bg-slate-50 text-xs font-medium uppercase tracking-wide text-slate-500">
+                  <th className="px-5 py-3 text-start font-medium">{copy.columns.role}</th>
+                  <th className="px-5 py-3 text-start font-medium">{copy.columns.company}</th>
+                  <th className="px-5 py-3 text-start font-medium">{copy.columns.date}</th>
+                  <th className="px-5 py-3 text-start font-medium">{copy.columns.language}</th>
+                  <th className="px-5 py-3 text-start font-medium">{copy.columns.score}</th>
+                  <th className="px-5 py-3 text-start font-medium">{copy.columns.match}</th>
+                  <th className="px-5 py-3 text-end font-medium">{copy.columns.download}</th>
+                  <th className="px-5 py-3 text-end font-medium" />
+                </tr>
+              </thead>
+              <tbody>
+                {resumes.map((resume) => {
+                  const isExpanded = expandedId === resume.id;
+                  const isDeleting = deletingId === resume.id;
+                  return (
+                    <React.Fragment key={resume.id}>
+                      <tr className="border-b border-slate-100 last:border-0 hover:bg-slate-50/60">
+                        <td className="px-5 py-3.5">
+                          <button
+                            type="button"
+                            onClick={() => setExpandedId(isExpanded ? null : resume.id)}
+                            className="flex items-center gap-1.5 font-medium text-slate-900 hover:text-blue-600"
+                          >
+                            {resume.role || copy.untitledRole}
+                            {isExpanded ? (
+                              <ChevronUp className="size-3.5 shrink-0 text-slate-400" aria-hidden />
+                            ) : (
+                              <ChevronDown className="size-3.5 shrink-0 text-slate-400" aria-hidden />
+                            )}
+                          </button>
+                        </td>
+                        <td className="px-5 py-3.5 text-slate-600">{resume.company || copy.unknownCompany}</td>
+                        <td className="px-5 py-3.5 text-slate-500">{formatDate(resume.created_at, lang)}</td>
+                        <td className="px-5 py-3.5">
+                          <LanguageBadge cvLanguage={resume.cv_language} copy={copy} />
+                        </td>
+                        <td className="px-5 py-3.5 text-slate-600">{resume.ats_score}%</td>
+                        <td className="px-5 py-3.5 text-slate-600">{resume.job_match_score}%</td>
+                        <td className="px-5 py-3.5 text-end">
+                          <button
+                            type="button"
+                            onClick={() => setExpandedId(isExpanded ? null : resume.id)}
+                            className="ms-auto text-xs font-medium text-blue-600 hover:text-blue-700"
+                          >
+                            {isExpanded ? copy.hideDetails : copy.viewDetails}
+                          </button>
+                        </td>
+                        <td className="px-5 py-3.5 text-end">
+                          <button
+                            type="button"
+                            onClick={() => handleDelete(resume)}
+                            disabled={isDeleting}
+                            aria-label={lang === "ar" ? "حذف" : "Delete"}
+                            className="inline-flex items-center justify-center rounded-lg p-1.5 text-slate-400 hover:bg-rose-50 hover:text-rose-600 disabled:cursor-not-allowed disabled:opacity-50"
+                          >
+                            {isDeleting ? (
+                              <Loader2 className="size-4 animate-spin" aria-hidden />
+                            ) : (
+                              <Trash2 className="size-4" aria-hidden />
+                            )}
+                          </button>
                         </td>
                       </tr>
-                    )}
-                  </React.Fragment>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
+                      {isExpanded && (
+                        <tr>
+                          <td colSpan={8} className="p-0">
+                            <ResumeDetail resume={resume} lang={lang} copy={copy} generateCopy={generateCopy} />
+                          </td>
+                        </tr>
+                      )}
+                    </React.Fragment>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+
+          {totalPages > 1 && (
+            <div className="flex items-center justify-between px-1 text-sm text-slate-500">
+              <span>
+                {lang === "ar"
+                  ? `الصفحة ${page + 1} من ${totalPages} · ${total} إجمالاً`
+                  : `Page ${page + 1} of ${totalPages} · ${total} total`}
+              </span>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setPage((p) => Math.max(0, p - 1))}
+                  disabled={page === 0}
+                  className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-3 py-1.5 font-medium text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {dir === "rtl" ? <ChevronRight className="size-3.5" aria-hidden /> : <ChevronLeft className="size-3.5" aria-hidden />}
+                  {lang === "ar" ? "السابق" : "Previous"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setPage((p) => Math.min(totalPages - 1, p + 1))}
+                  disabled={page >= totalPages - 1}
+                  className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-3 py-1.5 font-medium text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {lang === "ar" ? "التالي" : "Next"}
+                  {dir === "rtl" ? <ChevronLeft className="size-3.5" aria-hidden /> : <ChevronRight className="size-3.5" aria-hidden />}
+                </button>
+              </div>
+            </div>
+          )}
+        </>
       )}
     </div>
   );

@@ -13,6 +13,22 @@ header — it can't, and a preset that tried to fake that with nested tables
 would be fragile and look worse than just embracing what Word is good at:
 clean single-column documents with strong typography.
 
+Two extra knobs beyond color/font give templates that lean on a strong
+PDF-side visual block (a dark sidebar, a bold banner) something to still
+read as "themed" in Word, since color alone on a thin heading font reads
+as barely different from the next preset over:
+  - heading_border: adds a bottom rule under each section heading, in the
+    preset's accent color — the cheapest way to give a heading real
+    presence in a medium with no CSS.
+  - header_shade: fills the name header block with the preset's accent
+    color (RGB hex, no "#"), for templates whose PDF identity IS a solid
+    color block behind the name. header_text_color pairs with it so the
+    name stays readable against whatever shade is chosen (dark shades get
+    white text; None means keep the theme's normal heading color).
+  None on either knob means "leave that template's Word output plain" —
+  deliberately the case for compact_ats, since that template's whole
+  purpose is staying as parser-friendly/plain as possible.
+
 Each preset name matches a template_id in utils/template_registry.py so
 the same dropdown choice drives both PDF and DOCX output.
 """
@@ -31,15 +47,21 @@ DOCX_STYLES = {
         "font_name": "Cambria",
         "heading_color": "#000000",
         "heading_underline": True,
-        "accent_color": "#000000",
+        "accent_color": "#4A4A4A",
         "bullet_style": "List Bullet",
+        "heading_border": True,
+        "header_shade": None,
+        "header_text_color": None,
     },
     "classic_serif": {
         "font_name": "Cambria",
         "heading_color": "#000000",
         "heading_underline": True,
-        "accent_color": "#000000",
+        "accent_color": "#4A4A4A",
         "bullet_style": "List Bullet",
+        "heading_border": True,
+        "header_shade": None,
+        "header_text_color": None,
     },
     "modern_minimal": {
         "font_name": "Calibri Light",
@@ -47,6 +69,9 @@ DOCX_STYLES = {
         "heading_underline": False,
         "accent_color": "#B0B0B0",
         "bullet_style": "List Bullet",
+        "heading_border": False,
+        "header_shade": None,
+        "header_text_color": None,
     },
     "navy_executive": {
         "font_name": "Calibri",
@@ -54,6 +79,9 @@ DOCX_STYLES = {
         "heading_underline": False,
         "accent_color": "#1F3864",
         "bullet_style": "List Bullet",
+        "heading_border": True,
+        "header_shade": None,
+        "header_text_color": None,
     },
     "sidebar_dark": {
         "font_name": "Segoe UI",
@@ -61,6 +89,9 @@ DOCX_STYLES = {
         "heading_underline": False,
         "accent_color": "#16223A",
         "bullet_style": "List Bullet",
+        "heading_border": True,
+        "header_shade": "#16223A",
+        "header_text_color": "#FFFFFF",
     },
     "timeline": {
         "font_name": "Segoe UI",
@@ -68,6 +99,9 @@ DOCX_STYLES = {
         "heading_underline": False,
         "accent_color": "#0284C7",
         "bullet_style": "List Bullet",
+        "heading_border": True,
+        "header_shade": None,
+        "header_text_color": None,
     },
     "elegant_gold": {
         "font_name": "Garamond",
@@ -75,6 +109,9 @@ DOCX_STYLES = {
         "heading_underline": False,
         "accent_color": "#A9862E",
         "bullet_style": "List Bullet",
+        "heading_border": True,
+        "header_shade": None,
+        "header_text_color": None,
     },
     "compact_ats": {
         "font_name": "Arial",
@@ -82,6 +119,9 @@ DOCX_STYLES = {
         "heading_underline": False,
         "accent_color": "#000000",
         "bullet_style": "List Bullet",
+        "heading_border": False,
+        "header_shade": None,
+        "header_text_color": None,
     },
     "bold_banner": {
         "font_name": "Segoe UI",
@@ -89,6 +129,9 @@ DOCX_STYLES = {
         "heading_underline": False,
         "accent_color": "#F0C419",
         "bullet_style": "List Bullet",
+        "heading_border": True,
+        "header_shade": "#F0C419",
+        "header_text_color": "#1C1C1C",
     },
     "geometric_creative": {
         "font_name": "Century Gothic",
@@ -96,6 +139,9 @@ DOCX_STYLES = {
         "heading_underline": False,
         "accent_color": "#F0A500",
         "bullet_style": "List Bullet",
+        "heading_border": True,
+        "header_shade": None,
+        "header_text_color": None,
     },
     "letterhead_corporate": {
         "font_name": "Times New Roman",
@@ -103,6 +149,9 @@ DOCX_STYLES = {
         "heading_underline": False,
         "accent_color": "#333333",
         "bullet_style": "List Bullet",
+        "heading_border": True,
+        "header_shade": None,
+        "header_text_color": None,
     },
 }
 
@@ -115,4 +164,6 @@ def resolve_docx_style(template_id: str | None) -> dict:
         **preset,
         "heading_color_rgb": _rgb(preset["heading_color"]),
         "accent_color_rgb": _rgb(preset["accent_color"]),
+        "header_shade_rgb": _rgb(preset["header_shade"]) if preset.get("header_shade") else None,
+        "header_text_color_rgb": _rgb(preset["header_text_color"]) if preset.get("header_text_color") else None,
     }

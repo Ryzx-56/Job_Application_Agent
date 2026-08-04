@@ -120,10 +120,13 @@ def test_cover_letter_generation():
     return text
 
 
+OUTPUT_DIR = "outputs"
+
+
 def test_cv_pdf(cover_letter_text):
     print("🧪 Test 2: CV PDF Generation (WeasyPrint)")
     state = {**MOCK_STATE, "cover_letter_text": cover_letter_text}
-    path  = render_cv_pdf(state)
+    path  = render_cv_pdf(state, output_path=os.path.join(OUTPUT_DIR, "test_tailored_cv.pdf"))
 
     assert os.path.exists(path),      f"PDF not found at {path}"
     assert os.path.getsize(path) > 0, "PDF is empty"
@@ -134,7 +137,7 @@ def test_cv_pdf(cover_letter_text):
 
 def test_cover_letter_pdf(state):
     print("🧪 Test 3: Cover Letter PDF Generation (WeasyPrint)")
-    path = render_cover_letter_pdf(state)
+    path = render_cover_letter_pdf(state, output_path=os.path.join(OUTPUT_DIR, "test_cover_letter.pdf"))
 
     assert os.path.exists(path),      f"PDF not found at {path}"
     assert os.path.getsize(path) > 0, "PDF is empty"
@@ -144,7 +147,7 @@ def test_cover_letter_pdf(state):
 
 def test_cv_docx(state):
     print("🧪 Test 4: CV DOCX Generation (python-docx)")
-    path = generate_cv_docx(state)
+    path = generate_cv_docx(state, output_path=os.path.join(OUTPUT_DIR, "test_tailored_cv.docx"))
 
     assert os.path.exists(path),      f"DOCX not found at {path}"
     assert os.path.getsize(path) > 0, "DOCX is empty"

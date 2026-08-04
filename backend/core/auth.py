@@ -91,6 +91,46 @@ def get_current_user_id(authorization: str = Header(None)) -> str:
     return _verify_token(token)
 
 
+def _require_admin(user_id: str) -> str:
+    """
+    Shared admin check: user_id must belong to a profiles row with
+    is_admin = true. Local import of get_admin_client to avoid a
+    module-load-order dependency between core/auth.py and core/credits.py
+    (both are imported very early, from main.py and from each other's
+    callers) — deferring it to call time sidesteps that without needing to
+    reorganize either module.
+    """
+    from core.credits import get_admin_client
+
+    admin = get_admin_client()
+    profile = admin.table("profiles").select("is_admin").eq("id", user_id).maybe_single().execute().data
+    if not profile or not profile.get("is_admin"):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin access required.")
+    return user_id
+
+
+def get_current_admin_user_id(authorization: str = Header(None)) -> str:
+    """
+    Same JWT verification as get_current_user_id, but additionally requires
+    the caller's profiles.is_admin = true. Gates the admin-only "view any
+    user's generated CV/cover letter" debug tool (see core/documents.py) —
+    now that rendered files aren't stored permanently (see the storage/
+    retention rework), this is how the founder can still look at exactly
+    what a specific tester/user saw when they report a bug.
+    """
+    return _require_admin(get_current_user_id(authorization))
+
+
+def get_current_admin_user_id_query_or_header(
+    authorization: str = Header(None),
+    token: str = Query(None),
+) -> str:
+    """Admin-gated variant of get_current_user_id_query_or_header, for the
+    admin document-viewer links (plain <a href>, same reasoning as the
+    regular download/preview routes)."""
+    return _require_admin(get_current_user_id_query_or_header(authorization, token))
+
+
 def get_current_user_id_query_or_header(
     authorization: str = Header(None),
     token: str = Query(None),

@@ -13,6 +13,21 @@ only has to happen once, and PDF/DOCX can't drift out of sync again.
 from utils.template_registry import DEFAULT_TEMPLATE_ID
 
 
+def _s(value) -> str:
+    """
+    String-coalesce: `None` -> "", anything else -> str(value) unchanged.
+    Exists because `dict.get(key, default)` is a no-op whenever `key` IS
+    present with an explicit `None` value (Pydantic's model_dump() always
+    includes Optional fields, even unset ones) — `.get()`'s default only
+    kicks in when the key is missing entirely. Every Optional field coming
+    out of facts_json/tailored_* must be routed through this (or `or ""`)
+    before it reaches a template or docx run, otherwise Jinja/f-strings
+    print the literal text "None" for an unset field — see the CV/DOCX
+    "None" rendering bug this fixes.
+    """
+    return "" if value is None else str(value)
+
+
 def build_cv_context(state: dict, template_id: str | None = None) -> dict:
     facts = state.get("facts_json", {}) or {}
     personal = facts.get("personal", {}) or {}
@@ -60,10 +75,11 @@ def build_cv_context(state: dict, template_id: str | None = None) -> dict:
             for raw in (exp.get("bullets", []) or [])
             if raw and raw.strip()
         ]
+        fallback_title = _s(exp.get("title"))
         experience.append({
-            "title": title_lookup.get((exp.get("company") or "").strip(), exp.get("title", "")),
-            "company": exp.get("company", ""),
-            "dates": exp.get("dates", ""),
+            "title": title_lookup.get((exp.get("company") or "").strip()) or fallback_title,
+            "company": _s(exp.get("company")),
+            "dates": _s(exp.get("dates")),
             "bullets": resolved_bullets,
         })
 
@@ -89,24 +105,36 @@ def build_cv_context(state: dict, template_id: str | None = None) -> dict:
             "name": (tailored.get("display_name") if tailored else None) or name,
             "tech_stack": [str(t).strip() for t in tech_items if str(t).strip()],
             "description": (tailored.get("tailored_description") if tailored else None)
-                            or proj.get("description", ""),
+                            or _s(proj.get("description")),
         })
+
+    education = [
+        {
+            "institution": _s(edu.get("institution")),
+            "degree": _s(edu.get("degree")),
+            "gpa": _s(edu.get("gpa")),
+            "graduation_year": _s(edu.get("graduation_year")),
+            "distinctions": edu.get("distinctions") or [],
+            "relevant_coursework": edu.get("relevant_coursework") or [],
+        }
+        for edu in (facts.get("education", []) or [])
+    ]
 
     return {
         "personal": {
-            "name": personal.get("name", ""),
-            "email": personal.get("email", ""),
-            "phone": personal.get("phone", ""),
-            "location": personal.get("location", ""),
-            "linkedin": personal.get("linkedin", ""),
-            "github": personal.get("github", ""),
+            "name": _s(personal.get("name")),
+            "email": _s(personal.get("email")),
+            "phone": _s(personal.get("phone")),
+            "location": _s(personal.get("location")),
+            "linkedin": _s(personal.get("linkedin")),
+            "github": _s(personal.get("github")),
         },
         "tagline": state.get("tagline") or None,
-        "tailored_summary": state.get("tailored_summary") or facts.get("summary", ""),
+        "tailored_summary": state.get("tailored_summary") or _s(facts.get("summary")),
         "experience": experience,
         "projects": projects,
         "skills": tailored_skills,
-        "education": facts.get("education", []) or [],
+        "education": education,
         "certifications": facts.get("certifications", []) or [],
         "volunteer_work": display_volunteer,
         "is_arabic": is_arabic,

@@ -90,10 +90,19 @@ def render_html_fit_to_page(jinja_env, template_name: str, context: dict,
     Returns the final PDF bytes. If content is too long to ever fit on one
     page even at MIN_SCALE, returns the MIN_SCALE render as-is (2 dense
     pages beats unreadable 0.8-scale-and-still-overflowing text).
+
+    SPEED: page-count vs. scale is monotonic — a larger scale never fits
+    into fewer pages than a smaller one — so the search for "the largest
+    scale that still fits on one page" is a textbook binary search over the
+    [MIN_SCALE, MAX_SCALE] range, rather than a linear step-by-STEP climb.
+    This cuts the typical number of full WeasyPrint render passes (the
+    expensive part — each is a fresh HTML->PDF layout) from up to
+    MAX_ITERATIONS (14) down to roughly log2(range/STEP) + 2 (~7), which is
+    the biggest chunk of the "optimizing" delay users see after every agent
+    has already finished. The two boundary checks plus the rescue pass
+    behavior (for a near-miss 2-page result at MIN_SCALE) are unchanged.
     """
     template = jinja_env.get_template(template_name)
-    scale = 1.0
-    last_pdf_bytes = None
 
     def render_at(s: float) -> bytes:
         context["cv_scale"] = round(s, 3)
@@ -102,50 +111,60 @@ def render_html_fit_to_page(jinja_env, template_name: str, context: dict,
             html = html_transform(html)
         return _render(html, base_url)
 
-    for i in range(MAX_ITERATIONS):
-        pdf_bytes = render_at(scale)
-        pages = _page_count(pdf_bytes)
-        last_pdf_bytes = pdf_bytes
+    # Best case: full-size content already fits in one page — no search needed.
+    max_pdf = render_at(MAX_SCALE)
+    if _page_count(max_pdf) == 1:
+        return max_pdf
 
-        if pages == 1:
-            if scale >= MAX_SCALE:
-                break
-            trial_scale = round(min(scale + STEP, MAX_SCALE), 3)
-            trial_pdf = render_at(trial_scale)
-            if _page_count(trial_pdf) == 1:
-                scale = trial_scale
-                last_pdf_bytes = trial_pdf
-                continue
-            else:
-                break
+    # Floor case: even the smallest allowed scale doesn't fit on one page —
+    # this is the "genuinely long CV" (or near-miss) path, same as before.
+    min_pdf = render_at(MIN_SCALE)
+    pages_at_min = _page_count(min_pdf)
+    if pages_at_min > 1:
+        sparse_chars = _trailing_page_char_count(min_pdf)
+        if sparse_chars <= SPARSE_PAGE_CHAR_THRESHOLD:
+            logger.info(
+                f"fit_to_page: {pages_at_min} pages at MIN_SCALE ({MIN_SCALE}), but the "
+                f"trailing page only has ~{sparse_chars} chars — attempting a rescue "
+                f"pass down to {RESCUE_MIN_SCALE} to reclaim it onto one page."
+            )
+            rescue_scale = MIN_SCALE
+            while rescue_scale > RESCUE_MIN_SCALE:
+                rescue_scale = round(max(rescue_scale - RESCUE_STEP, RESCUE_MIN_SCALE), 3)
+                rescue_pdf = render_at(rescue_scale)
+                if _page_count(rescue_pdf) == 1:
+                    logger.info(f"fit_to_page: rescue succeeded at scale {rescue_scale}.")
+                    return rescue_pdf
+            logger.warning(
+                f"fit_to_page: rescue pass reached {RESCUE_MIN_SCALE} and still "
+                f"didn't fit — returning the {pages_at_min}-page MIN_SCALE result as-is."
+            )
         else:
-            if scale <= MIN_SCALE:
-                sparse_chars = _trailing_page_char_count(pdf_bytes)
-                if sparse_chars <= SPARSE_PAGE_CHAR_THRESHOLD:
-                    logger.info(
-                        f"fit_to_page: {pages} pages at MIN_SCALE ({MIN_SCALE}), but the "
-                        f"trailing page only has ~{sparse_chars} chars — attempting a rescue "
-                        f"pass down to {RESCUE_MIN_SCALE} to reclaim it onto one page."
-                    )
-                    rescue_scale = scale
-                    while rescue_scale > RESCUE_MIN_SCALE:
-                        rescue_scale = round(max(rescue_scale - RESCUE_STEP, RESCUE_MIN_SCALE), 3)
-                        rescue_pdf = render_at(rescue_scale)
-                        if _page_count(rescue_pdf) == 1:
-                            logger.info(f"fit_to_page: rescue succeeded at scale {rescue_scale}.")
-                            return rescue_pdf
-                    logger.warning(
-                        f"fit_to_page: rescue pass reached {RESCUE_MIN_SCALE} and still "
-                        f"didn't fit — returning the {pages}-page MIN_SCALE result as-is."
-                    )
-                else:
-                    logger.warning(
-                        f"fit_to_page: content still spans {pages} pages at MIN_SCALE "
-                        f"({MIN_SCALE}), and the trailing page has real content "
-                        f"(~{sparse_chars} chars) — not a rescue candidate. Returning as-is "
-                        f"rather than shrinking a genuinely long CV to an unreadable size."
-                    )
-                break
-            scale = round(max(scale - STEP, MIN_SCALE), 3)
+            logger.warning(
+                f"fit_to_page: content still spans {pages_at_min} pages at MIN_SCALE "
+                f"({MIN_SCALE}), and the trailing page has real content "
+                f"(~{sparse_chars} chars) — not a rescue candidate. Returning as-is "
+                f"rather than shrinking a genuinely long CV to an unreadable size."
+            )
+        return min_pdf
 
-    return last_pdf_bytes
+    # Normal case: MIN_SCALE fits, MAX_SCALE doesn't — binary search the
+    # boundary between them for the largest scale that still fits.
+    lo, hi = MIN_SCALE, MAX_SCALE
+    best_pdf, best_scale = min_pdf, MIN_SCALE
+    for _ in range(MAX_ITERATIONS):
+        if hi - lo <= STEP:
+            break
+        # Snap the midpoint to the STEP grid so results stay consistent with
+        # the granularity the rescue pass and MIN/MAX bounds already use.
+        raw_mid = (lo + hi) / 2
+        mid = round(round(raw_mid / STEP) * STEP, 3)
+        if mid <= lo or mid >= hi:
+            break
+        pdf_bytes = render_at(mid)
+        if _page_count(pdf_bytes) == 1:
+            lo, best_pdf, best_scale = mid, pdf_bytes, mid
+        else:
+            hi = mid
+
+    return best_pdf

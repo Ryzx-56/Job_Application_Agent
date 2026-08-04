@@ -13,8 +13,8 @@
 # is reached — see 006_deferred_downgrade.sql.
 #
 # NOTE: this only schedules the change in your DB — it does NOT yet call
-# Moyasar to actually stop a real recurring charge. Once Moyasar is wired,
-# add that call here (e.g. cancel the Moyasar subscription using
+# Tap Payments to actually stop a real recurring charge. Once Tap is wired,
+# add that call here (e.g. cancel the Tap subscription using
 # payment_subscription_id) so the next billing cycle genuinely doesn't
 # charge for the old tier.
 from fastapi import HTTPException, status
@@ -50,8 +50,8 @@ def cancel_subscription(user_id: str) -> dict:
             detail="You're already on the Free plan.",
         )
 
-    # TODO once Moyasar is wired: cancel the actual recurring charge with
-    # Moyasar here, using the stored payment_subscription_id. If that call
+    # TODO once Tap Payments is wired: cancel the actual recurring charge with
+    # Tap here, using the stored payment_subscription_id. If that call
     # fails, raise before scheduling the downgrade below.
 
     # Founding-member price is locked in only while the subscription stays

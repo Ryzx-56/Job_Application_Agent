@@ -96,6 +96,13 @@ type GenerateResult = {
   overallRecommendation: string;
   jobTitle: string;
   company: string;
+  // Small structured payload (facts_json, tailored_* fields, cover letter
+  // text, template_id) the backend needs to REGENERATE the PDF/DOCX on
+  // demand later — see backend/main.py's build_generation_snapshot. Saved
+  // verbatim into resumes.generation_snapshot; the rendered files
+  // themselves are no longer stored anywhere. Opaque here on purpose — the
+  // frontend never needs to read into its shape, only round-trip it.
+  generationSnapshot: unknown;
 };
 
 // Base URL for the FastAPI backend, e.g. http://127.0.0.1:8000 in dev.
@@ -159,6 +166,7 @@ function mapBackendResponse(raw: any): GenerateResult {
     overallRecommendation: raw.overall_recommendation ?? "",
     jobTitle: raw.job_title ?? "",
     company: raw.company ?? "",
+    generationSnapshot: raw.generation_snapshot ?? null,
   };
 }
 

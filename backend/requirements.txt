@@ -113,7 +113,7 @@ zstandard==0.25.0
 # import them — confirm nothing else does before pruning.
 arabic-reshaper==3.0.0
 python-bidi==0.6.6
-PyJWT[crypto]
+PyJWT[crypto]==2.13.0
 supabase==2.31.0
 # --- added for template-driven PDF rendering (utils/pdf_generator.py rewrite) ---
 weasyprint==63.1

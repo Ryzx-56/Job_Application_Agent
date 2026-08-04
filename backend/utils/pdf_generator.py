@@ -57,7 +57,7 @@ _MONTH_AR = {
     "january": "يناير", "february": "فبراير", "march": "مارس", "april": "أبريل",
     "may": "مايو", "june": "يونيو", "july": "يوليو", "august": "أغسطس",
     "september": "سبتمبر", "october": "أكتوبر", "november": "نوفمبر", "december": "ديسمبر",
-    "present": "حتى الآن",
+    "present": "حتى الآن", "current": "حتى الآن", "ongoing": "حتى الآن",
 }
 
 
@@ -188,22 +188,18 @@ _TEMPLATES_DIR = Path(__file__).parent.parent / "templates"
 _jinja_env = jinja2.Environment(loader=jinja2.FileSystemLoader(str(_TEMPLATES_DIR)))
 
 
-def render_cv_pdf(state: dict, template_id: str | None = None, output_path: str | None = None) -> str:
+def render_cv_pdf(state: dict, output_path: str, template_id: str | None = None) -> str:
     """
     Renders the tailored CV to PDF using the chosen template. Falls back to
     DEFAULT_TEMPLATE_ID if template_id is None or unrecognized (see
     resolve_template_path) - this is what makes "user didn't pick a
     template" behave correctly from the dashboard.
 
-    output_path: pass a unique per-request path (see main.py) so concurrent
-    users' generations can't overwrite each other or be downloaded by the
-    wrong person. Falls back to the old fixed filename only if not given -
-    that fallback is unsafe for concurrent real traffic, kept only so any
-    other caller (tests, scripts) doesn't break.
+    output_path is REQUIRED (no static-filename fallback) — a fixed default
+    path is exactly the bug that let concurrent users' generations overwrite
+    each other (see main.py's BUG FIX comment on output_paths()). Every
+    caller, including tests, must supply a unique per-request/per-call path.
     """
-    if output_path is None:
-        output_path = os.path.join(OUTPUT_DIR, "tailored_cv.pdf")
-
     resolved_template_id = template_id or DEFAULT_TEMPLATE_ID
     template_filename = resolve_template_path(resolved_template_id).name
 
@@ -263,10 +259,8 @@ def _cover_letter_styles(is_arabic: bool):
     return styles
 
 
-def render_cover_letter_pdf(state: dict, output_path: str | None = None) -> str:
-    if output_path is None:
-        output_path = os.path.join(OUTPUT_DIR, "cover_letter.pdf")
-
+def render_cover_letter_pdf(state: dict, output_path: str) -> str:
+    """output_path is REQUIRED — see render_cv_pdf's docstring for why."""
     is_arabic = str(state.get("cv_language", "en")).lower().startswith("ar")
     if is_arabic and not _ARABIC_REPORTLAB_FONT_REGISTERED:
         logger.warning("Arabic cover letter requested but the Arabic font isn't registered — falling back to Helvetica (will show tofu boxes).")
