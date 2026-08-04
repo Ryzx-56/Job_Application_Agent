@@ -47,12 +47,18 @@ def update_location(payload: LocationUpdateRequest, user_id: str = Depends(get_c
         .update({"location": location})
         .eq("id", user_id)
         .select()
-        .maybe_single()
         .execute()
     )
+    # BUG FIX: .maybe_single() doesn't exist on the builder type returned by
+    # .update().eq().select() in this postgrest-py version (only on a
+    # builder that started from .select() directly) — calling it crashed
+    # every request with a 500 AttributeError. This builder always returns
+    # .data as a list, so index into it instead; 0 or 1 rows expected here
+    # since we're filtering by primary key.
+    row = result.data[0] if result.data else None
 
-    if not result.data:
+    if not row:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Profile not found.")
 
     logger.info(f"📍 Location updated for user {user_id}: {location}")
-    return {"location": result.data["location"]}
+    return {"location": row["location"]}

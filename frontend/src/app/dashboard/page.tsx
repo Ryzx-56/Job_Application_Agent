@@ -1020,6 +1020,17 @@ export default function DashboardHomePage() {
               <div className="pointer-events-none absolute -bottom-20 -left-10 size-56 rounded-full bg-cyan-400/10 blur-3xl" />
 
               <div className="relative">
+                {location === null && (
+                  <Link
+                    href="/dashboard/settings"
+                    className="mb-4 flex items-center gap-2 rounded-lg border border-amber-400/30 bg-amber-400/10 px-3.5 py-2.5 text-xs font-medium text-amber-200 transition-colors hover:bg-amber-400/15"
+                  >
+                    <MapPin className="size-3.5 shrink-0" aria-hidden />
+                    {lang === "ar"
+                      ? "أضف موقعك في الإعدادات لوظائف أكثر ملاءمة لمنطقتك"
+                      : "Add your location in Settings for jobs more relevant to your area"}
+                  </Link>
+                )}
                 <div className="flex items-center gap-2.5">
                   <span className="grid size-9 shrink-0 place-items-center rounded-full bg-white/10 text-cyan-300 ring-1 ring-white/20">
                     <Sparkles className="size-4" aria-hidden />

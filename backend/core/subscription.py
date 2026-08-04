@@ -64,15 +64,19 @@ def cancel_subscription(user_id: str) -> dict:
         .update({"pending_tier": "free", "subscription_status": "canceling", "locked_price": None})
         .eq("id", user_id)
         .select()
-        .maybe_single()
         .execute()
     )
+    # BUG FIX: same .maybe_single()-doesn't-exist-on-this-builder-type issue
+    # as core/location.py hit in production — .update().eq().select()
+    # returns a builder that only supports plain list access, not
+    # .maybe_single()/.single(). Index into .data instead.
+    row = result.data[0] if result.data else None
 
     logger.info(
         f"↩️ Subscription cancel scheduled for user {user_id} — "
         f"stays on {profile['tier']} until {profile['credits_reset_at']}, then moves to Free."
     )
-    return result.data
+    return row
 
 
 def resume_subscription(user_id: str) -> dict:
@@ -96,8 +100,8 @@ def resume_subscription(user_id: str) -> dict:
         .update({"pending_tier": None, "subscription_status": "active"})
         .eq("id", user_id)
         .select()
-        .maybe_single()
         .execute()
     )
+    row = result.data[0] if result.data else None
     logger.info(f"↩️ Cancellation undone for user {user_id}.")
-    return result.data
+    return row
