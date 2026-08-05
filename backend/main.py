@@ -39,9 +39,31 @@ app = FastAPI(
 )
 
 # 2. Configure Cross-Origin Resource Sharing (CORS)
+#
+# BUG FIX: this used to be allow_origins=["*"] — every origin on the
+# internet was allowed to call this API. Now a real allowlist, driven by
+# ALLOWED_ORIGINS (comma-separated) so Render/local can differ without a
+# code change; falls back to the hardcoded defaults below if that env var
+# isn't set. The regex additionally covers Vercel's per-branch/per-PR
+# preview deployment subdomains (e.g. tarshih-git-some-branch-xyz.vercel.app),
+# which aren't a fixed string and can't live in a plain allowlist.
+_DEFAULT_ALLOWED_ORIGINS = [
+    "https://tarshih.com",
+    "https://www.tarshih.com",
+    "https://tarshih-ryzx.vercel.app",  # current live URL until the custom domain is fully cut over
+    "http://localhost:3000",             # local Next.js dev server
+]
+_allowed_origins_env = os.getenv("ALLOWED_ORIGINS", "")
+ALLOWED_ORIGINS = (
+    [origin.strip() for origin in _allowed_origins_env.split(",") if origin.strip()]
+    if _allowed_origins_env
+    else _DEFAULT_ALLOWED_ORIGINS
+)
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=ALLOWED_ORIGINS,
+    allow_origin_regex=r"^https://tarshih-.*\.vercel\.app$",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
