@@ -41,14 +41,37 @@ Every generation runs **8 coordinated agents across 3 different AI providers** (
 
 ## Key Features
 
-- **Real tailoring, not rephrasing.** The tailoring engine rewrites your summary, experience bullets, and project descriptions against the specific job description, while a separate fact-checking agent independently verifies every claim traces back to something you actually wrote. Nothing gets invented. If a rewrite can't be verified, it's regenerated and re-checked, up to twice, before falling back to the original.
-- **ATS compatibility scoring**, computed deterministically (keyword, skills, education, and experience match against the job description). No LLM in the loop for this one, so it's instant and can't drift.
-- **Semantic job-fit scoring**: a second, independent read on how well you actually match the role, with a plain-language explanation and a structured skill-gap analysis (what's missing, how important it is, how to close it).
-- **Live similar-job search**, prioritizing Saudi Arabia's national employment platform (Jadarat) and blending in a curated list of established global and Gulf/MENA job boards (LinkedIn, Indeed, Bayt, GulfTalent, and more) when it doesn't have enough good matches on its own. Filters out closed listings, scam signals, and board/category pages that aren't real postings.
-- **11 CV templates**, each rendered properly in both PDF (WeasyPrint, real CSS layout engine) and Word/DOCX (python-docx, styled to match).
-- **Fully bilingual**: English and Arabic, including right-to-left layout, Arabic text shaping, and digit/date-term localization, not just a translated UI shell around English-only output.
-- **Live progress streaming**: the dashboard shows each agent completing in real time over Server-Sent Events, instead of a blank spinner for 20 seconds.
-- **Accounts, subscriptions, and credits** via Supabase, with a resume history that's retained by tier (soft-archived past the cap, never silently deleted) and paginated so it stays fast as it grows.
+- **Real tailoring, not rephrasing**
+
+  The tailoring engine rewrites your summary, experience bullets, and project descriptions against the specific job description, while a separate fact-checking agent independently verifies every claim traces back to something you actually wrote. Nothing gets invented. If a rewrite can't be verified, it's regenerated and re-checked, up to twice, before falling back to the original.
+
+- **ATS compatibility scoring**
+
+  Computed deterministically: keyword, skills, education, and experience match against the job description. No LLM in the loop for this one, so it's instant and can't drift.
+
+- **Semantic job-fit scoring**
+
+  A second, independent read on how well you actually match the role, with a plain-language explanation and a structured skill-gap analysis: what's missing, how important it is, how to close it.
+
+- **Live similar-job search**
+
+  Prioritizes Saudi Arabia's national employment platform (Jadarat) and blends in a curated list of established global and Gulf/MENA job boards (LinkedIn, Indeed, Bayt, GulfTalent, and more) when it doesn't have enough good matches on its own. Filters out closed listings, scam signals, and board/category pages that aren't real postings.
+
+- **11 CV templates**
+
+  Each rendered properly in both PDF (WeasyPrint, real CSS layout engine) and Word/DOCX (python-docx, styled to match).
+
+- **Fully bilingual**
+
+  English and Arabic, including right-to-left layout, Arabic text shaping, and digit/date-term localization, not just a translated UI shell around English-only output.
+
+- **Live progress streaming**
+
+  The dashboard shows each agent completing in real time over Server-Sent Events, instead of a blank spinner for 20 seconds.
+
+- **Accounts, subscriptions, and credits**
+
+  Handled via Supabase, with a resume history that's retained by tier (soft-archived past the cap, never silently deleted) and paginated so it stays fast as it grows.
 
 ## The Agent Pipeline
 
@@ -118,12 +141,29 @@ Three of the eleven CV templates the pipeline can render (PDF and DOCX, both fro
 
 A few things under the hood that aren't obvious from the feature list:
 
-- **Concurrency-safe by construction.** Every generated file is keyed by `{verified user ID}_{request ID}` on both write and read. Two people generating at the same time, or a guessed/replayed request ID, can never resolve to someone else's file.
-- **Prompt-caching aware.** The tailoring engine's system prompt is large and static per request; it's marked for Anthropic's ephemeral prompt caching so repeated structure doesn't get re-billed and re-processed every call.
-- **Parallel where it's actually independent.** Document rendering (CV PDF, CV DOCX, cover letter PDF) and the fact-checker's per-bullet regeneration calls run concurrently via a thread pool instead of one-at-a-time. Real, measurable latency work, not just async syntax for its own sake.
-- **Binary-searched page fitting.** Fitting a CV onto one well-filled page (without visibly shrinking it) is framed as a search over a scale variable, converged on with binary search against WeasyPrint's own page-count output, not a fixed-size template that just clips overflow.
-- **Storage that doesn't grow forever.** Rendered PDFs/DOCX aren't stored; the small structured data behind them is, and the file is regenerated on demand when someone actually opens it. A database trigger enforces per-tier history retention (archived, never destroyed) without any application code needing to know about it.
-- **Full bilingual pipeline**, not a translated skin: Arabic output gets real Pango-driven RTL shaping and bidi handling in the PDF path, and its own font/shaping treatment in the DOCX and cover-letter paths, plus content-level digit and date-term localization.
+- **Concurrency-safe by construction**
+
+  Every generated file is keyed by `{verified user ID}_{request ID}` on both write and read. Two people generating at the same time, or a guessed/replayed request ID, can never resolve to someone else's file.
+
+- **Prompt-caching aware**
+
+  The tailoring engine's system prompt is large and static per request. It's marked for Anthropic's ephemeral prompt caching so repeated structure doesn't get re-billed and re-processed every call.
+
+- **Parallel where it's actually independent**
+
+  Document rendering (CV PDF, CV DOCX, cover letter PDF) and the fact-checker's per-bullet regeneration calls run concurrently via a thread pool instead of one-at-a-time. Real, measurable latency work, not just async syntax for its own sake.
+
+- **Binary-searched page fitting**
+
+  Fitting a CV onto one well-filled page (without visibly shrinking it) is framed as a search over a scale variable, converged on with binary search against WeasyPrint's own page-count output, not a fixed-size template that just clips overflow.
+
+- **Storage that doesn't grow forever**
+
+  Rendered PDFs/DOCX aren't stored. The small structured data behind them is, and the file is regenerated on demand when someone actually opens it. A database trigger enforces per-tier history retention (archived, never destroyed) without any application code needing to know about it.
+
+- **Full bilingual pipeline, not a translated skin**
+
+  Arabic output gets real Pango-driven RTL shaping and bidi handling in the PDF path, and its own font/shaping treatment in the DOCX and cover-letter paths, plus content-level digit and date-term localization.
 
 ## Getting Started
 
