@@ -22,6 +22,12 @@ const RESEND_API_KEY = Deno.env.get("RESEND_API_KEY")!;
 // fails and GoTrue reports the hook as broken (500 on signup/recover).
 const HOOK_SECRET = (Deno.env.get("SEND_EMAIL_HOOK_SECRET") ?? "").replace(/^v1[a-z]?,/, "");
 const FROM_ADDRESS = Deno.env.get("EMAIL_FROM") ?? "Tarshih <noreply@tarshih.com>";
+// Prefer our own explicit site URL over email_data.site_url — the latter
+// comes from Supabase's "Site URL" Auth setting, but in practice it can
+// resolve to the project's own API base URL (https://<ref>.supabase.co/auth/v1)
+// instead of the real frontend domain, breaking both the confirmation link
+// and the logo image. Setting SITE_URL ourselves removes that uncertainty.
+const SITE_URL = Deno.env.get("SITE_URL"); // e.g. "https://tarshih.com" — no trailing slash
 
 const LANG_METADATA_KEY = "preferred_language"; // <-- adjust to match your signup form's field name
 const DEFAULT_LANG: "ar" | "en" = "en";
@@ -52,18 +58,25 @@ Deno.serve(async (req: Request) => {
 
   const { user, email_data } = data;
 
+  const siteUrl = (SITE_URL || email_data.site_url).replace(/\/+$/, "");
+
   const rawLang = (user.user_metadata?.[LANG_METADATA_KEY] as string | undefined)?.toLowerCase();
   const lang: "ar" | "en" = rawLang === "ar" ? "ar" : rawLang === "en" ? "en" : DEFAULT_LANG;
+  // Diagnostic: shows up in the function's logs so language selection can be
+  // verified against the actual stored user_metadata without DB access.
+  console.log(
+    `email_action_type=${email_data.email_action_type} rawLang=${rawLang ?? "(none)"} resolvedLang=${lang} siteUrl=${siteUrl} (SITE_URL secret set: ${!!SITE_URL})`
+  );
 
   const confirmationUrl =
-    `${email_data.site_url}/auth/confirm` +
+    `${siteUrl}/auth/confirm` +
     `?token_hash=${email_data.token_hash}` +
     `&type=${email_data.email_action_type}` +
     `&redirect_to=${encodeURIComponent(email_data.redirect_to)}`;
 
   const fullName = user.user_metadata?.full_name as string | undefined;
   const { subject, html } = getEmailTemplate(lang, email_data.email_action_type, confirmationUrl, {
-    siteUrl: email_data.site_url,
+    siteUrl,
     name: fullName,
   });
 
