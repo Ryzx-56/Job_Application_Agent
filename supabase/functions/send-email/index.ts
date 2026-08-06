@@ -16,7 +16,11 @@ import { Webhook } from "npm:standardwebhooks@1.0.0";
 import { getEmailTemplate, EmailType } from "./templates.ts";
 
 const RESEND_API_KEY = Deno.env.get("RESEND_API_KEY")!;
-const HOOK_SECRET = Deno.env.get("SEND_EMAIL_HOOK_SECRET")!; // from Supabase dashboard when you enable the hook
+// The Supabase dashboard gives you this secret as "v1,whsec_XXXX" (a version
+// prefix + the real secret), but the standardwebhooks library only expects
+// the "whsec_XXXX" part — strip the version prefix or every signature check
+// fails and GoTrue reports the hook as broken (500 on signup/recover).
+const HOOK_SECRET = (Deno.env.get("SEND_EMAIL_HOOK_SECRET") ?? "").replace(/^v1[a-z]?,/, "");
 const FROM_ADDRESS = Deno.env.get("EMAIL_FROM") ?? "Tarshih <noreply@tarshih.com>";
 
 const LANG_METADATA_KEY = "preferred_language"; // <-- adjust to match your signup form's field name
