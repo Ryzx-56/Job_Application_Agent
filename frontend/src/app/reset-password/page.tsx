@@ -13,12 +13,12 @@ export default function ResetPasswordPage() {
   const c = t.resetPassword;
   const router = useRouter();
 
-  // The /auth/callback route already exchanged the recovery code for a
-  // session before redirecting here, so by the time this page mounts
-  // there should be an active (recovery) session. If there isn't one —
-  // e.g. the link was already used, or expired — updateUser() below will
-  // fail, and we also proactively check on mount so the form doesn't
-  // render for a session that doesn't exist.
+  // The /auth/confirm route already verified the recovery token and
+  // established a session before redirecting here, so by the time this
+  // page mounts there should be an active (recovery) session. If there
+  // isn't one — e.g. the link was already used, or expired — updateUser()
+  // below will fail, and we also proactively check on mount so the form
+  // doesn't render for a session that doesn't exist.
   const [checkingSession, setCheckingSession] = useState(true);
   const [hasSession, setHasSession] = useState(false);
 

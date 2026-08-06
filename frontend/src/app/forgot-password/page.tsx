@@ -36,13 +36,13 @@ export default function ForgotPasswordPage() {
     setSubmitting(true);
     const supabase = createClient();
 
-    // redirectTo points at the existing OAuth/email-confirmation callback
-    // route, which exchanges the code for a session and then forwards to
-    // `next`. Reusing it means no second code-exchange handler is needed.
+    // redirectTo becomes email_data.redirect_to in the "Send Email" hook,
+    // which /auth/confirm reads once it verifies the recovery token, so the
+    // user lands directly on the reset-password form with a live session.
     const { error: resetError } = await supabase.auth.resetPasswordForEmail(
       targetEmail.trim(),
       {
-        redirectTo: `${window.location.origin}/auth/callback?next=/reset-password`,
+        redirectTo: `${window.location.origin}/reset-password`,
       }
     );
 

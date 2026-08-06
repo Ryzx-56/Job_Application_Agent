@@ -200,7 +200,12 @@ function SignupForm() {
           preferred_language: lang,
           location: resolvedLocation,
         },
-        emailRedirectTo: `${window.location.origin}/auth/callback`,
+        // Points at /auth/confirm (not /auth/callback — that route is for
+        // Google OAuth's ?code= exchange only). The "Send Email" hook reads
+        // this back as email_data.redirect_to and appends it to the
+        // confirmation link it builds, so /auth/confirm knows where to send
+        // the user once it verifies the token.
+        emailRedirectTo: `${window.location.origin}/dashboard`,
       },
     });
     setSubmitting(false);

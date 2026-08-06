@@ -223,7 +223,9 @@ enable_signup = true
 # addresses. If disabled, only the new email is required to confirm.
 double_confirm_changes = true
 # If enabled, users need to confirm their email address before signing in.
-enable_confirmations = false
+# Set to true so local dev actually exercises the "Send Email" hook / auth
+# emails (with this off, signups auto-confirm and no email is ever sent).
+enable_confirmations = true
 # If enabled, users will need to reauthenticate or have logged in recently to change their password.
 secure_password_change = false
 # Controls the minimum amount of time that must pass before sending another signup confirmation or password reset email.
@@ -274,6 +276,19 @@ max_frequency = "5s"
 # timebox = "24h"
 # Force log out if the user has been inactive longer than the specified duration.
 # inactivity_timeout = "8h"
+
+# Send all auth emails (signup confirmation, password reset, etc.) through
+# our own Edge Function instead of Supabase's built-in mailer, so we can
+# pick the right language template and send via Resend. See
+# supabase/functions/send-email/. Requires `supabase functions serve
+# send-email --env-file supabase/.env` running alongside `supabase start`.
+# NOTE: if `supabase start` rejects this block (config schema differs by
+# CLI version), comment it out and test against a linked hosted project +
+# the Dashboard-configured hook instead (see supabase/.env.example).
+[auth.hook.send_email]
+enabled = true
+uri = "http://host.docker.internal:54321/functions/v1/send-email"
+secrets = "env(SEND_EMAIL_HOOK_SECRET)"
 
 # This hook runs before a new user is created and allows developers to reject the request based on the incoming user object.
 # [auth.hook.before_user_created]

@@ -17,7 +17,7 @@ import { getEmailTemplate, EmailType } from "./templates.ts";
 
 const RESEND_API_KEY = Deno.env.get("RESEND_API_KEY")!;
 const HOOK_SECRET = Deno.env.get("SEND_EMAIL_HOOK_SECRET")!; // from Supabase dashboard when you enable the hook
-const FROM_ADDRESS = Deno.env.get("EMAIL_FROM") ?? "Tarshih <noreply@yourdomain.com>";
+const FROM_ADDRESS = Deno.env.get("EMAIL_FROM") ?? "Tarshih <noreply@tarshih.com>";
 
 const LANG_METADATA_KEY = "preferred_language"; // <-- adjust to match your signup form's field name
 const DEFAULT_LANG: "ar" | "en" = "en";
@@ -57,7 +57,11 @@ Deno.serve(async (req: Request) => {
     `&type=${email_data.email_action_type}` +
     `&redirect_to=${encodeURIComponent(email_data.redirect_to)}`;
 
-  const { subject, html } = getEmailTemplate(lang, email_data.email_action_type, confirmationUrl);
+  const fullName = user.user_metadata?.full_name as string | undefined;
+  const { subject, html } = getEmailTemplate(lang, email_data.email_action_type, confirmationUrl, {
+    siteUrl: email_data.site_url,
+    name: fullName,
+  });
 
   const resendRes = await fetch("https://api.resend.com/emails", {
     method: "POST",
