@@ -1,7 +1,8 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { Suspense, useState } from "react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { ArrowRight, ArrowLeft, Mail, CheckCircle2 } from "lucide-react";
 import { useLang } from "@/lib/language";
 import { Button, Logo, LangSwitcher } from "@/components/brand";
@@ -11,15 +12,18 @@ function isValidEmail(value: string) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
 }
 
-export default function ForgotPasswordPage() {
+function ForgotPasswordForm() {
   const { t, isRTL, dir } = useLang();
   const c = t.forgotPassword;
   const BackIcon = isRTL ? ArrowRight : ArrowLeft;
   const ForwardIcon = isRTL ? ArrowLeft : ArrowRight;
+  const searchParams = useSearchParams();
 
   const [email, setEmail] = useState("");
   const [submitting, setSubmitting] = useState(false);
-  const [error, setError] = useState("");
+  // /auth/confirm sends expired/already-used recovery links back here with
+  // ?error=expired, instead of a silent, unexplained redirect to /login.
+  const [error, setError] = useState(() => (searchParams.get("error") === "expired" ? c.expiredLink : ""));
   const [sent, setSent] = useState(false);
 
   async function sendResetLink(targetEmail: string) {
@@ -149,5 +153,15 @@ export default function ForgotPasswordPage() {
         </p>
       </div>
     </div>
+  );
+}
+
+// useSearchParams() requires a Suspense boundary in the App Router, so the
+// form is split out the same way signup/page.tsx does it.
+export default function ForgotPasswordPage() {
+  return (
+    <Suspense fallback={<div className="flex min-h-screen w-full bg-zinc-950" />}>
+      <ForgotPasswordForm />
+    </Suspense>
   );
 }

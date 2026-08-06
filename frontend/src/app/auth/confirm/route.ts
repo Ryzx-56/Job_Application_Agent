@@ -26,5 +26,10 @@ export async function GET(request: Request) {
     }
   }
 
-  return NextResponse.redirect(`${origin}/login?error=confirm`);
+  // Expired/already-used links are the common failure case (single-use
+  // tokens, or a newer request superseding an older unclicked email).
+  // Recovery links fail back to forgot-password with a message the user
+  // can actually see, instead of a silent, unexplained /login redirect.
+  const fallback = type === "recovery" ? "/forgot-password?error=expired" : "/login?error=confirm";
+  return NextResponse.redirect(`${origin}${fallback}`);
 }

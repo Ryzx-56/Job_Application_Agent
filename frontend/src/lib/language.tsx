@@ -401,6 +401,7 @@ export const content = {
       missingEmail: "Enter your email address.",
       invalidEmail: "Enter a valid email address.",
       genericError: "Something went wrong. Please try again.",
+      expiredLink: "That reset link expired or was already used. Enter your email to get a new one.",
       successTitle: "Check your inbox",
       successBody: (email: string) =>
         `We've sent a password reset link to ${email}. It'll expire shortly, so use it soon.`,
@@ -988,6 +989,7 @@ export const content = {
       missingEmail: "الرجاء إدخال بريدك الإلكتروني.",
       invalidEmail: "الرجاء إدخال بريد إلكتروني صحيح.",
       genericError: "حدث خطأ ما. حاول مرة أخرى.",
+      expiredLink: "انتهت صلاحية رابط إعادة التعيين أو تم استخدامه بالفعل. أدخل بريدك الإلكتروني للحصول على رابط جديد.",
       successTitle: "تحقق من بريدك الإلكتروني",
       successBody: (email: string) =>
         `أرسلنا رابط إعادة تعيين كلمة المرور إلى ${email}. الرابط صالح لفترة قصيرة، فاستخدمه قريبًا.`,
