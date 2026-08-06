@@ -432,6 +432,21 @@ export const content = {
         "This password reset link is invalid or has expired. Request a new one to continue.",
       requestNewLink: "Request a new link",
     },
+    confirmLink: {
+      eyebrow: "One more step",
+      title: "Confirm it's you",
+      sub: "For your security, click continue to finish this — some email apps scan links automatically, so we wait for you to confirm.",
+      button: "Continue",
+      verifying: "Confirming...",
+      invalidTitle: "This link isn't valid",
+      invalidBody: "This link is malformed or missing its token. Please use the link from your email again, or request a new one.",
+      expiredTitleRecovery: "That link expired or was already used",
+      expiredBodyRecovery: "Password reset links can only be used once. Request a new one to continue.",
+      expiredTitleGeneric: "That link expired or was already used",
+      expiredBodyGeneric: "Please request a new link to continue.",
+      requestNewLink: "Request a new link",
+      backToLogin: "Back to login",
+    },
     signup: {
       brandPanel: {
         headline: "Every application, sharper than the last.",
@@ -1018,6 +1033,21 @@ export const content = {
       invalidLinkTitle: "هذا الرابط غير صالح",
       invalidLinkBody: "رابط إعادة تعيين كلمة المرور غير صالح أو منتهي الصلاحية. اطلب رابطًا جديدًا للمتابعة.",
       requestNewLink: "طلب رابط جديد",
+    },
+    confirmLink: {
+      eyebrow: "خطوة أخيرة",
+      title: "تأكيد أنك أنت",
+      sub: "لأمانك، اضغط متابعة لإتمام هذه الخطوة — بعض تطبيقات البريد تفحص الروابط تلقائيًا، لذا ننتظر تأكيدك.",
+      button: "متابعة",
+      verifying: "جارٍ التأكيد...",
+      invalidTitle: "هذا الرابط غير صالح",
+      invalidBody: "هذا الرابط غير صحيح أو ينقصه الرمز. يرجى استخدام الرابط من بريدك الإلكتروني مرة أخرى، أو طلب رابط جديد.",
+      expiredTitleRecovery: "انتهت صلاحية هذا الرابط أو تم استخدامه بالفعل",
+      expiredBodyRecovery: "لا يمكن استخدام رابط إعادة تعيين كلمة المرور إلا مرة واحدة. اطلب رابطًا جديدًا للمتابعة.",
+      expiredTitleGeneric: "انتهت صلاحية هذا الرابط أو تم استخدامه بالفعل",
+      expiredBodyGeneric: "يرجى طلب رابط جديد للمتابعة.",
+      requestNewLink: "طلب رابط جديد",
+      backToLogin: "العودة لتسجيل الدخول",
     },
     signup: {
       brandPanel: {

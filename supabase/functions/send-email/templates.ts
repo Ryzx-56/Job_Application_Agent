@@ -101,7 +101,7 @@ function renderShell(opts: {
           <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="max-width:560px;background:${BRAND.card};border:1px solid ${BRAND.border};border-radius:12px;overflow:hidden;">
             <tr>
               <td align="center" style="padding:36px 40px 8px 40px;">
-                <img src="${logoUrl}" alt="${logoAlt}" height="40" style="height:40px;width:auto;display:block;border:0;outline:none;" />
+                <img src="${logoUrl}" alt="${logoAlt}" height="48" style="height:48px;width:auto;display:block;border:0;outline:none;" />
               </td>
             </tr>
             <tr>
