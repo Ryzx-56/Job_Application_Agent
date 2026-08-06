@@ -7,8 +7,6 @@ import { Eye, EyeOff, ArrowRight, ArrowLeft, Lock, ScanSearch, BadgeCheck } from
 import { useLang } from "@/lib/language";
 import { Button, Logo, LangSwitcher } from "@/components/brand";
 import { createClient } from "@/lib/supabase/client";
-import { LegalModal } from "@/components/legal-modal";
-import { legalContent, LegalDocKey } from "@/lib/legal-content";
 
 function GoogleIcon(props: React.SVGProps<SVGSVGElement>) {
   return (
@@ -95,10 +93,9 @@ function BackToHome({ isRTL }: { isRTL: boolean }) {
    LOGIN FORM
 ======================================================================== */
 function LoginForm() {
-  const { t, isRTL, lang } = useLang();
+  const { t, isRTL } = useLang();
   const router = useRouter();
   const ForwardIcon = isRTL ? ArrowLeft : ArrowRight;
-  const [openDoc, setOpenDoc] = useState<LegalDocKey | null>(null);
 
   const [identifier, setIdentifier] = useState("");
   const [password, setPassword] = useState("");
@@ -247,21 +244,15 @@ function LoginForm() {
 
         <p className="mt-6 text-center text-xs leading-relaxed text-zinc-600">
           {t.form.terms}{" "}
-          <button type="button" onClick={() => setOpenDoc("terms")} className="text-zinc-500 underline underline-offset-2 hover:text-zinc-300">
+          <Link href="/terms" target="_blank" rel="noopener noreferrer" className="text-zinc-500 underline underline-offset-2 hover:text-zinc-300">
             {t.form.termsLink}
-          </button>{" "}
+          </Link>{" "}
           {t.form.and}{" "}
-          <button type="button" onClick={() => setOpenDoc("privacy")} className="text-zinc-500 underline underline-offset-2 hover:text-zinc-300">
+          <Link href="/privacy" target="_blank" rel="noopener noreferrer" className="text-zinc-500 underline underline-offset-2 hover:text-zinc-300">
             {t.form.privacyLink}
-          </button>
+          </Link>
         </p>
       </div>
-      <LegalModal
-        doc={openDoc ? legalContent[lang][openDoc] : null}
-        open={openDoc !== null}
-        onClose={() => setOpenDoc(null)}
-        isRTL={isRTL}
-      />
     </div>
   );
 }
