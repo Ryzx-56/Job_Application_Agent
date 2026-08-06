@@ -400,6 +400,14 @@ deno_version = 2
 # [edge_runtime.secrets]
 # secret_key = "env(SECRET_VALUE)"
 
+# GoTrue calls Auth Hooks (like send-email) using the Standard Webhooks
+# signature for auth, not a Supabase-issued JWT — with the default
+# verify_jwt = true, the Edge Functions gateway rejects those calls with 401
+# before our code ever runs (this is what was silently causing every
+# signup/recovery email to fail with a generic 500).
+[functions.send-email]
+verify_jwt = false
+
 [analytics]
 enabled = true
 port = 54327
