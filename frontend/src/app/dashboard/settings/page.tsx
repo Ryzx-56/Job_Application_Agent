@@ -368,15 +368,18 @@ export default function SettingsPage() {
       {/* Legal — compact links only, not the full marketing footer. See
           note below on why this lives here and not on every dashboard page. */}
       <div className="flex flex-wrap items-center justify-center gap-x-5 gap-y-1.5 pb-2 pt-1 text-xs text-slate-400">
-        <button type="button" onClick={() => setOpenDoc("terms")} className="rounded transition-colors hover:text-slate-600">
+        <Link href="/terms" className="rounded transition-colors hover:text-slate-600">
           {isAr ? "الشروط والأحكام" : "Terms & Conditions"}
-        </button>
-        <button type="button" onClick={() => setOpenDoc("privacy")} className="rounded transition-colors hover:text-slate-600">
+        </Link>
+        <Link href="/privacy" className="rounded transition-colors hover:text-slate-600">
           {isAr ? "سياسة الخصوصية" : "Privacy Policy"}
-        </button>
-        <button type="button" onClick={() => setOpenDoc("returnPolicy")} className="rounded transition-colors hover:text-slate-600">
-          {isAr ? "سياسة الاسترجاع" : "Return Policy"}
-        </button>
+        </Link>
+        <Link href="/security" className="rounded transition-colors hover:text-slate-600">
+          {isAr ? "الأمان" : "Security"}
+        </Link>
+        <Link href="/refund-policy" className="rounded transition-colors hover:text-slate-600">
+          {isAr ? "سياسة الاسترداد والاستبدال" : "Refund & Exchange Policy"}
+        </Link>
         <button type="button" onClick={() => setOpenDoc("contact")} className="rounded transition-colors hover:text-slate-600">
           {isAr ? "تواصل معنا" : "Contact"}
         </button>

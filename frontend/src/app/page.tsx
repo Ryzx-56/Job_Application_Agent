@@ -1115,7 +1115,7 @@ function FinalCta() {
 /* ========================================================================
    FOOTER
 ======================================================================== */
-function SiteFooter({ openDoc, setOpenDoc }: { openDoc: LegalDocKey | null; setOpenDoc: (key: LegalDocKey | null) => void }) {
+function SiteFooter({ setOpenDoc }: { setOpenDoc: (key: LegalDocKey | null) => void }) {
   const { t } = useLang();
   return (
     <footer className="border-t border-white/10">
@@ -1165,10 +1165,10 @@ function SiteFooter({ openDoc, setOpenDoc }: { openDoc: LegalDocKey | null; setO
         <div className="mt-12 flex flex-col items-center justify-between gap-4 border-t border-white/10 pt-6 sm:flex-row">
           <p className="text-sm text-zinc-500">{t.footer.rights(new Date().getFullYear())}</p>
           <div className="flex items-center gap-6 text-sm text-zinc-400">
-            <button type="button" onClick={() => setOpenDoc("terms")} className="rounded transition-colors hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400/60">{t.footer.terms}</button>
-            <button type="button" onClick={() => setOpenDoc("privacy")} className="rounded transition-colors hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400/60">{t.footer.privacy}</button>
-            <button type="button" onClick={() => setOpenDoc("security")} className="rounded transition-colors hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400/60">{t.footer.security}</button>
-            <button type="button" onClick={() => setOpenDoc("returnPolicy")} className="rounded transition-colors hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400/60">{t.footer.returnPolicy}</button>
+            <Link href="/terms" className="rounded transition-colors hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400/60">{t.footer.terms}</Link>
+            <Link href="/privacy" className="rounded transition-colors hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400/60">{t.footer.privacy}</Link>
+            <Link href="/security" className="rounded transition-colors hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400/60">{t.footer.security}</Link>
+            <Link href="/refund-policy" className="rounded transition-colors hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400/60">{t.footer.returnPolicy}</Link>
           </div>
         </div>
       </div>
@@ -1196,7 +1196,7 @@ export default function LandingPage() {
         <Faq />
         <FinalCta />
       </main>
-      <SiteFooter openDoc={openDoc} setOpenDoc={setOpenDoc} />
+      <SiteFooter setOpenDoc={setOpenDoc} />
       <LegalModal
         doc={openDoc ? legalContent[lang][openDoc] : null}
         open={openDoc !== null}

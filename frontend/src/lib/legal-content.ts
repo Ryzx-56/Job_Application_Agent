@@ -10,9 +10,10 @@
 //
 // IMPORTANT: The Terms & Privacy content was drafted to be thorough and
 // KSA-aware (PDPL references, freelance-certificate operating structure,
-// Tap Payments as payment processor, etc.), but it is not a substitute for
-// review by a licensed Saudi lawyer before this goes live in production,
-// especially around consumer protection and refund-window requirements.
+// Paddle.com as merchant of record / payment provider, etc.), but it is not
+// a substitute for review by a licensed Saudi lawyer before this goes live
+// in production, especially around consumer protection and refund-window
+// requirements.
 
 export type LegalSection = { heading: string; body: string[] };
 export type LegalDoc = { title: string; updated: string; intro?: string; sections: LegalSection[] };
@@ -45,7 +46,7 @@ export const legalContent: Record<Lang, Record<LegalDocKey, LegalDoc>> = {
         {
           heading: "3. The Service",
           body: [
-            "Tarshih uses artificial intelligence, including third-party AI models, to help you create, upgrade, and tailor resumes (CVs) and cover letters against specific job descriptions, in English or Arabic, and to surface related job postings and applicant tracking system (ATS) and job-match scoring for informational purposes.",
+            "Tarshih uses artificial intelligence, including third-party AI models from providers such as Anthropic (Claude) and Google (Gemini), to help you create, upgrade, and tailor resumes (CVs) and cover letters against specific job descriptions, in English or Arabic, and to surface related job postings and applicant tracking system (ATS) and job-match scoring for informational purposes.",
             "The Service is provided on a credit basis. Each generated application (a tailored CV and matching cover letter) consumes credits from your account, at a rate that may differ by language, as described on our pricing page. We may update credit costs, features, or the mechanics of the Service from time to time; material changes will be reflected on the pricing page and, where required, communicated to you in advance.",
           ],
         },
@@ -63,7 +64,7 @@ export const legalContent: Record<Lang, Record<LegalDocKey, LegalDoc>> = {
             "Paid subscriptions renew automatically each billing period until cancelled. Upgrading to a higher tier takes effect immediately and you may be charged a prorated amount. Downgrading or cancelling a subscription does not take effect immediately: your current plan and any remaining credits stay active until the end of the current billing cycle, at which point the new (lower or free) tier applies. On a downgrade specifically, any credits you have not used carry over and are added to the new tier's allotment at renewal, rather than being reset; ordinary month-to-month renewals with no tier change reset to that tier's fixed monthly allotment and do not accumulate indefinitely. You may reverse a scheduled downgrade or cancellation at any time before it takes effect.",
             "Pay-as-you-go credit packs are one-time purchases that do not expire on a monthly cycle, but Tarshih is not obligated to preserve unused credits indefinitely if your account is terminated under Section 12.",
             "Where we run a limited-time promotional price (for example, a founding-member discount restricted to a set number of subscribers), the discounted price applies only to eligible subscribers who purchase during the offer and is honored for as long as the qualifying subscription remains continuously active. Allowing a qualifying subscription to lapse, cancel, or downgrade to Free and later resubscribing may result in the then-current standard price applying instead. We may end a promotional offer once its stated capacity is reached or its stated period ends, without affecting subscribers who already locked in the price.",
-            "Payments are processed by a third-party payment processor. We do not store your full card number. All fees are quoted and charged in the currency shown at checkout. Prices do not include Saudi Value Added Tax (VAT) unless stated otherwise; VAT will be added at checkout once and if we are required to register as a VAT taxpayer under Saudi law. You are responsible for any other taxes applicable to your purchase in your jurisdiction.",
+            "Payments are processed by Paddle.com Market Limited (\"Paddle\"), our authorized reseller and payment provider. Paddle acts as the merchant of record for purchases made through the Service: Paddle is the seller you are contracting with for the payment itself, sets and displays the final checkout price in your local currency, collects your payment, and calculates, charges, and remits any applicable sales tax, VAT, or similar transaction tax on our behalf. We do not see or store your full card number. The payment transaction itself is governed by Paddle's own terms of use and privacy policy, available at paddle.com; Tarshih remains solely responsible for providing the Service you purchased.",
             "Except where required by applicable law or expressly stated otherwise, fees already paid and credits already consumed are non-refundable. If a technical failure on our part prevents the Service from delivering a paid-for generation (for example, a credit is deducted but no document is produced), contact tarshih.dev@gmail.com and we will restore the credit or, at our discretion, issue a refund for that specific charge.",
           ],
         },
@@ -107,7 +108,7 @@ export const legalContent: Record<Lang, Record<LegalDocKey, LegalDoc>> = {
         {
           heading: "11. Third-party services",
           body: [
-            "Delivering the Service relies on third-party providers, including AI model providers and search providers used to tailor documents and surface similar jobs, an authentication and database provider, and a payment processor. These providers process data on our behalf under their own terms and, where applicable, data processing agreements, as described further in our Privacy Policy. We select providers with appropriate safeguards but are not responsible for outages or failures caused solely by a third-party provider outside our control.",
+            "Delivering the Service relies on third-party providers, including AI model providers — currently Anthropic (Claude) and Google (Gemini) — and search providers used to tailor documents and surface similar jobs, an authentication and database provider, and Paddle.com Market Limited (\"Paddle\"), our payment provider and the merchant of record for purchases made through the Service. These providers process data on our behalf under their own terms and, where applicable, data processing agreements, as described further in our Privacy Policy. We select providers with appropriate safeguards but are not responsible for outages or failures caused solely by a third-party provider outside our control.",
           ],
         },
         {
@@ -186,7 +187,7 @@ export const legalContent: Record<Lang, Record<LegalDocKey, LegalDoc>> = {
           body: [
             "Account data: your name, email address, password (stored in hashed form by our authentication provider), preferred language, and selected subscription tier.",
             "Content data: the CVs, job descriptions, cover letter drafts, and any other material you upload, paste, or generate through the Service, including resulting tailored documents, ATS/match scores, gap analyses, and job-match results.",
-            "Billing data: subscription tier, credit balance and usage history, and transaction records. Full payment card details are collected and processed directly by our payment processor and are not stored on our servers.",
+            "Billing data: subscription tier, credit balance and usage history, and transaction records. Full payment card details are collected and processed directly by Paddle.com Market Limited (\"Paddle\"), our payment provider and merchant of record, and are not stored on our servers.",
             "Usage and device data: log data such as IP address, browser type, device information, pages viewed, and timestamps, collected automatically to operate and secure the Service.",
           ],
         },
@@ -197,16 +198,16 @@ export const legalContent: Record<Lang, Record<LegalDocKey, LegalDoc>> = {
             "To operate your account: authentication, credit tracking, billing, customer support, and service-related communications (for example, confirming a plan change or responding to a support request).",
             "To maintain and improve the Service: monitoring performance, diagnosing and fixing errors, and understanding aggregate usage patterns, using data that is anonymized or aggregated where feasible.",
             "To meet legal obligations, prevent fraud or abuse, and enforce our Terms & Conditions.",
-            "We do not use Your Content to train our own foundational AI models. Content sent to third-party AI providers is processed under those providers' API terms in order to generate your requested output; we do not authorize those providers to use it to train models serving other customers, to the extent their own commercial API terms allow us to make that election.",
+            "We do not use Your Content to train our own foundational AI models. Content sent to third-party AI providers — currently Anthropic (Claude) and Google (Gemini) — is processed under those providers' API terms in order to generate your requested output; we do not authorize those providers to use it to train models serving other customers, to the extent their own commercial API terms allow us to make that election.",
           ],
         },
         {
           heading: "4. Who we share data with",
           body: [
             "We share personal data only with service providers who process it on our behalf to deliver the Service (\"sub-processors\"), and only to the extent necessary for the purpose each one serves:",
-            "• AI model and search providers, to parse content, tailor documents, generate cover letters, calculate scores, and find similar jobs.",
+            "• AI model providers — currently Anthropic (Claude) and Google (Gemini) — and search providers, to parse your CV and job description, tailor your resume and cover letter, calculate scores, and find similar jobs. Relevant content from Your Content is sent to these providers solely to generate the output you requested.",
             "• Our authentication, database, and hosting provider, to store your account, content, and application data securely.",
-            "• Our payment processor, to handle subscription billing and pay-as-you-go purchases.",
+            "• Paddle.com Market Limited (\"Paddle\"), our payment provider, to handle subscription billing, pay-as-you-go purchases, and related tax collection. Paddle acts as the merchant of record for these transactions — the seller of record you are contracting with for the payment itself — and processes your payment data under its own privacy policy.",
             "We do not sell your personal data, and we do not share it with third parties for their own independent marketing purposes.",
             "We may disclose data if required to comply with a valid legal process, to protect the rights, property, or safety of Tarshih, our users, or others, or in connection with a merger, acquisition, or sale of assets, subject to this policy continuing to apply to previously collected data.",
           ],
@@ -290,13 +291,13 @@ export const legalContent: Record<Lang, Record<LegalDocKey, LegalDoc>> = {
         {
           heading: "Payment security",
           body: [
-            "Card payments are handled entirely by our payment processor. Tarshih never receives or stores your full card number, expiry date, or CVV on its own servers.",
+            "Card payments are handled entirely by Paddle.com Market Limited (\"Paddle\"), our payment provider and the merchant of record for purchases made through the Service. Tarshih never receives or stores your full card number, expiry date, or CVV on its own servers.",
           ],
         },
         {
           heading: "Third-party AI processing",
           body: [
-            "When your CV or a job description is tailored, relevant content is sent to third-party AI providers over encrypted connections solely to generate your requested output. This is described in more detail in our Privacy Policy.",
+            "When your CV or a job description is tailored, relevant content is sent to third-party AI providers — currently Anthropic (Claude) and Google (Gemini) — over encrypted connections solely to generate your requested output. This is described in more detail in our Privacy Policy.",
           ],
         },
         {
@@ -314,7 +315,7 @@ export const legalContent: Record<Lang, Record<LegalDocKey, LegalDoc>> = {
       ],
     },
     returnPolicy: {
-      title: "Return & Exchange Policy",
+      title: "Refund & Exchange Policy",
       updated: "Last updated: July 2026",
       intro:
         "Tarshih is a digital service, not a physical product, so there is nothing to physically return or exchange. This page explains, in plain language, how refunds, cancellations, and plan changes work. It supplements, and does not replace, Sections 5 and 6 of our Terms & Conditions.",
@@ -355,7 +356,7 @@ export const legalContent: Record<Lang, Record<LegalDocKey, LegalDoc>> = {
         {
           heading: "6. How to request a refund",
           body: [
-            "Email tarshih.dev@gmail.com from the address on your account, describe what happened, and we'll respond as quickly as we can. Approved refunds are returned to the original payment method through our payment processor.",
+            "Email tarshih.dev@gmail.com from the address on your account, describe what happened, and we'll respond as quickly as we can. Approved refunds are returned to the original payment method through Paddle, our payment provider.",
           ],
         },
       ],
@@ -484,7 +485,7 @@ export const legalContent: Record<Lang, Record<LegalDocKey, LegalDoc>> = {
         {
           heading: "3. الخدمة",
           body: [
-            "تستخدم ترشيح الذكاء الاصطناعي، بما في ذلك نماذج ذكاء اصطناعي من أطراف ثالثة، لمساعدتك على إنشاء وتطوير وتخصيص السير الذاتية وخطابات التقديم وفقًا لأوصاف وظيفية محددة، بالعربية أو الإنجليزية، وإظهار وظائف ذات صلة ونتائج تقييم لأنظمة تتبع المتقدمين (ATS) والتوافق الوظيفي لأغراض معلوماتية.",
+            "تستخدم ترشيح الذكاء الاصطناعي، بما في ذلك نماذج ذكاء اصطناعي من أطراف ثالثة مثل Anthropic (Claude) و Google (Gemini)، لمساعدتك على إنشاء وتطوير وتخصيص السير الذاتية وخطابات التقديم وفقًا لأوصاف وظيفية محددة، بالعربية أو الإنجليزية، وإظهار وظائف ذات صلة ونتائج تقييم لأنظمة تتبع المتقدمين (ATS) والتوافق الوظيفي لأغراض معلوماتية.",
             "تُقدَّم الخدمة على أساس نظام النقاط. كل طلب يتم توليده (سيرة ذاتية مخصصة وخطاب تقديم مطابق) يستهلك نقاطًا من حسابك، بمعدل قد يختلف حسب اللغة، كما هو موضح في صفحة الأسعار. يجوز لنا تحديث تكلفة النقاط أو الميزات أو آلية عمل الخدمة من وقت لآخر؛ وستنعكس التغييرات الجوهرية في صفحة الأسعار، وسيتم إبلاغك مسبقًا عند الاقتضاء.",
           ],
         },
@@ -502,7 +503,7 @@ export const legalContent: Record<Lang, Record<LegalDocKey, LegalDoc>> = {
             "تتجدد الاشتراكات المدفوعة تلقائيًا كل فترة فوترة حتى يتم إلغاؤها. الترقية إلى فئة أعلى تسري فورًا وقد يُحتسب عليك مبلغ تناسبي. لا يسري تخفيض الفئة أو إلغاء الاشتراك فورًا: تبقى خطتك الحالية وأي نقاط متبقية سارية حتى نهاية دورة الفوترة الحالية، وعندها تُطبَّق الفئة الجديدة (الأقل أو المجانية). في حال تخفيض الفئة تحديدًا، تُرحَّل أي نقاط لم تُستخدم وتُضاف إلى مخصص الفئة الجديدة عند التجديد، بدلًا من إعادة تصفيرها؛ أما التجديدات الشهرية الاعتيادية دون تغيير الفئة فتُعيد التعيين إلى المخصص الشهري الثابت لتلك الفئة ولا تتراكم إلى ما لا نهاية. يمكنك التراجع عن تخفيض أو إلغاء مجدوَل في أي وقت قبل سريانه.",
             "حزم الدفع حسب الاستخدام هي مشتريات لمرة واحدة لا تنتهي وفق دورة شهرية، لكن ترشيح غير ملزمة بالحفاظ على النقاط غير المستخدمة إلى أجل غير مسمى إذا تم إنهاء حسابك بموجب البند 12.",
             "عند تفعيل عرض سعر ترويجي محدود المدة (مثل خصم الأعضاء المؤسسين المقتصر على عدد محدد من المشتركين)، يُطبَّق السعر المخفّض فقط على المشتركين المؤهلين الذين يشتركون خلال فترة العرض، ويستمر العمل به طالما بقي الاشتراك المؤهل ساريًا دون انقطاع. السماح بانتهاء أو إلغاء أو تخفيض اشتراك مؤهل إلى الفئة المجانية ثم إعادة الاشتراك لاحقًا قد يؤدي إلى تطبيق السعر القياسي المعمول به حينها بدلًا من ذلك. يجوز لنا إنهاء عرض ترويجي عند بلوغ السعة المعلنة له أو انتهاء مدته المعلنة، دون أن يؤثر ذلك على المشتركين الذين ثبّتوا السعر بالفعل.",
-            "تتم معالجة المدفوعات عبر معالج دفع خارجي. نحن لا نخزّن رقم بطاقتك الكامل. تُعرض جميع الرسوم وتُحصَّل بالعملة الظاهرة عند الدفع. لا تشمل الأسعار ضريبة القيمة المضافة السعودية ما لم يُذكر خلاف ذلك؛ وستُضاف الضريبة عند الدفع إذا ومتى أصبحنا ملزمين بالتسجيل كمكلَّف بضريبة القيمة المضافة بموجب النظام السعودي. أنت مسؤول عن أي ضرائب أخرى مطبقة على مشترياتك في نطاقك القضائي.",
+            "تتم معالجة المدفوعات عبر شركة Paddle.com Market Limited (\"Paddle\")، وهي معيد بيع مرخّص ومزود خدمات دفع لنا. تعمل Paddle بصفتها التاجر المسجَّل (Merchant of Record) للمشتريات التي تتم عبر الخدمة: فهي البائع الذي تتعاقد معه فيما يخص عملية الدفع نفسها، وتحدد وتعرض السعر النهائي عند الدفع بعملتك المحلية، وتُحصّل مبلغ الدفع، وتحتسب وتُحصّل وتُحوّل أي ضريبة مبيعات أو ضريبة قيمة مضافة أو ضريبة معاملات مماثلة نيابة عنا. نحن لا نرى ولا نخزّن رقم بطاقتك الكامل. تخضع عملية الدفع نفسها لشروط استخدام وسياسة خصوصية Paddle المتاحة على موقع paddle.com؛ وتبقى ترشيح وحدها المسؤولة عن تقديم الخدمة التي اشتريتها.",
             "باستثناء ما يقتضيه القانون المعمول به أو ما هو منصوص عليه صراحة خلاف ذلك، فإن الرسوم المدفوعة والنقاط المستهلكة غير قابلة للاسترداد. إذا حال عطل تقني من جانبنا دون تسليم توليد مدفوع (مثلًا: خُصمت نقطة دون إنتاج مستند)، تواصل معنا على tarshih.dev@gmail.com وسنعيد النقطة أو نصدر، وفق تقديرنا، استردادًا لتلك الرسوم تحديدًا.",
           ],
         },
@@ -546,7 +547,7 @@ export const legalContent: Record<Lang, Record<LegalDocKey, LegalDoc>> = {
         {
           heading: "11. خدمات الأطراف الثالثة",
           body: [
-            "يعتمد تقديم الخدمة على مزودين من أطراف ثالثة، بما يشمل مزودي نماذج الذكاء الاصطناعي والبحث المستخدَمين لتخصيص المستندات وإظهار الوظائف المشابهة، ومزود المصادقة وقواعد البيانات، ومعالج الدفع. يعالج هؤلاء المزودون البيانات نيابة عنا بموجب شروطهم الخاصة، وحسب الاقتضاء، اتفاقيات معالجة بيانات، كما هو موضح بمزيد من التفصيل في سياسة الخصوصية. نختار مزودين يوفرون ضمانات مناسبة، لكننا لسنا مسؤولين عن انقطاعات أو أعطال ناتجة حصرًا عن طرف ثالث خارج عن سيطرتنا.",
+            "يعتمد تقديم الخدمة على مزودين من أطراف ثالثة، بما يشمل مزودي نماذج الذكاء الاصطناعي — حاليًا Anthropic (Claude) و Google (Gemini) — ومزودي البحث المستخدَمين لتخصيص المستندات وإظهار الوظائف المشابهة، ومزود المصادقة وقواعد البيانات، وشركة Paddle.com Market Limited (\"Paddle\")، مزود خدمات الدفع لدينا والتاجر المسجَّل (Merchant of Record) للمشتريات التي تتم عبر الخدمة. يعالج هؤلاء المزودون البيانات نيابة عنا بموجب شروطهم الخاصة، وحسب الاقتضاء، اتفاقيات معالجة بيانات، كما هو موضح بمزيد من التفصيل في سياسة الخصوصية. نختار مزودين يوفرون ضمانات مناسبة، لكننا لسنا مسؤولين عن انقطاعات أو أعطال ناتجة حصرًا عن طرف ثالث خارج عن سيطرتنا.",
           ],
         },
         {
@@ -625,7 +626,7 @@ export const legalContent: Record<Lang, Record<LegalDocKey, LegalDoc>> = {
           body: [
             "بيانات الحساب: اسمك، بريدك الإلكتروني، كلمة المرور (مخزّنة بصيغة مشفّرة لدى مزود المصادقة لدينا)، لغتك المفضلة، وفئة اشتراكك المختارة.",
             "بيانات المحتوى: السير الذاتية، الأوصاف الوظيفية، مسودات خطابات التقديم، وأي مواد أخرى ترفعها أو تلصقها أو تولّدها عبر الخدمة، بما يشمل المستندات المخصصة الناتجة ونتائج ATS/التوافق وتحليلات الفجوات ونتائج مطابقة الوظائف.",
-            "بيانات الفوترة: فئة الاشتراك، رصيد النقاط وسجل الاستخدام، وسجلات المعاملات. يتم جمع ومعالجة تفاصيل بطاقة الدفع الكاملة مباشرة عبر معالج الدفع لدينا ولا تُخزَّن على خوادمنا.",
+            "بيانات الفوترة: فئة الاشتراك، رصيد النقاط وسجل الاستخدام، وسجلات المعاملات. يتم جمع ومعالجة تفاصيل بطاقة الدفع الكاملة مباشرة عبر شركة Paddle.com Market Limited (\"Paddle\")، مزود خدمات الدفع لدينا والتاجر المسجَّل (Merchant of Record)، ولا تُخزَّن على خوادمنا.",
             "بيانات الاستخدام والجهاز: بيانات السجلّ مثل عنوان IP ونوع المتصفح ومعلومات الجهاز والصفحات المُشاهَدة والطوابع الزمنية، تُجمَع تلقائيًا لتشغيل الخدمة وتأمينها.",
           ],
         },
@@ -636,16 +637,16 @@ export const legalContent: Record<Lang, Record<LegalDocKey, LegalDoc>> = {
             "لإدارة حسابك: المصادقة، تتبع النقاط، الفوترة، دعم العملاء، والتواصل المتعلق بالخدمة (مثل تأكيد تغيير خطة أو الرد على طلب دعم).",
             "لصيانة الخدمة وتحسينها: مراقبة الأداء، تشخيص الأخطاء وإصلاحها، وفهم أنماط الاستخدام الإجمالية، باستخدام بيانات مجهولة المصدر أو مجمّعة حيثما أمكن.",
             "للوفاء بالالتزامات القانونية، ومنع الاحتيال أو إساءة الاستخدام، وتطبيق شروطنا وأحكامنا.",
-            "نحن لا نستخدم محتواك لتدريب نماذج ذكاء اصطناعي أساسية خاصة بنا. تتم معالجة المحتوى المُرسَل إلى مزودي الذكاء الاصطناعي من أطراف ثالثة بموجب شروط واجهة برمجة التطبيقات الخاصة بهم بهدف توليد المخرجات التي طلبتها؛ ونحن لا نأذن لهؤلاء المزودين باستخدامه لتدريب نماذج تخدم عملاء آخرين، بالقدر الذي تسمح لنا شروطهم التجارية الخاصة بذلك.",
+            "نحن لا نستخدم محتواك لتدريب نماذج ذكاء اصطناعي أساسية خاصة بنا. تتم معالجة المحتوى المُرسَل إلى مزودي الذكاء الاصطناعي من أطراف ثالثة — حاليًا Anthropic (Claude) و Google (Gemini) — بموجب شروط واجهة برمجة التطبيقات الخاصة بهم بهدف توليد المخرجات التي طلبتها؛ ونحن لا نأذن لهؤلاء المزودين باستخدامه لتدريب نماذج تخدم عملاء آخرين، بالقدر الذي تسمح لنا شروطهم التجارية الخاصة بذلك.",
           ],
         },
         {
           heading: "4. مع من نشارك بياناتك",
           body: [
             "نشارك البيانات الشخصية فقط مع مزودي خدمات يعالجونها نيابة عنا لتقديم الخدمة (\"معالجو البيانات الفرعيون\")، وفقط بالقدر اللازم للغرض الذي يخدمه كل منهم:",
-            "• مزودو نماذج الذكاء الاصطناعي والبحث، لتحليل المحتوى وتخصيص المستندات وتوليد خطابات التقديم وحساب النتائج وإيجاد وظائف مشابهة.",
+            "• مزودو نماذج الذكاء الاصطناعي — حاليًا Anthropic (Claude) و Google (Gemini) — ومزودو البحث، لتحليل سيرتك الذاتية ووصفك الوظيفي وتخصيص مستنداتك وتوليد خطابات التقديم وحساب النتائج وإيجاد وظائف مشابهة. يُرسَل المحتوى ذو الصلة من محتواك إلى هؤلاء المزودين فقط لتوليد المخرجات التي طلبتها.",
             "• مزود المصادقة وقواعد البيانات والاستضافة لدينا، لتخزين بيانات حسابك ومحتواك وطلباتك بأمان.",
-            "• معالج الدفع لدينا، لإدارة فوترة الاشتراكات ومشتريات الدفع حسب الاستخدام.",
+            "• شركة Paddle.com Market Limited (\"Paddle\")، مزود خدمات الدفع لدينا، لإدارة فوترة الاشتراكات ومشتريات الدفع حسب الاستخدام وتحصيل الضرائب المتعلقة بها. تعمل Paddle كالتاجر المسجَّل (Merchant of Record) لهذه المعاملات — أي البائع الذي تتعاقد معه فيما يخص عملية الدفع نفسها — وتعالج بيانات دفعك بموجب سياسة الخصوصية الخاصة بها.",
             "نحن لا نبيع بياناتك الشخصية، ولا نشاركها مع أطراف ثالثة لأغراضها التسويقية المستقلة.",
             "قد نكشف عن البيانات إذا اقتضى ذلك الامتثال لإجراء قانوني صحيح، أو لحماية حقوق أو ممتلكات أو سلامة ترشيح أو مستخدمينا أو غيرهم، أو في سياق اندماج أو استحواذ أو بيع أصول، مع استمرار سريان هذه السياسة على البيانات التي سبق جمعها.",
           ],
@@ -722,11 +723,11 @@ export const legalContent: Record<Lang, Record<LegalDocKey, LegalDoc>> = {
         },
         {
           heading: "أمان المدفوعات",
-          body: ["تتم معالجة مدفوعات البطاقات بالكامل عبر معالج الدفع لدينا. ترشيح لا تستلم أو تخزّن أبدًا رقم بطاقتك الكامل أو تاريخ انتهائها أو رمز CVV على خوادمها الخاصة."],
+          body: ["تتم معالجة مدفوعات البطاقات بالكامل عبر شركة Paddle.com Market Limited (\"Paddle\")، مزود خدمات الدفع لدينا والتاجر المسجَّل (Merchant of Record) للمشتريات التي تتم عبر الخدمة. ترشيح لا تستلم أو تخزّن أبدًا رقم بطاقتك الكامل أو تاريخ انتهائها أو رمز CVV على خوادمها الخاصة."],
         },
         {
           heading: "معالجة الذكاء الاصطناعي من أطراف ثالثة",
-          body: ["عند تخصيص سيرتك الذاتية أو وصف وظيفي، يُرسَل المحتوى ذو الصلة إلى مزودي ذكاء اصطناعي من أطراف ثالثة عبر اتصالات مشفّرة فقط لتوليد المخرجات التي طلبتها. مزيد من التفاصيل موضح في سياسة الخصوصية."],
+          body: ["عند تخصيص سيرتك الذاتية أو وصف وظيفي، يُرسَل المحتوى ذو الصلة إلى مزودي ذكاء اصطناعي من أطراف ثالثة — حاليًا Anthropic (Claude) و Google (Gemini) — عبر اتصالات مشفّرة فقط لتوليد المخرجات التي طلبتها. مزيد من التفاصيل موضح في سياسة الخصوصية."],
         },
         {
           heading: "عزل البيانات",
@@ -741,7 +742,7 @@ export const legalContent: Record<Lang, Record<LegalDocKey, LegalDoc>> = {
       ],
     },
     returnPolicy: {
-      title: "سياسة الإرجاع والاستبدال",
+      title: "سياسة الاسترداد والاستبدال",
       updated: "آخر تحديث: يوليو 2026",
       intro:
         "ترشيح خدمة رقمية وليست منتجًا ماديًا، لذا لا يوجد ما يمكن إرجاعه أو استبداله ماديًا. توضّح هذه الصفحة، بلغة مبسّطة، كيفية عمل عمليات الاسترداد والإلغاء وتغيير الخطط. وهي مكمّلة للبندين 5 و6 من الشروط والأحكام، ولا تحل محلهما.",
@@ -782,7 +783,7 @@ export const legalContent: Record<Lang, Record<LegalDocKey, LegalDoc>> = {
         {
           heading: "6. كيفية طلب الاسترداد",
           body: [
-            "راسلنا على tarshih.dev@gmail.com من البريد الإلكتروني المسجّل في حسابك، مع وصف ما حدث، وسنرد بأسرع ما يمكن. تُعاد المبالغ المستردة المعتمدة إلى وسيلة الدفع الأصلية عبر معالج الدفع لدينا.",
+            "راسلنا على tarshih.dev@gmail.com من البريد الإلكتروني المسجّل في حسابك، مع وصف ما حدث، وسنرد بأسرع ما يمكن. تُعاد المبالغ المستردة المعتمدة إلى وسيلة الدفع الأصلية عبر Paddle، مزود خدمات الدفع لدينا.",
           ],
         },
       ],

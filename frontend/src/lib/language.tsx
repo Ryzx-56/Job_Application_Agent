@@ -352,7 +352,7 @@ export const content = {
       terms: "Terms & Conditions",
       privacy: "Privacy",
       security: "Security",
-      returnPolicy: "Return & Exchange Policy",
+      returnPolicy: "Refund & Exchange Policy",
     },
     brandPanel: {
       headline: "Every application, sharper than the last.",
@@ -939,7 +939,7 @@ export const content = {
       terms: "الشروط والأحكام",
       privacy: "الخصوصية",
       security: "الأمان",
-      returnPolicy: "سياسة الإرجاع والاستبدال",
+      returnPolicy: "سياسة الاسترداد والاستبدال",
     },
     brandPanel: {
       headline: "كل طلب توظيف، أفضل من سابقه.",
