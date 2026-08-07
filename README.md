@@ -134,7 +134,7 @@ Three of the eleven CV templates the pipeline can render (PDF and DOCX, both fro
 | **Auth, database, storage** | Supabase (Postgres + Row Level Security + Auth) |
 | **PDF rendering** | WeasyPrint: real HTML/CSS layout via Pango/Cairo, not a headless-browser screenshot |
 | **DOCX rendering** | python-docx, with per-template style presets |
-| **Payments** | Tap Payments (Saudi/MENA payment gateway; integration in progress) |
+| **Payments** | Third-party payment gateway (provider selection and integration in progress) |
 | **Hosting** | Vercel (frontend) · Render (backend) |
 
 ## Engineering Notes

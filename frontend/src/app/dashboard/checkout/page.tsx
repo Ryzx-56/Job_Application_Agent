@@ -13,7 +13,7 @@ const PLAN_NAME: Record<string, { en: string; ar: string }> = {
 /**
  * Placeholder for the logged-in upgrade flow. Reached from the pricing
  * section's "Upgrade" buttons once a tier is picked. Swap the body of this
- * page for real Tap Payments checkout when that's wired up — the route and
+ * page for the real payment-provider checkout when that's wired up — the route and
  * the links pointing to it (`/dashboard/checkout?plan=pro` etc.) don't need
  * to change.
  */
@@ -34,8 +34,8 @@ export default function CheckoutPage() {
       </h1>
       <p className="text-sm leading-relaxed text-slate-500">
         {isAr
-          ? "الدفع عبر Tap Payments قيد الإعداد حاليًا. سيتم تفعيل هذه الصفحة قريبًا لإتمام الاشتراك مباشرة."
-          : "Payment via Tap Payments is being set up. This page will handle the real checkout soon."}
+          ? "الدفع الإلكتروني الآمن قيد الإعداد حاليًا. سيتم تفعيل هذه الصفحة قريبًا لإتمام الاشتراك مباشرة."
+          : "Secure online payment is currently being set up. This page will handle the real checkout soon."}
       </p>
       <Link
         href="/dashboard"

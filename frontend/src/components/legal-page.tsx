@@ -13,7 +13,8 @@ import { legalContent, LegalDocKey } from "@/lib/legal-content";
    /security, /refund-policy). Reuses the landing page's design language
    (dark canvas, Plus Jakarta Sans / Cairo, blue accents, grid-glow hero)
    but as a real page instead of a modal, so each document has its own
-   crawlable, linkable URL — required for Paddle's merchant verification.
+   crawlable, linkable URL — required for payment-provider merchant
+   verification.
 
    Only the four "policy" docs from legal-content.ts are meant to be passed
    in here; About/Resume Guide/ATS Tips/Contact stay as footer modals.
