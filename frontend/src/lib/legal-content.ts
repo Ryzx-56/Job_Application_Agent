@@ -34,7 +34,7 @@ export const legalContent: Record<Lang, Record<LegalDocKey, LegalDoc>> = {
           heading: "1. Who we are",
           body: [
             "Tarshih is currently operated by an individual entrepreneur based in Jeddah, Kingdom of Saudi Arabia, providing services under the Kingdom's freelance work document framework. Tarshih is not, at this time, a separately incorporated company. References in these Terms to \"we\", \"us\", or \"Tarshih\" mean the individual operator trading as Tarshih.",
-            "Tarshih operates under Freelancing Practitioner Certificate No. FL-547870023, issued by the Saudi Ministry of Human Resources and Social Development to Abdulmalik Yousef Mohammedrabi Hawsawi under the Specialized Services category, Software Engineering specialty, valid from 15 July 2026 to 15 July 2027. You can reach us at tarshih.dev@gmail.com.",
+            "Tarshih operates under Freelancing Practitioner Certificate No. FL-547870023, issued by the Saudi Ministry of Human Resources and Social Development to Abdulmalik Yousef Mohammedrabi Hawsawi under the Specialized Services category, Software Engineering specialty, valid from 15 July 2026 to 15 July 2027. You can reach us at support@tarshih.com.",
             "We intend to keep this section updated if our legal structure changes, for example upon incorporation, and any such change will not reduce your rights under these Terms.",
           ],
         },
@@ -56,7 +56,7 @@ export const legalContent: Record<Lang, Record<LegalDocKey, LegalDoc>> = {
           heading: "4. Accounts",
           body: [
             "You must provide accurate information when creating an account and keep your login credentials confidential. You are responsible for all activity that occurs under your account, whether or not you authorized it, except to the extent caused by our failure to secure the Service.",
-            "Notify us immediately at tarshih.dev@gmail.com if you suspect unauthorized access to your account. We may suspend or terminate accounts that provide false information, are used to violate these Terms, or are inactive for an extended period, subject to Section 12 (Termination).",
+            "Notify us immediately at support@tarshih.com if you suspect unauthorized access to your account. We may suspend or terminate accounts that provide false information, are used to violate these Terms, or are inactive for an extended period, subject to Section 12 (Termination).",
           ],
         },
         {
@@ -67,14 +67,14 @@ export const legalContent: Record<Lang, Record<LegalDocKey, LegalDoc>> = {
             "Pay-as-you-go credit packs are one-time purchases that do not expire on a monthly cycle, but Tarshih is not obligated to preserve unused credits indefinitely if your account is terminated under Section 12.",
             "Where we run a limited-time promotional price (for example, a founding-member discount restricted to a set number of subscribers), the discounted price applies only to eligible subscribers who purchase during the offer and is honored for as long as the qualifying subscription remains continuously active. Allowing a qualifying subscription to lapse, cancel, or downgrade to Free and later resubscribing may result in the then-current standard price applying instead. We may end a promotional offer once its stated capacity is reached or its stated period ends, without affecting subscribers who already locked in the price.",
             "Card payments are processed on our behalf by a licensed third-party payment provider through its own secure, PCI-compliant checkout. Tarshih is the seller for every purchase made through the Service: you contract directly with us, we set and display the price on our pricing page, and we remain responsible for delivering the Service, answering billing questions, and issuing any refund due under this Section or our Refund & Exchange Policy. We do not see or store your full card number; the payment details you enter at checkout are handled by the payment provider under its own terms of use and privacy policy, which are identified to you at the time of payment. Where value added tax or a similar transaction tax applies to your purchase, it will be shown or accounted for at checkout in accordance with applicable Saudi tax requirements.",
-            "Except where required by applicable law or expressly stated otherwise, fees already paid and credits already consumed are non-refundable. If a technical failure on our part prevents the Service from delivering a paid-for generation (for example, a credit is deducted but no document is produced), contact tarshih.dev@gmail.com and we will restore the credit or, at our discretion, issue a refund for that specific charge.",
+            "Except where required by applicable law or expressly stated otherwise, fees already paid and credits already consumed are non-refundable. If a technical failure on our part prevents the Service from delivering a paid-for generation (for example, a credit is deducted but no document is produced), contact support@tarshih.com and we will restore the credit or, at our discretion, issue a refund for that specific charge.",
           ],
         },
         {
           heading: "6. Right of withdrawal for digital content",
           body: [
             "Under Saudi Arabia's e-commerce regulations, consumers generally have a right to withdraw from an online purchase within a set period. That right does not apply to digital content or services that are not supplied on a tangible medium once performance has begun with your prior express consent and acknowledgment that you thereby lose the right of withdrawal.",
-            "By purchasing a subscription or a pay-as-you-go credit pack and generating at least one tailored document with it, you expressly request that we begin performing the Service immediately and acknowledge that your right of withdrawal ends once that generation is delivered, to the extent permitted by applicable law. If you have not yet used any credit from a purchase, contact tarshih.dev@gmail.com within a reasonable time and we will review the request in line with applicable consumer protection law.",
+            "By purchasing a subscription or a pay-as-you-go credit pack and generating at least one tailored document with it, you expressly request that we begin performing the Service immediately and acknowledge that your right of withdrawal ends once that generation is delivered, to the extent permitted by applicable law. If you have not yet used any credit from a purchase, contact support@tarshih.com within a reasonable time and we will review the request in line with applicable consumer protection law.",
           ],
         },
         {
@@ -122,7 +122,7 @@ export const legalContent: Record<Lang, Record<LegalDocKey, LegalDoc>> = {
         {
           heading: "13. Termination",
           body: [
-            "You may stop using the Service and delete your account at any time from your dashboard settings or by emailing tarshih.dev@gmail.com.",
+            "You may stop using the Service and delete your account at any time from your dashboard settings or by emailing support@tarshih.com.",
             "We may suspend or terminate your account, with notice where practicable, if you materially breach these Terms, if required by law, or if we discontinue the Service. On termination, your right to use the Service ends immediately; unused pay-as-you-go credits and any remaining subscription period are forfeited except where a refund is required by applicable law or expressly provided under Section 5.",
             "Sections that by their nature should survive termination (including Sections 7, 9, 14, 15, and 16) continue to apply after your account is closed.",
           ],
@@ -151,7 +151,7 @@ export const legalContent: Record<Lang, Record<LegalDocKey, LegalDoc>> = {
           heading: "17. Governing law and disputes",
           body: [
             "These Terms are governed by the laws of the Kingdom of Saudi Arabia. Any dispute arising from these Terms or the Service that cannot be resolved informally will be subject to the exclusive jurisdiction of the competent courts of the Kingdom of Saudi Arabia, without prejudice to any mandatory consumer-protection rights you may have under the laws of your place of residence.",
-            "Before filing a claim, please contact us at tarshih.dev@gmail.com; most issues can be resolved directly and faster than through formal proceedings.",
+            "Before filing a claim, please contact us at support@tarshih.com; most issues can be resolved directly and faster than through formal proceedings.",
           ],
         },
         {
@@ -168,7 +168,7 @@ export const legalContent: Record<Lang, Record<LegalDocKey, LegalDoc>> = {
         },
         {
           heading: "20. Contact",
-          body: ["Questions about these Terms can be sent to tarshih.dev@gmail.com."],
+          body: ["Questions about these Terms can be sent to support@tarshih.com."],
         },
       ],
     },
@@ -181,7 +181,7 @@ export const legalContent: Record<Lang, Record<LegalDocKey, LegalDoc>> = {
         {
           heading: "1. Who is responsible for your data",
           body: [
-            "Tarshih is currently operated by an individual entrepreneur based in Jeddah, Kingdom of Saudi Arabia, who acts as the data controller for the personal data described in this policy. You can reach us at tarshih.dev@gmail.com for any privacy question or request.",
+            "Tarshih is currently operated by an individual entrepreneur based in Jeddah, Kingdom of Saudi Arabia, who acts as the data controller for the personal data described in this policy. You can reach us at support@tarshih.com for any privacy question or request.",
           ],
         },
         {
@@ -224,7 +224,7 @@ export const legalContent: Record<Lang, Record<LegalDocKey, LegalDoc>> = {
           heading: "6. Data retention",
           body: [
             "We retain your account and content data for as long as your account remains active, so that your resume history, generated documents, and settings stay available to you. If you delete your account, we will delete or anonymize your personal data within a reasonable period, except where we are required to retain certain records (such as billing records) for legal, tax, or accounting purposes, or to resolve disputes.",
-            "You can request deletion of specific uploaded content or your entire account at any time from your dashboard or by emailing tarshih.dev@gmail.com.",
+            "You can request deletion of specific uploaded content or your entire account at any time from your dashboard or by emailing support@tarshih.com.",
           ],
         },
         {
@@ -237,7 +237,7 @@ export const legalContent: Record<Lang, Record<LegalDocKey, LegalDoc>> = {
           heading: "8. Your rights",
           body: [
             "Subject to applicable law, including the PDPL, you have the right to: access the personal data we hold about you; request correction of inaccurate data; request deletion of your data; withdraw consent where processing is based on consent, without affecting processing carried out before withdrawal; object to certain processing; and request a copy of your data in a portable format.",
-            "To exercise any of these rights, email tarshih.dev@gmail.com. We may need to verify your identity before acting on a request, and may decline requests that are manifestly unfounded, excessive, or where an exemption applies under law.",
+            "To exercise any of these rights, email support@tarshih.com. We may need to verify your identity before acting on a request, and may decline requests that are manifestly unfounded, excessive, or where an exemption applies under law.",
           ],
         },
         {
@@ -262,7 +262,7 @@ export const legalContent: Record<Lang, Record<LegalDocKey, LegalDoc>> = {
         },
         {
           heading: "12. Contact",
-          body: ["For any privacy question, request, or complaint, email tarshih.dev@gmail.com."],
+          body: ["For any privacy question, request, or complaint, email support@tarshih.com."],
         },
       ],
     },
@@ -311,7 +311,7 @@ export const legalContent: Record<Lang, Record<LegalDocKey, LegalDoc>> = {
         {
           heading: "Reporting a security issue",
           body: [
-            "If you believe you've found a security vulnerability in Tarshih, please report it to tarshih.dev@gmail.com with as much detail as possible. Please do not publicly disclose a suspected vulnerability before giving us a reasonable opportunity to address it. We appreciate responsible disclosure and will respond as quickly as we can.",
+            "If you believe you've found a security vulnerability in Tarshih, please report it to support@tarshih.com with as much detail as possible. Please do not publicly disclose a suspected vulnerability before giving us a reasonable opportunity to address it. We appreciate responsible disclosure and will respond as quickly as we can.",
           ],
         },
       ],
@@ -344,7 +344,7 @@ export const legalContent: Record<Lang, Record<LegalDocKey, LegalDoc>> = {
         {
           heading: "4. When a refund does apply",
           body: [
-            "If a technical failure on our side prevents the Service from delivering something you paid for, for example a credit is deducted but no document is produced, email tarshih.dev@gmail.com with your account email and a brief description. We will restore the credit or, at our discretion, refund that specific charge.",
+            "If a technical failure on our side prevents the Service from delivering something you paid for, for example a credit is deducted but no document is produced, email support@tarshih.com with your account email and a brief description. We will restore the credit or, at our discretion, refund that specific charge.",
             "Fees already paid and credits already consumed are otherwise non-refundable, except where required by applicable law.",
           ],
         },
@@ -352,13 +352,13 @@ export const legalContent: Record<Lang, Record<LegalDocKey, LegalDoc>> = {
           heading: "5. Right of withdrawal under Saudi e-commerce law",
           body: [
             "Saudi Arabia's e-commerce regulations generally give consumers a right to withdraw from an online purchase within a set period. That right does not extend to digital content or services supplied on a non-tangible medium once performance has begun with your prior express consent and acknowledgment that you lose the right of withdrawal by doing so.",
-            "By purchasing a subscription or credit pack and generating at least one document with it, you expressly ask us to begin performing the Service immediately and acknowledge that your right of withdrawal ends once that generation is delivered. If you haven't used any credit from a purchase yet, contact tarshih.dev@gmail.com within a reasonable time and we'll review the request under applicable consumer protection law.",
+            "By purchasing a subscription or credit pack and generating at least one document with it, you expressly ask us to begin performing the Service immediately and acknowledge that your right of withdrawal ends once that generation is delivered. If you haven't used any credit from a purchase yet, contact support@tarshih.com within a reasonable time and we'll review the request under applicable consumer protection law.",
           ],
         },
         {
           heading: "6. How to request a refund",
           body: [
-            "Email tarshih.dev@gmail.com from the address on your account, describe what happened, and we'll respond as quickly as we can. Refunds are issued by us and returned to the original payment method through our payment provider. Once approved, it can take a few business days for your bank or card issuer to show the amount.",
+            "Email support@tarshih.com from the address on your account, describe what happened, and we'll respond as quickly as we can. Refunds are issued by us and returned to the original payment method through our payment provider. Once approved, it can take a few business days for your bank or card issuer to show the amount.",
           ],
         },
       ],
@@ -384,7 +384,7 @@ export const legalContent: Record<Lang, Record<LegalDocKey, LegalDoc>> = {
         {
           heading: "Where it's going",
           body: [
-            "Tarshih is actively developed and still growing. If something feels rough around the edges, that's honest feedback we want to hear, not something we're trying to hide. You can reach the person actually building this at tarshih.dev@gmail.com.",
+            "Tarshih is actively developed and still growing. If something feels rough around the edges, that's honest feedback we want to hear, not something we're trying to hide. You can reach the person actually building this at support@tarshih.com.",
           ],
         },
       ],
@@ -456,7 +456,7 @@ export const legalContent: Record<Lang, Record<LegalDocKey, LegalDoc>> = {
         {
           heading: "Get in touch",
           body: [
-            "For support, billing questions, feedback, or anything else, email us at tarshih.dev@gmail.com. We typically reply within one to two business days.",
+            "For support, billing questions, feedback, or anything else, email us at support@tarshih.com. We typically reply within one to two business days.",
           ],
         },
       ],
@@ -473,7 +473,7 @@ export const legalContent: Record<Lang, Record<LegalDocKey, LegalDoc>> = {
           heading: "1. من نحن",
           body: [
             "تُدار ترشيح حاليًا من قِبل صاحب أعمال فردي مقيم في جدة، المملكة العربية السعودية، ويقدّم الخدمة بموجب نظام وثيقة العمل الحر في المملكة. ترشيح ليست، في الوقت الحالي، شركة مسجّلة بشكل منفصل. الإشارة إلى \"نحن\" أو \"ترشيح\" في هذه الشروط تعني المشغّل الفردي العامل تحت اسم ترشيح.",
-            "تعمل ترشيح بموجب وثيقة ممارس حر رقم FL-547870023، الصادرة من وزارة الموارد البشرية والتنمية الاجتماعية السعودية باسم عبدالملك يوسف محمد رابع هوساوي، ضمن فئة الخدمات التخصصية، تخصص هندسة برمجيات، سارية من 15 يوليو 2026 حتى 15 يوليو 2027. يمكنك التواصل معنا على tarshih.dev@gmail.com.",
+            "تعمل ترشيح بموجب وثيقة ممارس حر رقم FL-547870023، الصادرة من وزارة الموارد البشرية والتنمية الاجتماعية السعودية باسم عبدالملك يوسف محمد رابع هوساوي، ضمن فئة الخدمات التخصصية، تخصص هندسة برمجيات، سارية من 15 يوليو 2026 حتى 15 يوليو 2027. يمكنك التواصل معنا على support@tarshih.com.",
             "سنحرص على تحديث هذا القسم إذا تغيّر هيكلنا القانوني، مثلًا عند التأسيس كشركة، ولن يقلّل أي تغيير من هذا القبيل من حقوقك بموجب هذه الشروط.",
           ],
         },
@@ -495,7 +495,7 @@ export const legalContent: Record<Lang, Record<LegalDocKey, LegalDoc>> = {
           heading: "4. الحسابات",
           body: [
             "يجب عليك تقديم معلومات دقيقة عند إنشاء حساب والحفاظ على سرية بيانات تسجيل الدخول الخاصة بك. أنت مسؤول عن جميع الأنشطة التي تحدث ضمن حسابك، سواء صرّحت بها أم لا، إلا في حال نتجت عن إخفاقنا في تأمين الخدمة.",
-            "أبلغنا فورًا على tarshih.dev@gmail.com إذا اشتبهت بوصول غير مصرح به إلى حسابك. يجوز لنا تعليق أو إنهاء الحسابات التي تقدم معلومات كاذبة، أو تُستخدم لانتهاك هذه الشروط، أو تظل غير نشطة لفترة طويلة، وفقًا للبند 12 (الإنهاء).",
+            "أبلغنا فورًا على support@tarshih.com إذا اشتبهت بوصول غير مصرح به إلى حسابك. يجوز لنا تعليق أو إنهاء الحسابات التي تقدم معلومات كاذبة، أو تُستخدم لانتهاك هذه الشروط، أو تظل غير نشطة لفترة طويلة، وفقًا للبند 12 (الإنهاء).",
           ],
         },
         {
@@ -506,14 +506,14 @@ export const legalContent: Record<Lang, Record<LegalDocKey, LegalDoc>> = {
             "حزم الدفع حسب الاستخدام هي مشتريات لمرة واحدة لا تنتهي وفق دورة شهرية، لكن ترشيح غير ملزمة بالحفاظ على النقاط غير المستخدمة إلى أجل غير مسمى إذا تم إنهاء حسابك بموجب البند 12.",
             "عند تفعيل عرض سعر ترويجي محدود المدة (مثل خصم الأعضاء المؤسسين المقتصر على عدد محدد من المشتركين)، يُطبَّق السعر المخفّض فقط على المشتركين المؤهلين الذين يشتركون خلال فترة العرض، ويستمر العمل به طالما بقي الاشتراك المؤهل ساريًا دون انقطاع. السماح بانتهاء أو إلغاء أو تخفيض اشتراك مؤهل إلى الفئة المجانية ثم إعادة الاشتراك لاحقًا قد يؤدي إلى تطبيق السعر القياسي المعمول به حينها بدلًا من ذلك. يجوز لنا إنهاء عرض ترويجي عند بلوغ السعة المعلنة له أو انتهاء مدته المعلنة، دون أن يؤثر ذلك على المشتركين الذين ثبّتوا السعر بالفعل.",
             "تتم معالجة مدفوعات البطاقات نيابةً عنا عبر مزود خدمات دفع خارجي مرخّص، من خلال صفحة دفع آمنة ومتوافقة مع معيار PCI خاصة به. ترشيح هي البائع في كل عملية شراء تتم عبر الخدمة: فأنت تتعاقد معنا مباشرة، ونحن من يحدد ويعرض السعر في صفحة الأسعار، ونبقى المسؤولين عن تقديم الخدمة والرد على استفسارات الفوترة وإصدار أي مبلغ مسترد مستحق بموجب هذا البند أو سياسة الاسترداد والاستبدال. نحن لا نرى ولا نخزّن رقم بطاقتك الكامل؛ فبيانات الدفع التي تدخلها عند إتمام الشراء يعالجها مزود خدمات الدفع بموجب شروط الاستخدام وسياسة الخصوصية الخاصة به، والتي يتم تعريفك بها عند الدفع. وحيثما تنطبق ضريبة القيمة المضافة أو ضريبة معاملات مماثلة على عملية شرائك، فستُعرض أو تُحتسب عند الدفع وفقًا لمتطلبات الأنظمة الضريبية السعودية المعمول بها.",
-            "باستثناء ما يقتضيه القانون المعمول به أو ما هو منصوص عليه صراحة خلاف ذلك، فإن الرسوم المدفوعة والنقاط المستهلكة غير قابلة للاسترداد. إذا حال عطل تقني من جانبنا دون تسليم توليد مدفوع (مثلًا: خُصمت نقطة دون إنتاج مستند)، تواصل معنا على tarshih.dev@gmail.com وسنعيد النقطة أو نصدر، وفق تقديرنا، استردادًا لتلك الرسوم تحديدًا.",
+            "باستثناء ما يقتضيه القانون المعمول به أو ما هو منصوص عليه صراحة خلاف ذلك، فإن الرسوم المدفوعة والنقاط المستهلكة غير قابلة للاسترداد. إذا حال عطل تقني من جانبنا دون تسليم توليد مدفوع (مثلًا: خُصمت نقطة دون إنتاج مستند)، تواصل معنا على support@tarshih.com وسنعيد النقطة أو نصدر، وفق تقديرنا، استردادًا لتلك الرسوم تحديدًا.",
           ],
         },
         {
           heading: "6. حق الرجوع (الاسترداد) في المحتوى الرقمي",
           body: [
             "بموجب أنظمة التجارة الإلكترونية في المملكة العربية السعودية، يتمتع المستهلكون عمومًا بحق الرجوع عن عملية شراء إلكترونية خلال مدة محددة. لا ينطبق هذا الحق على المحتوى الرقمي أو الخدمات التي لا تُسلَّم على وسيط ملموس متى بدأ تنفيذها بموافقتك الصريحة المسبقة وإقرارك بأنك بذلك تفقد حق الرجوع.",
-            "بشرائك اشتراكًا أو حزمة نقاط للدفع حسب الاستخدام، وتوليدك مستندًا مخصصًا واحدًا على الأقل باستخدامها، فإنك تطلب صراحةً أن نبدأ بتنفيذ الخدمة فورًا، وتقرّ بأن حق الرجوع لديك ينتهي فور تسليم ذلك المستند، بالقدر الذي يسمح به القانون المعمول به. إذا لم تكن قد استخدمت أي نقطة من عملية شراء بعد، تواصل معنا على tarshih.dev@gmail.com خلال مدة معقولة وسنراجع الطلب بما يتوافق مع نظام حماية المستهلك المعمول به.",
+            "بشرائك اشتراكًا أو حزمة نقاط للدفع حسب الاستخدام، وتوليدك مستندًا مخصصًا واحدًا على الأقل باستخدامها، فإنك تطلب صراحةً أن نبدأ بتنفيذ الخدمة فورًا، وتقرّ بأن حق الرجوع لديك ينتهي فور تسليم ذلك المستند، بالقدر الذي يسمح به القانون المعمول به. إذا لم تكن قد استخدمت أي نقطة من عملية شراء بعد، تواصل معنا على support@tarshih.com خلال مدة معقولة وسنراجع الطلب بما يتوافق مع نظام حماية المستهلك المعمول به.",
           ],
         },
         {
@@ -561,7 +561,7 @@ export const legalContent: Record<Lang, Record<LegalDocKey, LegalDoc>> = {
         {
           heading: "13. الإنهاء",
           body: [
-            "يمكنك التوقف عن استخدام الخدمة وحذف حسابك في أي وقت من إعدادات لوحة التحكم أو بمراسلتنا على tarshih.dev@gmail.com.",
+            "يمكنك التوقف عن استخدام الخدمة وحذف حسابك في أي وقت من إعدادات لوحة التحكم أو بمراسلتنا على support@tarshih.com.",
             "يجوز لنا تعليق أو إنهاء حسابك، مع الإشعار متى أمكن ذلك عمليًا، إذا خالفت هذه الشروط بشكل جوهري، أو إذا اقتضى القانون ذلك، أو إذا أوقفنا الخدمة. عند الإنهاء، ينتهي حقك في استخدام الخدمة فورًا؛ وتسقط النقاط غير المستخدمة من حزم الدفع حسب الاستخدام وأي فترة اشتراك متبقية، باستثناء ما يقتضيه القانون المعمول به من استرداد أو ما هو منصوص عليه صراحة في البند 5.",
             "تستمر البنود التي تقتضي طبيعتها استمرارها بعد الإنهاء (بما يشمل البنود 7 و9 و14 و15 و16) في السريان بعد إغلاق حسابك.",
           ],
@@ -590,7 +590,7 @@ export const legalContent: Record<Lang, Record<LegalDocKey, LegalDoc>> = {
           heading: "17. القانون الحاكم والنزاعات",
           body: [
             "تخضع هذه الشروط لأنظمة المملكة العربية السعودية. أي نزاع ينشأ عن هذه الشروط أو الخدمة ولا يمكن حله وديًا يخضع للاختصاص القضائي الحصري للمحاكم المختصة في المملكة العربية السعودية، دون الإخلال بأي حقوق حماية للمستهلك إلزامية قد تتمتع بها بموجب أنظمة مكان إقامتك.",
-            "قبل رفع أي مطالبة، يرجى التواصل معنا على tarshih.dev@gmail.com؛ يمكن حل معظم المشكلات مباشرة وبشكل أسرع من الإجراءات الرسمية.",
+            "قبل رفع أي مطالبة، يرجى التواصل معنا على support@tarshih.com؛ يمكن حل معظم المشكلات مباشرة وبشكل أسرع من الإجراءات الرسمية.",
           ],
         },
         {
@@ -607,7 +607,7 @@ export const legalContent: Record<Lang, Record<LegalDocKey, LegalDoc>> = {
         },
         {
           heading: "20. التواصل",
-          body: ["يمكن إرسال أي استفسارات حول هذه الشروط إلى tarshih.dev@gmail.com."],
+          body: ["يمكن إرسال أي استفسارات حول هذه الشروط إلى support@tarshih.com."],
         },
       ],
     },
@@ -620,7 +620,7 @@ export const legalContent: Record<Lang, Record<LegalDocKey, LegalDoc>> = {
         {
           heading: "1. من المسؤول عن بياناتك",
           body: [
-            "تُدار ترشيح حاليًا من قِبل صاحب أعمال فردي مقيم في جدة، المملكة العربية السعودية، والذي يعمل كمتحكم في البيانات الموضحة في هذه السياسة. يمكنك التواصل معنا على tarshih.dev@gmail.com لأي استفسار أو طلب متعلق بالخصوصية.",
+            "تُدار ترشيح حاليًا من قِبل صاحب أعمال فردي مقيم في جدة، المملكة العربية السعودية، والذي يعمل كمتحكم في البيانات الموضحة في هذه السياسة. يمكنك التواصل معنا على support@tarshih.com لأي استفسار أو طلب متعلق بالخصوصية.",
           ],
         },
         {
@@ -663,7 +663,7 @@ export const legalContent: Record<Lang, Record<LegalDocKey, LegalDoc>> = {
           heading: "6. الاحتفاظ بالبيانات",
           body: [
             "نحتفظ ببيانات حسابك ومحتواك طالما ظل حسابك نشطًا، لتبقى سجلات سيرتك الذاتية والمستندات المُولَّدة وإعداداتك متاحة لك. إذا حذفت حسابك، سنحذف أو نُخفي هوية بياناتك الشخصية خلال فترة معقولة، باستثناء ما يلزم الاحتفاظ به من سجلات (مثل سجلات الفوترة) لأغراض قانونية أو ضريبية أو محاسبية، أو لتسوية النزاعات.",
-            "يمكنك طلب حذف محتوى محدد تم رفعه أو حذف حسابك بالكامل في أي وقت من لوحة التحكم أو بمراسلتنا على tarshih.dev@gmail.com.",
+            "يمكنك طلب حذف محتوى محدد تم رفعه أو حذف حسابك بالكامل في أي وقت من لوحة التحكم أو بمراسلتنا على support@tarshih.com.",
           ],
         },
         {
@@ -676,7 +676,7 @@ export const legalContent: Record<Lang, Record<LegalDocKey, LegalDoc>> = {
           heading: "8. حقوقك",
           body: [
             "وفقًا للقانون المعمول به، بما يشمل نظام حماية البيانات الشخصية، يحق لك: الوصول إلى بياناتك الشخصية التي نحتفظ بها؛ طلب تصحيح البيانات غير الدقيقة؛ طلب حذف بياناتك؛ سحب الموافقة عندما تكون المعالجة مبنية على الموافقة، دون التأثير على المعالجة التي تمت قبل السحب؛ الاعتراض على معالجة معينة؛ وطلب نسخة من بياناتك بصيغة قابلة للنقل.",
-            "لممارسة أي من هذه الحقوق، راسلنا على tarshih.dev@gmail.com. قد نحتاج للتحقق من هويتك قبل تنفيذ الطلب، ويجوز لنا رفض الطلبات التي تكون واضحة عدم استنادها لأساس، أو مفرطة، أو التي ينطبق عليها استثناء بموجب القانون.",
+            "لممارسة أي من هذه الحقوق، راسلنا على support@tarshih.com. قد نحتاج للتحقق من هويتك قبل تنفيذ الطلب، ويجوز لنا رفض الطلبات التي تكون واضحة عدم استنادها لأساس، أو مفرطة، أو التي ينطبق عليها استثناء بموجب القانون.",
           ],
         },
         {
@@ -701,7 +701,7 @@ export const legalContent: Record<Lang, Record<LegalDocKey, LegalDoc>> = {
         },
         {
           heading: "12. التواصل",
-          body: ["لأي استفسار أو طلب أو شكوى تتعلق بالخصوصية، راسلنا على tarshih.dev@gmail.com."],
+          body: ["لأي استفسار أو طلب أو شكوى تتعلق بالخصوصية، راسلنا على support@tarshih.com."],
         },
       ],
     },
@@ -738,7 +738,7 @@ export const legalContent: Record<Lang, Record<LegalDocKey, LegalDoc>> = {
         {
           heading: "الإبلاغ عن مشكلة أمنية",
           body: [
-            "إذا كنت تعتقد أنك عثرت على ثغرة أمنية في ترشيح، يرجى الإبلاغ عنها على tarshih.dev@gmail.com بأكبر قدر ممكن من التفاصيل. يرجى عدم الإفصاح علنًا عن ثغرة مشتبه بها قبل منحنا فرصة معقولة لمعالجتها. نقدّر الإفصاح المسؤول وسنرد بأسرع ما يمكن.",
+            "إذا كنت تعتقد أنك عثرت على ثغرة أمنية في ترشيح، يرجى الإبلاغ عنها على support@tarshih.com بأكبر قدر ممكن من التفاصيل. يرجى عدم الإفصاح علنًا عن ثغرة مشتبه بها قبل منحنا فرصة معقولة لمعالجتها. نقدّر الإفصاح المسؤول وسنرد بأسرع ما يمكن.",
           ],
         },
       ],
@@ -771,7 +771,7 @@ export const legalContent: Record<Lang, Record<LegalDocKey, LegalDoc>> = {
         {
           heading: "4. متى ينطبق الاسترداد",
           body: [
-            "إذا حال عطل تقني من جانبنا دون تسليم ما دفعت مقابله، كأن يُخصم رصيد دون إنتاج مستند، راسلنا على tarshih.dev@gmail.com مع بريد حسابك ووصف موجز لما حدث. سنعيد الرصيد أو، وفق تقديرنا، نسترد تلك العملية تحديدًا.",
+            "إذا حال عطل تقني من جانبنا دون تسليم ما دفعت مقابله، كأن يُخصم رصيد دون إنتاج مستند، راسلنا على support@tarshih.com مع بريد حسابك ووصف موجز لما حدث. سنعيد الرصيد أو، وفق تقديرنا، نسترد تلك العملية تحديدًا.",
             "بخلاف ذلك، فإن الرسوم المدفوعة والرصيد المستهلك غير قابلة للاسترداد، إلا في الحالات التي يقتضيها القانون المعمول به.",
           ],
         },
@@ -779,13 +779,13 @@ export const legalContent: Record<Lang, Record<LegalDocKey, LegalDoc>> = {
           heading: "5. حق التراجع بموجب نظام التجارة الإلكترونية السعودي",
           body: [
             "تمنح أنظمة التجارة الإلكترونية في المملكة العربية السعودية المستهلكين عمومًا حق التراجع عن عملية شراء إلكترونية خلال مدة محددة. لا يمتد هذا الحق إلى المحتوى الرقمي أو الخدمات التي تُقدَّم على وسيط غير ملموس متى بدأ التنفيذ بموافقتك الصريحة المسبقة وإقرارك بأنك تفقد بذلك حق التراجع.",
-            "بشرائك اشتراكًا أو باقة رصيد وإنشائك مستندًا واحدًا على الأقل بها، فإنك تطلب منا صراحةً البدء في تنفيذ الخدمة فورًا وتقرّ بأن حق تراجعك ينتهي بمجرد تسليم ذلك المستند. إن لم تكن قد استخدمت أي رصيد من عملية الشراء بعد، راسلنا على tarshih.dev@gmail.com خلال مدة معقولة وسنراجع طلبك وفق نظام حماية المستهلك المعمول به.",
+            "بشرائك اشتراكًا أو باقة رصيد وإنشائك مستندًا واحدًا على الأقل بها، فإنك تطلب منا صراحةً البدء في تنفيذ الخدمة فورًا وتقرّ بأن حق تراجعك ينتهي بمجرد تسليم ذلك المستند. إن لم تكن قد استخدمت أي رصيد من عملية الشراء بعد، راسلنا على support@tarshih.com خلال مدة معقولة وسنراجع طلبك وفق نظام حماية المستهلك المعمول به.",
           ],
         },
         {
           heading: "6. كيفية طلب الاسترداد",
           body: [
-            "راسلنا على tarshih.dev@gmail.com من البريد الإلكتروني المسجّل في حسابك، مع وصف ما حدث، وسنرد بأسرع ما يمكن. نحن من يصدر المبالغ المستردة، وتُعاد إلى وسيلة الدفع الأصلية عبر مزود خدمات الدفع لدينا. وبعد الموافقة، قد يستغرق ظهور المبلغ لدى بنكك أو مُصدِر بطاقتك بضعة أيام عمل.",
+            "راسلنا على support@tarshih.com من البريد الإلكتروني المسجّل في حسابك، مع وصف ما حدث، وسنرد بأسرع ما يمكن. نحن من يصدر المبالغ المستردة، وتُعاد إلى وسيلة الدفع الأصلية عبر مزود خدمات الدفع لدينا. وبعد الموافقة، قد يستغرق ظهور المبلغ لدى بنكك أو مُصدِر بطاقتك بضعة أيام عمل.",
           ],
         },
       ],
@@ -811,7 +811,7 @@ export const legalContent: Record<Lang, Record<LegalDocKey, LegalDoc>> = {
         {
           heading: "إلى أين تتجه",
           body: [
-            "ترشيح قيد التطوير المستمر ولا تزال تنمو. إذا شعرت أن شيئًا ما يحتاج إلى تحسين، فتلك ملاحظة صادقة نريد سماعها، وليست شيئًا نحاول إخفاءه. يمكنك التواصل مباشرة مع الشخص الذي يبني هذا المشروع فعليًا على tarshih.dev@gmail.com.",
+            "ترشيح قيد التطوير المستمر ولا تزال تنمو. إذا شعرت أن شيئًا ما يحتاج إلى تحسين، فتلك ملاحظة صادقة نريد سماعها، وليست شيئًا نحاول إخفاءه. يمكنك التواصل مباشرة مع الشخص الذي يبني هذا المشروع فعليًا على support@tarshih.com.",
           ],
         },
       ],
@@ -882,7 +882,7 @@ export const legalContent: Record<Lang, Record<LegalDocKey, LegalDoc>> = {
         {
           heading: "تواصل معنا",
           body: [
-            "للدعم الفني أو استفسارات الفوترة أو الملاحظات أو أي شيء آخر، راسلنا على tarshih.dev@gmail.com. عادةً ما نرد خلال يوم إلى يومي عمل.",
+            "للدعم الفني أو استفسارات الفوترة أو الملاحظات أو أي شيء آخر، راسلنا على support@tarshih.com. عادةً ما نرد خلال يوم إلى يومي عمل.",
           ],
         },
       ],

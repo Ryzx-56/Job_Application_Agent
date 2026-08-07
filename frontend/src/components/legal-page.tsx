@@ -203,8 +203,8 @@ export function LegalPageShell({ docKey }: { docKey: PublicLegalDocKey }) {
 
               <p className="mt-8 text-sm text-zinc-500">
                 {c.questionsPrefix}{" "}
-                <a href="mailto:tarshih.dev@gmail.com" className="text-blue-400 hover:text-blue-300">
-                  tarshih.dev@gmail.com
+                <a href="mailto:support@tarshih.com" className="text-blue-400 hover:text-blue-300">
+                  support@tarshih.com
                 </a>
               </p>
             </div>
