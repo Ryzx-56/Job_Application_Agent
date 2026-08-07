@@ -202,7 +202,7 @@ function SignupForm() {
         // this back as email_data.redirect_to and appends it to the
         // confirmation link it builds, so /auth/confirm knows where to send
         // the user once it verifies the token.
-        emailRedirectTo: `${window.location.origin}/dashboard`,
+        emailRedirectTo: `${window.location.origin}/dashboard?lang=${lang}`,
       },
     });
     setSubmitting(false);

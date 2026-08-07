@@ -13,7 +13,7 @@ function isValidEmail(value: string) {
 }
 
 function ForgotPasswordForm() {
-  const { t, isRTL, dir } = useLang();
+  const { t, isRTL, dir, lang } = useLang();
   const c = t.forgotPassword;
   const BackIcon = isRTL ? ArrowRight : ArrowLeft;
   const ForwardIcon = isRTL ? ArrowLeft : ArrowRight;
@@ -43,10 +43,13 @@ function ForgotPasswordForm() {
     // redirectTo becomes email_data.redirect_to in the "Send Email" hook,
     // which /auth/confirm reads once it verifies the recovery token, so the
     // user lands directly on the reset-password form with a live session.
+    // ?lang rides along so the hook can send the email in the language being
+    // browsed right now — nobody is logged in here, so the account's stored
+    // preference can easily be stale or never have been set.
     const { error: resetError } = await supabase.auth.resetPasswordForEmail(
       targetEmail.trim(),
       {
-        redirectTo: `${window.location.origin}/reset-password`,
+        redirectTo: `${window.location.origin}/reset-password?lang=${lang}`,
       }
     );
 

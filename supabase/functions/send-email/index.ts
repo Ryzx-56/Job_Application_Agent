@@ -32,6 +32,18 @@ const SITE_URL = Deno.env.get("SITE_URL"); // e.g. "https://tarshih.com" — no 
 const LANG_METADATA_KEY = "preferred_language"; // <-- adjust to match your signup form's field name
 const DEFAULT_LANG: "ar" | "en" = "en";
 
+function json(body: unknown, status: number) {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { "Content-Type": "application/json" },
+  });
+}
+
+function normalizeLang(value: string | null | undefined): "ar" | "en" | null {
+  const v = value?.toLowerCase();
+  return v === "ar" ? "ar" : v === "en" ? "en" : null;
+}
+
 Deno.serve(async (req: Request) => {
   const payload = await req.text();
   const headers = Object.fromEntries(req.headers);
@@ -53,19 +65,30 @@ Deno.serve(async (req: Request) => {
     data = wh.verify(payload, headers) as typeof data;
   } catch (err) {
     console.error("Hook signature verification failed:", err);
-    return new Response(JSON.stringify({ error: "Invalid signature" }), { status: 401 });
+    return json({ error: { http_code: 401, message: "Invalid signature" } }, 401);
   }
 
   const { user, email_data } = data;
 
   const siteUrl = (SITE_URL || email_data.site_url).replace(/\/+$/, "");
 
-  const rawLang = (user.user_metadata?.[LANG_METADATA_KEY] as string | undefined)?.toLowerCase();
-  const lang: "ar" | "en" = rawLang === "ar" ? "ar" : rawLang === "en" ? "en" : DEFAULT_LANG;
-  // Diagnostic: shows up in the function's logs so language selection can be
-  // verified against the actual stored user_metadata without DB access.
+  // Language, in priority order:
+  //  1. ?lang= on redirect_to — the language the person is browsing in right
+  //     now. Password resets happen while logged out, where the language
+  //     switcher can't write to the account, so stored metadata goes stale;
+  //     what's on screen at request time is the better signal.
+  //  2. user_metadata.preferred_language — set at signup / from settings.
+  //  3. DEFAULT_LANG.
+  let redirectLang: "ar" | "en" | null = null;
+  try {
+    redirectLang = normalizeLang(new URL(email_data.redirect_to).searchParams.get("lang"));
+  } catch {
+    // redirect_to may be absent or relative; metadata fallback covers it.
+  }
+  const metaLang = normalizeLang(user.user_metadata?.[LANG_METADATA_KEY] as string | undefined);
+  const lang: "ar" | "en" = redirectLang ?? metaLang ?? DEFAULT_LANG;
   console.log(
-    `email_action_type=${email_data.email_action_type} rawLang=${rawLang ?? "(none)"} resolvedLang=${lang} siteUrl=${siteUrl} (SITE_URL secret set: ${!!SITE_URL})`
+    `email_action_type=${email_data.email_action_type} redirectLang=${redirectLang ?? "(none)"} metaLang=${metaLang ?? "(none)"} resolvedLang=${lang} siteUrl=${siteUrl}`
   );
 
   const confirmationUrl =
@@ -97,8 +120,14 @@ Deno.serve(async (req: Request) => {
   if (!resendRes.ok) {
     const errText = await resendRes.text();
     console.error("Resend send failed:", errText);
-    return new Response(JSON.stringify({ error: "Email send failed" }), { status: 500 });
+    return json({ error: { http_code: 500, message: "Email send failed" } }, 500);
   }
 
-  return new Response(JSON.stringify({ ok: true }), { status: 200 });
+  // MUST be an empty JSON object with an application/json content type.
+  // GoTrue parses this response; anything else (including a stray {"ok":true}
+  // sent as text/plain) makes it treat the hook as failed, which returns 400
+  // to the caller AND rolls back the token it just generated — so the email
+  // we already sent carries a token_hash that never got committed, and the
+  // link 403s the instant it's clicked.
+  return json({}, 200);
 });

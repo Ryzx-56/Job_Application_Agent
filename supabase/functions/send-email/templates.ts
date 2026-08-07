@@ -101,7 +101,7 @@ function renderShell(opts: {
           <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="max-width:560px;background:${BRAND.card};border:1px solid ${BRAND.border};border-radius:12px;overflow:hidden;">
             <tr>
               <td align="center" style="padding:36px 40px 8px 40px;">
-                <img src="${logoUrl}" alt="${logoAlt}" height="48" style="height:48px;width:auto;display:block;border:0;outline:none;" />
+                <img src="${logoUrl}" alt="${logoAlt}" width="200" style="width:200px;max-width:60%;height:auto;display:block;border:0;outline:none;" />
               </td>
             </tr>
             <tr>
@@ -191,21 +191,21 @@ const COPY: Record<EmailType, Record<Lang, Copy>> = {
   signup: {
     en: {
       subject: "Confirm your email to activate your Tarshih account",
-      preheader: "One click and you're in — let's get your resume working for you.",
+      preheader: "One click and you're in. Let's get your resume working for you.",
       eyebrow: "Welcome to Tarshih",
       heading: "Confirm your email address",
       greeting: (name) => `Hi${name ? ` ${escapeHtml(name)}` : ""},`,
       body: [
-        "Thanks for signing up. We tailor resumes and cover letters with AI, so every application you send is built for the job you actually want — not a generic template.",
+        "Thanks for signing up. We tailor resumes and cover letters with AI, so every application you send is built for the job you actually want, not a generic template.",
         "Click the button below to confirm your email and activate your account. This link expires in 1 hour.",
       ],
       buttonLabel: "Confirm email",
       footerNote:
-        "If you didn't create a Tarshih account, you can safely ignore this email — no account will be created.",
+        "If you didn't create a Tarshih account, you can safely ignore this email. No account will be created.",
     },
     ar: {
       subject: "تأكيد بريدك الإلكتروني لتفعيل حسابك في ترشيح",
-      preheader: "خطوة واحدة تفصلك عن البدء — لنجهّز سيرتك الذاتية لفرصتك القادمة.",
+      preheader: "خطوة واحدة تفصلك عن البدء. لنجهّز سيرتك الذاتية لفرصتك القادمة.",
       eyebrow: "مرحباً بك في ترشيح",
       heading: "أكّد بريدك الإلكتروني",
       greeting: (name) => `مرحباً${name ? ` ${escapeHtml(name)}` : ""}،`,
@@ -214,32 +214,32 @@ const COPY: Record<EmailType, Record<Lang, Copy>> = {
         "اضغط على الزر أدناه لتأكيد بريدك الإلكتروني وتفعيل حسابك. صلاحية هذا الرابط ساعة واحدة.",
       ],
       buttonLabel: "تأكيد البريد الإلكتروني",
-      footerNote: "إذا لم تقم بإنشاء حساب في ترشيح، يمكنك تجاهل هذه الرسالة بأمان — لن يتم إنشاء أي حساب.",
+      footerNote: "إذا لم تقم بإنشاء حساب في ترشيح، يمكنك تجاهل هذه الرسالة بأمان، ولن يتم إنشاء أي حساب.",
     },
   },
   recovery: {
     en: {
       subject: "Reset your Tarshih password",
-      preheader: "Use the button below to choose a new password — this link expires in 1 hour.",
+      preheader: "Use the button below to choose a new password. This link expires in 1 hour.",
       eyebrow: "Password reset",
       heading: "Reset your password",
       greeting: (name) => `Hi${name ? ` ${escapeHtml(name)}` : ""},`,
       body: [
         "We received a request to reset the password on your Tarshih account. Click the button below to choose a new one. This link expires in 1 hour.",
-        "If you didn't request this, you can safely ignore this email — your password won't be changed.",
+        "If you didn't request this, you can safely ignore this email. Your password won't be changed.",
       ],
       buttonLabel: "Reset password",
       footerNote: "For your security, this link can only be used once.",
     },
     ar: {
       subject: "إعادة تعيين كلمة مرور حسابك في ترشيح",
-      preheader: "استخدم الزر أدناه لاختيار كلمة مرور جديدة — صلاحية هذا الرابط ساعة واحدة.",
+      preheader: "استخدم الزر أدناه لاختيار كلمة مرور جديدة. صلاحية هذا الرابط ساعة واحدة.",
       eyebrow: "إعادة تعيين كلمة المرور",
       heading: "إعادة تعيين كلمة المرور",
       greeting: (name) => `مرحباً${name ? ` ${escapeHtml(name)}` : ""}،`,
       body: [
         "وصلنا طلب لإعادة تعيين كلمة مرور حسابك في ترشيح. اضغط على الزر أدناه لاختيار كلمة مرور جديدة. صلاحية هذا الرابط ساعة واحدة.",
-        "إذا لم تطلب ذلك، يمكنك تجاهل هذه الرسالة بأمان — لن يتم تغيير كلمة المرور الخاصة بك.",
+        "إذا لم تطلب ذلك، يمكنك تجاهل هذه الرسالة بأمان، ولن يتم تغيير كلمة المرور الخاصة بك.",
       ],
       buttonLabel: "إعادة تعيين كلمة المرور",
       footerNote: "لأمان حسابك، لا يمكن استخدام هذا الرابط إلا مرة واحدة.",
@@ -248,7 +248,7 @@ const COPY: Record<EmailType, Record<Lang, Copy>> = {
   magiclink: {
     en: {
       subject: "Your Tarshih sign-in link",
-      preheader: "Click below to sign in — no password needed.",
+      preheader: "Click below to sign in. No password needed.",
       eyebrow: "Sign-in link",
       heading: "Sign in to Tarshih",
       greeting: (name) => `Hi${name ? ` ${escapeHtml(name)}` : ""},`,
