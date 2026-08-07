@@ -6,6 +6,7 @@ import { useLang } from "@/lib/language";
 import { useAuth } from "@/lib/auth";
 import { DashboardButton } from "@/components/dashboard";
 import { createClient } from "@/lib/supabase/client";
+import { passwordErrorKey } from "@/lib/auth-errors";
 import { fetchCredits, Tier } from "@/lib/supabase/credits";
 import { updateLocation } from "@/lib/supabase/location";
 import { getCountryList, getCitiesForCountry, formatLocation, parseLocation, OTHER_CITY_VALUE, CountryOption, CityOption } from "@/lib/countries";
@@ -139,7 +140,26 @@ export default function SettingsPage() {
 
     if (error) {
       setPasswordStatus("error");
-      setPasswordError(error.message);
+      // Was surfacing Supabase's raw English string, untranslated.
+      const messages: Record<ReturnType<typeof passwordErrorKey>, string> = {
+        samePassword: isAr
+          ? "يجب أن تكون كلمة المرور الجديدة مختلفة عن كلمة المرور الحالية"
+          : "Your new password must be different from your current one",
+        tooShort: isAr
+          ? "يجب ألا تقل كلمة المرور عن 8 أحرف"
+          : "Password must be at least 8 characters",
+        weakPassword: isAr
+          ? "كلمة المرور سهلة التخمين. جرّب إضافة أرقام أو رموز أو أحرف كبيرة"
+          : "That password is too easy to guess. Try adding numbers, symbols, or uppercase letters",
+        sessionExpired: isAr
+          ? "انتهت صلاحية جلستك. سجّل الدخول مرة أخرى وحاول من جديد"
+          : "Your session expired. Log in again and retry",
+        rateLimited: isAr
+          ? "محاولات كثيرة. انتظر قليلاً ثم حاول مرة أخرى"
+          : "Too many attempts. Wait a moment, then try again",
+        generic: isAr ? "حدث خطأ ما. حاول مرة أخرى" : "Something went wrong. Please try again",
+      };
+      setPasswordError(messages[passwordErrorKey(error)]);
       return;
     }
 

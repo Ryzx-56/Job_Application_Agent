@@ -7,6 +7,7 @@ import { Eye, EyeOff, ArrowRight, CheckCircle2 } from "lucide-react";
 import { useLang } from "@/lib/language";
 import { Button, Logo, LangSwitcher } from "@/components/brand";
 import { createClient } from "@/lib/supabase/client";
+import { passwordErrorKey } from "@/lib/auth-errors";
 
 export default function ResetPasswordPage() {
   const { t, dir } = useLang();
@@ -60,7 +61,10 @@ export default function ResetPasswordPage() {
     setSubmitting(false);
 
     if (updateError) {
-      setError(c.genericError);
+      // Show what actually went wrong (password reused, too weak, link
+      // expired, ...) instead of a blanket "something went wrong".
+      const key = passwordErrorKey(updateError);
+      setError(key === "generic" ? c.genericError : c[key]);
       return;
     }
     setSuccess(true);
