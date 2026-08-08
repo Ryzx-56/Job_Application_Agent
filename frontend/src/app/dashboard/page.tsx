@@ -31,8 +31,9 @@ import { createClient } from "@/lib/supabase/client";
 import { ManualCvForm, ManualCvData, emptyManualCvData } from "@/components/manual-cv-form";
 import { saveResumeResult } from "@/lib/supabase/resumes";
 import { fetchCredits } from "@/lib/supabase/credits";
-import { updateProfileNames, suggestNameFromCv, fetchAdminStatus } from "@/lib/supabase/profile-names";
-import { RoleBadges } from "@/components/badges";
+import { updateProfileNames, suggestNameFromCv, fetchAdminStatus, fetchBadges, markBadgesSeen } from "@/lib/supabase/profile-names";
+import { BadgeUnlockModal } from "@/components/badge-unlock";
+import { RoleBadges, BadgeKey } from "@/components/badges";
 
 // Detects Arabic script. Used only to decide whether a manually-typed name
 // can be offered back as an Arabic suggestion — never to transform a name.
@@ -367,8 +368,11 @@ export default function DashboardHomePage() {
   // Role flags come from their own endpoint, never from the profiles
   // select — see fetchAdminStatus for why.
   const [isAdmin, setIsAdmin] = useState(false);
-  const [isOwner, setIsOwner] = useState(false);
-  const [isAlphaTester, setIsAlphaTester] = useState(false);
+  // Badge list comes from the server so the tier badges (which depend on
+  // live subscription state) can't drift from what the backend believes.
+  const [badges, setBadges] = useState<BadgeKey[]>([]);
+  const [newBadges, setNewBadges] = useState<BadgeKey[]>([]);
+  const [badgeFoundingNumber, setBadgeFoundingNumber] = useState<number | null>(null);
   const [location, setLocation] = useState<string | null | undefined>(undefined);
 
   const refreshCredits = () => {
@@ -385,10 +389,12 @@ export default function DashboardHomePage() {
 
   useEffect(() => {
     refreshCredits();
-    fetchAdminStatus().then(({ isAdmin: admin, isOwner: owner, isAlphaTester: alpha }) => {
-      setIsAdmin(admin);
-      setIsOwner(owner);
-      setIsAlphaTester(alpha);
+    fetchAdminStatus().then(({ isAdmin: admin }) => setIsAdmin(admin));
+
+    fetchBadges().then((b) => {
+      setBadges(b.badges as BadgeKey[]);
+      setNewBadges(b.new as BadgeKey[]);
+      setBadgeFoundingNumber(b.founding_member_number);
     });
   }, []);
   const [generating, setGenerating] = useState(false);
@@ -667,27 +673,32 @@ export default function DashboardHomePage() {
           than in their own section — this is already where a user looks for
           "what am I". The whole block renders if the user has ANY badge, so
           an admin who isn't a founding member still gets the row. */}
-      {(isFoundingMember || isAdmin || isOwner || isAlphaTester) && (
+      {badges.length > 0 && (
         <div>
           <span className="mb-2 block text-xs font-medium uppercase tracking-wide text-slate-400">
             {lang === "ar" ? "الشارات" : "Badges"}
           </span>
-          {/* size="lg" here on purpose: on the Dashboard these are the
-              thing you're meant to notice, not a label beside a heading. */}
           <RoleBadges
-            isOwner={isOwner}
-            isAdmin={isAdmin}
-            isFoundingMember={isFoundingMember}
-            isAlphaTester={isAlphaTester}
-            foundingMemberNumber={foundingMemberNumber}
-            foundingMemberLabel={
-              lang === "ar" ? `عضو مؤسس #${foundingMemberNumber}` : `Founding Member #${foundingMemberNumber}`
-            }
-            alphaTesterLabel={lang === "ar" ? "مختبِر ألفا" : undefined}
+            badges={badges}
+            foundingMemberNumber={badgeFoundingNumber ?? foundingMemberNumber}
             lang={lang === "ar" ? "ar" : "en"}
             size="lg"
           />
         </div>
+      )}
+
+      {/* Fires once per newly-earned badge. Acknowledged only after it has
+          actually been shown — see markBadgesSeen. */}
+      {newBadges.length > 0 && (
+        <BadgeUnlockModal
+          badges={newBadges}
+          foundingMemberNumber={badgeFoundingNumber ?? foundingMemberNumber}
+          lang={lang === "ar" ? "ar" : "en"}
+          onDismiss={() => {
+            setNewBadges([]);
+            markBadgesSeen();
+          }}
+        />
       )}
 
       <div className="flex items-start justify-between gap-4">

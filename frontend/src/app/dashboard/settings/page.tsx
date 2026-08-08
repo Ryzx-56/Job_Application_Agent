@@ -9,8 +9,8 @@ import { createClient } from "@/lib/supabase/client";
 import { passwordErrorKey } from "@/lib/auth-errors";
 import { fetchCredits, Tier } from "@/lib/supabase/credits";
 import { updateLocation } from "@/lib/supabase/location";
-import { fetchProfileNames, updateProfileNames, fetchAdminStatus } from "@/lib/supabase/profile-names";
-import { RoleBadges } from "@/components/badges";
+import { fetchProfileNames, updateProfileNames, fetchAdminStatus, fetchBadges } from "@/lib/supabase/profile-names";
+import { RoleBadges, BadgeKey } from "@/components/badges";
 import { getCountryList, getCitiesForCountry, formatLocation, parseLocation, OTHER_CITY_VALUE, CountryOption, CityOption } from "@/lib/countries";
 import { SearchableSelect } from "@/components/searchable-select";
 import { LegalModal } from "@/components/legal-modal";
@@ -36,8 +36,8 @@ export default function SettingsPage() {
   // nothing and showing either grants nothing. Users have SELECT-only RLS
   // on profiles, so this flag can't be set by the person it describes.
   const [isAdmin, setIsAdmin] = useState(false);
-  const [isOwner, setIsOwner] = useState(false);
-  const [isAlphaTester, setIsAlphaTester] = useState(false);
+  const [badges, setBadges] = useState<BadgeKey[]>([]);
+  const [badgeFoundingNumber, setBadgeFoundingNumber] = useState<number | null>(null);
   const [isFoundingMember, setIsFoundingMember] = useState(false);
   const [foundingMemberNumber, setFoundingMemberNumber] = useState<number | null>(null);
   const [countryIso, setCountryIso] = useState("SA");
@@ -87,10 +87,11 @@ export default function SettingsPage() {
       .catch((err) => console.error("fetchCredits failed:", err));
 
     // Separate call from fetchCredits on purpose — see fetchAdminStatus.
-    fetchAdminStatus().then(({ isAdmin: admin, isOwner: owner, isAlphaTester: alpha }) => {
-      setIsAdmin(admin);
-      setIsOwner(owner);
-      setIsAlphaTester(alpha);
+    fetchAdminStatus().then(({ isAdmin: admin }) => setIsAdmin(admin));
+
+    fetchBadges().then((b) => {
+      setBadges(b.badges as BadgeKey[]);
+      setBadgeFoundingNumber(b.founding_member_number);
     });
 
     fetchProfileNames()
@@ -244,15 +245,8 @@ export default function SettingsPage() {
           {/* Cosmetic. The flags come from the backend, which re-checks them
               on every privileged request regardless of what renders here. */}
           <RoleBadges
-            isOwner={isOwner}
-            isAdmin={isAdmin}
-            isFoundingMember={isFoundingMember}
-            isAlphaTester={isAlphaTester}
-            foundingMemberNumber={foundingMemberNumber}
-            foundingMemberLabel={
-              isAr ? `عضو مؤسس #${foundingMemberNumber}` : `Founding Member #${foundingMemberNumber}`
-            }
-            alphaTesterLabel={isAr ? "مختبِر ألفا" : undefined}
+            badges={badges}
+            foundingMemberNumber={badgeFoundingNumber ?? foundingMemberNumber}
             lang={isAr ? "ar" : "en"}
             size="sm"
           />

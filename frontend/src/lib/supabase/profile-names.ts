@@ -134,3 +134,44 @@ export async function fetchAdminStatus(): Promise<RoleFlags> {
     return { isAdmin: false, isOwner: false, isAlphaTester: false };
   }
 }
+
+/* ========================================================================
+   BADGES
+
+   The server owns which badges a user holds — tier badges are derived from
+   live subscription state, so recomputing them client-side would risk the
+   two disagreeing (e.g. still showing Pro after a lapse). See
+   backend/core/badges.py.
+======================================================================== */
+export type BadgeState = {
+  badges: string[];
+  /** Badges the user hasn't been congratulated for yet. Drives the popup. */
+  new: string[];
+  founding_member_number: number | null;
+};
+
+export async function fetchBadges(): Promise<BadgeState> {
+  try {
+    const res = await fetch(`${API_URL}/api/v1/profile/badges`, { headers: await authHeader() });
+    if (!res.ok) return { badges: [], new: [], founding_member_number: null };
+    return await res.json();
+  } catch {
+    return { badges: [], new: [], founding_member_number: null };
+  }
+}
+
+/**
+ * Acknowledges every currently-earned badge so its popup doesn't fire
+ * again. Called only AFTER the popup has been shown and dismissed, so
+ * closing the tab early means seeing it next visit rather than missing it.
+ */
+export async function markBadgesSeen(): Promise<void> {
+  try {
+    await fetch(`${API_URL}/api/v1/profile/badges/seen`, {
+      method: "POST",
+      headers: await authHeader(),
+    });
+  } catch {
+    // Cosmetic acknowledgement — never worth surfacing an error for.
+  }
+}

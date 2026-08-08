@@ -1,8 +1,9 @@
 "use client";
 
 import React from "react";
+import { Check, Sparkles, Zap, Clock, Heart } from "lucide-react";
+import { Badge } from "@/components/badges";
 import Link from "next/link";
-import { Check, Sparkles, Zap } from "lucide-react";
 import { useLang } from "@/lib/language";
 
 /**
@@ -72,13 +73,37 @@ export default function UpgradePage() {
           {paidPlans.map((plan) => (
             <div
               key={plan.slug}
-              className={`relative flex flex-col rounded-2xl border bg-white p-5 shadow-sm transition-shadow hover:shadow-md ${
-                plan.featured ? "border-blue-300 ring-1 ring-blue-200" : "border-slate-200"
+              className={`relative flex flex-col rounded-2xl border bg-white shadow-sm transition-shadow hover:shadow-md ${
+                plan.offerBanner
+                  ? "border-orange-300 ring-2 ring-orange-200"
+                  : plan.premium
+                  ? "border-slate-300 ring-1 ring-slate-200"
+                  : "border-slate-200"
               }`}
             >
+              {/* Offer banner, matching the landing page. Orange rather than
+                  the app's blue precisely because it should interrupt the
+                  page — a discount that blends in isn't doing its job. */}
+              {plan.offerBanner && (
+                <div className="flex items-center justify-center gap-1.5 rounded-t-2xl bg-gradient-to-r from-orange-500 to-amber-500 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-white">
+                  <Clock className="size-3.5 shrink-0" aria-hidden />
+                  {plan.offerBanner}
+                </div>
+              )}
+
+              <div className="flex flex-1 flex-col p-5">
               {plan.badge && (
-                <span className="absolute -top-2.5 start-5 rounded-full bg-blue-600 px-2.5 py-0.5 text-[11px] font-semibold text-white">
+                <span
+                  className={`absolute start-5 rounded-full px-2.5 py-0.5 text-[11px] font-semibold text-white ${
+                    plan.offerBanner ? "-top-2.5 bg-orange-600" : "-top-2.5 bg-blue-600"
+                  }`}
+                >
                   {plan.badge}
+                </span>
+              )}
+              {plan.discountLabel && (
+                <span className="absolute -top-2.5 end-5 rounded-full bg-rose-600 px-2.5 py-0.5 text-[11px] font-bold text-white shadow-sm">
+                  {plan.discountLabel}
                 </span>
               )}
               <h3 className="text-lg font-semibold text-slate-900">{plan.name}</h3>
@@ -105,16 +130,43 @@ export default function UpgradePage() {
                 ))}
               </ul>
 
+              {/* What you actually keep, shown as the badge itself rather
+                  than described in text. Pro/Elite subscribers earn their
+                  tier badge; the first 50 payers also keep Founding Member
+                  and their locked price permanently. */}
+              <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50/70 p-3">
+                <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                  {isAr ? "شارات تحصل عليها" : "Badges you unlock"}
+                </p>
+                <div className="mt-2 flex flex-wrap items-center gap-2">
+                  <Badge
+                    badge={plan.slug === "elite" ? "elite" : "pro"}
+                    size="sm"
+                    lang={isAr ? "ar" : "en"}
+                    withTooltip={false}
+                  />
+                  {plan.limitedOffer && (
+                    <Badge badge="founding_member" size="sm" lang={isAr ? "ar" : "en"} withTooltip={false} />
+                  )}
+                </div>
+                {plan.limitedOffer && (
+                  <p className="mt-2 text-xs leading-relaxed text-orange-700">{plan.limitedOffer}</p>
+                )}
+              </div>
+
               <Link
                 href={`/dashboard/checkout?plan=${plan.slug}`}
                 className={`mt-5 inline-flex items-center justify-center rounded-lg px-4 py-2.5 text-sm font-medium transition-colors ${
-                  plan.featured
+                  plan.offerBanner
+                    ? "bg-orange-600 text-white hover:bg-orange-500"
+                    : plan.featured
                     ? "bg-blue-600 text-white hover:bg-blue-500"
                     : "border border-slate-200 text-slate-700 hover:bg-slate-50"
                 }`}
               >
                 {plan.cta}
               </Link>
+              </div>
             </div>
           ))}
         </div>
@@ -156,6 +208,27 @@ export default function UpgradePage() {
               </Link>
             </div>
           ))}
+        </div>
+      </section>
+
+      {/* Same founder note the landing page shows. It's the honest reason
+          the free tier exists at a loss, and it belongs here more than
+          anywhere: this is the moment someone is deciding whether to pay. */}
+      <section className="rounded-2xl border border-slate-200 bg-slate-50/70 p-5 sm:p-6">
+        <div className="flex gap-3">
+          <span className="grid size-9 shrink-0 place-items-center rounded-lg bg-rose-50 text-rose-500">
+            <Heart className="size-4.5" aria-hidden />
+          </span>
+          <div className="min-w-0">
+            <h3 className="text-sm font-semibold text-slate-900">{pricing.founderNote.title}</h3>
+            <p className="mt-1.5 text-sm leading-relaxed text-slate-600">{pricing.founderNote.body}</p>
+            <Link
+              href="/about"
+              className="mt-2 inline-block text-sm font-medium text-blue-600 underline underline-offset-2 hover:text-blue-500"
+            >
+              {pricing.founderNote.cta}
+            </Link>
+          </div>
         </div>
       </section>
     </div>

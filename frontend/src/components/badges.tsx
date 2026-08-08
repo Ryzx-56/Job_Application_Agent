@@ -70,6 +70,18 @@ export const BADGE_TOOLTIPS = {
     en: "Given to early testers who helped shape Tarshih.",
     ar: "تُمنح للمختبرين الأوائل الذين ساهموا في تطوير ترشيح.",
   },
+  elite: {
+    en: "Given to Elite subscribers.",
+    ar: "تُمنح لمشتركي النخبة.",
+  },
+  pro: {
+    en: "Given to Pro subscribers.",
+    ar: "تُمنح لمشتركي برو.",
+  },
+  free: {
+    en: "You're on the free plan. Subscribe to earn a better badge.",
+    ar: "أنت على الخطة المجانية. اشترك للحصول على شارة أفضل.",
+  },
 };
 
 const SIZES: Record<BadgeSize, { pad: string; text: string; icon: string; gap: string }> = {
@@ -547,50 +559,318 @@ export function AlphaTesterBadge({
 }
 
 /* ------------------------------------------------------------------------
-   Convenience wrapper. Renders whichever badges apply, in rank order
-   (Owner, Admin, Founding Member), or nothing at all for a plain account.
+   FREE — the plain one.
+
+   Deliberately dull: flat grey, no gradient, no glow, no animation. Every
+   other badge is a reward and this one is the absence of one. Making it
+   attractive would undercut the paid badges sitting next to it, and a free
+   user should be able to tell at a glance that there is something better
+   to have.
+
+   It still exists rather than showing nothing, because "no badge" reads as
+   a bug whereas this reads as a state.
 ------------------------------------------------------------------------ */
-export function RoleBadges({
-  isOwner,
-  isAdmin,
-  isFoundingMember,
-  isAlphaTester,
+export function FreeBadge({
+  size = "md",
+  className = "",
+  tooltip,
+  label,
+}: {
+  size?: BadgeSize;
+  className?: string;
+  tooltip?: string;
+  label?: string;
+}) {
+  const s = SIZES[size];
+  const chip = (
+    <span
+      className={`inline-flex items-center rounded-md border border-slate-300 bg-slate-100 font-medium uppercase tracking-[0.12em] text-slate-500 ${s.pad} ${s.text} ${s.gap} ${className}`}
+    >
+      <svg width={s.icon} height={s.icon} viewBox="0 0 14 14" fill="none" aria-hidden className="shrink-0">
+        <circle cx="7" cy="7" r="4.2" stroke="#94a3b8" strokeWidth="1.3" />
+      </svg>
+      {label ?? "Free"}
+    </span>
+  );
+  return tooltip ? <Tooltip text={tooltip}>{chip}</Tooltip> : chip;
+}
+
+/* ------------------------------------------------------------------------
+   PRO — electric chip.
+
+   Blue/indigo with a fast diagonal sheen. Reads as "powered up" beside
+   Free's flat grey without reaching for the gold that belongs to Owner or
+   the platinum that belongs to Elite. 2.8s: the second-fastest cycle after
+   Admin, so it feels energetic rather than stately.
+------------------------------------------------------------------------ */
+export function ProBadge({
+  size = "md",
+  className = "",
+  tooltip,
+  label,
+}: {
+  size?: BadgeSize;
+  className?: string;
+  tooltip?: string;
+  label?: string;
+}) {
+  const s = SIZES[size];
+  const chip = (
+    <>
+      <style>{`
+        .jbaa-pro {
+          position: relative;
+          isolation: isolate;
+          border: 1px solid transparent;
+          background-image:
+            linear-gradient(180deg, #0f1b3d 0%, #070c1d 100%),
+            linear-gradient(120deg, #60a5fa 0%, #2563eb 45%, #93c5fd 60%, #2563eb 100%);
+          background-origin: border-box;
+          background-clip: padding-box, border-box;
+          box-shadow:
+            0 1px 2px rgba(0, 0, 0, 0.45),
+            0 0 14px -4px rgba(59, 130, 246, 0.8),
+            inset 0 1px 0 rgba(191, 219, 254, 0.16);
+        }
+        .jbaa-pro__text {
+          background: linear-gradient(180deg, #eff6ff 0%, #bfdbfe 55%, #60a5fa 100%);
+          -webkit-background-clip: text;
+          background-clip: text;
+          color: transparent;
+          white-space: nowrap;
+        }
+        @media (prefers-reduced-motion: no-preference) {
+          .jbaa-pro__text {
+            background: linear-gradient(100deg, #bfdbfe 0%, #bfdbfe 42%, #ffffff 50%, #bfdbfe 58%, #bfdbfe 100%);
+            background-size: 240% 100%;
+            -webkit-background-clip: text;
+            background-clip: text;
+            animation: jbaa-pro-sheen 2.8s ease-in-out infinite;
+          }
+          .jbaa-pro__bolt { animation: jbaa-pro-spark 2.8s ease-in-out infinite; }
+        }
+        @keyframes jbaa-pro-sheen {
+          0%, 55%, 100% { background-position: 130% 0; }
+          82% { background-position: -30% 0; }
+        }
+        @keyframes jbaa-pro-spark {
+          0%, 55%, 100% { filter: drop-shadow(0 0 0 rgba(147, 197, 253, 0)); }
+          78% { filter: drop-shadow(0 0 3px rgba(219, 234, 254, 0.95)); }
+        }
+      `}</style>
+      <span
+        className={`jbaa-pro inline-flex items-center rounded-md font-semibold uppercase tracking-[0.16em] ${s.pad} ${s.text} ${s.gap} ${className}`}
+      >
+        <svg width={s.icon} height={s.icon} viewBox="0 0 14 14" fill="none" aria-hidden className="jbaa-pro__bolt shrink-0">
+          <path d="M7.8 1.2 3.1 8h3.2l-.9 4.8L10.9 6H7.6l.2-4.8Z" fill="url(#jbaa-bolt)" stroke="#1d4ed8" strokeWidth="0.45" strokeLinejoin="round" />
+          <defs>
+            <linearGradient id="jbaa-bolt" x1="3" y1="1" x2="11" y2="13" gradientUnits="userSpaceOnUse">
+              <stop stopColor="#eff6ff" />
+              <stop offset="1" stopColor="#60a5fa" />
+            </linearGradient>
+          </defs>
+        </svg>
+        <span className="jbaa-pro__text">{label ?? "Pro"}</span>
+      </span>
+    </>
+  );
+  return tooltip ? <Tooltip text={tooltip}>{chip}</Tooltip> : chip;
+}
+
+/* ------------------------------------------------------------------------
+   ELITE — platinum chip.
+
+   Has to outrank Pro visually without competing with Owner. Gold is taken,
+   so this is cool platinum on near-black with a faceted star and a
+   prismatic edge that drifts. The restraint is the point: it reads as more
+   expensive than Pro's electric blue precisely because it is quieter.
+   3.2s.
+------------------------------------------------------------------------ */
+export function EliteBadge({
+  size = "md",
+  className = "",
+  tooltip,
+  label,
+}: {
+  size?: BadgeSize;
+  className?: string;
+  tooltip?: string;
+  label?: string;
+}) {
+  const s = SIZES[size];
+  const chip = (
+    <>
+      <style>{`
+        .jbaa-elite {
+          position: relative;
+          isolation: isolate;
+          border: 1px solid transparent;
+          background-image:
+            linear-gradient(180deg, #1c1f26 0%, #0a0c10 100%),
+            linear-gradient(120deg, #e2e8f0 0%, #94a3b8 30%, #ffffff 50%, #94a3b8 70%, #e2e8f0 100%);
+          background-size: 100% 100%, 260% 100%;
+          background-origin: border-box;
+          background-clip: padding-box, border-box;
+          box-shadow:
+            0 1px 3px rgba(0, 0, 0, 0.55),
+            0 0 16px -4px rgba(226, 232, 240, 0.6),
+            inset 0 1px 0 rgba(255, 255, 255, 0.18);
+        }
+        .jbaa-elite__text {
+          background: linear-gradient(180deg, #ffffff 0%, #e2e8f0 50%, #94a3b8 100%);
+          -webkit-background-clip: text;
+          background-clip: text;
+          color: transparent;
+          white-space: nowrap;
+        }
+        @media (prefers-reduced-motion: no-preference) {
+          .jbaa-elite { animation: jbaa-elite-edge 3.2s linear infinite; }
+          .jbaa-elite__star { animation: jbaa-elite-glint 3.2s ease-in-out infinite; }
+        }
+        @keyframes jbaa-elite-edge {
+          0% { background-position: 0 0, 0% 50%; }
+          100% { background-position: 0 0, 260% 50%; }
+        }
+        @keyframes jbaa-elite-glint {
+          0%, 60%, 100% { filter: drop-shadow(0 0 0 rgba(255, 255, 255, 0)); }
+          80% { filter: drop-shadow(0 0 3.5px rgba(255, 255, 255, 0.95)); }
+        }
+      `}</style>
+      <span
+        className={`jbaa-elite inline-flex items-center rounded-md font-semibold uppercase tracking-[0.18em] ${s.pad} ${s.text} ${s.gap} ${className}`}
+      >
+        <svg width={s.icon} height={s.icon} viewBox="0 0 14 14" fill="none" aria-hidden className="jbaa-elite__star shrink-0">
+          <path d="M7 0.9 8.7 5.1 13 6.8 8.7 8.5 7 12.8 5.3 8.5 1 6.8 5.3 5.1 7 0.9Z" fill="url(#jbaa-elite-fill)" stroke="#cbd5e1" strokeWidth="0.4" strokeLinejoin="round" />
+          <defs>
+            <linearGradient id="jbaa-elite-fill" x1="1" y1="1" x2="13" y2="13" gradientUnits="userSpaceOnUse">
+              <stop stopColor="#ffffff" />
+              <stop offset="0.5" stopColor="#e2e8f0" />
+              <stop offset="1" stopColor="#94a3b8" />
+            </linearGradient>
+          </defs>
+        </svg>
+        <span className="jbaa-elite__text">{label ?? "Elite"}</span>
+      </span>
+    </>
+  );
+  return tooltip ? <Tooltip text={tooltip}>{chip}</Tooltip> : chip;
+}
+
+/* ------------------------------------------------------------------------
+   BADGE KEYS + RENDERER
+
+   The server decides which badges a user holds (see backend/core/badges.py)
+   and returns them as an ordered list of keys. Rendering from that list
+   rather than from a pile of booleans matters because the tier badges are
+   MUTUALLY EXCLUSIVE and DERIVED: exactly one of elite/pro/free is always
+   present, and which one depends on live subscription state. Reproducing
+   that rule in the client would mean two implementations that can disagree
+   — e.g. still showing Pro after a subscription lapsed.
+------------------------------------------------------------------------ */
+export type BadgeKey =
+  | "owner"
+  | "admin"
+  | "elite"
+  | "pro"
+  | "founding_member"
+  | "alpha_tester"
+  | "free";
+
+/** Label overrides per language. Only badges whose text isn't already
+ *  correct in English need an entry. */
+function badgeLabel(key: BadgeKey, lang: "en" | "ar", foundingNumber?: number | null): string | undefined {
+  const ar = lang === "ar";
+  switch (key) {
+    case "founding_member":
+      return ar
+        ? `عضو مؤسس${foundingNumber ? ` #${foundingNumber}` : ""}`
+        : `Founding Member${foundingNumber ? ` #${foundingNumber}` : ""}`;
+    case "alpha_tester":
+      return ar ? "مختبِر ألفا" : undefined;
+    case "elite":
+      return ar ? "النخبة" : undefined;
+    case "pro":
+      return ar ? "برو" : undefined;
+    case "free":
+      return ar ? "مجاني" : undefined;
+    default:
+      return undefined;
+  }
+}
+
+const TOOLTIP_KEY: Record<BadgeKey, keyof typeof BADGE_TOOLTIPS> = {
+  owner: "owner",
+  admin: "admin",
+  elite: "elite",
+  pro: "pro",
+  founding_member: "founder",
+  alpha_tester: "alpha",
+  free: "free",
+};
+
+export function Badge({
+  badge,
+  size = "md",
+  lang = "en",
   foundingMemberNumber,
-  foundingMemberLabel,
-  alphaTesterLabel,
+  withTooltip = true,
+}: {
+  badge: BadgeKey;
+  size?: BadgeSize;
+  lang?: "en" | "ar";
+  foundingMemberNumber?: number | null;
+  withTooltip?: boolean;
+}) {
+  const label = badgeLabel(badge, lang, foundingMemberNumber);
+  const tooltip = withTooltip ? BADGE_TOOLTIPS[TOOLTIP_KEY[badge]][lang === "ar" ? "ar" : "en"] : undefined;
+  const common = { size, tooltip, label };
+
+  switch (badge) {
+    case "owner":
+      return <OwnerBadge size={size} tooltip={tooltip} />;
+    case "admin":
+      return <AdminBadge size={size} tooltip={tooltip} />;
+    case "elite":
+      return <EliteBadge {...common} />;
+    case "pro":
+      return <ProBadge {...common} />;
+    case "founding_member":
+      return <FoundingMemberBadge size={size} tooltip={tooltip} label={label} number={foundingMemberNumber} />;
+    case "alpha_tester":
+      return <AlphaTesterBadge {...common} />;
+    case "free":
+      return <FreeBadge {...common} />;
+    default:
+      return null;
+  }
+}
+
+export function RoleBadges({
+  badges,
+  foundingMemberNumber,
   lang = "en",
   size = "md",
   className = "",
 }: {
-  isOwner?: boolean;
-  isAdmin?: boolean;
-  isFoundingMember?: boolean;
-  isAlphaTester?: boolean;
+  /** Ordered badge keys from GET /api/v1/profile/badges. */
+  badges: BadgeKey[] | string[];
   foundingMemberNumber?: number | null;
-  foundingMemberLabel?: string;
-  alphaTesterLabel?: string;
-  /** Picks the tooltip language. Defaults to English. */
   lang?: "en" | "ar";
   size?: BadgeSize;
   className?: string;
 }) {
-  if (!isOwner && !isAdmin && !isFoundingMember && !isAlphaTester) return null;
-  const tip = (k: keyof typeof BADGE_TOOLTIPS) => BADGE_TOOLTIPS[k][lang === "ar" ? "ar" : "en"];
+  if (!badges?.length) return null;
   return (
     <span className={`inline-flex flex-wrap items-center gap-2 ${className}`}>
-      {isOwner && <OwnerBadge size={size} tooltip={tip("owner")} />}
-      {isAdmin && <AdminBadge size={size} tooltip={tip("admin")} />}
-      {isFoundingMember && (
-        <FoundingMemberBadge
+      {(badges as BadgeKey[]).map((key) => (
+        <Badge
+          key={key}
+          badge={key}
           size={size}
-          number={foundingMemberNumber}
-          label={foundingMemberLabel}
-          tooltip={tip("founder")}
+          lang={lang}
+          foundingMemberNumber={foundingMemberNumber}
         />
-      )}
-      {isAlphaTester && (
-        <AlphaTesterBadge size={size} label={alphaTesterLabel} tooltip={tip("alpha")} />
-      )}
+      ))}
     </span>
   );
 }
