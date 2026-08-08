@@ -20,7 +20,7 @@ from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
 from pydantic import BaseModel, Field
 from loguru import logger
 
-from core.auth import get_current_user_id
+from core.auth import get_current_user_id, read_admin_flag
 from core.credits import get_admin_client
 
 router = APIRouter()
@@ -94,6 +94,27 @@ class NamesUpdateRequest(BaseModel):
 @router.get("/api/v1/profile/names", tags=["Profile"])
 def read_names(user_id: str = Depends(get_current_user_id)) -> dict:
     return get_profile_names(user_id)
+
+
+@router.get("/api/v1/profile/admin-status", tags=["Profile"])
+def read_admin_status(user_id: str = Depends(get_current_user_id)) -> dict:
+    """
+    Whether to render the Settings link to the Resume Viewer.
+
+    Deliberately its OWN endpoint rather than another field on the profile
+    row the browser already reads. The frontend fetches profiles directly
+    via Supabase with a fixed column list, and PostgREST fails the WHOLE
+    query if any named column is missing — so adding is_admin there meant a
+    schema that hadn't been migrated yet broke tier, credits and location
+    display too, not just the admin link. Reading it here keeps that blast
+    radius at zero, and read_admin_flag accepts either column name so this
+    works before and after 003_admin_access.sql.
+
+    This is presentation only. Every real admin route re-checks the flag
+    server-side (see _require_admin), so a forged `true` here would reveal
+    a link and nothing behind it.
+    """
+    return {"is_admin": read_admin_flag(user_id)}
 
 
 @router.patch("/api/v1/profile/names", tags=["Profile"])

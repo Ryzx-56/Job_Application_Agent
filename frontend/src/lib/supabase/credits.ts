@@ -11,9 +11,6 @@ export type CreditsInfo = {
   isFoundingMember: boolean;
   foundingMemberNumber: number | null;
   location: string | null;
-  /** Drives the Settings link to the Resume Viewer. Display only: the real
-   *  check runs server-side on every admin request (core/auth.py). */
-  isAdmin: boolean;
 };
 
 /* ========================================================================
@@ -31,7 +28,12 @@ export async function fetchCredits(): Promise<CreditsInfo> {
 
   const { data, error } = await supabase
     .from("profiles")
-    .select("tier, credits_remaining, credits_total, pending_tier, credits_reset_at, is_founding_member, founding_member_number, location, is_admin")
+    // NOTE: do NOT add speculative columns here. PostgREST fails the ENTIRE
+    // query if any single named column is missing, so a column that hasn't
+    // been migrated yet takes down tier, credits AND location with it. The
+    // admin flag is read from its own endpoint for exactly this reason —
+    // see fetchAdminStatus in lib/supabase/profile-names.ts.
+    .select("tier, credits_remaining, credits_total, pending_tier, credits_reset_at, is_founding_member, founding_member_number, location")
     .eq("id", user.id)
     .single();
 
@@ -46,6 +48,5 @@ export async function fetchCredits(): Promise<CreditsInfo> {
     isFoundingMember: data.is_founding_member,
     foundingMemberNumber: data.founding_member_number,
     location: data.location,
-    isAdmin: Boolean(data.is_admin),
   };
 }

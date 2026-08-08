@@ -10,7 +10,7 @@ import { createClient } from "@/lib/supabase/client";
 import { passwordErrorKey } from "@/lib/auth-errors";
 import { fetchCredits, Tier } from "@/lib/supabase/credits";
 import { updateLocation } from "@/lib/supabase/location";
-import { fetchProfileNames, updateProfileNames } from "@/lib/supabase/profile-names";
+import { fetchProfileNames, updateProfileNames, fetchAdminStatus } from "@/lib/supabase/profile-names";
 import { getCountryList, getCitiesForCountry, formatLocation, parseLocation, OTHER_CITY_VALUE, CountryOption, CityOption } from "@/lib/countries";
 import { SearchableSelect } from "@/components/searchable-select";
 import { LegalModal } from "@/components/legal-modal";
@@ -61,7 +61,6 @@ export default function SettingsPage() {
     fetchCredits()
       .then((c) => {
         setTier(c.tier);
-        setIsAdmin(c.isAdmin);
         if (!c.location) return;
 
         const parsed = parseLocation(c.location);
@@ -79,6 +78,9 @@ export default function SettingsPage() {
         }
       })
       .catch((err) => console.error("fetchCredits failed:", err));
+
+    // Separate call from fetchCredits on purpose — see fetchAdminStatus.
+    fetchAdminStatus().then(setIsAdmin);
 
     fetchProfileNames()
       .then((n) => {

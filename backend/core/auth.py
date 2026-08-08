@@ -5,6 +5,7 @@ from functools import lru_cache
 import jwt
 from jwt import PyJWKClient
 from fastapi import Header, HTTPException, Query, status
+from loguru import logger
 
 # Plain server-side env var (NOT the NEXT_PUBLIC_ one from the frontend,
 # though it's the same value) — e.g. https://xxxxx.supabase.co
@@ -91,20 +92,59 @@ def get_current_user_id(authorization: str = Header(None)) -> str:
     return _verify_token(token)
 
 
-def _require_admin(user_id: str) -> str:
+# The admin flag's column name, most-preferred first. `is_admin` is the
+# intended name (and what 003_admin_access.sql renames to); `admin` is what
+# the column was originally created as. Both are accepted so the admin
+# feature works before AND after that migration runs, rather than the
+# rename being a hard prerequisite.
+_ADMIN_COLUMN_CANDIDATES = ("is_admin", "admin")
+
+
+def read_admin_flag(user_id: str | None) -> bool:
     """
-    Shared admin check: user_id must belong to a profiles row with
-    is_admin = true. Local import of get_admin_client to avoid a
-    module-load-order dependency between core/auth.py and core/credits.py
-    (both are imported very early, from main.py and from each other's
-    callers) — deferring it to call time sidesteps that without needing to
-    reorganize either module.
+    True if this user is an admin. Never raises.
+
+    Tries each known column name in turn: selecting a column that doesn't
+    exist is a PostgREST error, not a null, so the miss has to be caught
+    rather than tested for. Any other failure (network, missing row) is
+    treated as "not an admin", which is the safe direction to fail.
     """
+    if not user_id:
+        return False
+
+    # Local import of get_admin_client to avoid a module-load-order
+    # dependency between core/auth.py and core/credits.py (both are
+    # imported very early, from main.py and from each other's callers) —
+    # deferring it to call time sidesteps that without reorganizing either.
     from core.credits import get_admin_client
 
-    admin = get_admin_client()
-    profile = admin.table("profiles").select("is_admin").eq("id", user_id).maybe_single().execute().data
-    if not profile or not profile.get("is_admin"):
+    try:
+        admin = get_admin_client()
+    except Exception as e:
+        logger.error(f"Admin check could not reach Supabase: {e}")
+        return False
+
+    for column in _ADMIN_COLUMN_CANDIDATES:
+        try:
+            row = (
+                admin.table("profiles")
+                .select(column)
+                .eq("id", user_id)
+                .maybe_single()
+                .execute()
+                .data
+            )
+        except Exception:
+            continue  # column doesn't exist on this schema — try the next name
+        if row is not None:
+            return bool(row.get(column))
+
+    return False
+
+
+def _require_admin(user_id: str) -> str:
+    """Shared admin gate for every /api/v1/admin/* route."""
+    if not read_admin_flag(user_id):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin access required.")
     return user_id
 

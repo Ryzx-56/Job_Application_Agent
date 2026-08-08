@@ -103,3 +103,27 @@ export async function suggestNameFromCv(file: File): Promise<ProfileNames> {
     return { nameEn: null, nameAr: null };
   }
 }
+
+/**
+ * Whether to show the Settings link to the admin Resume Viewer.
+ *
+ * Its own call rather than a field on the profile row, because that row is
+ * fetched with a fixed column list and PostgREST 400s the whole query on
+ * one unknown column. Returns false on any failure: the link disappearing
+ * is a harmless degradation, a broken Settings page is not.
+ *
+ * Display only. Every admin route re-checks server-side, so faking this
+ * reveals a link with nothing behind it.
+ */
+export async function fetchAdminStatus(): Promise<boolean> {
+  try {
+    const res = await fetch(`${API_URL}/api/v1/profile/admin-status`, {
+      headers: await authHeader(),
+    });
+    if (!res.ok) return false;
+    const data = await res.json();
+    return Boolean(data?.is_admin);
+  } catch {
+    return false;
+  }
+}
