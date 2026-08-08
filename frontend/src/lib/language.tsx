@@ -451,8 +451,6 @@ export const content = {
       sub: "Set up your account to start tailoring applications in minutes.",
       googleCta: "Continue with Google",
       dividerLabel: "or sign up with email",
-      fullNameLabel: "Full name",
-      fullNamePlaceholder: "Your full name",
       // Two script-specific name fields. We never transliterate a name
       // between scripts — the same name has several valid Arabic spellings
       // and only its owner knows which is theirs.
@@ -493,6 +491,7 @@ export const content = {
         dashboard: "Dashboard",
         myResumes: "My Resumes",
         settings: "Settings",
+        admin: "Admin",
         logout: "Log out",
       },
       generate: {
@@ -582,7 +581,6 @@ export const content = {
         title: "Settings",
         sub: "Manage your account and preferences.",
         accountSection: "Account",
-        nameLabel: "Full name",
         nameEnLabel: "Name (English)",
         nameArLabel: "Name (Arabic)",
         // No placeholder here on purpose — nameHelp already explains what
@@ -1076,8 +1074,6 @@ export const content = {
       sub: "أعدّ حسابك لتبدأ في تخصيص طلبات التوظيف خلال دقائق.",
       googleCta: "المتابعة عبر جوجل",
       dividerLabel: "أو أنشئ حسابًا بالبريد الإلكتروني",
-      fullNameLabel: "الاسم الكامل",
-      fullNamePlaceholder: "اسمك الكامل",
       nameEnLabel: "الاسم (بالإنجليزية)",
       nameArLabel: "الاسم (بالعربية)",
       nameHelp: "أدخل واحدًا على الأقل. نستخدم كل اسم كما تكتبه تمامًا، ولا نترجم اسمك أبدًا.",
@@ -1112,6 +1108,7 @@ export const content = {
         dashboard: "لوحة التحكم",
         myResumes: "سيري الذاتية",
         settings: "الإعدادات",
+        admin: "الإدارة",
         logout: "تسجيل الخروج",
       },
       generate: {
@@ -1197,7 +1194,6 @@ export const content = {
         title: "الإعدادات",
         sub: "إدارة حسابك وتفضيلاتك.",
         accountSection: "الحساب",
-        nameLabel: "الاسم الكامل",
         nameEnLabel: "الاسم (بالإنجليزية)",
         nameArLabel: "الاسم (بالعربية)",
         // لا يوجد نص توضيحي داخل الحقل عمدًا — nameHelp يشرح الغرض بالفعل.

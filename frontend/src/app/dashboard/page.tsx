@@ -31,7 +31,8 @@ import { createClient } from "@/lib/supabase/client";
 import { ManualCvForm, ManualCvData, emptyManualCvData } from "@/components/manual-cv-form";
 import { saveResumeResult } from "@/lib/supabase/resumes";
 import { fetchCredits } from "@/lib/supabase/credits";
-import { updateProfileNames, suggestNameFromCv } from "@/lib/supabase/profile-names";
+import { updateProfileNames, suggestNameFromCv, fetchAdminStatus } from "@/lib/supabase/profile-names";
+import { RoleBadges } from "@/components/badges";
 
 // Detects Arabic script. Used only to decide whether a manually-typed name
 // can be offered back as an Arabic suggestion — never to transform a name.
@@ -363,6 +364,10 @@ export default function DashboardHomePage() {
   const [creditsTotal, setCreditsTotal] = useState(0);
   const [isFoundingMember, setIsFoundingMember] = useState(false);
   const [foundingMemberNumber, setFoundingMemberNumber] = useState<number | null>(null);
+  // Role flags come from their own endpoint, never from the profiles
+  // select — see fetchAdminStatus for why.
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [isOwner, setIsOwner] = useState(false);
   const [location, setLocation] = useState<string | null | undefined>(undefined);
 
   const refreshCredits = () => {
@@ -379,6 +384,10 @@ export default function DashboardHomePage() {
 
   useEffect(() => {
     refreshCredits();
+    fetchAdminStatus().then(({ isAdmin: admin, isOwner: owner }) => {
+      setIsAdmin(admin);
+      setIsOwner(owner);
+    });
   }, []);
   const [generating, setGenerating] = useState(false);
   const [result, setResult] = useState<GenerateResult | null>(null);
@@ -649,15 +658,27 @@ export default function DashboardHomePage() {
         </div>
       )}
 
-      {isFoundingMember && (
+      {/* Badges row. Owner and Admin sit alongside Founding Member rather
+          than in their own section — this is already where a user looks for
+          "what am I". The whole block renders if the user has ANY badge, so
+          an admin who isn't a founding member still gets the row. */}
+      {(isFoundingMember || isAdmin || isOwner) && (
         <div>
           <span className="mb-2 block text-xs font-medium uppercase tracking-wide text-slate-400">
             {lang === "ar" ? "الشارات" : "Badges"}
           </span>
-          <span className="inline-flex items-center gap-1.5 rounded-full border border-amber-400/40 bg-gradient-to-r from-amber-400/15 to-orange-400/15 px-3 py-1 text-xs font-semibold text-amber-700">
-            <Sparkles className="size-3.5" aria-hidden />
-            {lang === "ar" ? `عضو مؤسس #${foundingMemberNumber}` : `Founding Member #${foundingMemberNumber}`}
-          </span>
+          {/* size="lg" here on purpose: on the Dashboard these are the
+              thing you're meant to notice, not a label beside a heading. */}
+          <RoleBadges
+            isOwner={isOwner}
+            isAdmin={isAdmin}
+            isFoundingMember={isFoundingMember}
+            foundingMemberNumber={foundingMemberNumber}
+            foundingMemberLabel={
+              lang === "ar" ? `عضو مؤسس #${foundingMemberNumber}` : `Founding Member #${foundingMemberNumber}`
+            }
+            size="lg"
+          />
         </div>
       )}
 

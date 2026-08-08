@@ -201,14 +201,21 @@ function SignupForm() {
         // fallback for whenever an uploaded CV doesn't yield a location.
         data: {
           // name_en / name_ar are the real fields — handle_new_user() reads
-          // them into profiles (see supabase/migrations/002_profile_names.sql).
-          // full_name is still written so anything already reading
-          // user_metadata.full_name keeps working; it gets whichever name
-          // matches the signup language, falling back to the other.
+          // them into profiles (see supabase/migrations/002_profile_names.sql),
+          // and every user-facing surface picks between them by interface
+          // language (see pickDisplayName in components/dashboard.tsx).
+          //
+          // full_name is a single-value FALLBACK, not a source of truth. It
+          // prefers English regardless of the signup language, deliberately:
+          // it's what shows in the Supabase dashboard, in admin tooling and
+          // in logs, and having those consistently in one script makes them
+          // scannable. Latin is also the safer universal fallback (it's what
+          // Google OAuth supplies, and it renders anywhere). A user who only
+          // gave an Arabic name still gets it here — English is preferred,
+          // not required.
           name_en: nameEn.trim() || null,
           name_ar: nameAr.trim() || null,
-          full_name:
-            (lang === "ar" ? nameAr.trim() || nameEn.trim() : nameEn.trim() || nameAr.trim()),
+          full_name: nameEn.trim() || nameAr.trim(),
           selected_plan: planSlug,
           preferred_language: lang,
           location: resolvedLocation,

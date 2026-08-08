@@ -305,10 +305,10 @@ def _tailored_content_usable(result_state: dict) -> bool:
     return bool(result_state.get("tailored_bullets"))
 
 
-# Fields whose language should follow cv_language. Checked together rather
-# than individually so one stubborn proper noun can't fail an otherwise
-# correct Arabic CV.
-_LATIN_WORD_RE = re.compile(r"[A-Za-z]{2,}")
+# Used by _language_matches_request below to confirm an Arabic request
+# actually produced Arabic. Only the presence of Arabic is tested — a
+# Latin-script proper noun in an otherwise Arabic CV is fine and must not
+# fail the check.
 _ARABIC_CHAR_RE = re.compile(r"[؀-ۿ]")
 
 

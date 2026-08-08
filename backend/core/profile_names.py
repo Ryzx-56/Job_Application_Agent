@@ -154,8 +154,47 @@ def update_names(payload: NamesUpdateRequest, user_id: str = Depends(get_current
     if not row:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Profile not found.")
 
+    _sync_auth_metadata_names(user_id, name_en, name_ar)
+
     logger.info(f"👤 Profile names updated for user {user_id} (en={bool(name_en)}, ar={bool(name_ar)}).")
     return {"name_en": row.get("name_en"), "name_ar": row.get("name_ar")}
+
+
+def _sync_auth_metadata_names(user_id: str, name_en: str, name_ar: str) -> None:
+    """
+    Mirrors the names into auth.users.user_metadata.
+
+    `profiles` is the source of truth, but two things read auth metadata and
+    can't reach the profiles table: the confirmation/welcome email Edge
+    Function (supabase/functions/send-email), and anything reading
+    user_metadata.full_name directly. Without this, changing your name in
+    Settings would leave those greeting you by the name you signed up with,
+    possibly forever.
+
+    full_name prefers English for the same reason signup does: it's the
+    single-value fallback that shows up in the Supabase dashboard and in
+    tooling, and one consistent script there is easier to scan.
+
+    Best-effort. A metadata sync failure must not fail the name update the
+    user actually asked for — profiles is already written by this point, and
+    that's what every user-facing surface reads.
+    """
+    try:
+        admin = get_admin_client()
+        # READ-MODIFY-WRITE, not a blind overwrite: user_metadata also holds
+        # preferred_language, selected_plan, avatar_url and the OAuth
+        # provider's own fields. Replacing the object wholesale would drop
+        # all of them.
+        existing = admin.auth.admin.get_user_by_id(user_id)
+        current = dict(getattr(existing.user, "user_metadata", None) or {})
+        current.update({
+            "name_en": name_en or None,
+            "name_ar": name_ar or None,
+            "full_name": name_en or name_ar,
+        })
+        admin.auth.admin.update_user_by_id(user_id, {"user_metadata": current})
+    except Exception as e:
+        logger.warning(f"Couldn't sync names into auth metadata for {user_id}: {e}")
 
 
 # ─── NAME SUGGESTION FROM AN UPLOADED CV ───────────────────────────────────

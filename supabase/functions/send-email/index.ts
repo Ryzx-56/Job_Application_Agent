@@ -97,10 +97,25 @@ Deno.serve(async (req: Request) => {
     `&type=${email_data.email_action_type}` +
     `&redirect_to=${encodeURIComponent(email_data.redirect_to)}`;
 
-  const fullName = user.user_metadata?.full_name as string | undefined;
+  // Greet the reader in the script the email itself is written in. Users
+  // supply a name in Arabic, English, or both, so an Arabic email should
+  // open with their Arabic name where one exists. Falls back to the other
+  // script (a real name in the wrong script still beats no name), then to
+  // the legacy full_name, which is all a Google OAuth signup ever has.
+  //
+  // These are kept in sync with profiles by the backend whenever a name is
+  // edited — see _sync_auth_metadata_names in core/profile_names.py.
+  const meta = user.user_metadata ?? {};
+  const nameEn = meta.name_en as string | undefined;
+  const nameAr = meta.name_ar as string | undefined;
+  const preferredName = lang === "ar" ? nameAr : nameEn;
+  const otherName = lang === "ar" ? nameEn : nameAr;
+  const greetingName =
+    preferredName?.trim() || otherName?.trim() || (meta.full_name as string | undefined);
+
   const { subject, html } = getEmailTemplate(lang, email_data.email_action_type, confirmationUrl, {
     siteUrl,
-    name: fullName,
+    name: greetingName,
   });
 
   const resendRes = await fetch("https://api.resend.com/emails", {

@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
@@ -16,9 +16,11 @@ import {
   Eye,
   Download,
   Loader2,
+  Shield,
 } from "lucide-react";
 import { Globe } from "lucide-react";
 import { useLang, useSyncLanguageFromAccount } from "@/lib/language";
+import { fetchAdminStatus } from "@/lib/supabase/profile-names";
 import { Logo } from "@/components/brand";
 import { signOut } from "@/lib/auth";
 
@@ -367,21 +369,59 @@ export function StatusBadge({
    DASHBOARD SHELL — sidebar + topbar wrapper around every /dashboard/* page.
    Collapses to a hamburger drawer on mobile.
 ======================================================================== */
-type DashboardUser = { name: string | null; email: string; preferredLanguage?: string | null };
+type DashboardUser = {
+  /** Latin-script name. */
+  nameEn?: string | null;
+  /** Arabic-script name. */
+  nameAr?: string | null;
+  /** Legacy auth-metadata full_name, used only if neither of the above exists. */
+  name: string | null;
+  email: string;
+  preferredLanguage?: string | null;
+};
 
-function useNavItems() {
+/**
+ * The name to greet this user by, in the language they're reading.
+ *
+ * Users supply a name in Arabic, English, or both, so there is no single
+ * "their name" to show. Prefer the one matching the interface language,
+ * fall back to the other script rather than showing nothing (a real name in
+ * the wrong script beats an email address), then to the legacy full_name,
+ * then the email.
+ *
+ * Never transliterates. Whichever string is shown is one the user typed.
+ */
+export function pickDisplayName(
+  user: Pick<DashboardUser, "nameEn" | "nameAr" | "name" | "email">,
+  lang: string
+): string {
+  const preferred = lang === "ar" ? user.nameAr : user.nameEn;
+  const other = lang === "ar" ? user.nameEn : user.nameAr;
+  return (
+    preferred?.trim() || other?.trim() || user.name?.trim() || user.email
+  );
+}
+
+function useNavItems(isAdmin = false) {
   const { t } = useLang();
   return [
     { href: "/dashboard", label: t.dashboard.sidebar.dashboard, icon: LayoutDashboard },
     { href: "/dashboard/resumes", label: t.dashboard.sidebar.myResumes, icon: FileText },
     { href: "/dashboard/settings", label: t.dashboard.sidebar.settings, icon: Settings },
+    // Sits directly under Settings, and only for admins. Hiding it is
+    // convenience, not access control — every /api/v1/admin/* route
+    // re-checks profiles.is_admin server-side, so a non-admin who types the
+    // URL still gets nothing but "Admin access required".
+    ...(isAdmin
+      ? [{ href: "/dashboard/admin/resumes", label: t.dashboard.sidebar.admin, icon: Shield }]
+      : []),
   ];
 }
 
-function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
+function SidebarContent({ onNavigate, isAdmin }: { onNavigate?: () => void; isAdmin?: boolean }) {
   const { t } = useLang();
   const pathname = usePathname();
-  const navItems = useNavItems();
+  const navItems = useNavItems(isAdmin);
 
   return (
     <div className="flex h-full flex-col">
@@ -426,16 +466,25 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
 }
 
 export function DashboardShell({ user, children }: { user: DashboardUser; children: React.ReactNode }) {
-  const { isRTL } = useLang();
+  const { isRTL, lang } = useLang();
   useSyncLanguageFromAccount(user.preferredLanguage);
   const [drawerOpen, setDrawerOpen] = useState(false);
-  const displayName = user.name?.trim() || user.email;
+  // Resolved once here rather than inside SidebarContent, which renders
+  // twice (desktop rail + mobile drawer) and would otherwise make the same
+  // request twice on every page.
+  const [isAdmin, setIsAdmin] = useState(false);
+  useEffect(() => {
+    fetchAdminStatus().then(({ isAdmin: admin }) => setIsAdmin(admin));
+  }, []);
+  // Follows the interface language, not the account's "primary" name —
+  // see pickDisplayName.
+  const displayName = pickDisplayName(user, lang);
 
   return (
     <div className="min-h-screen bg-slate-50 lg:flex">
       {/* Desktop sidebar */}
       <aside className="hidden w-64 shrink-0 border-e border-slate-200 bg-white lg:block">
-        <SidebarContent />
+        <SidebarContent isAdmin={isAdmin} />
       </aside>
 
       {/* Mobile drawer */}
@@ -453,7 +502,7 @@ export function DashboardShell({ user, children }: { user: DashboardUser; childr
                 <X className="size-4.5" aria-hidden />
               </button>
             </div>
-            <SidebarContent onNavigate={() => setDrawerOpen(false)} />
+            <SidebarContent onNavigate={() => setDrawerOpen(false)} isAdmin={isAdmin} />
           </div>
         </div>
       )}

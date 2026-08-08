@@ -5,13 +5,12 @@ import Link from "next/link";
 import { useLang } from "@/lib/language";
 import { useAuth } from "@/lib/auth";
 import { DashboardButton } from "@/components/dashboard";
-import { Shield } from "lucide-react";
-import { RoleBadges } from "@/components/badges";
 import { createClient } from "@/lib/supabase/client";
 import { passwordErrorKey } from "@/lib/auth-errors";
 import { fetchCredits, Tier } from "@/lib/supabase/credits";
 import { updateLocation } from "@/lib/supabase/location";
 import { fetchProfileNames, updateProfileNames, fetchAdminStatus } from "@/lib/supabase/profile-names";
+import { RoleBadges } from "@/components/badges";
 import { getCountryList, getCitiesForCountry, formatLocation, parseLocation, OTHER_CITY_VALUE, CountryOption, CityOption } from "@/lib/countries";
 import { SearchableSelect } from "@/components/searchable-select";
 import { LegalModal } from "@/components/legal-modal";
@@ -30,13 +29,16 @@ export default function SettingsPage() {
   const isAr = lang === "ar";
   const [languageJustSaved, setLanguageJustSaved] = useState(false);
   const [tier, setTier] = useState<Tier | null>(null);
-  // Controls whether the Resume Viewer link is rendered. This is a
-  // CONVENIENCE ONLY, never a security boundary: the admin endpoints check
-  // profiles.is_admin server-side on every request, so hiding the link
-  // stops nothing and showing it grants nothing. Users have SELECT-only RLS
+  // Drives the Admin badge here. The Admin *nav link* lives in the sidebar
+  // (see useNavItems in components/dashboard.tsx). Both are convenience
+  // only, never a security boundary: the admin endpoints check
+  // profiles.is_admin server-side on every request, so hiding either stops
+  // nothing and showing either grants nothing. Users have SELECT-only RLS
   // on profiles, so this flag can't be set by the person it describes.
   const [isAdmin, setIsAdmin] = useState(false);
   const [isOwner, setIsOwner] = useState(false);
+  const [isFoundingMember, setIsFoundingMember] = useState(false);
+  const [foundingMemberNumber, setFoundingMemberNumber] = useState<number | null>(null);
   const [countryIso, setCountryIso] = useState("SA");
   const [city, setCity] = useState("");
   const [locationOther, setLocationOther] = useState("");
@@ -63,6 +65,8 @@ export default function SettingsPage() {
     fetchCredits()
       .then((c) => {
         setTier(c.tier);
+        setIsFoundingMember(c.isFoundingMember);
+        setFoundingMemberNumber(c.foundingMemberNumber);
         if (!c.location) return;
 
         const parsed = parseLocation(c.location);
@@ -235,9 +239,18 @@ export default function SettingsPage() {
       <section className="space-y-5 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-7">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500">{copy.accountSection}</h2>
-          {/* Cosmetic only. Flags come from the backend, which re-checks
-              them on every privileged request regardless of what renders. */}
-          <RoleBadges isOwner={isOwner} isAdmin={isAdmin} size="sm" />
+          {/* Cosmetic. The flags come from the backend, which re-checks them
+              on every privileged request regardless of what renders here. */}
+          <RoleBadges
+            isOwner={isOwner}
+            isAdmin={isAdmin}
+            isFoundingMember={isFoundingMember}
+            foundingMemberNumber={foundingMemberNumber}
+            foundingMemberLabel={
+              isAr ? `عضو مؤسس #${foundingMemberNumber}` : `Founding Member #${foundingMemberNumber}`
+            }
+            size="sm"
+          />
         </div>
 
         {/* Two editable name fields, one per script. Previously this was a
@@ -301,36 +314,6 @@ export default function SettingsPage() {
           />
         </div>
       </section>
-
-      {/* Admin. Rendered only for admins, purely so the link is easy to
-          find. See the isAdmin state declaration for why this is not, and
-          must not be treated as, an access control. */}
-      {isAdmin && (
-        <section className="space-y-4 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-7">
-          <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500">
-            {isAr ? "الإدارة" : "Admin"}
-          </h2>
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div className="min-w-0">
-              <p className="text-sm font-medium text-slate-900">
-                {isAr ? "عارض السير الذاتية" : "Resume Viewer"}
-              </p>
-              <p className="mt-0.5 text-xs leading-relaxed text-slate-500">
-                {isAr
-                  ? "ابحث عن أي مستخدم بالبريد الإلكتروني أو الاسم، وافتح السيرة الذاتية وخطاب التقديم الذي استلمه."
-                  : "Search any user by email or name and open the CV and cover letter they received."}
-              </p>
-            </div>
-            <Link
-              href="/dashboard/admin/resumes"
-              className="inline-flex shrink-0 items-center gap-1.5 rounded-lg bg-slate-900 px-3 py-2 text-sm font-medium text-white transition-colors hover:bg-slate-800"
-            >
-              <Shield className="size-3.5" aria-hidden />
-              {isAr ? "فتح" : "Open"}
-            </Link>
-          </div>
-        </section>
-      )}
 
       {/* Password */}
       <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-7">

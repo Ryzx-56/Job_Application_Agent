@@ -19,11 +19,14 @@ import React from "react";
    and nothing else.
 ======================================================================== */
 
-type BadgeSize = "sm" | "md";
+type BadgeSize = "sm" | "md" | "lg";
 
 const SIZES: Record<BadgeSize, { pad: string; text: string; icon: string; gap: string }> = {
   sm: { pad: "px-2 py-0.5", text: "text-[10px]", icon: "9px", gap: "gap-1" },
   md: { pad: "px-2.5 py-1", text: "text-xs", icon: "11px", gap: "gap-1.5" },
+  // For the Dashboard badge row, where these are the thing you're meant to
+  // notice rather than a label tucked beside a heading.
+  lg: { pad: "px-3.5 py-1.5", text: "text-sm", icon: "15px", gap: "gap-2" },
 };
 
 /* ------------------------------------------------------------------------
@@ -236,25 +239,127 @@ export function OwnerBadge({ size = "md", className = "" }: { size?: BadgeSize; 
 }
 
 /* ------------------------------------------------------------------------
+   FOUNDING MEMBER — iridescent seal.
+
+   Deliberately shares NONE of Owner's vocabulary. Owner owns gold and the
+   crown; reusing either here would make the two read as ranks of the same
+   thing rather than different things. This one is amethyst-to-teal
+   iridescence with a faceted gem, which is premium without being regal.
+
+   The iridescence is a wide multi-stop gradient drifting slowly across
+   both the border and the text, so the colour you see depends on where you
+   look, like a hologram. Slow (7s) and continuous rather than the Owner
+   badge's discrete shine, so the two never look like they're animating in
+   sync when they sit side by side.
+------------------------------------------------------------------------ */
+export function FoundingMemberBadge({
+  number,
+  label,
+  size = "md",
+  className = "",
+}: {
+  number?: number | null;
+  /** Full display text. Defaults to English; pass the Arabic string for RTL. */
+  label?: string;
+  size?: BadgeSize;
+  className?: string;
+}) {
+  const s = SIZES[size];
+  const text = label ?? `Founding Member${number ? ` #${number}` : ""}`;
+  return (
+    <>
+      <style>{`
+        .jbaa-founder {
+          position: relative;
+          isolation: isolate;
+          border: 1px solid transparent;
+          background-image:
+            linear-gradient(180deg, #191233 0%, #0d0a1c 100%),
+            linear-gradient(115deg, #c084fc 0%, #7dd3fc 25%, #f0abfc 50%, #5eead4 75%, #c084fc 100%);
+          background-size: 100% 100%, 300% 100%;
+          background-origin: border-box;
+          background-clip: padding-box, border-box;
+          box-shadow:
+            0 1px 2px rgba(0, 0, 0, 0.45),
+            0 0 16px -5px rgba(192, 132, 252, 0.75),
+            inset 0 1px 0 rgba(226, 214, 255, 0.14);
+        }
+        .jbaa-founder__text {
+          background: linear-gradient(115deg, #e9d5ff 0%, #a5f3fc 30%, #f5d0fe 55%, #99f6e4 80%, #e9d5ff 100%);
+          background-size: 300% 100%;
+          -webkit-background-clip: text;
+          background-clip: text;
+          color: transparent;
+          white-space: nowrap;
+        }
+        @media (prefers-reduced-motion: no-preference) {
+          .jbaa-founder { animation: jbaa-iris 7s linear infinite; }
+          .jbaa-founder__text { animation: jbaa-iris-text 7s linear infinite; }
+        }
+        /* Only the BORDER layer moves. The first background-position keeps
+           the solid fill pinned, otherwise the chip's interior would slide
+           around underneath the text. */
+        @keyframes jbaa-iris {
+          0% { background-position: 0 0, 0% 50%; }
+          100% { background-position: 0 0, 300% 50%; }
+        }
+        @keyframes jbaa-iris-text {
+          0% { background-position: 0% 50%; }
+          100% { background-position: 300% 50%; }
+        }
+      `}</style>
+
+      <span
+        className={`jbaa-founder inline-flex items-center rounded-md font-semibold uppercase tracking-[0.12em] ${s.pad} ${s.text} ${s.gap} ${className}`}
+      >
+        {/* Faceted gem. Deliberately not a crown, not a star — those read as
+            rank and rating respectively; a cut stone reads as "rare". */}
+        <svg width={s.icon} height={s.icon} viewBox="0 0 14 14" fill="none" aria-hidden className="shrink-0">
+          <path d="M3.4 1.8h7.2l2.2 3.3L7 12.4 1.2 5.1l2.2-3.3Z" fill="url(#jbaa-gem-fill)" stroke="#a78bfa" strokeWidth="0.5" strokeLinejoin="round" />
+          <path d="M1.2 5.1h11.6M5 1.8 7 5.1l2-3.3M7 5.1v7.3" stroke="#f5f3ff" strokeWidth="0.45" strokeOpacity="0.75" strokeLinejoin="round" />
+          <defs>
+            <linearGradient id="jbaa-gem-fill" x1="1" y1="2" x2="13" y2="12" gradientUnits="userSpaceOnUse">
+              <stop stopColor="#e9d5ff" />
+              <stop offset="0.45" stopColor="#a5f3fc" />
+              <stop offset="1" stopColor="#5eead4" />
+            </linearGradient>
+          </defs>
+        </svg>
+        <span className="jbaa-founder__text">{text}</span>
+      </span>
+    </>
+  );
+}
+
+/* ------------------------------------------------------------------------
    Convenience wrapper. Renders whichever badges apply, in rank order
-   (Owner first), or nothing at all for a normal account.
+   (Owner, Admin, Founding Member), or nothing at all for a plain account.
 ------------------------------------------------------------------------ */
 export function RoleBadges({
   isOwner,
   isAdmin,
+  isFoundingMember,
+  foundingMemberNumber,
+  foundingMemberLabel,
   size = "md",
   className = "",
 }: {
   isOwner?: boolean;
   isAdmin?: boolean;
+  isFoundingMember?: boolean;
+  foundingMemberNumber?: number | null;
+  foundingMemberLabel?: string;
   size?: BadgeSize;
   className?: string;
 }) {
-  if (!isOwner && !isAdmin) return null;
+  if (!isOwner && !isAdmin && !isFoundingMember) return null;
   return (
     <span className={`inline-flex flex-wrap items-center gap-2 ${className}`}>
       {isOwner && <OwnerBadge size={size} />}
       {isAdmin && <AdminBadge size={size} />}
+      {isFoundingMember && (
+        <FoundingMemberBadge size={size} number={foundingMemberNumber} label={foundingMemberLabel} />
+      )}
     </span>
   );
 }

@@ -265,12 +265,6 @@ def localize_structure(value, glossary: dict[str, str], skip_keys: tuple[str, ..
     return value
 
 
-def remaining_latin_terms(value, glossary: dict[str, str] | None = None) -> list[str]:
-    """Latin terms still present after localization — used for logging and
-    for deciding whether a second pass is worth making."""
-    return find_latin_terms(iter_strings(value))
-
-
 # ─── DATES ──────────────────────────────────────────────────────────────────
 # Month names and digits are a CONTENT decision, not a shaping one, so they
 # need explicit translation. This used to live only in pdf_generator.py,
