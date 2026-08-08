@@ -37,6 +37,7 @@ export default function SettingsPage() {
   // on profiles, so this flag can't be set by the person it describes.
   const [isAdmin, setIsAdmin] = useState(false);
   const [isOwner, setIsOwner] = useState(false);
+  const [isAlphaTester, setIsAlphaTester] = useState(false);
   const [isFoundingMember, setIsFoundingMember] = useState(false);
   const [foundingMemberNumber, setFoundingMemberNumber] = useState<number | null>(null);
   const [countryIso, setCountryIso] = useState("SA");
@@ -86,9 +87,10 @@ export default function SettingsPage() {
       .catch((err) => console.error("fetchCredits failed:", err));
 
     // Separate call from fetchCredits on purpose — see fetchAdminStatus.
-    fetchAdminStatus().then(({ isAdmin: admin, isOwner: owner }) => {
+    fetchAdminStatus().then(({ isAdmin: admin, isOwner: owner, isAlphaTester: alpha }) => {
       setIsAdmin(admin);
       setIsOwner(owner);
+      setIsAlphaTester(alpha);
     });
 
     fetchProfileNames()
@@ -245,10 +247,12 @@ export default function SettingsPage() {
             isOwner={isOwner}
             isAdmin={isAdmin}
             isFoundingMember={isFoundingMember}
+            isAlphaTester={isAlphaTester}
             foundingMemberNumber={foundingMemberNumber}
             foundingMemberLabel={
               isAr ? `عضو مؤسس #${foundingMemberNumber}` : `Founding Member #${foundingMemberNumber}`
             }
+            alphaTesterLabel={isAr ? "مختبِر ألفا" : undefined}
             lang={isAr ? "ar" : "en"}
             size="sm"
           />
@@ -383,7 +387,7 @@ export default function SettingsPage() {
             {copy.planLabel}: <span className="font-medium text-slate-900">{planDisplayName}</span>
           </p>
         </div>
-        <DashboardButton as={Link} href="/#pricing" variant="outline" size="sm">
+        <DashboardButton as={Link} href="/dashboard/upgrade" variant="outline" size="sm">
           {copy.changePlan}
         </DashboardButton>
       </section>

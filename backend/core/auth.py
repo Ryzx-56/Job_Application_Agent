@@ -104,6 +104,7 @@ _ADMIN_COLUMN_CANDIDATES = ("is_admin", "admin")
 # is_admin, so support access can be granted without handing over the
 # product's identity.
 _OWNER_COLUMN_CANDIDATES = ("is_owner", "owner")
+_ALPHA_COLUMN_CANDIDATES = ("is_alpha_tester", "alpha_tester")
 
 
 def _read_bool_column(user_id: str | None, candidates: tuple[str, ...], label: str) -> bool:
@@ -176,6 +177,11 @@ def read_owner_flag(user_id: str | None) -> bool:
     """True if this user gets the Owner badge. Cosmetic only — no route
     anywhere authorizes on this."""
     return _read_bool_column(user_id, _OWNER_COLUMN_CANDIDATES, "Owner")
+
+
+def read_alpha_tester_flag(user_id: str | None) -> bool:
+    """True if this user gets the Alpha Tester badge. Cosmetic only."""
+    return _read_bool_column(user_id, _ALPHA_COLUMN_CANDIDATES, "Alpha tester")
 
 
 def _require_admin(user_id: str) -> str:

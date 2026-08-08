@@ -17,7 +17,7 @@ interface CreditsButtonProps {
    "low balance" look under 15% remaining so it doubles as a warning, not
    just a display.
 ======================================================================== */
-export function CreditsButton({ creditsRemaining, creditsTotal, lang = "en", upgradeHref = "/dashboard/settings" }: CreditsButtonProps) {
+export function CreditsButton({ creditsRemaining, creditsTotal, lang = "en", upgradeHref = "/dashboard/upgrade" }: CreditsButtonProps) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
 

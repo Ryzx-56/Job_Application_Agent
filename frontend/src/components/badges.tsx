@@ -66,6 +66,10 @@ export const BADGE_TOOLTIPS = {
     en: "Given to Tarshih's earliest subscribers.",
     ar: "تُمنح لأوائل المشتركين في ترشيح.",
   },
+  alpha: {
+    en: "Given to early testers who helped shape Tarshih.",
+    ar: "تُمنح للمختبرين الأوائل الذين ساهموا في تطوير ترشيح.",
+  },
 };
 
 const SIZES: Record<BadgeSize, { pad: string; text: string; icon: string; gap: string }> = {
@@ -427,6 +431,122 @@ export function FoundingMemberBadge({
 }
 
 /* ------------------------------------------------------------------------
+   ALPHA TESTER — telemetry chip.
+
+   Fourth badge, so it had to stay clear of three taken visual languages:
+   Owner owns gold + crown + a discrete shine, Admin owns cyan/magenta +
+   glitch, Founding Member owns violet/teal iridescence + a gem. This takes
+   crimson-to-coral with an alpha glyph and a sonar-style pulse ring, which
+   collides with none of them.
+
+   Crimson also carries the right meaning: alpha software is the unstable,
+   pre-release thing you were let in early to break. It reads as a live
+   instrument, not a reward.
+
+   3.5s cycle. Still coprime enough with Owner's 5s, Admin's 2.2s and
+   Founding Member's 4.5s that the four never visibly fall into step —
+   four badges pulsing together would read as one animation rather than
+   four separate marks.
+------------------------------------------------------------------------ */
+export function AlphaTesterBadge({
+  size = "md",
+  className = "",
+  tooltip,
+  label,
+}: {
+  size?: BadgeSize;
+  className?: string;
+  tooltip?: string;
+  label?: string;
+}) {
+  const s = SIZES[size];
+  const chip = (
+    <>
+      <style>{`
+        .jbaa-alpha {
+          position: relative;
+          isolation: isolate;
+          overflow: hidden;
+          border: 1px solid transparent;
+          background-image:
+            linear-gradient(180deg, #241016 0%, #14080c 100%),
+            linear-gradient(120deg, #fb7185 0%, #e11d48 40%, #fda4af 60%, #e11d48 100%);
+          background-origin: border-box;
+          background-clip: padding-box, border-box;
+          box-shadow:
+            0 1px 2px rgba(0, 0, 0, 0.45),
+            0 0 14px -4px rgba(244, 63, 94, 0.7),
+            inset 0 1px 0 rgba(255, 228, 230, 0.13);
+        }
+        .jbaa-alpha__text {
+          background: linear-gradient(180deg, #ffe4e6 0%, #fda4af 55%, #fb7185 100%);
+          -webkit-background-clip: text;
+          background-clip: text;
+          color: transparent;
+          white-space: nowrap;
+        }
+        @media (prefers-reduced-motion: no-preference) {
+          /* Sonar ping: a ring expanding out from the glyph, fading as it
+             goes. Sits behind the content (z-index -1) so it never washes
+             out the label. */
+          .jbaa-alpha::before {
+            content: "";
+            position: absolute;
+            top: 50%;
+            inset-inline-start: 0.55em;
+            width: 0.7em;
+            height: 0.7em;
+            margin-top: -0.35em;
+            border-radius: 9999px;
+            border: 1px solid rgba(251, 113, 133, 0.85);
+            transform: scale(0.4);
+            opacity: 0;
+            z-index: -1;
+            animation: jbaa-alpha-ping 3.5s ease-out infinite;
+          }
+          .jbaa-alpha__glyph { animation: jbaa-alpha-beat 3.5s ease-out infinite; }
+        }
+        @keyframes jbaa-alpha-ping {
+          0%, 70% { transform: scale(0.4); opacity: 0; }
+          78% { opacity: 0.9; }
+          100% { transform: scale(4.2); opacity: 0; }
+        }
+        @keyframes jbaa-alpha-beat {
+          0%, 70%, 100% { filter: drop-shadow(0 0 0 rgba(253, 164, 175, 0)); }
+          78% { filter: drop-shadow(0 0 3px rgba(255, 228, 230, 0.95)); }
+        }
+      `}</style>
+
+      <span
+        className={`jbaa-alpha inline-flex items-center rounded-md font-semibold uppercase tracking-[0.14em] ${s.pad} ${s.text} ${s.gap} ${className}`}
+      >
+        {/* Greek alpha in a ring — the universal mark for a pre-release
+            build, and nothing like the other three icons. */}
+        <svg width={s.icon} height={s.icon} viewBox="0 0 14 14" fill="none" aria-hidden className="jbaa-alpha__glyph shrink-0">
+          <circle cx="7" cy="7" r="6" stroke="url(#jbaa-alpha-ring)" strokeWidth="1.1" />
+          <path
+            d="M9.1 4.6c-2.6 0-3.9 1.3-3.9 2.6 0 1 .7 1.8 1.7 1.8 1.5 0 2.2-1.8 2.2-3.1 0 1.7.2 3.1 1.1 3.5"
+            stroke="#ffe4e6"
+            strokeWidth="1.05"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            fill="none"
+          />
+          <defs>
+            <linearGradient id="jbaa-alpha-ring" x1="1" y1="1" x2="13" y2="13" gradientUnits="userSpaceOnUse">
+              <stop stopColor="#fda4af" />
+              <stop offset="1" stopColor="#e11d48" />
+            </linearGradient>
+          </defs>
+        </svg>
+        <span className="jbaa-alpha__text">{label ?? "Alpha Tester"}</span>
+      </span>
+    </>
+  );
+  return tooltip ? <Tooltip text={tooltip}>{chip}</Tooltip> : chip;
+}
+
+/* ------------------------------------------------------------------------
    Convenience wrapper. Renders whichever badges apply, in rank order
    (Owner, Admin, Founding Member), or nothing at all for a plain account.
 ------------------------------------------------------------------------ */
@@ -434,8 +554,10 @@ export function RoleBadges({
   isOwner,
   isAdmin,
   isFoundingMember,
+  isAlphaTester,
   foundingMemberNumber,
   foundingMemberLabel,
+  alphaTesterLabel,
   lang = "en",
   size = "md",
   className = "",
@@ -443,14 +565,16 @@ export function RoleBadges({
   isOwner?: boolean;
   isAdmin?: boolean;
   isFoundingMember?: boolean;
+  isAlphaTester?: boolean;
   foundingMemberNumber?: number | null;
   foundingMemberLabel?: string;
+  alphaTesterLabel?: string;
   /** Picks the tooltip language. Defaults to English. */
   lang?: "en" | "ar";
   size?: BadgeSize;
   className?: string;
 }) {
-  if (!isOwner && !isAdmin && !isFoundingMember) return null;
+  if (!isOwner && !isAdmin && !isFoundingMember && !isAlphaTester) return null;
   const tip = (k: keyof typeof BADGE_TOOLTIPS) => BADGE_TOOLTIPS[k][lang === "ar" ? "ar" : "en"];
   return (
     <span className={`inline-flex flex-wrap items-center gap-2 ${className}`}>
@@ -463,6 +587,9 @@ export function RoleBadges({
           label={foundingMemberLabel}
           tooltip={tip("founder")}
         />
+      )}
+      {isAlphaTester && (
+        <AlphaTesterBadge size={size} label={alphaTesterLabel} tooltip={tip("alpha")} />
       )}
     </span>
   );

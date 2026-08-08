@@ -116,17 +116,21 @@ export async function suggestNameFromCv(file: File): Promise<ProfileNames> {
  * Display only. Every admin route re-checks server-side, so faking this
  * reveals a link with nothing behind it.
  */
-export type RoleFlags = { isAdmin: boolean; isOwner: boolean };
+export type RoleFlags = { isAdmin: boolean; isOwner: boolean; isAlphaTester: boolean };
 
 export async function fetchAdminStatus(): Promise<RoleFlags> {
   try {
     const res = await fetch(`${API_URL}/api/v1/profile/admin-status`, {
       headers: await authHeader(),
     });
-    if (!res.ok) return { isAdmin: false, isOwner: false };
+    if (!res.ok) return { isAdmin: false, isOwner: false, isAlphaTester: false };
     const data = await res.json();
-    return { isAdmin: Boolean(data?.is_admin), isOwner: Boolean(data?.is_owner) };
+    return {
+      isAdmin: Boolean(data?.is_admin),
+      isOwner: Boolean(data?.is_owner),
+      isAlphaTester: Boolean(data?.is_alpha_tester),
+    };
   } catch {
-    return { isAdmin: false, isOwner: false };
+    return { isAdmin: false, isOwner: false, isAlphaTester: false };
   }
 }

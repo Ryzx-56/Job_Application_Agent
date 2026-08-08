@@ -3,7 +3,7 @@
 import React from "react";
 import Link from "next/link";
 import { FileText, BarChart3, Users, Activity, ArrowRight } from "lucide-react";
-import { AdminPage, Panel, ADMIN_MONO } from "@/components/admin-ui";
+import { AdminPage, ADMIN_MONO } from "@/components/admin-ui";
 
 /**
  * Admin landing page. Four tools, each its own route — real navigation
@@ -84,31 +84,6 @@ export default function AdminHomePage() {
         ))}
       </div>
 
-      <Panel title="notes">
-        <ul className="space-y-2 text-sm leading-relaxed text-slate-600">
-          <li className="flex gap-2">
-            <span className={`${ADMIN_MONO} shrink-0 text-slate-300`}>01</span>
-            <span>
-              Revenue, pack purchases and subscription history come from{" "}
-              <code className={`${ADMIN_MONO} rounded bg-slate-100 px-1 py-0.5 text-xs`}>payment_events</code>, which
-              stays empty until the payment provider is wired up. Those tiles say so rather than showing $0.00.
-            </span>
-          </li>
-          <li className="flex gap-2">
-            <span className={`${ADMIN_MONO} shrink-0 text-slate-300`}>02</span>
-            <span>
-              Everything else is derived live from{" "}
-              <code className={`${ADMIN_MONO} rounded bg-slate-100 px-1 py-0.5 text-xs`}>profiles</code>,{" "}
-              <code className={`${ADMIN_MONO} rounded bg-slate-100 px-1 py-0.5 text-xs`}>auth.users</code> and{" "}
-              <code className={`${ADMIN_MONO} rounded bg-slate-100 px-1 py-0.5 text-xs`}>cv_generation_events</code>.
-            </span>
-          </li>
-          <li className="flex gap-2">
-            <span className={`${ADMIN_MONO} shrink-0 text-slate-300`}>03</span>
-            <span>A dash means a figure could not be read, never that it is zero.</span>
-          </li>
-        </ul>
-      </Panel>
     </AdminPage>
   );
 }

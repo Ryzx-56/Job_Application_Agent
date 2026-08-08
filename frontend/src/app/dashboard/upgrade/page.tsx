@@ -18,6 +18,24 @@ import { useLang } from "@/lib/language";
  * "payment coming soon" placeholder — same destination the Upgrade buttons
  * elsewhere already use.
  */
+/**
+ * Most customers are in Saudi Arabia, so every price shows its SAR value
+ * underneath. Derived from the USD string at the fixed 3.75 peg rather than
+ * stored separately — the landing page's `priceSar` fields are null on the
+ * English side, and a second hand-maintained number is one that eventually
+ * disagrees with the first.
+ */
+const USD_TO_SAR = 3.75;
+
+function toSar(price: string): string | null {
+  const usd = parseFloat(price.replace(/[^0-9.]/g, ""));
+  if (!Number.isFinite(usd) || usd <= 0) return null;
+  return `${(usd * USD_TO_SAR).toLocaleString(undefined, {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  })} SAR`;
+}
+
 export default function UpgradePage() {
   const { t, lang } = useLang();
   const isAr = lang === "ar";
@@ -71,6 +89,11 @@ export default function UpgradePage() {
                 )}
                 <span className="text-sm text-slate-500">{plan.period}</span>
               </div>
+              {toSar(plan.price) && (
+                <p className="mt-0.5 text-sm text-slate-500">
+                  {toSar(plan.price)} {plan.period}
+                </p>
+              )}
               <p className="mt-2 text-sm leading-relaxed text-slate-500">{plan.description}</p>
 
               <ul className="mt-4 flex-1 space-y-2">
@@ -119,7 +142,8 @@ export default function UpgradePage() {
               )}
               <h3 className="text-base font-semibold text-slate-900">{pack.name}</h3>
               <div className="mt-1 text-2xl font-semibold text-slate-900">{pack.price}</div>
-              <p className="mt-0.5 text-sm font-medium text-blue-600">{pack.credits}</p>
+              {toSar(pack.price) && <p className="mt-0.5 text-sm text-slate-500">{toSar(pack.price)}</p>}
+              <p className="mt-1 text-sm font-medium text-blue-600">{pack.credits}</p>
               <p className="mt-2 flex-1 text-sm leading-relaxed text-slate-500">{pack.blurb}</p>
               <p className="mt-2 text-xs text-slate-400">
                 {pack.perAppValue} {payg.perApp}

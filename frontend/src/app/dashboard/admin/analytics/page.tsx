@@ -43,7 +43,7 @@ export default function AdminAnalyticsPage() {
   return (
     <AdminPage
       title="Analytics"
-      subtitle={`Live platform figures. Dollar amounts show their SAR equivalent at the fixed ${data.usd_to_sar} peg.`}
+      subtitle="Live platform figures."
       actions={
         <span className={`${ADMIN_MONO} text-xs text-slate-400`}>
           {new Date(data.generated_at).toLocaleString()}
@@ -83,33 +83,119 @@ export default function AdminAnalyticsPage() {
       </Panel>
 
       <Panel title="subscriptions" hint="current state from profiles · history from payment_events">
-        <Table head={["Tier", "Currently on tier", "Active subscription", "Ever subscribed", `Subscribed ${month}`]}>
+        <Table head={["Tier", "Price", "On tier", "Active", "Ever", `${month}`, "Revenue / month"]}>
           {data.tiers.map((t) => (
             <Row key={t.tier}>
-              <Cell className="font-medium text-slate-900">{TIER_LABEL[t.tier] ?? t.tier}</Cell>
+              <Cell className="font-medium text-slate-900">
+                {t.label}
+                {t.founding_count > 0 && (
+                  <span className={`${ADMIN_MONO} ms-2 text-[10px] text-violet-500`}>
+                    {t.founding_count} founding
+                  </span>
+                )}
+              </Cell>
+              <Cell mono className="text-slate-500">
+                {t.price_usd === 0 ? "free" : `$${t.price_usd?.toFixed(2)}`}
+              </Cell>
               <Cell mono>{t.current_count?.toLocaleString() ?? "—"}</Cell>
               <Cell mono>{t.active_count?.toLocaleString() ?? "—"}</Cell>
               <Cell mono className="text-slate-300">—</Cell>
               <Cell mono className="text-slate-300">—</Cell>
+              <Cell>
+                <span className={t.is_cost ? "text-rose-600" : "text-emerald-700"}>
+                  {t.is_cost && <span className={ADMIN_MONO}>−</span>}
+                  <Money
+                    usd={Math.abs(t.estimated_monthly.usd)}
+                    sar={Math.abs(t.estimated_monthly.sar)}
+                  />
+                </span>
+              </Cell>
             </Row>
           ))}
         </Table>
-        <p className="mt-2 text-xs leading-relaxed text-slate-400">
-          &ldquo;Ever subscribed&rdquo; and per-month counts need the payment ledger:{" "}
+
+        <div className="mt-3 grid gap-3 sm:grid-cols-2">
+          <Stat
+            label="subscription revenue · all time"
+            value={<Money usd={data.revenue.all_time.usd} sar={data.revenue.all_time.sar} />}
+            pending={pending}
+            accent="emerald"
+          />
+          <Stat
+            label={`subscription revenue · ${month}`}
+            value={
+              <Money
+                usd={data.subscription_revenue.this_month_estimated.usd}
+                sar={data.subscription_revenue.this_month_estimated.sar}
+              />
+            }
+            sub="projected from who is subscribed now"
+            accent="emerald"
+          />
+        </div>
+
+        <p className="mt-3 text-xs leading-relaxed text-slate-400">
+          Revenue per tier is a <strong className="text-slate-500">projection</strong>: current subscribers at the
+          price each actually pays, using{" "}
+          <code className={ADMIN_MONO}>locked_price</code> for founding members rather than list. It is not money
+          received — that needs the payment ledger. Free is negative because those users cost{" "}
+          <span className={ADMIN_MONO}>$0.60</span> each per month at full credit usage and generate no income.
+          &ldquo;Ever&rdquo; and per-month counts also need the ledger:{" "}
           <code className={ADMIN_MONO}>profiles.tier</code> is a snapshot, so someone who subscribed and later
-          cancelled is indistinguishable from someone who never subscribed.
+          cancelled is indistinguishable from someone who never did.
         </p>
       </Panel>
 
       <Panel title="pay-as-you-go packs">
-        <StatGrid cols={2}>
-          <Stat label="packs sold · all time" value={data.packs.ever} pending={pending} />
-          <Stat label={`packs sold · ${month}`} value={data.packs.this_month} pending={pending} />
-        </StatGrid>
+        <Table head={["Pack", "Price", "Credits", "Sold · all time", `Sold · ${month}`, "Revenue"]}>
+          {data.packs_catalogue.map((p) => (
+            <Row key={p.slug}>
+              <Cell className="font-medium text-slate-900">{p.label}</Cell>
+              <Cell mono className="text-slate-500">${p.price_usd.toFixed(2)}</Cell>
+              <Cell mono className="text-slate-500">{p.credits}</Cell>
+              <Cell mono className={pending ? "text-slate-300" : ""}>
+                {pending ? "—" : p.sold_ever.toLocaleString()}
+              </Cell>
+              <Cell mono className={pending ? "text-slate-300" : ""}>
+                {pending ? "—" : p.sold_this_month.toLocaleString()}
+              </Cell>
+              <Cell>
+                {pending ? (
+                  <span className="text-slate-300">—</span>
+                ) : (
+                  <span className="text-emerald-700">
+                    <Money usd={p.revenue.usd} sar={p.revenue.sar} />
+                  </span>
+                )}
+              </Cell>
+            </Row>
+          ))}
+        </Table>
+
+        <div className="mt-3 grid gap-3 sm:grid-cols-2">
+          <Stat
+            label="pack revenue · all time"
+            value={<Money usd={data.packs_revenue.all_time.usd} sar={data.packs_revenue.all_time.sar} />}
+            pending={pending}
+            accent="emerald"
+          />
+          <Stat
+            label={`pack revenue · ${month}`}
+            value={<Money usd={data.packs_revenue.this_month.usd} sar={data.packs_revenue.this_month.sar} />}
+            pending={pending}
+            accent="emerald"
+          />
+        </div>
       </Panel>
 
-      <Panel title="revenue">
-        <StatGrid cols={2}>
+      <Panel title="total revenue" hint="subscriptions + packs">
+        <StatGrid cols={3}>
+          <Stat
+            label="projected mrr"
+            value={<Money usd={data.estimated_mrr.usd} sar={data.estimated_mrr.sar} />}
+            sub="net of free-tier cost"
+            accent={data.estimated_mrr.usd >= 0 ? "emerald" : "rose"}
+          />
           <Stat
             label="all time"
             value={<Money usd={data.revenue.all_time.usd} sar={data.revenue.all_time.sar} />}
@@ -125,23 +211,6 @@ export default function AdminAnalyticsPage() {
         </StatGrid>
       </Panel>
 
-      <Panel title="by product" hint="populates as payments land">
-        {data.by_product.length === 0 ? (
-          <Empty message="no purchases recorded yet" />
-        ) : (
-          <Table head={["Kind", "Product", "Ever", month, "Revenue"]}>
-            {data.by_product.map((p) => (
-              <Row key={`${p.kind}:${p.product_slug}`}>
-                <Cell mono className="text-slate-500">{p.kind}</Cell>
-                <Cell className="font-medium text-slate-900">{p.product_slug}</Cell>
-                <Cell mono>{p.count_ever}</Cell>
-                <Cell mono>{p.count_month}</Cell>
-                <Cell><Money usd={p.revenue.usd} sar={p.revenue.sar} /></Cell>
-              </Row>
-            ))}
-          </Table>
-        )}
-      </Panel>
     </AdminPage>
   );
 }

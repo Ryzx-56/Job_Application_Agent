@@ -24,6 +24,33 @@ router = APIRouter()
 # with what the ledger says.
 USD_TO_SAR = 3.75
 
+# ─── PRICING ────────────────────────────────────────────────────────────────
+# Source of truth for every revenue figure the admin pages show. Kept
+# server-side so the maths happens once, next to the SAR conversion, rather
+# than being reimplemented per page.
+#
+# Numbers come from the pricing reference. `worst_case_cost_usd` is what a
+# user on that tier costs if they burn their entire credit allotment on the
+# most expensive generations, which is what makes the Free tier a NEGATIVE
+# revenue line: every free user is an acquisition cost, not income.
+#
+# NOTE: these are LIST prices. Founding members are grandfathered lower, so
+# estimated revenue uses profiles.locked_price where it's set (see
+# admin_tier_counts in 006_tier_revenue.sql) and only falls back to list
+# price for everyone else.
+TIER_PRICING = {
+    "free":  {"label": "Free",  "price_usd": 0.00,  "credits": 3,   "worst_case_cost_usd": 0.60},
+    "pro":   {"label": "Pro",   "price_usd": 12.99, "credits": 40,  "worst_case_cost_usd": 8.00,
+              "founding_price_usd": 10.99},
+    "elite": {"label": "Elite", "price_usd": 34.99, "credits": 120, "worst_case_cost_usd": 24.00},
+}
+
+PACK_PRICING = {
+    "starter":    {"label": "Starter",    "price_usd": 4.99,  "credits": 5},
+    "best-value": {"label": "Best Value", "price_usd": 11.99, "credits": 15},
+    "power":      {"label": "Power",      "price_usd": 19.99, "credits": 30},
+}
+
 
 def _rpc(name: str, params: dict | None = None):
     """
@@ -79,6 +106,81 @@ def get_analytics(admin_user_id: str = Depends(get_current_admin_user_id)) -> di
 
     total_payment_events = int(payments.get("total_events") or 0)
 
+    # ── Estimated monthly revenue per tier ──────────────────────────────
+    #
+    # This is a PROJECTION from who is currently subscribed at what price,
+    # not a measurement of money received — that needs payment_events. It's
+    # still worth showing because it's the one revenue figure that IS
+    # knowable today, and it's the number that actually matters
+    # operationally (current MRR).
+    #
+    # Free is deliberately negative: those users generate cost, not income.
+    tier_rows = []
+    estimated_mrr = 0.0
+    for row in tiers:
+        slug = row.get("tier") or "free"
+        pricing = TIER_PRICING.get(slug, {})
+        current = int(row.get("current_count") or 0)
+        active = int(row.get("active_count") or 0)
+        locked_total = float(row.get("locked_price_total") or 0)
+        locked_count = int(row.get("locked_price_count") or 0)
+
+        if slug == "free":
+            # Cost of serving the free tier, shown as negative revenue.
+            monthly = -(current * float(pricing.get("worst_case_cost_usd", 0)))
+        else:
+            # Founding members pay their locked price; everyone else pays
+            # list. Counting them separately avoids overstating by the
+            # grandfathered discount.
+            list_payers = max(active - locked_count, 0)
+            monthly = locked_total + list_payers * float(pricing.get("price_usd", 0))
+
+        estimated_mrr += monthly
+        tier_rows.append({
+            "tier": slug,
+            "label": pricing.get("label", slug.title()),
+            "current_count": current,
+            "active_count": active,
+            "founding_count": row.get("founding_count") or 0,
+            "price_usd": pricing.get("price_usd"),
+            "founding_price_usd": pricing.get("founding_price_usd"),
+            "credits": pricing.get("credits"),
+            "estimated_monthly": _money(monthly),
+            # Free's figure is a cost, so the UI renders it differently.
+            "is_cost": slug == "free",
+        })
+
+    # ── Packs ───────────────────────────────────────────────────────────
+    # Sales counts and revenue need payment_events; the catalogue (price,
+    # credits) is known now, so the table renders in full with the sold
+    # columns pending rather than the whole panel being empty.
+    sold_by_slug = {
+        r.get("product_slug"): r
+        for r in by_product
+        if r.get("kind") == "pack"
+    }
+    pack_rows = []
+    packs_revenue_all = 0.0
+    packs_revenue_month = 0.0
+    for slug, pricing in PACK_PRICING.items():
+        sold = sold_by_slug.get(slug, {})
+        ever = int(sold.get("count_ever") or 0)
+        month = int(sold.get("count_month") or 0)
+        revenue = float(sold.get("revenue_usd") or 0)
+        packs_revenue_all += revenue
+        # Per-pack monthly revenue isn't returned separately, so derive it
+        # from this month's unit count at list price.
+        packs_revenue_month += month * float(pricing["price_usd"])
+        pack_rows.append({
+            "slug": slug,
+            "label": pricing["label"],
+            "price_usd": pricing["price_usd"],
+            "credits": pricing["credits"],
+            "sold_ever": ever,
+            "sold_this_month": month,
+            "revenue": _money(revenue),
+        })
+
     now = datetime.now(timezone.utc)
 
     return {
@@ -108,14 +210,19 @@ def get_analytics(admin_user_id: str = Depends(get_current_admin_user_id)) -> di
         # until it's populated — profiles.tier is a snapshot, so a user who
         # subscribed and cancelled is indistinguishable from one who never
         # did.
-        "tiers": [
-            {
-                "tier": row.get("tier"),
-                "current_count": row.get("current_count"),
-                "active_count": row.get("active_count"),
-            }
-            for row in tiers
-        ],
+        "tiers": tier_rows,
+        "packs_catalogue": pack_rows,
+        # Projected from who is subscribed right now at their actual price.
+        # Distinct from `revenue`, which is money actually recorded.
+        "estimated_mrr": _money(estimated_mrr),
+        "packs_revenue": {
+            "all_time": _money(packs_revenue_all),
+            "this_month": _money(packs_revenue_month),
+        },
+        "subscription_revenue": {
+            # All-time needs the ledger; monthly is the MRR projection.
+            "this_month_estimated": _money(estimated_mrr),
+        },
 
         "payments_wired": total_payment_events > 0,
         "revenue": {

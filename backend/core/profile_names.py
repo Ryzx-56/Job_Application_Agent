@@ -20,7 +20,7 @@ from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
 from pydantic import BaseModel, Field
 from loguru import logger
 
-from core.auth import get_current_user_id, read_admin_flag, read_owner_flag
+from core.auth import get_current_user_id, read_admin_flag, read_owner_flag, read_alpha_tester_flag
 from core.credits import get_admin_client
 
 router = APIRouter()
@@ -115,7 +115,11 @@ def read_admin_status(user_id: str = Depends(get_current_user_id)) -> dict:
     server-side (see _require_admin), so a forged `true` here would reveal
     a link and nothing behind it.
     """
-    return {"is_admin": read_admin_flag(user_id), "is_owner": read_owner_flag(user_id)}
+    return {
+        "is_admin": read_admin_flag(user_id),
+        "is_owner": read_owner_flag(user_id),
+        "is_alpha_tester": read_alpha_tester_flag(user_id),
+    }
 
 
 @router.patch("/api/v1/profile/names", tags=["Profile"])

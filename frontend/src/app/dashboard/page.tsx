@@ -368,6 +368,7 @@ export default function DashboardHomePage() {
   // select — see fetchAdminStatus for why.
   const [isAdmin, setIsAdmin] = useState(false);
   const [isOwner, setIsOwner] = useState(false);
+  const [isAlphaTester, setIsAlphaTester] = useState(false);
   const [location, setLocation] = useState<string | null | undefined>(undefined);
 
   const refreshCredits = () => {
@@ -384,9 +385,10 @@ export default function DashboardHomePage() {
 
   useEffect(() => {
     refreshCredits();
-    fetchAdminStatus().then(({ isAdmin: admin, isOwner: owner }) => {
+    fetchAdminStatus().then(({ isAdmin: admin, isOwner: owner, isAlphaTester: alpha }) => {
       setIsAdmin(admin);
       setIsOwner(owner);
+      setIsAlphaTester(alpha);
     });
   }, []);
   const [generating, setGenerating] = useState(false);
@@ -665,7 +667,7 @@ export default function DashboardHomePage() {
           than in their own section — this is already where a user looks for
           "what am I". The whole block renders if the user has ANY badge, so
           an admin who isn't a founding member still gets the row. */}
-      {(isFoundingMember || isAdmin || isOwner) && (
+      {(isFoundingMember || isAdmin || isOwner || isAlphaTester) && (
         <div>
           <span className="mb-2 block text-xs font-medium uppercase tracking-wide text-slate-400">
             {lang === "ar" ? "الشارات" : "Badges"}
@@ -676,10 +678,12 @@ export default function DashboardHomePage() {
             isOwner={isOwner}
             isAdmin={isAdmin}
             isFoundingMember={isFoundingMember}
+            isAlphaTester={isAlphaTester}
             foundingMemberNumber={foundingMemberNumber}
             foundingMemberLabel={
               lang === "ar" ? `عضو مؤسس #${foundingMemberNumber}` : `Founding Member #${foundingMemberNumber}`
             }
+            alphaTesterLabel={lang === "ar" ? "مختبِر ألفا" : undefined}
             lang={lang === "ar" ? "ar" : "en"}
             size="lg"
           />

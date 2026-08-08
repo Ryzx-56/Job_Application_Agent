@@ -47,7 +47,33 @@ export type AdminAnalytics = {
     failed_total: number | null;
   };
   founding_members: number | null;
-  tiers: { tier: string; current_count: number; active_count: number }[];
+  tiers: {
+    tier: string;
+    label: string;
+    current_count: number;
+    active_count: number;
+    founding_count: number;
+    price_usd: number | null;
+    founding_price_usd?: number | null;
+    credits: number | null;
+    estimated_monthly: MoneyAmount;
+    /** Free tier: the figure is a cost, shown negative. */
+    is_cost: boolean;
+  }[];
+  packs_catalogue: {
+    slug: string;
+    label: string;
+    price_usd: number;
+    credits: number;
+    sold_ever: number;
+    sold_this_month: number;
+    revenue: MoneyAmount;
+  }[];
+  /** Projected from who is subscribed right now at their actual price.
+   *  Distinct from `revenue`, which is money actually recorded. */
+  estimated_mrr: MoneyAmount;
+  packs_revenue: { all_time: MoneyAmount; this_month: MoneyAmount };
+  subscription_revenue: { this_month_estimated: MoneyAmount };
   /** False until the first payment_events row exists. Revenue and
    *  purchase-history tiles are unknowable, not zero, while this is false. */
   payments_wired: boolean;
