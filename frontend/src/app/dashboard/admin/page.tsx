@@ -24,7 +24,7 @@ const TOOLS = [
     icon: BarChart3,
     accent: "text-emerald-600",
     ring: "group-hover:border-emerald-300",
-    desc: "Signups, generations, tier distribution and revenue. Dollar figures show their SAR equivalent at the 3.75 peg.",
+    desc: "Signups, generations, tier distribution and revenue.",
   },
   {
     href: "/dashboard/admin/users",
