@@ -17,6 +17,7 @@
 # up exactly what a specific user's CV/cover letter looked like when they
 # report a bug.
 import os
+import re
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -132,31 +133,107 @@ def get_own_resume_document(
     return _regenerate_response(resume, doc_type, download=download)
 
 
+_UUID_RE = re.compile(r"^[0-9a-fA-F-]{36}$")
+
+
+def _lookup_users(admin, term: str) -> list[dict]:
+    """Resolves a free-text search term to matching users via the
+    admin_search_users SQL function (see 003_admin_access.sql). Emails live
+    in auth.users, which PostgREST can't expose directly, so the join
+    happens in a SECURITY DEFINER function granted to service_role only."""
+    try:
+        return admin.rpc("admin_search_users", {"term": term}).execute().data or []
+    except Exception as e:
+        logger.error(f"admin_search_users failed for '{term}': {e}")
+        return []
+
+
+def _attach_user_info(admin, resumes: list[dict]) -> list[dict]:
+    """Adds email / name_en / name_ar to each resume row so the viewer can
+    show who a resume belongs to instead of a bare uuid."""
+    user_ids = list({r["user_id"] for r in resumes if r.get("user_id")})
+    if not user_ids:
+        return resumes
+    try:
+        rows = admin.rpc("admin_users_by_ids", {"ids": user_ids}).execute().data or []
+    except Exception as e:
+        # Non-fatal: the listing is still perfectly usable without names.
+        logger.warning(f"admin_users_by_ids failed: {e}")
+        return resumes
+
+    by_id = {r["id"]: r for r in rows}
+    for resume in resumes:
+        info = by_id.get(resume.get("user_id")) or {}
+        resume["email"] = info.get("email")
+        resume["name_en"] = info.get("name_en")
+        resume["name_ar"] = info.get("name_ar")
+    return resumes
+
+
 @router.get("/api/v1/admin/resumes", tags=["Admin"])
 def list_all_resumes(
     limit: int = Query(25, ge=1, le=100),
     offset: int = Query(0, ge=0),
-    user_id: str | None = Query(None, description="Filter to one user's resumes by their auth user id."),
+    q: str | None = Query(
+        None,
+        description="Search by email, name (English or Arabic), or auth user id. Blank returns everyone.",
+    ),
+    user_id: str | None = Query(None, description="Legacy exact-user-id filter. Prefer `q`."),
     admin_user_id: str = Depends(get_current_admin_user_id),
 ):
-    """Admin-only listing across ALL users' resumes (including archived
-    ones — an admin debugging a report shouldn't be blinded by a user's own
-    retention cap), for the bug-report debugging workflow: look up a
-    tester's resumes by their user id, then open the CV/cover letter they
-    actually saw. No email/name join here — profiles doesn't duplicate
-    auth.users.email, so correlate via the Supabase dashboard's Auth users
-    list if you only have an email from a bug report."""
+    """Admin-only listing across ALL users' resumes, including archived ones
+    (an admin debugging a report shouldn't be blinded by a user's own
+    retention cap).
+
+    `q` accepts whatever you actually have to hand when someone reports a
+    problem — most often their email, sometimes their name in either script,
+    occasionally a raw user id. It used to be user-id-only, which meant
+    round-tripping through the Supabase dashboard to translate an email into
+    a uuid before you could look anything up."""
     admin = get_admin_client()
+
+    matched_users: list[dict] = []
+    target_user_ids: list[str] | None = None
+
+    term = (q or "").strip()
+    if term:
+        if _UUID_RE.match(term):
+            # A raw id needs no lookup, though we still resolve it so the
+            # response can show whose account it is.
+            target_user_ids = [term]
+            matched_users = _lookup_users(admin, term)
+        else:
+            matched_users = _lookup_users(admin, term)
+            target_user_ids = [u["id"] for u in matched_users]
+            if not target_user_ids:
+                # Nobody matched — return empty rather than every user's
+                # resumes, which is what an unfiltered query would do.
+                return {
+                    "resumes": [], "limit": limit, "offset": offset,
+                    "matched_users": [], "total_matched_users": 0,
+                }
+    elif user_id:
+        target_user_ids = [user_id]
+
     query = (
         admin.table("resumes")
         .select("id, user_id, role, company, cv_language, ats_score, job_match_score, is_archived, created_at")
         .order("created_at", desc=True)
         .range(offset, offset + limit - 1)
     )
-    if user_id:
-        query = query.eq("user_id", user_id)
-    result = query.execute()
-    return {"resumes": result.data or [], "limit": limit, "offset": offset}
+    if target_user_ids:
+        # in_() rather than eq() so an email matching several accounts (or a
+        # name shared by two testers) returns all of their resumes.
+        query = query.in_("user_id", target_user_ids)
+
+    resumes = _attach_user_info(admin, query.execute().data or [])
+    return {
+        "resumes": resumes,
+        "limit": limit,
+        "offset": offset,
+        "matched_users": matched_users,
+        "total_matched_users": len(matched_users),
+    }
 
 
 @router.get("/api/v1/admin/resumes/{resume_id}/document/{doc_type}", tags=["Admin"])

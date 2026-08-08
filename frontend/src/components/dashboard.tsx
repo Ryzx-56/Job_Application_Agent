@@ -259,7 +259,10 @@ export function FileResultCard({
   disabled?: boolean;
 }) {
   return (
-    <div className="group relative overflow-hidden rounded-xl border border-slate-200 bg-white p-4 shadow-sm transition-all hover:border-blue-200 hover:shadow-md">
+    // h-full + flex-col + mt-auto on the action row: the two file cards sit
+    // in a 2-up grid and must stay the same height even when one title or
+    // button label is longer (very visible in Arabic).
+    <div className="group relative flex h-full flex-col overflow-hidden rounded-xl border border-slate-200 bg-white p-4 shadow-sm transition-all hover:border-blue-200 hover:shadow-md">
       <div className="flex items-start justify-between gap-3">
         <div className="flex min-w-0 items-center gap-3">
           <span className="grid size-10 shrink-0 place-items-center rounded-lg bg-blue-50 text-blue-600">
@@ -275,29 +278,29 @@ export function FileResultCard({
         </div>
       </div>
 
-      <div className="mt-3.5 flex items-center gap-2">
+      <div className="mt-auto flex items-center gap-2 pt-3.5">
         <a
           href={disabled ? undefined : previewHref}
           target="_blank"
           rel="noopener noreferrer"
           aria-disabled={disabled}
-          className={`inline-flex h-8 flex-1 items-center justify-center gap-1.5 rounded-lg border border-slate-200 text-xs font-medium text-slate-700 transition-colors ${
+          className={`inline-flex h-8 min-w-0 flex-1 items-center justify-center gap-1.5 rounded-lg border border-slate-200 px-2 text-xs font-medium text-slate-700 transition-colors ${
             disabled ? "pointer-events-none opacity-40" : "hover:bg-slate-50 hover:border-slate-300"
           }`}
         >
-          <Eye className="size-3.5" aria-hidden />
-          {previewLabel}
+          <Eye className="size-3.5 shrink-0" aria-hidden />
+          <span className="truncate">{previewLabel}</span>
         </a>
         <a
           href={disabled ? undefined : downloadHref}
           download
           aria-disabled={disabled}
-          className={`inline-flex h-8 flex-1 items-center justify-center gap-1.5 rounded-lg bg-blue-600 text-xs font-medium text-white transition-colors ${
+          className={`inline-flex h-8 min-w-0 flex-1 items-center justify-center gap-1.5 rounded-lg bg-blue-600 px-2 text-xs font-medium text-white transition-colors ${
             disabled ? "pointer-events-none opacity-40" : "hover:bg-blue-500"
           }`}
         >
-          <Download className="size-3.5" aria-hidden />
-          {downloadLabel}
+          <Download className="size-3.5 shrink-0" aria-hidden />
+          <span className="truncate">{downloadLabel}</span>
         </a>
       </div>
     </div>

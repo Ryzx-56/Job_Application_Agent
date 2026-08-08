@@ -11,6 +11,9 @@ export type CreditsInfo = {
   isFoundingMember: boolean;
   foundingMemberNumber: number | null;
   location: string | null;
+  /** Drives the Settings link to the Resume Viewer. Display only: the real
+   *  check runs server-side on every admin request (core/auth.py). */
+  isAdmin: boolean;
 };
 
 /* ========================================================================
@@ -28,7 +31,7 @@ export async function fetchCredits(): Promise<CreditsInfo> {
 
   const { data, error } = await supabase
     .from("profiles")
-    .select("tier, credits_remaining, credits_total, pending_tier, credits_reset_at, is_founding_member, founding_member_number, location")
+    .select("tier, credits_remaining, credits_total, pending_tier, credits_reset_at, is_founding_member, founding_member_number, location, is_admin")
     .eq("id", user.id)
     .single();
 
@@ -43,5 +46,6 @@ export async function fetchCredits(): Promise<CreditsInfo> {
     isFoundingMember: data.is_founding_member,
     foundingMemberNumber: data.founding_member_number,
     location: data.location,
+    isAdmin: Boolean(data.is_admin),
   };
 }

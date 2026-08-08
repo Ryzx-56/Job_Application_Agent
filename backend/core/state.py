@@ -96,6 +96,13 @@ class AgentState(TypedDict):
     # letter). Shared so a term can't be translated one way on the CV and a
     # different way in the letter. Always {} for English CVs.
     arabic_glossary:            dict
+    # The tailored CV's text/skills as they were BEFORE Arabic localization,
+    # kept solely as input to the ATS scorer. The JD's keywords are English,
+    # so scoring translated Arabic text against them always returned 0% —
+    # see the note in tailoring_engine.py. Empty for English CVs, where the
+    # rendered text already IS the scoring text.
+    ats_source_text:            str
+    ats_source_skills:          dict
 
     # ── FACT CHECK LOOP (Gemini) ────────────────────────────
     hallucination_flags:     List[dict]

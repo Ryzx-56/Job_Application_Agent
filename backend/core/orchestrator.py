@@ -22,8 +22,38 @@ workflow.add_node("jd_analyzer", run_jd_analyzer)
 workflow.add_node("tailoring_engine", run_tailoring_engine) # Updated node reference
 workflow.add_node("fact_checker", run_fact_checker)
 workflow.add_node("document_generator", run_document_generator)
-workflow.add_node("match_scorer", run_match_scorer)
-workflow.add_node("ats_scorer", run_ats_scorer)
+
+# SPEED: ats_scorer and match_scorer are ONE node.
+#
+# They used to be two, wired ats_scorer -> match_scorer as a sequential
+# edge, because match_scorer reads state["score_breakdown"] which ats_scorer
+# writes. That was correct but expensive: LangGraph runs in supersteps, and
+# a superstep cannot begin until EVERY node in the previous one has
+# finished. match_scorer therefore waited not just for ats_scorer (22ms,
+# it's pure Python) but for the whole parallel batch beside it — including
+# the 25-second cover letter. Measured on a real Arabic run:
+#
+#   16:00:56.636  document_generator starts
+#   16:00:56.658  ats_scorer done      (22ms)
+#   16:01:21.888  cover letter done    (25s)
+#   16:01:21.889  match_scorer STARTS  <- 1ms later, having idled ~25s
+#
+# Collapsing them into a single node puts the scoring work INSIDE the
+# parallel fan-out, so it runs alongside the cover letter instead of after
+# it. Same execution order internally (ATS first, then match scoring on its
+# output), roughly 20-25 seconds off every run.
+def run_scoring(state: AgentState) -> dict:
+    """Agent 5 + Agent 7. ATS scoring is pure Python and instant; the match
+    scorer needs its output, so they run back to back here rather than as
+    two graph nodes."""
+    ats_update = run_ats_scorer(state) or {}
+    # match_scorer reads score_breakdown/ats_score, which only exist in the
+    # update dict at this point — merge before handing it over.
+    match_update = run_match_scorer({**state, **ats_update}) or {}
+    return {**ats_update, **match_update}
+
+
+workflow.add_node("scoring", run_scoring)
 workflow.add_node("jobs_finder", run_jobs_finder) # Registering the new node
 
 # jd_analyzer always runs — JD analysis doesn't depend on how the CV
@@ -82,18 +112,16 @@ MAX_TAILORING_ATTEMPTS = 2  # hard ceiling — if fact-checking still hasn't
                              # retrying forever (e.g. if Gemini is down/exhausted)
 
 def route_after_fact_check(state: AgentState):
-    # NOTE: match_scorer is NOT in this fan-out. It depends on ats_scorer's
-    # output (state["score_breakdown"]), and LangGraph runs everything in a
-    # single fan-out list from the SAME state snapshot — parallel siblings
-    # never see each other's writes until the whole batch finishes. Putting
-    # match_scorer here would mean it always reads a stale/empty
-    # score_breakdown. Instead ats_scorer has a direct edge into
-    # match_scorer below, so match_scorer only starts once ats_scorer's
-    # result has actually been merged back into state.
+    # NOTE: parallel siblings in a fan-out all read the SAME state snapshot
+    # and never see each other's writes until the batch finishes. That's why
+    # match scoring can't be its own sibling here — it needs ats_scorer's
+    # output. It's folded into the "scoring" node instead (see run_scoring),
+    # which keeps the ordering guarantee AND the parallelism.
     if state.get("fact_check_passed", False):
-        # Trigger Document Generator, ATS Scorer, AND Jobs Finder in PARALLEL
-        # (these three are independent of each other).
-        return ["document_generator", "ats_scorer", "jobs_finder"]
+        # Cover letter, scoring (ATS + match), and job search all run in
+        # PARALLEL — they're independent of each other. See run_scoring for
+        # why the two scorers are one node rather than two.
+        return ["document_generator", "scoring", "jobs_finder"]
 
     # FAIL FAST #2 — the checker itself couldn't run (see
     # FactCheckerUnavailable in core/fact_checker.py). Nothing downstream
@@ -127,21 +155,18 @@ workflow.add_conditional_edges(
     route_after_fact_check,
     {
         "document_generator": "document_generator",
-        "ats_scorer": "ats_scorer",
+        "scoring": "scoring",
         "jobs_finder": "jobs_finder",
         "tailoring_engine": "tailoring_engine",
         "abort": END,
     }
 )
 
-# match_scorer must run AFTER ats_scorer completes and its output has been
-# merged into shared state — see the note in route_after_fact_check above.
-# This is a normal (sequential) edge, not part of the parallel fan-out.
-workflow.add_edge("ats_scorer", "match_scorer")
+
 
 # Connect everything out to final execution sink step
 workflow.add_edge("document_generator", END)
-workflow.add_edge("match_scorer", END)
+workflow.add_edge("scoring", END)
 workflow.add_edge("jobs_finder", END)
 
 # Compile Graph Structure

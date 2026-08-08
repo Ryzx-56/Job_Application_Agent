@@ -312,7 +312,6 @@ function SignupForm() {
                     dir="ltr"
                     value={nameEn}
                     onChange={(e) => setNameEn(e.target.value)}
-                    placeholder={t.signup.nameEnPlaceholder}
                     className="block w-full rounded-lg border border-white/10 bg-white/5 px-4 py-3 text-base text-white placeholder:text-zinc-600 outline-none transition-colors focus:border-blue-400/60 focus:bg-white/[0.07] focus:ring-2 focus:ring-blue-400/30"
                   />
                 </div>
@@ -330,7 +329,6 @@ function SignupForm() {
                     dir="rtl"
                     value={nameAr}
                     onChange={(e) => setNameAr(e.target.value)}
-                    placeholder={t.signup.nameArPlaceholder}
                     className="block w-full rounded-lg border border-white/10 bg-white/5 px-4 py-3 text-base text-white placeholder:text-zinc-600 outline-none transition-colors focus:border-blue-400/60 focus:bg-white/[0.07] focus:ring-2 focus:ring-blue-400/30"
                   />
                 </div>

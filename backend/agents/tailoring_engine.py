@@ -546,7 +546,30 @@ def run_tailoring_engine(state: AgentState) -> dict:
             # can localize the raw facts fields and document_generator.py
             # can localize the cover letter with the SAME translations.
             arabic_glossary: dict = {}
+            # ATS SCORING SOURCE — captured BEFORE Arabic localization.
+            #
+            # The ATS scorer matches the job description's keywords (English,
+            # since that's what the JD is written in) against the CV's text.
+            # Once the CV is translated to Arabic, that comparison can never
+            # match anything, so every Arabic run scored 0% keywords and
+            # 0% skills no matter how well the CV actually covered the role.
+            # Keeping the English text the model produced, purely as scoring
+            # input, makes the score reflect real coverage again. It is never
+            # rendered — only utils/ats_scorer.py reads it.
+            ats_source_text = ""
+            ats_source_skills: dict = {}
             if cv_language == "ar":
+                ats_source_text = " ".join(
+                    s for s in iter_strings({k: v for k, v in core_data.items() if k != "bullets"}) if s
+                ) + " " + " ".join(
+                    (b.get("tailored") or "") for b in core_data.get("bullets", []) or [] if isinstance(b, dict)
+                )
+                raw_pre = core_data.get("tailored_skills", {}) or {}
+                ats_source_skills = {
+                    cat: [str(s) for s in items if str(s).strip()]
+                    for cat, items in raw_pre.items() if isinstance(items, list)
+                }
+
                 core_data, arabic_glossary = _enforce_arabic_purity(
                     core_data,
                     usage_counters,
@@ -614,6 +637,8 @@ def run_tailoring_engine(state: AgentState) -> dict:
                 "tailored_experience_titles": tailored_experience_titles,
                 "tailored_skills": tailored_skills,
                 "arabic_glossary": arabic_glossary,
+                "ats_source_text": ats_source_text,
+                "ats_source_skills": ats_source_skills,
                 "tailoring_attempts": attempts,
                 "error": None,
                 **_cumulative_usage_fields(),

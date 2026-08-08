@@ -474,7 +474,33 @@ def run_ats_scorer(state: dict) -> dict:
         skills_text,
     ]))
 
-    result = calculate_ats_score(facts_json, weight_factors, tailored_cv_text, tailored_skills=skills_source)
+    # BUG FIX (Arabic CVs scored 0% keywords / 0% skills):
+    #
+    # An ATS score is a keyword-overlap measure between the JOB DESCRIPTION
+    # and the CV. The job description is written in English; an Arabic CV's
+    # rendered text is not. Comparing the two is guaranteed to find nothing,
+    # so every Arabic run reported 0% keyword match and 0% skills match and
+    # a badly deflated total, regardless of how well the candidate actually
+    # fit the role.
+    #
+    # tailoring_engine.py now keeps the English text it generated before
+    # translating it (ats_source_text / ats_source_skills) purely so this
+    # comparison stays meaningful. The score then measures what it's
+    # supposed to measure — does this CV's CONTENT cover what the JD asks
+    # for — instead of measuring which alphabet it's written in.
+    #
+    # English CVs are completely unaffected: ats_source_text is empty for
+    # them, so the branch below is skipped and the rendered text is scored
+    # exactly as before.
+    scoring_text = tailored_cv_text
+    scoring_skills = skills_source
+    ats_source_text = (state.get("ats_source_text") or "").strip()
+    if ats_source_text:
+        scoring_text = ats_source_text
+        scoring_skills = state.get("ats_source_skills") or skills_source
+        logger.info("📋 Arabic CV — scoring against the pre-translation English text so JD keywords can match.")
+
+    result = calculate_ats_score(facts_json, weight_factors, scoring_text, tailored_skills=scoring_skills)
 
     logger.info(f"📋 ATS score: {result['ats_score']}/100")
 

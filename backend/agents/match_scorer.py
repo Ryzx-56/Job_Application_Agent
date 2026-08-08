@@ -24,6 +24,8 @@ RULES:
 - Ignore gaps that already appear in the CV.
 - Be specific — name the actual skill, tool, duty, or experience gap rather than giving generic advice.
 
+{language_instruction}
+
 WRITING STYLE:
 
 - Clear and complete, not padded. Say what's actually useful, don't cut it short just to hit a word count.
@@ -64,6 +66,29 @@ Return EXACTLY this JSON structure:
   "overall_recommendation": ""
 }}
 """
+
+# BUG FIX: this node had no language instruction at all, so its output was
+# always English. On an Arabic CV the user saw an Arabic dashboard with an
+# English match-score explanation and English improvement tips sitting
+# inside it. The JD is usually still English, so the model has to be told
+# explicitly to answer in the CV's language rather than the input's.
+_AR_SCORER_LANGUAGE_INSTRUCTION = """OUTPUT LANGUAGE — MANDATORY:
+
+- Write "reason", every "skill", every "how_to_close", and "overall_recommendation" entirely in
+  fluent Modern Standard Arabic. The job description and the CV data below may be in English;
+  answer in Arabic regardless.
+- "skill" names a gap the candidate should close. Write it in Arabic, but keep a widely-used
+  technology or tool name in its original form inside the Arabic phrase if translating it would
+  make it unrecognizable to a recruiter (e.g. "خبرة في Docker").
+- Keep the JSON keys themselves exactly as given in English. Only the VALUES are translated.
+- "importance" must stay exactly "required" or "preferred" in English — it is a machine-read enum,
+  not display text."""
+
+_EN_SCORER_LANGUAGE_INSTRUCTION = """OUTPUT LANGUAGE:
+
+- Write all output in professional English, regardless of what language the CV or job description
+  are written in."""
+
 
 def _strip_dashes(text: str) -> str:
     """Defensive safety net — see tailoring_engine.py's version of this for why."""
@@ -111,8 +136,13 @@ def run_match_scorer(state: AgentState) -> AgentState:
         if isinstance(category, list):
             current_skills.extend(category)
 
+    is_arabic = str(state.get("cv_language", "en")).lower().startswith("ar")
+
     prompt = MATCH_SCORER_PROMPT.format(
         ats_score=ats_score,
+        language_instruction=(
+            _AR_SCORER_LANGUAGE_INSTRUCTION if is_arabic else _EN_SCORER_LANGUAGE_INSTRUCTION
+        ),
         cv_content=cv_content,
         jd_content=jd_content,
         missing_skills=json.dumps(missing_skills, ensure_ascii=False),

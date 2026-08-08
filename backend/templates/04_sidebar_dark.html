@@ -36,7 +36,7 @@
     {% if tagline %}<div class="tagline">{{ tagline }}</div>{% endif %}
 
     <div class="side-section">
-      <div class="side-title">Contact</div>
+      <div class="side-title">{{ labels.contact }}</div>
       {% if personal.email %}<div class="side-row">{{ personal.email }}</div>{% endif %}
       {% if personal.phone %}<div class="side-row">{{ personal.phone }}</div>{% endif %}
       {% if personal.location %}<div class="side-row">{{ personal.location }}</div>{% endif %}
@@ -46,7 +46,7 @@
 
     {% if skills %}
     <div class="side-section">
-      <div class="side-title">Skills</div>
+      <div class="side-title">{{ labels.skills }}</div>
       {% if skills.languages %}{% for s in skills.languages %}<div class="side-row">{{ s }}</div>{% endfor %}{% endif %}
       {% if skills.frameworks %}{% for s in skills.frameworks %}<div class="side-row">{{ s }}</div>{% endfor %}{% endif %}
       {% if skills.tools %}{% for s in skills.tools %}<div class="side-row">{{ s }}</div>{% endfor %}{% endif %}
@@ -55,11 +55,11 @@
 
     {% if education %}
     <div class="side-section">
-      <div class="side-title">Education</div>
+      <div class="side-title">{{ labels.education }}</div>
       {% for edu in education %}
       <div class="side-row" style="margin-bottom:10px;">
         <strong>{{ edu.degree }}</strong><br>{{ edu.institution }}{% if edu.graduation_year %}<br>{{ edu.graduation_year }}{% endif %}
-        {% if edu.gpa %}<br>GPA {{ edu.gpa }}{% endif %}
+        {% if edu.gpa %}<br>{{ labels.gpa }} {{ edu.gpa }}{% endif %}
       </div>
       {% endfor %}
     </div>
@@ -67,7 +67,7 @@
 
     {% if certifications %}
     <div class="side-section">
-      <div class="side-title">Certifications</div>
+      <div class="side-title">{{ labels.certifications }}</div>
       {% for cert in certifications %}<div class="side-row">{{ cert }}</div>{% endfor %}
     </div>
     {% endif %}
@@ -76,14 +76,14 @@
   <div class="main">
     {% if tailored_summary %}
     <div class="main-section">
-      <div class="main-title">Profile</div>
+      <div class="main-title">{{ labels.profile }}</div>
       <p>{{ tailored_summary }}</p>
     </div>
     {% endif %}
 
     {% if experience %}
     <div class="main-section">
-      <div class="main-title">Experience</div>
+      <div class="main-title">{{ labels.experience }}</div>
       {% for exp in experience %}
       <div class="entry">
         <div class="entry-header">
@@ -98,7 +98,7 @@
 
     {% if projects %}
     <div class="main-section">
-      <div class="main-title">Projects</div>
+      <div class="main-title">{{ labels.projects }}</div>
       {% for proj in projects %}
       <div class="entry">
         <div class="entry-header">

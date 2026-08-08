@@ -404,10 +404,20 @@ Respond ONLY with a JSON array, one object per result id, no markdown:
    "role": "Machine Learning Engineer", "company": "Elm"}}]
 """
 
-# Below this the role is too far from what the candidate does to be worth
-# showing. Low rather than aggressive — the model already filtered out
-# non-jobs and wrong locations, so this only trims the long tail.
-_MIN_RELEVANCE = 0.15
+# Relevance is a RANKING signal, not a cutoff.
+#
+# It used to be a hard filter, which combined with the location and open
+# checks to return a single listing on a real run — the user asked for five
+# and got one. Showing five imperfect-but-real openings is more useful than
+# showing one perfect one, so nothing is dropped for being a weak match:
+# results are ordered best-first and the list is filled to RESULT_CAP from
+# whatever survived. The ONLY hard exclusion after screening is
+# "this isn't a job posting at all", which is the thing the user actually
+# complained about (articles and blog posts appearing as jobs).
+#
+# This threshold now only decides the "Strong / Partial / Stretch" label.
+_STRONG_MATCH = 0.6
+_PARTIAL_MATCH = 0.3
 
 # How much of each result's crawled text the screener sees. Enough to judge
 # "posting vs article" and spot a location, without turning one screen into
@@ -464,7 +474,7 @@ def _llm_screen_listings(
         logger.error(f"🔍 Job screening call failed: {e} — falling back to heuristic filters.")
         return None
 
-    accepted: list[tuple[float, dict]] = []
+    accepted: list[tuple[tuple, dict]] = []
     rejected = Counter()
 
     for verdict in verdicts:
@@ -474,23 +484,25 @@ def _llm_screen_listings(
         if not isinstance(idx, int) or not (0 <= idx < len(candidates)):
             continue
 
+        # The ONE hard exclusion — see the note on _STRONG_MATCH above.
         if not verdict.get("is_job_posting"):
             rejected["not_a_job_posting"] += 1
-            continue
-        if verdict.get("is_open") is False:
-            rejected["closed"] += 1
-            continue
-        if verdict.get("location_ok") is False:
-            rejected["wrong_location"] += 1
             continue
 
         try:
             relevance = float(verdict.get("relevance", 0.0))
         except (TypeError, ValueError):
             relevance = 0.0
-        if relevance < _MIN_RELEVANCE:
-            rejected["low_relevance"] += 1
-            continue
+
+        # Open and in-the-right-place become SORT KEYS instead of filters:
+        # a closed or far-away real opening still beats returning nothing,
+        # and it sinks below every better option automatically.
+        is_open = verdict.get("is_open") is not False
+        location_ok = verdict.get("location_ok") is not False
+        if not is_open:
+            rejected["closed_kept_last"] += 1
+        if not location_ok:
+            rejected["wrong_location_kept_last"] += 1
 
         job = dict(candidates[idx])
         # Prefer the model's cleaned-up role/company over the raw crawled
@@ -502,18 +514,20 @@ def _llm_screen_listings(
             job["title"] = f"{role} - {company}" if company else role
         job["company"] = company
         job["match_label"] = (
-            "Strong Match" if relevance >= 0.6
-            else "Partial Match" if relevance >= 0.3
+            "Strong Match" if relevance >= _STRONG_MATCH
+            else "Partial Match" if relevance >= _PARTIAL_MATCH
             else "Stretch Role"
         )
         # Strip every internal field — these get serialized straight into
         # the API response and persisted in the user's resume history.
         for internal in ("_content", "_skill_ratio"):
             job.pop(internal, None)
-        accepted.append((relevance, job))
+
+        # Sort: open first, then right-location, then most relevant.
+        accepted.append(((is_open, location_ok, relevance), job))
 
     if rejected:
-        logger.info(f"🔍 Screener rejected: {dict(rejected)}")
+        logger.info(f"🔍 Screener verdicts: {dict(rejected)}")
 
     accepted.sort(key=lambda pair: pair[0], reverse=True)
     return [job for _, job in accepted]
@@ -653,13 +667,104 @@ def _run_search_pass(
     with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
         priority_future = executor.submit(_search_tavily, client, query, PRIORITY_DOMAINS, RAW_FETCH_LIMIT)
         fallback_future = executor.submit(_search_tavily, client, query, FALLBACK_DOMAINS, RAW_FETCH_LIMIT)
-        priority_raw = [r for r in priority_future.result() if _matches_any_domain(r.get('url', ''), PRIORITY_DOMAINS)]
-        fallback_raw = [r for r in fallback_future.result() if _matches_any_domain(r.get('url', ''), FALLBACK_DOMAINS)]
+        priority_result = priority_future.result()
+        fallback_result = fallback_future.result()
+
+    priority_raw = [r for r in priority_result if _matches_any_domain(r.get('url', ''), PRIORITY_DOMAINS)]
+    fallback_raw = [r for r in fallback_result if _matches_any_domain(r.get('url', ''), FALLBACK_DOMAINS)]
+
+    # Tavily's include_domains is a preference, not an allowlist, so these
+    # searches also return results from boards we didn't name. They used to
+    # be discarded outright. They're now kept as a RESERVE, used only when
+    # the allowlisted pool can't fill RESULT_CAP — a real opening on a
+    # company's own careers page is far more useful to the candidate than a
+    # short list, and the LLM screen still has to confirm it's a genuine job
+    # posting before it can be shown. The allowlist keeps doing its real job
+    # (scam avoidance) by ordering these last rather than by hiding them.
+    known = set()
+    for r in priority_raw + fallback_raw:
+        known.add(r.get('url', ''))
+    offlist_raw = [
+        r for r in priority_result + fallback_result
+        if r.get('url') and r['url'] not in known
+    ]
 
     return (
         _collect_candidates(priority_raw, required_skills_lower)
-        + _collect_candidates(fallback_raw, required_skills_lower)
+        + _collect_candidates(fallback_raw, required_skills_lower),
+        _collect_candidates(offlist_raw, required_skills_lower),
     )
+
+
+def _run_search_passes(
+    client: TavilyClient,
+    queries: list[str],
+    required_skills_lower: list[str],
+) -> list[tuple[list[dict], list[dict]]]:
+    """
+    Runs several query variants at the same time, returning one
+    (allowlisted, offlist) pair per query IN QUERY ORDER, not completion
+    order.
+
+    Order matters even though the model re-ranks everything afterwards: the
+    caller dedupes by URL as it absorbs these, so whichever pass sees a URL
+    first is the one whose copy is kept. Preserving query order keeps that
+    deterministic, so the same search doesn't return subtly different
+    results run to run depending on which request happened to finish first.
+
+    Each pass internally fans out to two Tavily searches (priority board +
+    fallback boards), so the real concurrency here is 2x len(queries). That
+    is bounded by the caller passing at most the three follow-up variants,
+    i.e. six in-flight searches, which is well within Tavily's limits and
+    still just one round trip's worth of latency.
+    """
+    if not queries:
+        return []
+    if len(queries) == 1:
+        return [_run_search_pass(client, queries[0], required_skills_lower)]
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=len(queries)) as executor:
+        futures = [
+            executor.submit(_run_search_pass, client, query, required_skills_lower)
+            for query in queries
+        ]
+        # Iterating `futures` (not as_completed) is what preserves order;
+        # .result() re-raises, and _search_tavily already swallows its own
+        # errors, so a dead board yields an empty list rather than killing
+        # the whole batch.
+        return [future.result() for future in futures]
+
+
+def _normalize_for_match(text: str) -> str:
+    return re.sub(r"[^a-z0-9]+", " ", (text or "").lower()).strip()
+
+
+def _drop_source_job(candidates: list[dict], weight_factors: dict) -> list[dict]:
+    """
+    Removes the very posting the user pasted in as their job description.
+
+    "Similar jobs" that leads with the job you're already applying to is
+    noise — and it always ranks first, because it matches its own JD
+    perfectly. Matched on company AND role together: company alone would
+    wrongly hide every other opening at the same employer, which is exactly
+    the kind of listing a candidate DOES want to see.
+    """
+    company = _normalize_for_match(weight_factors.get("company", ""))
+    title = _normalize_for_match(weight_factors.get("job_title", ""))
+    if not company or not title or company == "unknown":
+        return candidates
+
+    kept, dropped = [], 0
+    for candidate in candidates:
+        haystack = _normalize_for_match(f"{candidate.get('title', '')} {candidate.get('_content', '')[:300]}")
+        if company in haystack and title in haystack:
+            dropped += 1
+            continue
+        kept.append(candidate)
+
+    if dropped:
+        logger.info(f"🔍 Dropped {dropped} listing(s) matching the pasted job description itself.")
+    return kept
 
 
 def find_similar_jobs(
@@ -718,48 +823,92 @@ def find_similar_jobs(
 
     required_skills_lower = [s.lower() for s in required_skills]
 
-    candidates = _run_search_pass(
-        client,
+    # PROGRESSIVELY BROADER QUERIES. Each is run only while the candidate
+    # pool is still too thin to reliably yield RESULT_CAP after screening.
+    # The pool target is a multiple of RESULT_CAP because screening drops a
+    # meaningful share (articles, category pages), and a pool of exactly 5
+    # reliably produced 1-2 survivors.
+    queries = [
         f"{job_title} active job openings hiring {search_skills}{location_query_part}",
-        required_skills_lower,
-    )
+        f"{job_title} jobs vacancies apply{location_query_part}",
+        # Drops the location so a nearby-city or remote posting can surface.
+        # Location is a sort key now, not a filter, so these still rank below
+        # local ones rather than displacing them.
+        f"{job_title} jobs hiring now",
+        # Last resort: the single strongest skill instead of the job title,
+        # which catches roles titled differently for the same actual work.
+        f"{(required_skills[0] if required_skills else job_title)} jobs{location_query_part}",
+    ]
 
-    # SECOND PASS — the skills clause makes the primary query precise but
-    # narrow. Dropping it surfaces postings for the same role that simply
-    # don't spell out the same top-3 tools. Run whenever the candidate pool
-    # is thin, since screening will reject a good share of what's here: the
-    # reported run returned 2 listings and BOTH were junk that only survived
-    # because there was nothing better to pad the list with.
-    if len(candidates) < RESULT_CAP * 2:
-        logger.info(f"🔍 First pass yielded {len(candidates)} candidate(s) — running a broader second pass...")
-        candidates += _run_search_pass(
-            client,
-            f"{job_title} jobs vacancies apply{location_query_part}",
-            required_skills_lower,
+    candidates: list[dict] = []
+    reserve: list[dict] = []
+    seen_urls: set[str] = set()
+
+    def _absorb(batch: list[dict], into: list[dict]) -> None:
+        # Dedupe as we go — no reason to pay to screen the same URL twice.
+        for candidate in batch:
+            if candidate["url"] in seen_urls:
+                continue
+            seen_urls.add(candidate["url"])
+            into.append(candidate)
+
+    # PASS 1 runs alone. It's the most specific query and usually fills the
+    # pool by itself, and running it first is what keeps the common case at
+    # exactly 2 Tavily searches. Firing all four variants up front would be
+    # simpler but would quadruple the search spend on every single request
+    # to buy latency the common case never needed.
+    allowlisted, offlist = _run_search_pass(client, queries[0], required_skills_lower)
+    _absorb(allowlisted, candidates)
+    _absorb(offlist, reserve)
+
+    # THE REMAINING PASSES RUN CONCURRENTLY, not one after another.
+    #
+    # These only fire when pass 1 came up short, but when they do fire they
+    # are independent of each other — none reads the others' output, they
+    # just widen the same pool. Sequentially that was up to three ~5s round
+    # trips stacked back to back; together it's one. Worst-case Tavily spend
+    # is unchanged (the same four queries, two searches each); only the
+    # wall-clock arrangement differs.
+    if len(candidates) < RESULT_CAP * 3 and len(queries) > 1:
+        remaining = queries[1:]
+        logger.info(
+            f"🔍 Pool at {len(candidates)} candidate(s) — broadening with "
+            f"{len(remaining)} more queries, run concurrently..."
         )
+        for allowlisted, offlist in _run_search_passes(client, remaining, required_skills_lower):
+            _absorb(allowlisted, candidates)
+            _absorb(offlist, reserve)
 
-    # Deduplicate BEFORE screening — no reason to pay to judge the same URL
-    # twice when both passes surface it.
-    seen_urls, deduped = set(), []
-    for candidate in candidates:
-        if candidate['url'] in seen_urls:
-            continue
-        seen_urls.add(candidate['url'])
-        deduped.append(candidate)
+    # Pull in off-allowlist results only if the trusted pool is too thin to
+    # produce RESULT_CAP after screening — see _run_search_pass.
+    if len(candidates) < RESULT_CAP * 2 and reserve:
+        logger.info(f"🔍 Trusted pool at {len(candidates)} — adding {len(reserve)} off-allowlist candidate(s) as reserve.")
+        candidates += reserve
+
+    # Drop the posting the user pasted in as their job description. It's a
+    # guaranteed "Strong Match" against itself, and recommending someone the
+    # exact job they're already applying to is noise, not a suggestion.
+    candidates = _drop_source_job(candidates, weight_factors)
 
     # THE SCREEN — a model reads each candidate and decides whether it's a
-    # real, open posting the candidate could actually take. Heuristics only
-    # step in if that call couldn't be made at all.
-    screened = _llm_screen_listings(deduped, job_title, effective_location, required_skills)
+    # real posting. Heuristics only step in if that call couldn't be made.
+    screened = _llm_screen_listings(candidates, job_title, effective_location, required_skills)
     if screened is None:
-        final = _heuristic_filter(deduped, location_terms)[:RESULT_CAP]
+        final = _heuristic_filter(candidates, location_terms)[:RESULT_CAP]
         logger.info(f"✅ Found {len(final)} job listings via heuristic fallback (screening unavailable).")
         return final
 
     final = screened[:RESULT_CAP]
+    if len(final) < RESULT_CAP:
+        # Worth knowing: means the pool itself was thin, not that the
+        # filters were harsh — nothing is dropped for being a weak match.
+        logger.warning(
+            f"⚠️  Only {len(final)}/{RESULT_CAP} listings after screening from "
+            f"{len(candidates)} candidates — the search pool was too small."
+        )
     logger.info(
         f"✅ Found {len(final)} screened job listings "
-        f"({len(deduped)} candidates screened, location: {effective_location or 'unknown'})."
+        f"({len(candidates)} candidates screened, location: {effective_location or 'unknown'})."
     )
     return final
 

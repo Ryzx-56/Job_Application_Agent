@@ -457,9 +457,10 @@ export const content = {
       // between scripts — the same name has several valid Arabic spellings
       // and only its owner knows which is theirs.
       nameEnLabel: "Name (English)",
-      nameEnPlaceholder: "e.g. Abdulmalik Hawsawi",
       nameArLabel: "Name (Arabic)",
-      nameArPlaceholder: "مثال: عبدالملك حوساوي",
+      // No in-field placeholders on purpose — the labels plus nameHelp
+      // below already say what each field is for, and an example name adds
+      // nothing (same reasoning as the Settings name fields).
       nameHelp: "Fill in at least one. We use each exactly as you write it, and never translate your name.",
       emailLabel: "Email address",
       emailPlaceholder: "you@example.com",
@@ -584,8 +585,8 @@ export const content = {
         nameLabel: "Full name",
         nameEnLabel: "Name (English)",
         nameArLabel: "Name (Arabic)",
-        nameEnPlaceholder: "e.g. Abdulmalik Hawsawi",
-        nameArPlaceholder: "مثال: عبدالملك حوساوي",
+        // No placeholder here on purpose — nameHelp already explains what
+        // the field is for, and an example name adds nothing.
         nameHelp: "Used exactly as written on your generated CV. English CVs use the English name, Arabic CVs use the Arabic one. We never translate your name.",
         nameSave: "Save name",
         nameSaved: "Saved.",
@@ -1078,9 +1079,7 @@ export const content = {
       fullNameLabel: "الاسم الكامل",
       fullNamePlaceholder: "اسمك الكامل",
       nameEnLabel: "الاسم (بالإنجليزية)",
-      nameEnPlaceholder: "مثال: Abdulmalik Hawsawi",
       nameArLabel: "الاسم (بالعربية)",
-      nameArPlaceholder: "مثال: عبدالملك حوساوي",
       nameHelp: "أدخل واحدًا على الأقل. نستخدم كل اسم كما تكتبه تمامًا، ولا نترجم اسمك أبدًا.",
       emailLabel: "البريد الإلكتروني",
       emailPlaceholder: "you@example.com",
@@ -1201,8 +1200,7 @@ export const content = {
         nameLabel: "الاسم الكامل",
         nameEnLabel: "الاسم (بالإنجليزية)",
         nameArLabel: "الاسم (بالعربية)",
-        nameEnPlaceholder: "مثال: Abdulmalik Hawsawi",
-        nameArPlaceholder: "مثال: عبدالملك حوساوي",
+        // لا يوجد نص توضيحي داخل الحقل عمدًا — nameHelp يشرح الغرض بالفعل.
         nameHelp: "يُستخدم كما هو مكتوب تمامًا في سيرتك الذاتية. السير الإنجليزية تستخدم الاسم الإنجليزي، والعربية تستخدم الاسم العربي. لا نترجم اسمك أبدًا.",
         nameSave: "حفظ الاسم",
         nameSaved: "تم الحفظ.",

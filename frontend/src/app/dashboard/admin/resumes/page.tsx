@@ -2,20 +2,25 @@
 
 import React, { useEffect, useState } from "react";
 import { Loader2, AlertCircle, FileText, Mail, FileType2, Search } from "lucide-react";
-import { fetchAdminResumes, getAdminDocumentUrl, AdminResumeSummary } from "@/lib/supabase/resumes";
+import {
+  fetchAdminResumes,
+  getAdminDocumentUrl,
+  AdminResumeSummary,
+  AdminMatchedUser,
+} from "@/lib/supabase/resumes";
 
 /**
- * Admin-only debug tool: look up any user's saved resumes by their auth
- * user id and open exactly the CV/cover letter they saw, regenerated on
- * demand from the saved generation_snapshot (see PART 1 of the
- * storage/retention rework — rendered files aren't stored anywhere
- * permanently anymore, so this is the only way to see a specific past
- * result after the fact).
+ * Admin-only debug tool. Search for a user by email, name, or id, then open
+ * the exact CV or cover letter they received. Documents are re-rendered on
+ * demand from the generation_snapshot saved on each resume row, because the
+ * rendered files themselves are not kept anywhere after the request that
+ * created them.
  *
- * Not linked from any nav — reachable only by URL. Access control is
- * entirely server-side (backend checks profiles.is_admin on every request
- * here); a non-admin visiting this page just sees every request fail with
- * "Admin access required."
+ * Access control is entirely server-side: the backend checks
+ * profiles.is_admin on every request. This page does no client-side gating,
+ * so a non-admin who opens it just sees every request fail with "Admin
+ * access required". The Settings link to it is likewise only a convenience,
+ * not a security boundary.
  */
 
 const PAGE_SIZE = 25;
@@ -59,8 +64,9 @@ function DocLink({ resumeId, docType, label, icon: Icon }: { resumeId: string; d
 }
 
 export default function AdminResumesPage() {
-  const [userId, setUserId] = useState("");
-  const [appliedUserId, setAppliedUserId] = useState<string | undefined>(undefined);
+  const [search, setSearch] = useState("");
+  const [appliedSearch, setAppliedSearch] = useState<string | undefined>(undefined);
+  const [matchedUsers, setMatchedUsers] = useState<AdminMatchedUser[]>([]);
   const [page, setPage] = useState(0);
   const [resumes, setResumes] = useState<AdminResumeSummary[]>([]);
   const [loading, setLoading] = useState(true);
@@ -70,9 +76,11 @@ export default function AdminResumesPage() {
     let cancelled = false;
     setLoading(true);
     setError(null);
-    fetchAdminResumes({ page, pageSize: PAGE_SIZE, userId: appliedUserId })
-      .then(({ resumes }) => {
-        if (!cancelled) setResumes(resumes);
+    fetchAdminResumes({ page, pageSize: PAGE_SIZE, search: appliedSearch })
+      .then(({ resumes, matched_users }) => {
+        if (cancelled) return;
+        setResumes(resumes);
+        setMatchedUsers(matched_users ?? []);
       })
       .catch((err) => {
         if (!cancelled) setError(err?.message || "Failed to load resumes.");
@@ -83,15 +91,15 @@ export default function AdminResumesPage() {
     return () => {
       cancelled = true;
     };
-  }, [page, appliedUserId]);
+  }, [page, appliedSearch]);
 
   return (
     <div className="mx-auto max-w-5xl space-y-6">
       <div>
-        <h1 className="text-2xl font-semibold tracking-tight text-slate-900">Admin — Resume Viewer</h1>
+        <h1 className="text-2xl font-semibold tracking-tight text-slate-900">Resume Viewer</h1>
         <p className="mt-2 text-sm text-slate-500">
-          Look up any user&apos;s saved resumes by their Supabase auth user id and regenerate the CV/cover letter they saw. Find a
-          reporter&apos;s user id in the Supabase dashboard under Authentication → Users (search by their email).
+          Search by email, name, or user id to open the CV and cover letter someone actually received.
+          Leave the box empty to see the most recent resumes from everyone.
         </p>
       </div>
 
@@ -100,14 +108,14 @@ export default function AdminResumesPage() {
         onSubmit={(e) => {
           e.preventDefault();
           setPage(0);
-          setAppliedUserId(userId.trim() || undefined);
+          setAppliedSearch(search.trim() || undefined);
         }}
       >
         <input
           type="text"
-          value={userId}
-          onChange={(e) => setUserId(e.target.value)}
-          placeholder="Filter by user id (leave blank for all users)"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder="Email, name, or user id"
           className="w-full max-w-md rounded-lg border border-slate-200 px-3 py-2 text-sm focus:border-blue-400 focus:outline-none"
         />
         <button
@@ -115,9 +123,17 @@ export default function AdminResumesPage() {
           className="inline-flex items-center gap-1.5 rounded-lg bg-slate-900 px-3 py-2 text-sm font-medium text-white hover:bg-slate-800"
         >
           <Search className="size-3.5" aria-hidden />
-          Filter
+          Search
         </button>
       </form>
+
+      {appliedSearch && matchedUsers.length > 0 && (
+        <p className="text-xs text-slate-500">
+          {matchedUsers.length === 1
+            ? `1 account matched: ${matchedUsers[0].email ?? matchedUsers[0].id}`
+            : `${matchedUsers.length} accounts matched. Showing resumes from all of them.`}
+        </p>
+      )}
 
       {error && (
         <div className="flex items-center gap-2 rounded-xl border border-rose-200 bg-rose-50/60 px-4 py-3 text-sm text-rose-600">
@@ -128,16 +144,18 @@ export default function AdminResumesPage() {
 
       {loading ? (
         <div className="flex items-center justify-center gap-2 rounded-2xl border border-slate-200 bg-white py-16 text-sm text-slate-400">
-          <Loader2 className="size-4 animate-spin" aria-hidden /> Loading...
+          <Loader2 className="size-4 animate-spin" aria-hidden /> Loading
         </div>
       ) : resumes.length === 0 && !error ? (
-        <div className="rounded-2xl border border-slate-200 bg-white py-16 text-center text-sm text-slate-400">No resumes found.</div>
+        <div className="rounded-2xl border border-slate-200 bg-white py-16 text-center text-sm text-slate-400">
+          {appliedSearch ? `Nothing matched "${appliedSearch}".` : "No resumes yet."}
+        </div>
       ) : (
         <div className="overflow-x-auto overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-slate-200 bg-slate-50 text-xs font-medium uppercase tracking-wide text-slate-500">
-                <th className="px-4 py-3 text-left font-medium">User ID</th>
+                <th className="px-4 py-3 text-left font-medium">User</th>
                 <th className="px-4 py-3 text-left font-medium">Role</th>
                 <th className="px-4 py-3 text-left font-medium">Company</th>
                 <th className="px-4 py-3 text-left font-medium">Date</th>
@@ -150,9 +168,16 @@ export default function AdminResumesPage() {
             <tbody>
               {resumes.map((r) => (
                 <tr key={r.id} className="border-b border-slate-100 last:border-0 hover:bg-slate-50/60">
-                  <td className="px-4 py-3 font-mono text-xs text-slate-500">{r.user_id}</td>
-                  <td className="px-4 py-3 text-slate-900">{r.role || "—"}</td>
-                  <td className="px-4 py-3 text-slate-600">{r.company || "—"}</td>
+                  <td className="px-4 py-3">
+                    <div className="min-w-0">
+                      <p className="truncate text-xs font-medium text-slate-900">
+                        {r.name_en || r.name_ar || "No name saved"}
+                      </p>
+                      <p className="truncate text-xs text-slate-500">{r.email || r.user_id}</p>
+                    </div>
+                  </td>
+                  <td className="px-4 py-3 text-slate-900">{r.role || "Not recorded"}</td>
+                  <td className="px-4 py-3 text-slate-600">{r.company || "Not recorded"}</td>
                   <td className="px-4 py-3 text-slate-500">{formatDate(r.created_at)}</td>
                   <td className="px-4 py-3 text-slate-500">{r.cv_language}</td>
                   <td className="px-4 py-3 text-slate-600">{r.ats_score}%</td>

@@ -816,7 +816,7 @@ export default function DashboardHomePage() {
                   handleSaveNameAndGenerate();
                 }
               }}
-              placeholder={namePromptField === "ar" ? "عبدالملك حوساوي" : "Abdulmalik Hawsawi"}
+              placeholder={namePromptField === "ar" ? "اسمك بالعربية" : "Your name in English"}
               className="mt-3 block w-full rounded-lg border border-slate-200 bg-white px-4 py-2.5 text-sm text-slate-900 placeholder:text-slate-400 outline-none transition-colors focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20"
             />
 
@@ -1185,41 +1185,54 @@ export default function DashboardHomePage() {
             <p className="mb-2.5 text-sm font-medium text-slate-700">
               {lang === "ar" ? "ملفاتك جاهزة" : "Your files"}
             </p>
-            <div className="grid gap-3 sm:grid-cols-2">
-              <div className="flex flex-col justify-between gap-3 rounded-xl border border-slate-200 bg-white px-4 py-4 shadow-sm">
+            {/* items-stretch (grid default) + h-full on both cards keeps the
+                two the same height. The CV card is a hand-rolled copy of
+                FileResultCard because it needs the PDF/Word format picker
+                instead of a plain download link — it had drifted to
+                different padding (px-3 py-2 text-sm vs h-8 text-xs) and icon
+                sizes, so the two boxes rendered at visibly different heights.
+                Arabic made it obvious because the longer label wrapped, but
+                the mismatch was there in English too. Sizing below is now
+                identical to FileResultCard's; keep them in sync. */}
+            <div className="grid items-stretch gap-3 sm:grid-cols-2">
+              <div className="group relative flex h-full flex-col overflow-hidden rounded-xl border border-slate-200 bg-white p-4 shadow-sm transition-all hover:border-blue-200 hover:shadow-md">
                 <div className="flex items-center gap-3">
-                  <span className="grid size-9 shrink-0 place-items-center rounded-lg bg-blue-50 text-blue-600">
+                  <span className="grid size-10 shrink-0 place-items-center rounded-lg bg-blue-50 text-blue-600">
                     <FileText className="size-4.5" aria-hidden />
                   </span>
                   <div className="min-w-0">
-                    <p className="text-sm font-medium text-slate-900">{copy.resumeCardTitle}</p>
-                    <span className="inline-flex items-center gap-1 text-xs font-medium text-emerald-600">
+                    <p className="truncate text-sm font-semibold text-slate-900">{copy.resumeCardTitle}</p>
+                    <span className="mt-0.5 inline-flex items-center gap-1 text-xs font-medium text-emerald-600">
                       <CheckCircle2 className="size-3" aria-hidden />
                       {lang === "ar" ? "جاهز" : "Ready"}
                     </span>
                   </div>
                 </div>
-                <div className="flex gap-2">
+                {/* mt-auto pins the buttons to the bottom so both cards'
+                    action rows line up even if one title wraps. */}
+                <div className="mt-auto flex items-center gap-2 pt-3.5">
                   <a
                     href={cvPreviewUrl ?? "#"}
                     target="_blank"
                     rel="noopener noreferrer"
                     aria-disabled={!cvPreviewUrl}
-                    className={`inline-flex flex-1 items-center justify-center gap-1.5 rounded-lg border border-slate-200 px-3 py-2 text-sm font-medium text-slate-600 transition-colors ${
-                      cvPreviewUrl ? "hover:border-slate-300 hover:bg-slate-50" : "pointer-events-none opacity-50"
+                    className={`inline-flex h-8 min-w-0 flex-1 items-center justify-center gap-1.5 rounded-lg border border-slate-200 px-2 text-xs font-medium text-slate-700 transition-colors ${
+                      cvPreviewUrl ? "hover:border-slate-300 hover:bg-slate-50" : "pointer-events-none opacity-40"
                     }`}
                   >
-                    <Eye className="size-4" aria-hidden />
-                    {copy.preview}
+                    <Eye className="size-3.5 shrink-0" aria-hidden />
+                    <span className="truncate">{copy.preview}</span>
                   </a>
                   <button
                     type="button"
                     disabled={!cvDownloadUrl || !cvDownloadDocxUrl}
                     onClick={() => setCvFormatPickerOpen(true)}
-                    className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-blue-600 px-3 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-700 disabled:pointer-events-none disabled:opacity-50"
+                    className="inline-flex h-8 min-w-0 flex-1 items-center justify-center gap-1.5 rounded-lg bg-blue-600 px-2 text-xs font-medium text-white transition-colors hover:bg-blue-500 disabled:pointer-events-none disabled:opacity-40"
                   >
-                    <Download className="size-4" aria-hidden />
-                    {copy.downloadCv}
+                    <Download className="size-3.5 shrink-0" aria-hidden />
+                    {/* truncate + shrink-0 icon: a long Arabic label ellipsises
+                        instead of wrapping and blowing out the button height. */}
+                    <span className="truncate">{copy.downloadCv}</span>
                   </button>
                 </div>
               </div>

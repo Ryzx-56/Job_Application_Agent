@@ -210,13 +210,32 @@ export type AdminResumeSummary = {
   job_match_score: number;
   is_archived: boolean;
   created_at: string;
+  // Joined server-side from auth.users + profiles so the table can show who
+  // a row belongs to. Null when the lookup function isn't available.
+  email?: string | null;
+  name_en?: string | null;
+  name_ar?: string | null;
+};
+
+export type AdminMatchedUser = {
+  id: string;
+  email: string | null;
+  name_en: string | null;
+  name_ar: string | null;
 };
 
 export async function fetchAdminResumes(params: {
   page: number;
   pageSize: number;
-  userId?: string;
-}): Promise<{ resumes: AdminResumeSummary[]; limit: number; offset: number }> {
+  /** Email, name (English or Arabic), or auth user id. Blank = everyone. */
+  search?: string;
+}): Promise<{
+  resumes: AdminResumeSummary[];
+  limit: number;
+  offset: number;
+  matched_users?: AdminMatchedUser[];
+  total_matched_users?: number;
+}> {
   const supabase = createClient();
   const {
     data: { session },
@@ -227,14 +246,17 @@ export async function fetchAdminResumes(params: {
     limit: String(params.pageSize),
     offset: String(params.page * params.pageSize),
   });
-  if (params.userId) query.set("user_id", params.userId);
+  if (params.search) query.set("q", params.search);
 
   const res = await fetch(`${API_URL}/api/v1/admin/resumes?${query.toString()}`, {
     headers: { Authorization: `Bearer ${session.access_token}` },
   });
   if (!res.ok) {
     const body = await res.json().catch(() => null);
-    throw new Error(body?.detail ?? `Request failed: ${res.status}`);
+    const detail = body?.detail;
+    throw new Error(
+      typeof detail === "string" ? detail : detail?.message ?? `Request failed: ${res.status}`
+    );
   }
   return res.json();
 }

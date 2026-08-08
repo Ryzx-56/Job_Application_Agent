@@ -29,6 +29,63 @@ def _s(value) -> str:
     return "" if value is None else str(value)
 
 
+# ─── TEMPLATE CHROME ────────────────────────────────────────────────────────
+# Section headings and field labels were hardcoded English literals inside
+# all 12 Jinja templates ("Skills", "Languages:", "GPA", ...). Since they
+# live in the template rather than in the generated content, no amount of
+# Arabic localization in the pipeline could reach them — an Arabic CV came
+# out with fully Arabic prose sitting under English headings.
+#
+# Both variants live here, in one place, so a template can render either
+# language without knowing anything about which one it's in, and so a new
+# label can't be added to one language and forgotten in the other.
+_LABELS_EN = {
+    "profile": "Profile",
+    "summary": "Summary",
+    "professional_summary": "Professional Summary",
+    "experience": "Experience",
+    "work_experience": "Work Experience",
+    "professional_experience": "Professional Experience",
+    "projects": "Projects",
+    "skills": "Skills",
+    "education": "Education",
+    "certifications": "Certifications",
+    "volunteer": "Volunteer Work",
+    "contact": "Contact",
+    "languages": "Languages",
+    "frameworks": "Frameworks",
+    "frameworks_libraries": "Frameworks & Libraries",
+    "tools": "Tools",
+    "soft_skills": "Soft Skills",
+    "other_skills": "Other",
+    "gpa": "GPA",
+    "coursework": "Relevant Coursework",
+}
+
+_LABELS_AR = {
+    "profile": "نبذة",
+    "summary": "الملخص",
+    "professional_summary": "الملخص المهني",
+    "experience": "الخبرات",
+    "work_experience": "الخبرات العملية",
+    "professional_experience": "الخبرات المهنية",
+    "projects": "المشاريع",
+    "skills": "المهارات",
+    "education": "التعليم",
+    "certifications": "الشهادات",
+    "volunteer": "العمل التطوعي",
+    "contact": "معلومات التواصل",
+    "languages": "لغات البرمجة",
+    "frameworks": "الأطر والمكتبات",
+    "frameworks_libraries": "الأطر والمكتبات",
+    "tools": "الأدوات",
+    "soft_skills": "المهارات الشخصية",
+    "other_skills": "مهارات أخرى",
+    "gpa": "المعدل التراكمي",
+    "coursework": "المواد الدراسية ذات الصلة",
+}
+
+
 def resolve_candidate_name(state: dict) -> str:
     """
     The candidate's name for this run, taken VERBATIM from the profile field
@@ -239,5 +296,9 @@ def build_cv_context(state: dict, template_id: str | None = None) -> dict:
             else ar_list(display_volunteer)
         ),
         "is_arabic": is_arabic,
+        # Section headings / field labels for whichever language this CV is
+        # in — see _LABELS_EN / _LABELS_AR. Templates must read these rather
+        # than hardcoding English text.
+        "labels": _LABELS_AR if is_arabic else _LABELS_EN,
         "template_id": template_id or DEFAULT_TEMPLATE_ID,
     }

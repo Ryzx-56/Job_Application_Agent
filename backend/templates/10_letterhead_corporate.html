@@ -51,12 +51,12 @@
   </div>
 
   {% if tailored_summary %}
-  <div class="section-title">Profile</div>
+  <div class="section-title">{{ labels.profile }}</div>
   <p>{{ tailored_summary }}</p>
   {% endif %}
 
   {% if experience %}
-  <div class="section-title">Professional Experience</div>
+  <div class="section-title">{{ labels.professional_experience }}</div>
   {% for exp in experience %}
   <div class="entry">
     <div class="entry-header">
@@ -69,7 +69,7 @@
   {% endif %}
 
   {% if projects %}
-  <div class="section-title">Projects</div>
+  <div class="section-title">{{ labels.projects }}</div>
   {% for proj in projects %}
   <div class="entry">
     <div class="entry-header">
@@ -82,29 +82,29 @@
   {% endif %}
 
   {% if skills %}
-  <div class="section-title">Skills</div>
+  <div class="section-title">{{ labels.skills }}</div>
   <div class="skills-grid">
-    {% if skills.languages %}<div class="row"><span class="label">Languages: </span>{{ skills.languages | join(", ") }}</div>{% endif %}
-    {% if skills.frameworks %}<div class="row"><span class="label">Frameworks: </span>{{ skills.frameworks | join(", ") }}</div>{% endif %}
-    {% if skills.tools %}<div class="row"><span class="label">Tools: </span>{{ skills.tools | join(", ") }}</div>{% endif %}
+    {% if skills.languages %}<div class="row"><span class="label">{{ labels.languages }}: </span>{{ skills.languages | join(", ") }}</div>{% endif %}
+    {% if skills.frameworks %}<div class="row"><span class="label">{{ labels.frameworks }}: </span>{{ skills.frameworks | join(", ") }}</div>{% endif %}
+    {% if skills.tools %}<div class="row"><span class="label">{{ labels.tools }}: </span>{{ skills.tools | join(", ") }}</div>{% endif %}
   </div>
   {% endif %}
 
   {% if education %}
-  <div class="section-title">Education</div>
+  <div class="section-title">{{ labels.education }}</div>
   {% for edu in education %}
   <div class="entry">
     <div class="entry-header">
       <div><span class="entry-title">{{ edu.degree }}</span> <span class="entry-sub">— {{ edu.institution }}</span></div>
       {% if edu.graduation_year %}<div class="entry-date">{{ edu.graduation_year }}</div>{% endif %}
     </div>
-    {% if edu.gpa or edu.distinctions %}<div class="edu-gpa">GPA: {{ edu.gpa }}{% if edu.distinctions %} | {{ edu.distinctions | join(", ") }}{% endif %}</div>{% endif %}
+    {% if edu.gpa or edu.distinctions %}<div class="edu-gpa">{{ labels.gpa }}: {{ edu.gpa }}{% if edu.distinctions %} | {{ edu.distinctions | join(", ") }}{% endif %}</div>{% endif %}
   </div>
   {% endfor %}
   {% endif %}
 
   {% if certifications %}
-  <div class="section-title">Certifications</div>
+  <div class="section-title">{{ labels.certifications }}</div>
   <ul class="bullets">{% for cert in certifications %}<li>{{ cert }}</li>{% endfor %}</ul>
   {% endif %}
 </body>

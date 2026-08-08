@@ -197,13 +197,22 @@ def generate_cv_docx(state: dict, output_path: str, template_id: str | None = No
     # Skills
     if context["skills"]:
         _heading(doc, "المهارات" if is_arabic else "Skills", is_arabic, style)
-        category_labels_ar = {
-            "languages": "اللغات البرمجية", "frameworks": "أطر العمل",
-            "tools": "الأدوات", "soft_skills": "المهارات الشخصية", "other": "أخرى",
+        # Sourced from context["labels"] (utils/cv_context.py) rather than a
+        # local dict, so the DOCX and the PDF of the same CV can't disagree
+        # about what a section is called — they previously had two separate
+        # Arabic wordings for the same skill categories.
+        labels = context.get("labels", {})
+        label_keys = {
+            "languages": "languages", "frameworks": "frameworks", "tools": "tools",
+            "soft_skills": "soft_skills", "other": "other_skills",
         }
         for category, items in context["skills"].items():
             if items:
-                label = category_labels_ar.get(category, category) if is_arabic else category.replace("_", " ").capitalize()
+                label = (
+                    labels.get(label_keys.get(category, ""), category)
+                    if is_arabic
+                    else category.replace("_", " ").capitalize()
+                )
                 p = doc.add_paragraph()
                 _add_run(p, f"{label}: ", is_arabic, style, bold=True)
                 _add_run(p, ", ".join(items), is_arabic, style)

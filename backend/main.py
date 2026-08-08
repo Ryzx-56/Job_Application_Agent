@@ -398,16 +398,21 @@ def _pipeline_ready(result_state: dict) -> tuple[bool, str, str]:
 # The label strings are intentionally generic ("Reading your CV") — no
 # model names, no internal node names — that's the whole point of this
 # endpoint vs. what you see in the local dev logs.
+# Values are LISTS because one graph node can back more than one UI row:
+# "scoring" runs the ATS scorer and the match scorer back to back inside a
+# single node (see run_scoring in orchestrator.py — they were merged so the
+# match scorer stops idling ~25s waiting for the cover letter's superstep).
+# The frontend still shows them as two separate agents, so completing that
+# node reports both.
 _STEP_NODE_TO_AGENT = {
-    "cv_parser": (1, "cvParse"),
-    "manual_cv_parser": (1, "cvParse"),
-    "jd_analyzer": (2, "jdAnalyze"),
-    "tailoring_engine": (3, "tailor"),
-    "fact_checker": (4, "factCheck"),
-    "ats_scorer": (5, "atsScore"),
-    "document_generator": (6, "coverLetter"),
-    "match_scorer": (7, "matchScore"),
-    "jobs_finder": (8, "similarJobs"),
+    "cv_parser": [(1, "cvParse")],
+    "manual_cv_parser": [(1, "cvParse")],
+    "jd_analyzer": [(2, "jdAnalyze")],
+    "tailoring_engine": [(3, "tailor")],
+    "fact_checker": [(4, "factCheck")],
+    "document_generator": [(6, "coverLetter")],
+    "scoring": [(5, "atsScore"), (7, "matchScore")],
+    "jobs_finder": [(8, "similarJobs")],
 }
 
 
@@ -545,14 +550,13 @@ def _stream_pipeline(initial_state: AgentState, user_id: str, reserved_amount: i
                 if partial:
                     result_state.update(partial)
 
-                step = _STEP_NODE_TO_AGENT.get(node_name)
-                if not step:
-                    continue
-                agent_num, step_key = step
-                if agent_num in seen_agents:
-                    continue
-                seen_agents.add(agent_num)
-                yield _sse("step", {"agent": agent_num, "step": step_key})
+                # One node can report more than one agent row — see
+                # _STEP_NODE_TO_AGENT.
+                for agent_num, step_key in _STEP_NODE_TO_AGENT.get(node_name, ()):
+                    if agent_num in seen_agents:
+                        continue
+                    seen_agents.add(agent_num)
+                    yield _sse("step", {"agent": agent_num, "step": step_key})
 
         logger.info("✅ Multi-agent execution phase completed (stream).")
 

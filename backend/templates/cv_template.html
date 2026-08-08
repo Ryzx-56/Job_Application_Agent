@@ -72,7 +72,7 @@
   <!-- SUMMARY -->
   {% if tailored_summary %}
   <div class="section summary">
-    <div class="section-title">Professional Summary</div>
+    <div class="section-title">{{ labels.professional_summary }}</div>
     <p>{{ tailored_summary }}</p>
   </div>
   {% endif %}
@@ -80,7 +80,7 @@
   <!-- EXPERIENCE -->
   {% if experience %}
   <div class="section">
-    <div class="section-title">Experience</div>
+    <div class="section-title">{{ labels.experience }}</div>
     {% for exp in experience %}
     <div class="entry">
       <div class="entry-header">
@@ -105,7 +105,7 @@
   <!-- PROJECTS -->
   {% if projects %}
   <div class="section">
-    <div class="section-title">Projects</div>
+    <div class="section-title">{{ labels.projects }}</div>
     {% for proj in projects %}
     <div class="entry">
       <div class="entry-header">
@@ -123,16 +123,16 @@
   <!-- SKILLS -->
   {% if skills %}
   <div class="section">
-    <div class="section-title">Skills</div>
+    <div class="section-title">{{ labels.skills }}</div>
     <div class="skills-grid">
       {% if skills.languages %}
-      <div class="row"><span class="label">Languages: </span>{{ skills.languages | join(", ") }}</div>
+      <div class="row"><span class="label">{{ labels.languages }}: </span>{{ skills.languages | join(", ") }}</div>
       {% endif %}
       {% if skills.frameworks %}
-      <div class="row"><span class="label">Frameworks & Libraries: </span>{{ skills.frameworks | join(", ") }}</div>
+      <div class="row"><span class="label">{{ labels.frameworks_libraries }}: </span>{{ skills.frameworks | join(", ") }}</div>
       {% endif %}
       {% if skills.tools %}
-      <div class="row"><span class="label">Tools: </span>{{ skills.tools | join(", ") }}</div>
+      <div class="row"><span class="label">{{ labels.tools }}: </span>{{ skills.tools | join(", ") }}</div>
       {% endif %}
     </div>
   </div>
@@ -141,7 +141,7 @@
   <!-- EDUCATION -->
   {% if education %}
   <div class="section">
-    <div class="section-title">Education</div>
+    <div class="section-title">{{ labels.education }}</div>
     {% for edu in education %}
     <div class="entry">
       <div class="entry-header">
@@ -152,7 +152,7 @@
         {% if edu.graduation_year %}<div class="entry-date">{{ edu.graduation_year }}</div>{% endif %}
       </div>
       {% if edu.gpa or edu.distinctions %}
-      <div class="edu-gpa">{% if edu.gpa %}GPA: {{ edu.gpa }}{% endif %}
+      <div class="edu-gpa">{% if edu.gpa %}{{ labels.gpa }}: {{ edu.gpa }}{% endif %}
         {% if edu.distinctions %} · {{ edu.distinctions | join(", ") }}{% endif %}
       </div>
       {% endif %}
@@ -164,7 +164,7 @@
   <!-- CERTIFICATIONS -->
   {% if certifications %}
   <div class="section">
-    <div class="section-title">Certifications</div>
+    <div class="section-title">{{ labels.certifications }}</div>
     <ul class="bullets">
       {% for cert in certifications %}
       <li>{{ cert }}</li>
