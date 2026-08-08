@@ -3,6 +3,8 @@ import json
 from loguru import logger
 from core.state import AgentState
 from core.llm_config import generate_claude_text
+from utils.arabic_localizer import apply_glossary, build_glossary, find_latin_terms
+from utils.cv_context import resolve_candidate_name
 import anthropic
 
 COVER_LETTER_PROMPT = """
@@ -44,14 +46,27 @@ FACTS_JSON: {facts_json}
 WEIGHT_FACTORS: {weight_factors}
 """
 
-_AR_COVER_LETTER_LANGUAGE_INSTRUCTION = """OUTPUT LANGUAGE — READ CAREFULLY:
+# BUG FIX (Arabic cover letter): this used to instruct Claude to KEEP tool
+# names, technical terms and acronyms in Latin script inline. On a
+# right-to-left letter that produced exactly the reported symptom — Arabic
+# prose with English words scattered through the middle of it, rendering in
+# visually scrambled order once ReportLab applied bidi. It also contradicted
+# the CV path, where tailoring_engine.py's Arabic rule translates every one
+# of those same terms. One document had "بايثون", the other "Python", in the
+# same application. The letter now follows the CV's rule.
+_AR_COVER_LETTER_LANGUAGE_INSTRUCTION = """OUTPUT LANGUAGE — MANDATORY ARABIC RULES:
   - Write the entire letter in Modern Standard Arabic, in natural professional business-letter register,
     not a literal word-for-word translation of a typical English cover letter.
   - FACTS_JSON and WEIGHT_FACTORS may contain English or Arabic text. Regardless of source language,
     write your output entirely in Arabic; do not leave sentences untranslated.
-  - Keep company names, product/tool names, and technical terms/acronyms in their original Latin script
-    inline (e.g. "Python", "AWS", "React") — this is standard on Arabic business letters. Keep the
-    candidate's name as it appears in FACTS_JSON.
+  - Absolutely NO English or Latin-script characters anywhere in the letter body. Translate technical
+    terms, tool names, framework names and acronyms into Arabic (write "بايثون" not "Python",
+    "واجهة برمجة التطبيقات" not "API", "التعلم الآلي" not "Machine Learning"). Mixing Latin words into
+    Arabic sentences breaks right-to-left layout rendering and is the single most visible defect in
+    an Arabic letter.
+  - This rule matters MORE than elegant phrasing. If you are unsure how to translate a term, translate
+    it as best you can rather than leaving it in English. A slightly awkward Arabic phrase is always
+    better than any English word appearing in the output.
   - Numbers and dates stay as normal digits, not spelled out."""
 
 _EN_COVER_LETTER_LANGUAGE_INSTRUCTION = """OUTPUT LANGUAGE:
@@ -61,6 +76,49 @@ _EN_COVER_LETTER_LANGUAGE_INSTRUCTION = """OUTPUT LANGUAGE:
 
 _GREETING_PREFIXES = ("dear ", "السادة", "عزيزي", "الأفاضل")
 _SIGNOFF_MARKERS = ("sincerely", "regards", "best regards", "مع خالص التقدير", "مع تحياتي", "وتفضلوا بقبول")
+
+
+def _enforce_arabic_letter_purity(text: str, cv_language: str, glossary: dict | None = None) -> str:
+    """
+    Two-stage Arabic cleanup for the letter, mirroring the CV path.
+
+    Stage 1 applies the SHARED glossary tailoring_engine.py already built
+    for this run (see arabic_glossary in core/state.py). This is free — no
+    API call — and it's what keeps a term rendered identically in both
+    documents; previously the CV said "بايثون" while the letter said
+    "Python" for the same skill.
+
+    Stage 2 handles anything the letter used that the CV didn't, by
+    translating just those leftover terms. Both stages are best-effort: if
+    translation fails the original text is kept, because a partly-mixed
+    letter beats no letter at all.
+    """
+    if cv_language != "ar" or not text:
+        return text
+
+    if glossary:
+        text = apply_glossary(text, glossary)
+
+    leftover = find_latin_terms([text])
+    if not leftover:
+        logger.info("✅ Arabic cover letter is fully Arabic.")
+        return text
+
+    logger.warning(f"🔤 Arabic cover letter still contains Latin terms ({leftover[:8]}) — translating leftovers...")
+    try:
+        extra = build_glossary(leftover)
+        if not extra:
+            return text
+        fixed = apply_glossary(text, extra)
+        still = find_latin_terms([fixed])
+        if still:
+            logger.warning(f"🔤 Cover letter still has Latin terms after localization: {still[:6]}")
+        else:
+            logger.info("✅ Arabic cover letter localization complete.")
+        return fixed
+    except Exception as e:
+        logger.error(f"🔤 Arabic cover letter localization failed: {e} — keeping best-effort original.")
+        return text
 
 
 def _strip_leaked_greeting_and_signoff(text: str, candidate_name: str) -> str:
@@ -134,13 +192,25 @@ def generate_cover_letter(state: AgentState) -> str:
         # asked. generate_claude_text also auto-escalates further if this
         # still isn't enough, so this is a safe starting point, not a hard
         # ceiling.
-        text = generate_claude_text(prompt, max_tokens=2000).strip()
+        # Arabic needs roughly 2-3x the output budget for the same letter —
+        # see CLAUDE_BUDGETS in core/llm_config.py. A flat 2000 was enough
+        # for English and tight for Arabic.
+        text = generate_claude_text(
+            prompt,
+            max_tokens=3500 if cv_language == "ar" else 2000,
+            max_tokens_ceiling=8000,
+        ).strip()
         # Defensive cleanup: strip any em/en dashes that slip through despite
         # the prompt rule, replacing with a comma so sentences stay readable
         # instead of just deleting the character and running words together.
         text = text.replace(" — ", ", ").replace(" – ", ", ").replace("—", ",").replace("–", "-")
-        candidate_name = (facts_json.get("personal", {}) or {}).get("name", "")
-        text = _strip_leaked_greeting_and_signoff(text, candidate_name)
+        # Match against BOTH the profile name (what the letter is actually
+        # signed with) and the parsed CV name (what Claude is most likely to
+        # have echoed), so a leaked signature is caught either way.
+        text = _strip_leaked_greeting_and_signoff(text, resolve_candidate_name(state))
+        text = _strip_leaked_greeting_and_signoff(text, (facts_json.get("personal", {}) or {}).get("name", ""))
+        # No-op for English. See _enforce_arabic_letter_purity.
+        text = _enforce_arabic_letter_purity(text, cv_language, state.get("arabic_glossary"))
         logger.info("✅ Cover letter generated.")
         return text
     except anthropic.APIError as e:
@@ -157,5 +227,14 @@ def run_document_generator(state: AgentState) -> dict:
     Generates cover letter text and stores it in state.
     PDF/DOCX rendering handled by utils/pdf_generator.py and utils/docx_generator.py.
     """
+    # Every other node in the fan-out already had this guard; this one
+    # didn't, so a run whose tailoring had permanently failed still paid for
+    # a full Claude call here to write a cover letter for a CV that was
+    # never produced. The orchestrator now stops before reaching this node
+    # at all, but keep the guard so the node is safe to call directly and so
+    # a future edge into it can't silently reintroduce the cost.
+    if state.get("error") or state.get("fatal_error_code"):
+        return {}
+
     cover_letter_text = generate_cover_letter(state)
     return {"cover_letter_text": cover_letter_text}

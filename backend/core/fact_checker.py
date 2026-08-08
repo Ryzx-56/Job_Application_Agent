@@ -35,6 +35,64 @@ THE DISTINCTION THAT MATTERS:
   that isn't listed, an outcome or scale that was never claimed, or a
   responsibility/achievement invented from nothing.
 
+LANGUAGE UPGRADES ARE ALWAYS ALLOWED — READ THIS BEFORE FAILING ANYTHING.
+Improving HOW something is said is never fabrication. This applies to every
+part of speech, not just verbs:
+
+  VERBS — a stronger verb for the same activity:
+    "managed X"     -> "led X" / "owned X" / "ran X" / "directed X"
+    "helped with X" -> "drove X" / "supported delivery of X"
+    "worked on X"   -> "built X" / "delivered X" (when X was in fact built)
+
+  ADJECTIVES — descriptive words characterizing work that was actually done:
+    "high-traffic", "fast-paced", "customer-facing", "hands-on",
+    "end-to-end", "day-to-day", "cross-functional" (when more than one
+    function is evident in the facts), "production" (when the thing was in
+    fact shipped/used). These describe the nature of the work, not its size.
+
+  ADVERBS — manner and consistency words: "consistently", "directly",
+    "proactively", "independently", "closely", "reliably", "regularly".
+    These characterize how work was performed and assert no new fact.
+
+  NOUNS — a more professional name for the same thing:
+    "customers"   -> "clients" / "visitors" / "stakeholders"
+    "selling"     -> "revenue generation" / "sales performance"
+    "fixing bugs" -> "defect resolution"
+    "reception work" -> "front-of-house operations"
+    A noun that RENAMES something in the facts is fine. A noun that
+    introduces something absent from the facts (a client name, a product,
+    a certification, a team) is not.
+
+  FRAMING AND STRUCTURE — connective and positioning language that
+    reorganizes existing facts: "end to end", "from X through Y" (where both
+    X and Y are in the facts), "spanning", "across", "while also",
+    "which supported". Merging two facts into one sentence, splitting one
+    into two, or leading with the outcome instead of the task are all fine.
+
+  The single test is unchanged: does the bullet assert a FACT that isn't in
+  VERIFIED FACTS? Word choice, tone, register, and sentence shape are never
+  that. Only a new number, name, tool, date, scope, headcount, or outcome is.
+
+  Seniority-flavored verbs like "owned", "led", "spearheaded", "drove"
+  applied to work the candidate demonstrably did are NOT claims of a
+  management title and NOT claims of supervising people. Do not fail them on
+  that basis. Only fail if the bullet states an actual headcount, an actual
+  reporting relationship, or an actual title that VERIFIED FACTS does not
+  support (e.g. "led a team of 12" when no team or number appears anywhere).
+
+  Likewise, restating a listed responsibility in more professional or more
+  business-oriented language PASSES, even when the restatement sounds more
+  impressive than the original wording. "Sounds stronger than the source
+  sentence" is not a defect. Only NEW FACTS are a defect.
+
+  WHERE THE LINE ACTUALLY IS — quantity words:
+    PASS: "high-traffic museum"  (describes the environment, no number claimed)
+    FAIL: "served 500 visitors daily"  (a specific number that wasn't stated)
+    PASS: "supported new staff during onboarding"  (facts say training was given)
+    FAIL: "onboarded a team of 12"  (headcount invented)
+    PASS: "improved the customer experience"  (qualitative, follows from the duties)
+    FAIL: "improved satisfaction scores by 20%"  (metric invented)
+
 WORD-LEVEL SIMILARITY IS NEVER A REASON TO FAIL A BULLET. A tailored bullet is
 EXPECTED to share very few words with the original — different verbs, different
 sentence order, different structure, synonyms throughout, clauses merged or
@@ -69,6 +127,15 @@ rewritten restatement of an existing one, ask: does this bullet assert something
 a reader could reasonably expect to see evidence for that ISN'T in VERIFIED
 FACTS? If yes, fail it. If it's the same underlying fact in different words, no
 matter how different those words are, pass it.
+
+DEFAULT TO PASSING. A false rejection is more damaging here than a marginal
+pass: it strips a truthful bullet out of the candidate's CV. Fail a bullet only
+when you can point at the SPECIFIC invented element — quote the number, tool,
+employer, title, date, or scope claim that is absent from VERIFIED FACTS — in
+your "issue" text. If you cannot name that specific element, the bullet passes.
+"Feels exaggerated", "tone is too strong", "wording differs from the source"
+and "cannot be fully verified" are NOT valid reasons to fail, and any issue
+you write that amounts to one of those means the bullet should have passed.
 
 Below is a JSON array of bullets to check, each with an "id".
 
@@ -140,11 +207,24 @@ def _call_gemini_raw(prompt: str) -> str:
     raise last_exc
 
 
+class FactCheckerUnavailable(RuntimeError):
+    """
+    The checker itself could not run (Gemini down, quota exhausted, or
+    returning unparseable output) — as distinct from the checker running and
+    rejecting a bullet. The two used to be collapsed into "everything
+    failed", which meant an outage looked identical to wholesale
+    fabrication. They need different handling: rejected content is the
+    candidate's problem to fix, an outage is ours, and only one of the two
+    should be described to the user as a fact-check failure.
+    """
+
+
 def _call_gemini_batch(bullet_objs: list[dict], facts_json: dict) -> dict:
     """
     Sends ALL bullets in one Gemini call.
     bullet_objs: list of {"id": int, "text": str}
     Returns: dict mapping id -> {"passes": bool, "issue": str|None}
+    Raises FactCheckerUnavailable if the call itself could not be completed.
     """
     prompt = BATCH_FACT_CHECK_PROMPT.format(
         facts_json=json.dumps(facts_json, ensure_ascii=False),
@@ -160,9 +240,13 @@ def _call_gemini_batch(bullet_objs: list[dict], facts_json: dict) -> dict:
         results = json.loads(text)
         return {r["id"]: {"passes": r["passes"], "issue": r.get("issue")} for r in results}
     except Exception as e:
-        logger.error(f"Batch fact check failed after retries: {e}. Marking all as UNVERIFIED.")
-        # Do NOT silently pass — mark everything in this batch as failed/unverified instead.
-        return {b["id"]: {"passes": False, "issue": "unverified — Gemini API unavailable after retries"} for b in bullet_objs}
+        # Previously this returned "passes: False" for every bullet, which
+        # made an API outage indistinguishable from the model finding real
+        # fabrications — the run then continued and shipped a CV with every
+        # bullet stripped out. Raise instead, so the caller can abort the
+        # run and refund rather than charge for an empty document.
+        logger.error(f"Batch fact check could not be completed after retries: {e}")
+        raise FactCheckerUnavailable(str(e)) from e
 
 
 def run_fact_check_loop(
@@ -309,26 +393,55 @@ def run_fact_checker(state: AgentState) -> dict:
             usage_counters["bullets_regenerated_count"] += 1
         return regenerate_bullet_fn(bullet_text, issue)
 
-    verified_bullets, hallucination_flags = run_fact_check_loop(
-        bullets=tailored_bullets,
-        facts_json=facts_json,
-        tailoring_fn=_counted_tailoring_fn
-    )
+    usage_fields = {
+        "usage_bullets_regenerated_count": state.get("usage_bullets_regenerated_count", 0) + usage_counters["bullets_regenerated_count"],
+        "usage_regen_calls": state.get("usage_regen_calls", 0) + usage_counters["regen_calls"],
+        "usage_regen_input_tokens": state.get("usage_regen_input_tokens", 0) + usage_counters["regen_input_tokens"],
+        "usage_regen_output_tokens": state.get("usage_regen_output_tokens", 0) + usage_counters["regen_output_tokens"],
+    }
 
-    fact_check_passed = len(verified_bullets) > 0
+    try:
+        verified_bullets, hallucination_flags = run_fact_check_loop(
+            bullets=tailored_bullets,
+            facts_json=facts_json,
+            tailoring_fn=_counted_tailoring_fn
+        )
+    except FactCheckerUnavailable as e:
+        # Abort rather than continue: without a working checker we can
+        # neither verify the bullets nor honestly claim we did. Marked
+        # fatal so orchestrator.py stops here instead of paying for the
+        # cover letter, match score, and job search on a run that is
+        # already going to be refunded.
+        logger.error(f"🛡️  Fact checker unavailable — aborting run so the user isn't charged: {e}")
+        return {
+            "fact_check_passed": False,
+            "fact_check_unavailable": True,
+            "fatal_error_code": "fact_check_unavailable",
+            "error": f"Fact checker unavailable: {e}",
+            **usage_fields,
+        }
+
+    # A CV with no work-experience bullets at all (student/projects-only CVs
+    # are common here) legitimately produces zero verified bullets. That is
+    # "nothing to check", not "everything was rejected" — treating the two
+    # the same would abort a perfectly good run, so the empty-input case
+    # passes explicitly. Otherwise the bar stays exactly where it was:
+    # at least one bullet survived.
+    if not tailored_bullets:
+        fact_check_passed = True
+    else:
+        fact_check_passed = len(verified_bullets) > 0
     logger.info(f"🛡️  Fact check complete. Passed: {fact_check_passed}")
 
     return {
         "tailored_bullets": verified_bullets,
         "hallucination_flags": hallucination_flags,
         "fact_check_passed": fact_check_passed,
+        "fact_check_unavailable": False,
         # Cumulative, not a fresh count — this node can run multiple times
         # in the tailoring_engine <-> fact_checker loop (see
         # MAX_TAILORING_ATTEMPTS in orchestrator.py), and LangGraph
         # overwrites state keys per node return rather than summing them.
         # Same reasoning as _cumulative_usage_fields() in tailoring_engine.py.
-        "usage_bullets_regenerated_count": state.get("usage_bullets_regenerated_count", 0) + usage_counters["bullets_regenerated_count"],
-        "usage_regen_calls": state.get("usage_regen_calls", 0) + usage_counters["regen_calls"],
-        "usage_regen_input_tokens": state.get("usage_regen_input_tokens", 0) + usage_counters["regen_input_tokens"],
-        "usage_regen_output_tokens": state.get("usage_regen_output_tokens", 0) + usage_counters["regen_output_tokens"],
+        **usage_fields,
     }

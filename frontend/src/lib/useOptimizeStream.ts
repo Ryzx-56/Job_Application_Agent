@@ -68,6 +68,12 @@ export function useOptimizeStream(stepLabels: Record<string, string>) {
         const errBody = await res.json().catch(() => null);
         const err = new Error(errBody?.detail?.message ?? errBody?.detail ?? `Request failed: ${res.status}`);
         (err as Error & { status?: number }).status = res.status;
+        // e.g. "unreadable_upload" from a .docx/PDF we couldn't parse, or
+        // "missing_profile_name" (409) when the profile has no name in the
+        // requested output language — lets the caller show localized copy
+        // and, for the name case, know WHICH field to ask for.
+        (err as Error & { code?: string }).code = errBody?.detail?.code;
+        (err as Error & { field?: string }).field = errBody?.detail?.field;
         throw err;
       }
 
@@ -76,6 +82,7 @@ export function useOptimizeStream(stepLabels: Record<string, string>) {
       let buffer = "";
       let finalResult: any = null;
       let streamError: string | null = null;
+      let streamErrorCode: string | undefined;
 
       while (true) {
         const { value, done } = await reader.read();
@@ -111,11 +118,20 @@ export function useOptimizeStream(stepLabels: Record<string, string>) {
             setSteps((prev) => prev.map((s) => ({ ...s, status: "done" as const })));
           } else if (eventType === "error") {
             streamError = data.detail ?? "Something went wrong.";
+            // Backend failure codes (tailoring_failed, fact_check_failed,
+            // fact_check_unavailable, wrong_language, ...) — see
+            // ERROR_MESSAGES in backend/main.py. These runs are always
+            // refunded server-side, so the copy the caller shows can say so.
+            streamErrorCode = data.code;
           }
         }
       }
 
-      if (streamError) throw new Error(streamError);
+      if (streamError) {
+        const err = new Error(streamError);
+        (err as Error & { code?: string }).code = streamErrorCode;
+        throw err;
+      }
       if (!finalResult) throw new Error("Stream ended without a result.");
       return finalResult;
     },

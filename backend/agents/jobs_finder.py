@@ -1,4 +1,5 @@
 # agents/jobs_finder.py
+import json
 import os
 import re
 import concurrent.futures
@@ -8,6 +9,7 @@ from tavily import TavilyClient
 from loguru import logger
 from core.state import AgentState
 from core.credits import get_admin_client
+from core.llm_config import generate_gemini_json
 
 # Priority job board — Jadarat is Saudi Arabia's national employment
 # platform (jadarat.sa), general-purpose across public and private sector.
@@ -63,7 +65,20 @@ RESULT_CAP = 5
 # results get dropped AFTER the fact, not before — asking Tavily for
 # exactly RESULT_CAP and then filtering could leave us with far fewer than
 # 5 even when good matches existed but didn't make the initial cut.
-RAW_FETCH_LIMIT = 10
+#
+# 10 -> 20: with only 10 raw results per board, the post-filters routinely
+# left 2 survivors (exactly what the reported run showed: "Found 2 matching
+# job listings ... 0 good from Jadarat, 0 good from fallback"). The filters
+# below are now stricter, not looser, so the candidate pool has to grow to
+# compensate or the list gets shorter still.
+RAW_FETCH_LIMIT = 20
+
+# Tavily's time_range. 'week' was too tight to fill RESULT_CAP: a niche role
+# in one city simply doesn't have 5 postings crawled in the last 7 days, and
+# every result that didn't make the window was invisible regardless of how
+# good a match it was. A month-old posting is usually still open, and the
+# _CLOSED_SIGNALS check below is what actually filters stale ones.
+SEARCH_TIME_RANGE = 'month'
 
 # Signals that a listing Tavily surfaced is no longer actually open. Tavily's
 # time_range='week' filters by crawl/publish date, not live status — a
@@ -155,7 +170,84 @@ _NOISE_URL_SIGNALS = [
     "/faq", "/about", "/help", "/privacy", "/terms", "/sitemap", "/contact",
     "linkedin.com/in/",        # a LinkedIn PERSON profile, not a job posting
     "linkedin.com/company/",   # a LinkedIn company page, not a specific job
+    # ── EDITORIAL / MARKETING CONTENT ───────────────────────────────────
+    # BUG FIX: the reported run returned Indeed's "IT Job Titles Explained:
+    # Roles, Career Paths and How to Choose" and LinkedIn's "Build an AI
+    # Roadmap That Delivers Results" as if they were job openings. Both are
+    # career-advice ARTICLES. They cleared every existing filter because
+    # nothing looked at the URL's content section, and they cleared the
+    # skill check trivially — an article listing IT roles naturally contains
+    # more skill keywords than a real posting does. These are the fixed path
+    # segments the major boards publish editorial content under.
 ]
+
+# ─── HEURISTIC FALLBACK ONLY ────────────────────────────────────────────────
+# Everything below this point is NOT the primary filter. The primary filter
+# is _llm_screen_listings() — an actual model reading each result and judging
+# whether it's a real, open job posting in the right place. Word lists can't
+# do that job well: they miss editorial pages phrased in ways nobody
+# enumerated, and they wrongly drop real postings whose title happens to
+# contain a listed word.
+#
+# These stay as a SAFETY NET for when the screening call is unavailable
+# (Gemini down / quota exhausted), so a degraded run still doesn't hand back
+# blog posts. They are deliberately not consulted when the model screen
+# succeeds.
+_EDITORIAL_URL_SIGNALS = [
+    "/career-advice", "/career-guide", "/advice/", "/blog", "/articles",
+    "/insights", "/resources", "/guides", "/hiring-lab", "/learning",
+    "/pulse/",                 # LinkedIn articles
+    "/business/",              # LinkedIn/Indeed employer-marketing pages
+    "/salaries", "/salary", "/companies/", "/cmp/", "/topic/", "/news",
+    "/career-paths", "/what-is-", "/how-to-",
+]
+
+# Positive signal: the URL routing pattern the big boards use for an
+# INDIVIDUAL posting. Checked per-domain because a path like "/jobs/" means
+# "a job" on one site and "the job search page" on another. When a result
+# comes from one of these domains and does NOT match its posting pattern, it
+# is an index/editorial page no matter what its title says.
+_JOB_URL_PATTERNS = {
+    "linkedin.com":      ("/jobs/view/",),
+    "indeed.com":        ("/viewjob", "/rc/clk", "/job/", "/jobs/view"),
+    "glassdoor.com":     ("/job-listing/", "/Job/", "/partner/jobListing"),
+    "ziprecruiter.com":  ("/jobs/", "/c/", "/job/"),
+    "monster.com":       ("/job-openings/", "/jobs/search/", "/job/"),
+    "bayt.com":          ("/jobs/", "/en/", "/ar/"),
+    "glassdoor.co":      ("/job-listing/",),
+}
+
+
+def _fails_job_url_pattern(url: str) -> bool:
+    """
+    True when the URL is on a board we know the posting-URL shape of, but
+    doesn't match it. Only applies to the domains listed above — everything
+    else (ATS platforms, regional boards) passes through untouched, since
+    guessing their routing would drop real postings.
+    """
+    url_lower = (url or "").lower()
+    for domain, patterns in _JOB_URL_PATTERNS.items():
+        if domain in url_lower:
+            return not any(p.lower() in url_lower for p in patterns)
+    return False
+
+
+# Title phrasings that belong to an article, not a posting. Complements the
+# URL check above for boards whose editorial content lives on a path we
+# don't recognise. Kept to constructions a real role title essentially never
+# uses — a posting is named after the job, it doesn't ask or explain.
+_ARTICLE_TITLE_RE = re.compile(
+    r"(\bhow to\b|\bwhat is\b|\bwhat are\b|\bwhy \w+ (?:is|are)\b|\bexplained\b|"
+    r"\bguide\b|\bguides\b|\btips\b|\bbest practices\b|\bcareer paths?\b|"
+    r"\bstep[- ]by[- ]step\b|\bexamples?\b|\btemplates?\b|\bchecklist\b|"
+    r"\bvs\.?\b|\bversus\b|\btop \d+\b|\b\d+ (?:things|ways|steps|tips|skills)\b|"
+    r"\bhow do\b|\bshould you\b|\bdelivers results\b|\bcomplete guide\b)",
+    re.IGNORECASE,
+)
+
+
+def _looks_like_article_title(title: str) -> bool:
+    return bool(_ARTICLE_TITLE_RE.search(title or ""))
 
 # Another structural (not vocabulary) signal, found via live testing against
 # the expanded board list: aggregator/category pages on sites like Wuzzuf or
@@ -175,9 +267,15 @@ def _looks_like_aggregator_title(title: str) -> bool:
     return bool(_AGGREGATOR_TITLE_RE.search(title or ""))
 
 
-def _looks_closed(content: str) -> bool:
-    content_lower = (content or "").lower()
-    return any(signal in content_lower for signal in _CLOSED_SIGNALS)
+def _looks_closed(content: str, title: str = "") -> bool:
+    """
+    Now checks the TITLE too. Tavily's crawler frequently folds a board's
+    "No longer accepting applications" banner into the page title rather
+    than the body snippet, which is how a closed LinkedIn posting made it
+    into the reported results despite this check already existing.
+    """
+    haystack = f"{title or ''} {content or ''}".lower()
+    return any(signal in haystack for signal in _CLOSED_SIGNALS)
 
 
 def _looks_like_scam(content: str) -> bool:
@@ -189,6 +287,19 @@ def _looks_like_noise_page(title: str, url: str, content: str) -> bool:
     title_lower = (title or "").lower().strip()
     url_lower = (url or "").lower()
 
+    # Only STRUCTURAL signals belong in this pre-screen — things whose shape
+    # proves they aren't a single posting, independent of vocabulary:
+    # a bare placeholder title, an /faq or /privacy path, a "1 to 10 of 5885"
+    # pagination counter, a taxonomy page's long flat enumeration.
+    #
+    # _looks_like_article_title and _fails_job_url_pattern are deliberately
+    # NOT here, even though they'd catch more. They judge by word list and by
+    # guessed URL routing, and both have real false positives — "\bguide\b"
+    # would drop a genuine "Tour Guide" vacancy, and a board changing its
+    # posting URL shape would silently drop every result from that board.
+    # That judgment now belongs to _llm_screen_listings, which reads the page
+    # instead of pattern-matching it. Those two survive only in
+    # _heuristic_filter, for when the screening call can't run at all.
     if title_lower in _NOISE_EXACT_TITLES:
         return True
     if any(signal in url_lower for signal in _NOISE_URL_SIGNALS):
@@ -198,6 +309,214 @@ def _looks_like_noise_page(title: str, url: str, content: str) -> bool:
     if _looks_like_listing_or_category_page(content or ""):
         return True
     return False
+
+
+# Accepted when the candidate's own city/country isn't mentioned — a genuinely
+# remote role is relevant regardless of where it's headquartered.
+_REMOTE_SIGNALS = ("remote", "work from home", "telecommute", "anywhere",
+                   "عن بعد", "من المنزل")
+
+
+def _location_terms(*locations: str) -> list[str]:
+    """
+    Flattens every known location string ("Jeddah", "Jeddah, Saudi Arabia",
+    the Supabase profile's "City, Country") into a deduplicated list of
+    lowercase tokens to match against. Using BOTH the CV's location and the
+    profile's is what lets a CV that only says "Jeddah" still match a
+    listing that only says "Saudi Arabia" — previously only one source was
+    consulted, and only its first comma-separated token at that.
+    """
+    terms: list[str] = []
+    for location in locations:
+        for part in (location or "").split(","):
+            token = part.strip().lower()
+            # 2-char tokens are almost always noise ("KSA" is fine, "SA" is
+            # a substring of far too many unrelated words).
+            if len(token) >= 3 and token not in terms:
+                terms.append(token)
+    return terms
+
+
+def _location_ok(content: str, title: str, url: str, location_terms: list[str]) -> bool:
+    """
+    BUG FIX (wrong country): the previous check was documented as "soft" and
+    a listing that failed it was still kept as `weak` backfill. Since weak
+    results are appended whenever there are fewer than RESULT_CAP good ones
+    — which is most runs — a New York role reliably shipped to a candidate
+    whose CV and Supabase profile both said Jeddah. Location is now a hard
+    gate whenever we actually know where the candidate is: a listing must
+    mention one of their location terms, or be explicitly remote.
+
+    Still returns True when we know nothing about the candidate's location —
+    filtering on an unknown is worse than not filtering.
+    """
+    if not location_terms:
+        return True
+    haystack = f"{title or ''} {content or ''} {url or ''}".lower()
+    if any(term in haystack for term in location_terms):
+        return True
+    return any(signal in haystack for signal in _REMOTE_SIGNALS)
+
+
+# ─── THE ACTUAL SCREEN: a model reads the results and judges them ──────────
+
+JOB_SCREEN_PROMPT = """You are screening web search results to find REAL, CURRENTLY OPEN job postings
+for a specific candidate. Judge each result on its own merits — do not rely on keyword matching.
+
+WHAT THE CANDIDATE IS LOOKING FOR:
+  Target role: {job_title}
+  Their location: {location}
+  Their skills: {skills}
+
+For EACH result below, decide:
+
+1. "is_job_posting" — is this ONE specific job opening at a specific employer, that a person could
+   apply to right now?
+     YES: an individual posting with a role, an employer, and duties or requirements.
+     NO: a careers-advice or how-to article, a blog post, a salary guide, an employer marketing
+         page, a search-results or category page listing many roles, a company profile, a person's
+         profile, a newsletter, or a course/training ad.
+   Be strict here. If it reads like something written to be READ rather than APPLIED TO, it is not
+   a job posting. An article that merely mentions many job titles is still an article.
+
+2. "is_open" — does anything indicate it is closed, filled, or expired? If there is a clear signal
+   it is no longer accepting applications, set this false. If there is no signal either way,
+   assume it is open and set true.
+
+3. "location_ok" — would this role realistically work for someone based in {location}?
+     TRUE if the role is in that city, that country, or the surrounding region, OR if it is
+     explicitly remote / work-from-home / hybrid-with-relocation.
+     FALSE if it is clearly based in a different country with no remote option.
+     If the location genuinely cannot be determined from the result, set true — do not guess a
+     rejection. When the candidate's location is "unknown", always set true.
+
+4. "relevance" — 0.0 to 1.0, how well this role matches the candidate's target role and skills.
+   A closely-matching role in the right place scores high; a loosely related one scores low.
+
+5. "role" — the actual job title, cleaned up. "company" — the employer name. Use "" if genuinely
+   not determinable from the result. Do NOT invent an employer.
+
+RESULTS:
+{results}
+
+Respond ONLY with a JSON array, one object per result id, no markdown:
+[{{"id": 0, "is_job_posting": true, "is_open": true, "location_ok": true, "relevance": 0.8,
+   "role": "Machine Learning Engineer", "company": "Elm"}}]
+"""
+
+# Below this the role is too far from what the candidate does to be worth
+# showing. Low rather than aggressive — the model already filtered out
+# non-jobs and wrong locations, so this only trims the long tail.
+_MIN_RELEVANCE = 0.15
+
+# How much of each result's crawled text the screener sees. Enough to judge
+# "posting vs article" and spot a location, without turning one screen into
+# a huge prompt.
+_SCREEN_CONTENT_CHARS = 900
+
+
+def _llm_screen_listings(
+    candidates: list[dict],
+    job_title: str,
+    location: str,
+    required_skills: list[str],
+) -> list[dict] | None:
+    """
+    Asks the model to judge every candidate result at once, and returns the
+    ones it accepts, ordered by relevance. Returns None (not []) when the
+    screen could not run at all, so the caller can tell "the model rejected
+    everything" apart from "the model never answered" and fall back to
+    heuristics only in the latter case.
+
+    This is the answer to "I want the agent itself to know jobs and give
+    only jobs": the decision is made by something that actually reads the
+    page text, rather than by a list of banned words that has to be
+    extended every time a job board invents a new content section.
+    """
+    if not candidates:
+        return []
+
+    payload = [
+        {
+            "id": i,
+            "title": c.get("title") or "",
+            "url": c.get("url") or "",
+            "content": (c.get("_content") or "")[:_SCREEN_CONTENT_CHARS],
+        }
+        for i, c in enumerate(candidates)
+    ]
+
+    prompt = JOB_SCREEN_PROMPT.format(
+        job_title=job_title or "unknown",
+        location=location or "unknown",
+        skills=", ".join(required_skills[:8]) or "unknown",
+        results=json.dumps(payload, ensure_ascii=False),
+    )
+
+    try:
+        raw = generate_gemini_json(prompt)
+        raw = re.sub(r"```json|```", "", raw or "").strip()
+        verdicts = json.loads(raw)
+        if not isinstance(verdicts, list):
+            logger.warning("🔍 Job screen returned a non-list response — falling back to heuristics.")
+            return None
+    except Exception as e:
+        logger.error(f"🔍 Job screening call failed: {e} — falling back to heuristic filters.")
+        return None
+
+    accepted: list[tuple[float, dict]] = []
+    rejected = Counter()
+
+    for verdict in verdicts:
+        if not isinstance(verdict, dict):
+            continue
+        idx = verdict.get("id")
+        if not isinstance(idx, int) or not (0 <= idx < len(candidates)):
+            continue
+
+        if not verdict.get("is_job_posting"):
+            rejected["not_a_job_posting"] += 1
+            continue
+        if verdict.get("is_open") is False:
+            rejected["closed"] += 1
+            continue
+        if verdict.get("location_ok") is False:
+            rejected["wrong_location"] += 1
+            continue
+
+        try:
+            relevance = float(verdict.get("relevance", 0.0))
+        except (TypeError, ValueError):
+            relevance = 0.0
+        if relevance < _MIN_RELEVANCE:
+            rejected["low_relevance"] += 1
+            continue
+
+        job = dict(candidates[idx])
+        # Prefer the model's cleaned-up role/company over the raw crawled
+        # page title, which is frequently "Company hiring Role - LinkedIn"
+        # or a bare "JobDetails" placeholder.
+        role = str(verdict.get("role") or "").strip()
+        company = str(verdict.get("company") or "").strip()
+        if role:
+            job["title"] = f"{role} - {company}" if company else role
+        job["company"] = company
+        job["match_label"] = (
+            "Strong Match" if relevance >= 0.6
+            else "Partial Match" if relevance >= 0.3
+            else "Stretch Role"
+        )
+        # Strip every internal field — these get serialized straight into
+        # the API response and persisted in the user's resume history.
+        for internal in ("_content", "_skill_ratio"):
+            job.pop(internal, None)
+        accepted.append((relevance, job))
+
+    if rejected:
+        logger.info(f"🔍 Screener rejected: {dict(rejected)}")
+
+    accepted.sort(key=lambda pair: pair[0], reverse=True)
+    return [job for _, job in accepted]
 
 
 def _matches_any_domain(url: str, domains: list[str]) -> bool:
@@ -212,23 +531,6 @@ def _matches_any_domain(url: str, domains: list[str]) -> bool:
     return any(domain in url_lower for domain in domains)
 
 
-def _mentions_location(content: str, location: str) -> bool:
-    """
-    Soft location relevance check — NOT a hard geo-filter (a good remote or
-    relocation-friendly listing shouldn't be dropped just because the city
-    name isn't in the crawled snippet). Matches on the first comma-separated
-    token of the location (usually the city) rather than the full "City,
-    Country" string, since listings rarely repeat the candidate's exact
-    phrasing.
-    """
-    if not location:
-        return True  # nothing to check against — don't penalize
-    city = location.split(",")[0].strip().lower()
-    if not city:
-        return True
-    return city in (content or "").lower()
-
-
 def _search_tavily(client: TavilyClient, query: str, domains: list[str], max_results: int):
     try:
         results = client.search(
@@ -236,7 +538,7 @@ def _search_tavily(client: TavilyClient, query: str, domains: list[str], max_res
             search_depth='advanced',
             include_domains=domains,
             max_results=max_results,
-            time_range='week'
+            time_range=SEARCH_TIME_RANGE,
         )
         return results.get('results', [])
     except Exception as e:
@@ -244,74 +546,128 @@ def _search_tavily(client: TavilyClient, query: str, domains: list[str], max_res
         return []
 
 
-def _process_listing(r: dict, required_skills_lower: list[str], effective_location: str) -> tuple[dict | None, str]:
+def _to_candidate(r: dict, required_skills_lower: list[str]) -> tuple[dict | None, str]:
     """
-    Turns one raw Tavily result into (job_dict, tier), or (None, reason) if
-    it should be dropped outright. tier is "good" (skill AND location both
-    check out) or "weak" (only one of the two does — kept only as backfill
-    if there isn't enough "good" material). A listing that clears NEITHER
-    signal is dropped outright rather than kept as filler — this is what
-    keeps a wrong-field, wrong-country result from padding out the list to
-    RESULT_CAP.
+    Turns one raw Tavily result into a candidate for screening, or
+    (None, reason) if it's obviously unusable.
+
+    Only CHEAP, HIGH-PRECISION drops happen here — a scam listing, a page
+    that says outright it's closed, a structural non-page (an /about or
+    /privacy URL, a paginated category index). Everything requiring actual
+    judgment about "is this a job posting" and "is this the right place" is
+    left to _llm_screen_listings, which reads the page text rather than
+    matching words.
+
+    `_content` rides along for the screener and is stripped before the job
+    reaches the frontend.
     """
     content = r.get('content', '') or ''
     title = r.get('title') or 'Job Opening'
     url = r.get('url', '')
 
-    if _looks_closed(content):
-        return None, "closed"
+    if not url:
+        return None, "no_url"
     if _looks_like_scam(content):
         return None, "scam"
+    if _looks_closed(content, title):
+        return None, "closed"
     if _looks_like_noise_page(title, url, content):
         return None, "noise"
 
     source = url.split('/')[2] if '/' in url and len(url.split('/')) > 2 else "Job Board"
-    snippet_content = content.lower()
-    matched_count = sum(1 for skill in required_skills_lower if skill in snippet_content)
+    matched = sum(1 for skill in required_skills_lower if skill in content.lower())
+    ratio = (matched / len(required_skills_lower[:5])) if required_skills_lower else 0.5
 
-    if len(required_skills_lower) == 0:
-        match_label = "Partial Match"
-        match_ratio = 0.5
-    else:
-        match_ratio = matched_count / len(required_skills_lower[:5])  # grade against top 5 needed skills
-        if match_ratio >= 0.6:
-            match_label = "Strong Match"
-        elif match_ratio >= 0.2:
-            match_label = "Partial Match"
-        else:
-            match_label = "Stretch Role"
-
-    location_ok = _mentions_location(content, effective_location)
-    skill_ok = match_ratio >= 0.2
-
-    if skill_ok and location_ok:
-        tier = "good"
-    elif skill_ok or location_ok:
-        tier = "weak"
-    else:
-        return None, "irrelevant"
-
-    job = {
+    return {
         'title': title,
         'url': url,
         'snippet': content[:200] + "...",
         'source': source,
-        'match_label': match_label,
-    }
-    return job, tier
+        'match_label': "Strong Match" if ratio >= 0.6 else "Partial Match" if ratio >= 0.2 else "Stretch Role",
+        '_content': content,
+        '_skill_ratio': ratio,
+    }, "ok"
 
 
-def _classify(raw_results: list[dict], required_skills_lower: list[str], effective_location: str) -> tuple[list[dict], list[dict]]:
-    good, weak = [], []
-    for r in raw_results:
-        job, tier = _process_listing(r, required_skills_lower, effective_location)
-        if job is None:
+def _heuristic_filter(candidates: list[dict], location_terms: list[str]) -> list[dict]:
+    """
+    FALLBACK ONLY — used when _llm_screen_listings couldn't run. Applies the
+    old word/URL-list rules so a degraded run still doesn't return blog
+    posts or wrong-country roles. See the _EDITORIAL_URL_SIGNALS banner for
+    why these aren't the primary mechanism.
+    """
+    kept, dropped = [], Counter()
+    for c in candidates:
+        url_lower = (c.get('url') or "").lower()
+        if any(sig in url_lower for sig in _EDITORIAL_URL_SIGNALS):
+            dropped["editorial_url"] += 1
             continue
-        (good if tier == "good" else weak).append(job)
-    return good, weak
+        if _looks_like_article_title(c.get('title')):
+            dropped["article_title"] += 1
+            continue
+        if _fails_job_url_pattern(c.get('url')):
+            dropped["not_a_posting_url"] += 1
+            continue
+        if not _location_ok(c.get('_content'), c.get('title'), c.get('url'), location_terms):
+            dropped["wrong_location"] += 1
+            continue
+        kept.append(c)
+
+    if dropped:
+        logger.info(f"🔍 Heuristic fallback dropped: {dict(dropped)}")
+    kept.sort(key=lambda c: c.get('_skill_ratio', 0), reverse=True)
+    for c in kept:
+        c.pop('_content', None)
+        c.pop('_skill_ratio', None)
+    return kept
 
 
-def find_similar_jobs(weight_factors: dict, facts_json: dict, fallback_location: str | None = None) -> list:
+def _collect_candidates(raw_results: list[dict], required_skills_lower: list[str]) -> list[dict]:
+    candidates, dropped = [], Counter()
+    for r in raw_results:
+        candidate, reason = _to_candidate(r, required_skills_lower)
+        if candidate is None:
+            dropped[reason] += 1
+            continue
+        candidates.append(candidate)
+    if dropped:
+        # Logged because "we found 2 jobs" is useless on its own for
+        # diagnosing whether the search was thin or the filters were harsh.
+        logger.info(f"🔍 Dropped raw results before screening: {dict(dropped)}")
+    return candidates
+
+
+def _run_search_pass(
+    client: TavilyClient,
+    query: str,
+    required_skills_lower: list[str],
+) -> list[dict]:
+    """
+    One full search pass: Jadarat and the fallback boards queried
+    concurrently, each post-filtered by _matches_any_domain (Tavily's
+    include_domains is a preference, not an allowlist), then reduced to
+    screening candidates. Jadarat's results lead the returned list — that's
+    its priority weighting — but nothing requires it to hit any minimum.
+    """
+    logger.info(f"🔍 Agent 6 — Querying Tavily for listings matching: '{query}'...")
+    with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
+        priority_future = executor.submit(_search_tavily, client, query, PRIORITY_DOMAINS, RAW_FETCH_LIMIT)
+        fallback_future = executor.submit(_search_tavily, client, query, FALLBACK_DOMAINS, RAW_FETCH_LIMIT)
+        priority_raw = [r for r in priority_future.result() if _matches_any_domain(r.get('url', ''), PRIORITY_DOMAINS)]
+        fallback_raw = [r for r in fallback_future.result() if _matches_any_domain(r.get('url', ''), FALLBACK_DOMAINS)]
+
+    return (
+        _collect_candidates(priority_raw, required_skills_lower)
+        + _collect_candidates(fallback_raw, required_skills_lower)
+    )
+
+
+def find_similar_jobs(
+    weight_factors: dict,
+    facts_json: dict,
+    fallback_location: str | None = None,
+    profile_location: str | None = None,
+) -> list:
     """
     Queries the Tavily API for relevant active job listings posted within
     the last week and applies a matching tier label based on skill overlap.
@@ -351,45 +707,59 @@ def find_similar_jobs(weight_factors: dict, facts_json: dict, fallback_location:
     # string the candidate actually provided, nothing hardcoded to one country.
     candidate_location = ((facts_json.get("personal", {}) or {}).get("location") or "").strip()
     effective_location = candidate_location or (fallback_location or "").strip()
-    location_query_part = f" in {effective_location}" if effective_location else ""
 
-    query = f"{job_title} active job openings hiring {search_skills}{location_query_part}"
-    logger.info(f"🔍 Agent 6 — Querying Tavily for listings matching: '{query}'...")
+    # Match against the CV's location AND the Supabase profile's, not just
+    # whichever one happened to be picked. The profile location comes from
+    # the signup/Settings country+city dropdown, so it's the one that
+    # reliably carries a COUNTRY — the CV often only says "Jeddah", which on
+    # its own can't rule out a listing that says "Saudi Arabia".
+    location_terms = _location_terms(candidate_location, fallback_location or "", profile_location or "")
+    location_query_part = f" in {effective_location}" if effective_location else ""
 
     required_skills_lower = [s.lower() for s in required_skills]
 
-    # Query Jadarat and the fallback boards concurrently — always both,
-    # every time (see docstring). Each raw list is post-filtered by
-    # _matches_any_domain since Tavily's include_domains isn't a hard
-    # allowlist (confirmed by live testing).
-    with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
-        priority_future = executor.submit(_search_tavily, client, query, PRIORITY_DOMAINS, RAW_FETCH_LIMIT)
-        fallback_future = executor.submit(_search_tavily, client, query, FALLBACK_DOMAINS, RAW_FETCH_LIMIT)
-        priority_raw = [r for r in priority_future.result() if _matches_any_domain(r.get('url', ''), PRIORITY_DOMAINS)]
-        fallback_raw = [r for r in fallback_future.result() if _matches_any_domain(r.get('url', ''), FALLBACK_DOMAINS)]
+    candidates = _run_search_pass(
+        client,
+        f"{job_title} active job openings hiring {search_skills}{location_query_part}",
+        required_skills_lower,
+    )
 
-    good_priority, weak_priority = _classify(priority_raw, required_skills_lower, effective_location)
-    good_fallback, weak_fallback = _classify(fallback_raw, required_skills_lower, effective_location)
+    # SECOND PASS — the skills clause makes the primary query precise but
+    # narrow. Dropping it surfaces postings for the same role that simply
+    # don't spell out the same top-3 tools. Run whenever the candidate pool
+    # is thin, since screening will reject a good share of what's here: the
+    # reported run returned 2 listings and BOTH were junk that only survived
+    # because there was nothing better to pad the list with.
+    if len(candidates) < RESULT_CAP * 2:
+        logger.info(f"🔍 First pass yielded {len(candidates)} candidate(s) — running a broader second pass...")
+        candidates += _run_search_pass(
+            client,
+            f"{job_title} jobs vacancies apply{location_query_part}",
+            required_skills_lower,
+        )
 
-    # Jadarat's results lead the merged list — that's its "priority"
-    # weighting — but nothing here requires it to hit any minimum count.
-    combined = good_priority + good_fallback
-    if len(combined) < RESULT_CAP:
-        combined += weak_priority + weak_fallback
-
-    seen_urls = set()
-    final = []
-    for job in combined:
-        if job['url'] in seen_urls:
+    # Deduplicate BEFORE screening — no reason to pay to judge the same URL
+    # twice when both passes surface it.
+    seen_urls, deduped = set(), []
+    for candidate in candidates:
+        if candidate['url'] in seen_urls:
             continue
-        seen_urls.add(job['url'])
-        final.append(job)
-        if len(final) >= RESULT_CAP:
-            break
+        seen_urls.add(candidate['url'])
+        deduped.append(candidate)
 
+    # THE SCREEN — a model reads each candidate and decides whether it's a
+    # real, open posting the candidate could actually take. Heuristics only
+    # step in if that call couldn't be made at all.
+    screened = _llm_screen_listings(deduped, job_title, effective_location, required_skills)
+    if screened is None:
+        final = _heuristic_filter(deduped, location_terms)[:RESULT_CAP]
+        logger.info(f"✅ Found {len(final)} job listings via heuristic fallback (screening unavailable).")
+        return final
+
+    final = screened[:RESULT_CAP]
     logger.info(
-        f"✅ Found {len(final)} matching job listings via Tavily "
-        f"({len(good_priority)} good from Jadarat, {len(good_fallback)} good from fallback boards)."
+        f"✅ Found {len(final)} screened job listings "
+        f"({len(deduped)} candidates screened, location: {effective_location or 'unknown'})."
     )
     return final
 
@@ -449,10 +819,32 @@ def run_jobs_finder(state: AgentState) -> dict:
     facts_json = state.get("facts_json", {})
 
     cv_location = ((facts_json.get("personal", {}) or {}).get("location") or "").strip()
-    fallback_location = (
-        None if _looks_like_real_location(cv_location) else _fetch_profile_location(state.get("user_id"))
-    )
 
-    similar_jobs = find_similar_jobs(weight_factors, facts_json, fallback_location=fallback_location)
+    # BUG FIX: the profile location is now ALWAYS fetched, not only when the
+    # CV's location looks fake.
+    #
+    # Two separate problems were stacked here. First, state["user_id"] was
+    # never actually reaching this node — `user_id` wasn't declared in
+    # AgentState, so LangGraph silently dropped it and this call received
+    # None on every request, meaning the Supabase location has never once
+    # been read (fixed in core/state.py). Second, even with a working
+    # user_id, the old condition skipped the profile entirely whenever the
+    # CV had *any* plausible-looking location — so a CV saying "Jeddah"
+    # meant the profile's "Jeddah, Saudi Arabia" was never consulted, and
+    # the country was unavailable to filter on. Both sources are now passed
+    # through and merged into the match terms.
+    user_id = state.get("user_id")
+    profile_location = _fetch_profile_location(user_id)
+    if not user_id:
+        logger.warning("Agent 6 has no user_id in state — falling back to the CV's location only.")
+
+    fallback_location = None if _looks_like_real_location(cv_location) else profile_location
+
+    similar_jobs = find_similar_jobs(
+        weight_factors,
+        facts_json,
+        fallback_location=fallback_location,
+        profile_location=profile_location,
+    )
 
     return {"similar_jobs": similar_jobs}

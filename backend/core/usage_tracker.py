@@ -54,6 +54,14 @@ class UsageEvent:
 
     bullets_regenerated_count: int = 0
 
+    # True when the run generated without profiles.name_ar / name_en for its
+    # output language, so the candidate's name fell back to the CV's parsed
+    # name run through the Arabic glossary. That's the LEGACY behavior this
+    # field exists to measure — query it to see how many users are still
+    # skipping the name prompt (and therefore may be getting a
+    # machine-transliterated name on their CV).
+    name_fallback_used: bool = False
+
     total_input_tokens: int = 0
     total_output_tokens: int = 0
     total_calls: int = 1
@@ -83,6 +91,7 @@ class UsageEvent:
             arabic_purity_pass_fired=bool(result.get("usage_arabic_purity_fired", False)),
             arabic_purity_still_bad=bool(result.get("usage_arabic_purity_still_bad", False)),
             bullets_regenerated_count=result.get("usage_bullets_regenerated_count", 0) or 0,
+            name_fallback_used=bool(result.get("name_fallback_used", False)),
             total_input_tokens=(result.get("usage_tailoring_input_tokens", 0) or 0) + (result.get("usage_regen_input_tokens", 0) or 0),
             total_output_tokens=(result.get("usage_tailoring_output_tokens", 0) or 0) + (result.get("usage_regen_output_tokens", 0) or 0),
             total_calls=(result.get("usage_tailoring_calls", 0) or 0) + (result.get("usage_regen_calls", 0) or 0),
@@ -138,6 +147,7 @@ class UsageEvent:
             "arabic_purity_pass_fired": self.arabic_purity_pass_fired,
             "arabic_purity_still_bad": self.arabic_purity_still_bad,
             "bullets_regenerated_count": self.bullets_regenerated_count,
+            "name_fallback_used": self.name_fallback_used,
             "total_input_tokens": self.total_input_tokens or None,
             "total_output_tokens": self.total_output_tokens or None,
             "total_calls": self.total_calls,

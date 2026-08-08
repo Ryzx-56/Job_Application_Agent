@@ -50,7 +50,30 @@ workflow.add_edge("cv_parser", "tailoring_engine")
 workflow.add_edge("manual_cv_parser", "tailoring_engine")
 workflow.add_edge("jd_analyzer", "tailoring_engine")
 
-workflow.add_edge("tailoring_engine", "fact_checker")
+# FAIL FAST #1 — between Agent 3 and the fact checker.
+#
+# tailoring_engine sets fatal_error_code when it has permanently failed
+# (exhausted retries, or produced output too large to ever fit the token
+# ceiling). Everything downstream reads the tailored CV it never produced,
+# so continuing only buys an empty document at full price. Previously the
+# graph ran on regardless: the fact checker no-oped, ats_scorer and
+# match_scorer no-oped to 0, and document_generator STILL made a full Claude
+# call for a cover letter attached to a CV that didn't exist. That is the
+# "burned tokens for ~5 minutes and returned 0% / 0% / no content" report.
+def route_after_tailoring(state: AgentState) -> str:
+    if state.get("fatal_error_code"):
+        return "abort"
+    return "fact_checker"
+
+
+workflow.add_conditional_edges(
+    "tailoring_engine",
+    route_after_tailoring,
+    {
+        "fact_checker": "fact_checker",
+        "abort": END,
+    }
+)
 
 # Conditional Router Logic block if check fails
 MAX_TAILORING_ATTEMPTS = 2  # hard ceiling — if fact-checking still hasn't
@@ -72,20 +95,30 @@ def route_after_fact_check(state: AgentState):
         # (these three are independent of each other).
         return ["document_generator", "ats_scorer", "jobs_finder"]
 
+    # FAIL FAST #2 — the checker itself couldn't run (see
+    # FactCheckerUnavailable in core/fact_checker.py). Nothing downstream
+    # can improve on that, so stop and let main.py refund.
+    if state.get("fatal_error_code"):
+        return "abort"
+
     if state.get("error"):
         # tailoring_engine already exhausted its own internal retries and
         # permanently failed — it now no-ops on every further call (see its
         # `if state.get("error"): return {}` guard), which means
         # tailoring_attempts would never increment again and this router
-        # would loop back to it forever. Stop looping and proceed with
-        # best-effort results; the error is still visible to the frontend.
-        return ["document_generator", "ats_scorer", "jobs_finder"]
+        # would loop back to it forever. Stop, rather than paying for the
+        # remaining agents to produce an empty document.
+        return "abort"
 
     if state.get("tailoring_attempts", 0) >= MAX_TAILORING_ATTEMPTS:
-        # Give up looping — proceed with best-effort results rather than
-        # retrying indefinitely. fact_check_passed=False is still visible
-        # to the frontend so the user knows to double check the output.
-        return ["document_generator", "ats_scorer", "jobs_finder"]
+        # Retries are exhausted and NOT ONE bullet survived fact-checking
+        # (fact_check_passed is False here, and a CV with no bullets at all
+        # already reports True — see run_fact_checker). Rendering now would
+        # produce exactly the failure that was reported: a charged run whose
+        # CV falls back to the untailored source text, with a 0% ATS score,
+        # a 0% match score and an empty tailored summary. Abort instead so
+        # main.py refunds the credit and returns a real error.
+        return "abort"
 
     return "tailoring_engine" # Loop back to rewrite hallucinations
 
@@ -96,7 +129,8 @@ workflow.add_conditional_edges(
         "document_generator": "document_generator",
         "ats_scorer": "ats_scorer",
         "jobs_finder": "jobs_finder",
-        "tailoring_engine": "tailoring_engine"
+        "tailoring_engine": "tailoring_engine",
+        "abort": END,
     }
 )
 

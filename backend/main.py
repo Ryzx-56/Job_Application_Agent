@@ -24,8 +24,13 @@ from core.credits import reserve_credits, refund_credits, get_credits, normalize
 from core.subscription import cancel_subscription, resume_subscription
 from core.location import router as location_router
 from core.documents import router as documents_router
+from core.profile_names import (
+    router as profile_names_router,
+    get_profile_names,
+    required_name_for,
+)
 from core.usage_tracker import UsageEvent
-from utils.pdf_parser import extract_text_from_pdf
+from utils.pdf_parser import extract_text_from_pdf, UnsupportedCVFormat
 from utils.pdf_generator import render_cv_pdf, render_cover_letter_pdf
 from utils.docx_generator import generate_cv_docx
 from utils.template_registry import DEFAULT_TEMPLATE_ID
@@ -71,6 +76,7 @@ app.add_middleware(
 
 app.include_router(location_router)
 app.include_router(documents_router)
+app.include_router(profile_names_router)
 
 OUTPUT_DIR = "outputs"
 
@@ -104,6 +110,77 @@ def _validate_id_component(value: str, label: str) -> str:
 
 def make_request_id() -> str:
     return uuid.uuid4().hex
+
+
+def read_uploaded_cv(cv_bytes: bytes) -> str:
+    """
+    Parses an uploaded CV, turning an unreadable file into a clean 400 with
+    a message the user can act on.
+
+    This runs BEFORE reserve_credits() in both upload endpoints, which is
+    deliberate — a file we can't read costs the user nothing. Previously a
+    .docx upload (which the file picker explicitly allows) raised PyMuPDF's
+    FileDataError straight out of the endpoint as an opaque 500.
+    """
+    try:
+        return extract_text_from_pdf(pdf_bytes=cv_bytes)
+    except UnsupportedCVFormat as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={"code": "unreadable_upload", "message": str(e)},
+        )
+
+
+def apply_candidate_names(initial_state: AgentState, user_id: str, allow_name_fallback: bool) -> None:
+    """
+    Loads profiles.name_en / name_ar onto the state, and REFUSES the run if
+    the name for this output language hasn't been provided yet.
+
+    Why refuse rather than transliterate: a personal name has several valid
+    spellings in another script and only its owner knows which is theirs, so
+    generating one produces a document with the wrong name on it — worse
+    than asking. The frontend catches this 409, shows the field pre-filled
+    with anything readable off the uploaded CV, and retries.
+
+    allow_name_fallback is the explicit escape hatch (the "generate anyway"
+    option). It permits the legacy behavior — the CV's parsed name run
+    through the Arabic glossary — and records name_fallback_used so we can
+    see how many users are still landing on it.
+
+    Called BEFORE reserve_credits in every endpoint: being asked for your
+    name must never cost a credit.
+    """
+    names = get_profile_names(user_id)
+    initial_state["profile_name_en"] = names.get("name_en")
+    initial_state["profile_name_ar"] = names.get("name_ar")
+    initial_state["name_fallback_used"] = False
+
+    cv_language = initial_state["cv_language"]
+    has_name, field = required_name_for(cv_language, names)
+    if has_name:
+        return
+
+    if allow_name_fallback:
+        initial_state["name_fallback_used"] = True
+        logger.warning(
+            f"👤 LEGACY NAME PATH: user {user_id} generating a '{cv_language}' CV without {field}. "
+            f"Falling back to the CV's parsed name; it may be machine-transliterated."
+        )
+        return
+
+    raise HTTPException(
+        status_code=status.HTTP_409_CONFLICT,
+        detail={
+            "code": "missing_profile_name",
+            "field": field,
+            "cv_language": cv_language,
+            "message": (
+                "Add your name in Arabic before generating an Arabic CV."
+                if field == "name_ar"
+                else "Add your name in English before generating an English CV."
+            ),
+        },
+    )
 
 
 def output_paths(user_id: str, request_id: str) -> dict:
@@ -147,8 +224,11 @@ def make_initial_state(cv_text: str, jd_text: str, template_id: str = DEFAULT_TE
         tailored_projects=[],
         tailored_volunteer_work=[],
         tailored_skills={},
+        tailored_experience_titles=[],
+        arabic_glossary={},
         hallucination_flags=[],
         fact_check_passed=False,
+        fact_check_unavailable=False,
         cover_letter_text="",
         cv_pdf_path="",
         cover_letter_pdf_path="",
@@ -162,6 +242,13 @@ def make_initial_state(cv_text: str, jd_text: str, template_id: str = DEFAULT_TE
         tailoring_attempts=0,
         error=None,
         current_step="start",
+        fatal_error_code=None,
+        hit_max_retries=False,
+        user_id=None,
+        # Filled in by apply_candidate_names() before the graph runs.
+        profile_name_en=None,
+        profile_name_ar=None,
+        name_fallback_used=False,
     )
 
 
@@ -196,17 +283,101 @@ def _weight_factors_usable(result_state: dict) -> bool:
     return bool(job_title)
 
 
-def _pipeline_ready(result_state: dict) -> tuple[bool, str]:
+def _tailored_content_usable(result_state: dict) -> bool:
     """
-    True only if BOTH Agent 1 and Agent 2 actually produced usable data.
-    Returns (ready, user_facing_error_message) so callers can raise/emit
-    a specific, honest message instead of a generic failure.
+    Agent 3 is the entire product. If it produced neither a summary nor a
+    single tailored bullet, there is nothing to render that the user didn't
+    already have.
+
+    This check was missing, and its absence is the reported bug: the two
+    gates above only look at Agent 1 and Agent 2, both of which succeed
+    happily on a run whose tailoring later dies. The pipeline was therefore
+    declared "ready", the credit was kept, and utils/cv_context.py quietly
+    fell back to the RAW parsed CV for every field (`state.get("tailored_summary")
+    or facts.get("summary")`, raw bullets, raw project descriptions). The
+    user was charged and handed back a re-typeset copy of their own CV with
+    a 0% ATS score and a 0% match score — and on an Arabic request, that
+    fallback content is still in the source CV's language, which is why an
+    Arabic run came back in English.
     """
+    if (result_state.get("tailored_summary") or "").strip():
+        return True
+    return bool(result_state.get("tailored_bullets"))
+
+
+# Fields whose language should follow cv_language. Checked together rather
+# than individually so one stubborn proper noun can't fail an otherwise
+# correct Arabic CV.
+_LATIN_WORD_RE = re.compile(r"[A-Za-z]{2,}")
+_ARABIC_CHAR_RE = re.compile(r"[؀-ۿ]")
+
+
+def _language_matches_request(result_state: dict) -> bool:
+    """
+    Guards the specific failure the Arabic bug report describes: a CV
+    requested in Arabic that comes back written in English.
+
+    Deliberately coarse — it only fires when the generated summary contains
+    NO Arabic at all. A partially-translated CV still ships (the Arabic
+    purity pass in tailoring_engine.py is the mechanism that tightens that,
+    and it is best-effort by design); this is only here to stop a wholly
+    wrong-language document from being sold to someone as an Arabic CV.
+    """
+    if str(result_state.get("cv_language", "en")).lower() != "ar":
+        return True
+    summary = (result_state.get("tailored_summary") or "").strip()
+    if not summary:
+        return True  # already caught by _tailored_content_usable
+    return bool(_ARABIC_CHAR_RE.search(summary))
+
+
+# Machine-readable failure codes -> user-facing English text. The frontend
+# also maps these codes to Arabic copy (see useOptimizeStream.ts /
+# dashboard/page.tsx), which is why the code travels alongside the message
+# instead of the message being the only thing returned.
+ERROR_MESSAGES = {
+    "cv_unreadable":         "We couldn't read your CV — please try again in a moment.",
+    "jd_unreadable":         "We couldn't analyze the job description — please try again in a moment.",
+    "tailoring_failed":      "We couldn't finish tailoring your CV, so nothing was charged. Please try again.",
+    "fact_check_failed":     "Fact check did not fully pass, please try again.",
+    "fact_check_unavailable": "Our fact checker is temporarily unavailable, so nothing was charged. Please try again in a moment.",
+    "wrong_language":        "We couldn't generate your CV in Arabic this time, so nothing was charged. Please try again.",
+}
+
+
+def _pipeline_ready(result_state: dict) -> tuple[bool, str, str]:
+    """
+    True only if the pipeline actually produced something worth charging
+    for. Returns (ready, error_code, user_facing_message) so callers can
+    raise/emit a specific, honest message instead of a generic failure.
+
+    ORDER MATTERS: the most specific known cause is reported first, so the
+    user is told what actually happened rather than being handed a generic
+    "couldn't read your CV" for a fact-check rejection.
+    """
+    fatal_code = result_state.get("fatal_error_code")
+    if fatal_code in ERROR_MESSAGES:
+        return False, fatal_code, ERROR_MESSAGES[fatal_code]
+
     if not _pipeline_produced_usable_cv(result_state):
-        return False, "We couldn't read your CV — please try again in a moment."
+        return False, "cv_unreadable", ERROR_MESSAGES["cv_unreadable"]
     if not _weight_factors_usable(result_state):
-        return False, "We couldn't analyze the job description — please try again in a moment."
-    return True, ""
+        return False, "jd_unreadable", ERROR_MESSAGES["jd_unreadable"]
+
+    # A run that reached the end with fact_check_passed still False means
+    # every bullet was rejected and the tailoring loop is exhausted (a CV
+    # with no bullets at all reports True — see core/fact_checker.py). Do
+    # not render, do not charge.
+    if not result_state.get("fact_check_passed", False):
+        return False, "fact_check_failed", ERROR_MESSAGES["fact_check_failed"]
+
+    if not _tailored_content_usable(result_state):
+        return False, "tailoring_failed", ERROR_MESSAGES["tailoring_failed"]
+
+    if not _language_matches_request(result_state):
+        return False, "wrong_language", ERROR_MESSAGES["wrong_language"]
+
+    return True, "", ""
 
 
 # ─── LIVE PROGRESS STREAMING (dashboard "Agent N" UI) ─────────────────────
@@ -260,6 +431,15 @@ _SNAPSHOT_STATE_KEYS = [
     "tailored_summary", "tailored_bullets", "tailored_projects",
     "tailored_volunteer_work", "tailored_skills", "tailored_experience_titles",
     "cover_letter_text",
+    # Required for a later re-render to reproduce the SAME Arabic CV — without
+    # it, build_cv_context would fall back to the untranslated facts_json and
+    # a regenerated Arabic CV would come back with English employer/university
+    # names that the original didn't have.
+    "arabic_glossary",
+    # The name is resolved from the profile at render time, so a later
+    # re-render needs these or it would fall back to the CV's parsed name
+    # and print a different name than the original document did.
+    "profile_name_en", "profile_name_ar",
 ]
 
 
@@ -380,12 +560,14 @@ def _stream_pipeline(initial_state: AgentState, user_id: str, reserved_amount: i
         # extracted usable data (e.g. Gemini rate-limited out after all
         # retries) — see _pipeline_produced_usable_cv for why this check
         # is the reliable signal rather than just checking state["error"].
-        ready, error_detail = _pipeline_ready(result_state)
+        ready, error_code, error_detail = _pipeline_ready(result_state)
         if not ready:
-            logger.error(f"❌ Pipeline did not produce usable output (stream): {error_detail} | state error: {result_state.get('error')}")
+            logger.error(f"❌ Pipeline did not produce usable output (stream) [{error_code}]: {error_detail} | state error: {result_state.get('error')}")
             refund_credits(user_id, reserved_amount)
             flush_usage_event_async(result_state, input_mode=result_state.get("input_mode", "upload"), pipeline_succeeded=False, user_id=user_id, error_message=error_detail)
-            yield _sse("error", {"detail": error_detail})
+            # `code` lets the frontend show localized copy; `detail` is the
+            # ready-to-display English fallback.
+            yield _sse("error", {"detail": error_detail, "code": error_code})
             return
 
         generated_paths = generate_documents_parallel(result_state, paths)
@@ -553,12 +735,14 @@ async def optimize_application(
     additional_info: str = Form(""),
     cv_language: str = Form("en"),
     template_id: str = Form(DEFAULT_TEMPLATE_ID),
+    # Explicit "generate anyway" escape hatch — see apply_candidate_names.
+    allow_name_fallback: bool = Form(False),
     user_id: str = Depends(get_current_user_id),
 ):
     logger.info("🚀 API Gateway received an application optimization request.")
 
     cv_bytes = await cv.read()
-    final_cv_text = extract_text_from_pdf(pdf_bytes=cv_bytes)
+    final_cv_text = read_uploaded_cv(cv_bytes)
     final_jd_text = job_description or SHORT_SAMPLE_JD
 
     initial_state = make_initial_state(final_cv_text, final_jd_text, template_id=template_id)
@@ -570,6 +754,9 @@ async def optimize_application(
     # Reserve credits BEFORE running the (expensive) pipeline. Atomic against
     # concurrent requests — see reserve_credits() in core/credits.py.
     # Raises 402 automatically if the user doesn't have enough.
+    # Name check BEFORE credits — being asked for your name costs nothing.
+    apply_candidate_names(initial_state, user_id, allow_name_fallback)
+
     reserved_amount = reserve_credits(user_id, initial_state["cv_language"])
     request_id = make_request_id()
     paths = output_paths(user_id, request_id)
@@ -584,14 +771,14 @@ async def optimize_application(
         # Don't return a fake "success" if Agent 1 never actually extracted
         # usable data — see _pipeline_produced_usable_cv for why this is the
         # reliable check rather than just looking at state["error"].
-        ready, error_detail = _pipeline_ready(result)
+        ready, error_code, error_detail = _pipeline_ready(result)
         if not ready:
-            logger.error(f"❌ Pipeline did not produce usable output: {error_detail} | state error: {result.get('error')}")
+            logger.error(f"❌ Pipeline did not produce usable output [{error_code}]: {error_detail} | state error: {result.get('error')}")
             refund_credits(user_id, reserved_amount)
             flush_usage_event_async(result, input_mode="upload", pipeline_succeeded=False, user_id=user_id, error_message=error_detail)
             raise HTTPException(
                 status_code=status.HTTP_502_BAD_GATEWAY,
-                detail=error_detail,
+                detail={"code": error_code, "message": error_detail},
             )
 
         generated_paths = generate_documents_parallel(result, paths)
@@ -619,6 +806,8 @@ async def optimize_application_stream(
     additional_info: str = Form(""),
     cv_language: str = Form("en"),
     template_id: str = Form(DEFAULT_TEMPLATE_ID),
+    # Explicit "generate anyway" escape hatch — see apply_candidate_names.
+    allow_name_fallback: bool = Form(False),
     user_id: str = Depends(get_current_user_id),
 ):
     """
@@ -634,7 +823,7 @@ async def optimize_application_stream(
     logger.info("🚀 API Gateway received a STREAMING application optimization request.")
 
     cv_bytes = await cv.read()
-    final_cv_text = extract_text_from_pdf(pdf_bytes=cv_bytes)
+    final_cv_text = read_uploaded_cv(cv_bytes)
     final_jd_text = job_description or SHORT_SAMPLE_JD
 
     initial_state = make_initial_state(final_cv_text, final_jd_text, template_id=template_id)
@@ -642,6 +831,9 @@ async def optimize_application_stream(
     initial_state["user_id"] = user_id
     initial_state["additional_info"] = additional_info or ""
     initial_state["cv_language"] = normalize_cv_language(cv_language)
+
+    # Name check BEFORE credits — being asked for your name costs nothing.
+    apply_candidate_names(initial_state, user_id, allow_name_fallback)
 
     reserved_amount = reserve_credits(user_id, initial_state["cv_language"])
     request_id = make_request_id()
@@ -668,7 +860,7 @@ async def optimize_manual_application_stream(
     """Streaming variant of /api/v1/optimize-manual — see optimize_application_stream."""
     logger.info("🚀 API Gateway received a STREAMING manual optimization request.")
 
-    manual_data = payload.model_dump(exclude={"job_description", "additional_info", "cv_language", "template_id"})
+    manual_data = payload.model_dump(exclude={"job_description", "additional_info", "cv_language", "template_id", "allow_name_fallback"})
     final_jd_text = payload.job_description or SHORT_SAMPLE_JD
 
     initial_state = make_initial_state("", final_jd_text, template_id=getattr(payload, "template_id", None))
@@ -677,6 +869,9 @@ async def optimize_manual_application_stream(
     initial_state["manual_cv_data"] = manual_data
     initial_state["additional_info"] = payload.additional_info or ""
     initial_state["cv_language"] = normalize_cv_language(payload.cv_language or "en")
+
+    # Name check BEFORE credits — being asked for your name costs nothing.
+    apply_candidate_names(initial_state, user_id, bool(payload.allow_name_fallback))
 
     reserved_amount = reserve_credits(user_id, initial_state["cv_language"])
     request_id = make_request_id()
@@ -705,7 +900,7 @@ async def optimize_manual_application(
     """
     logger.info("🚀 API Gateway received a MANUAL CV optimization request.")
 
-    manual_data = payload.model_dump(exclude={"job_description", "additional_info", "cv_language", "template_id"})
+    manual_data = payload.model_dump(exclude={"job_description", "additional_info", "cv_language", "template_id", "allow_name_fallback"})
     final_jd_text = payload.job_description or SHORT_SAMPLE_JD
 
     initial_state = make_initial_state("", final_jd_text, template_id=getattr(payload, "template_id", None))
@@ -714,6 +909,9 @@ async def optimize_manual_application(
     initial_state["manual_cv_data"] = manual_data
     initial_state["additional_info"] = payload.additional_info or ""
     initial_state["cv_language"] = normalize_cv_language(payload.cv_language or "en")
+
+    # Name check BEFORE credits — being asked for your name costs nothing.
+    apply_candidate_names(initial_state, user_id, bool(payload.allow_name_fallback))
 
     reserved_amount = reserve_credits(user_id, initial_state["cv_language"])
     request_id = make_request_id()
@@ -725,14 +923,14 @@ async def optimize_manual_application(
         result = graph.invoke(initial_state)
         logger.info("✅ Multi-agent execution phase completed.")
 
-        ready, error_detail = _pipeline_ready(result)
+        ready, error_code, error_detail = _pipeline_ready(result)
         if not ready:
-            logger.error(f"❌ Pipeline did not produce usable output (manual): {error_detail} | state error: {result.get('error')}")
+            logger.error(f"❌ Pipeline did not produce usable output (manual) [{error_code}]: {error_detail} | state error: {result.get('error')}")
             refund_credits(user_id, reserved_amount)
             flush_usage_event_async(result, input_mode="manual", pipeline_succeeded=False, user_id=user_id, error_message=error_detail)
             raise HTTPException(
                 status_code=status.HTTP_502_BAD_GATEWAY,
-                detail=error_detail,
+                detail={"code": error_code, "message": error_detail},
             )
 
         generated_paths = generate_documents_parallel(result, paths)

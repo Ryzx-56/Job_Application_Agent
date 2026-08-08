@@ -453,6 +453,14 @@ export const content = {
       dividerLabel: "or sign up with email",
       fullNameLabel: "Full name",
       fullNamePlaceholder: "Your full name",
+      // Two script-specific name fields. We never transliterate a name
+      // between scripts — the same name has several valid Arabic spellings
+      // and only its owner knows which is theirs.
+      nameEnLabel: "Name (English)",
+      nameEnPlaceholder: "e.g. Abdulmalik Hawsawi",
+      nameArLabel: "Name (Arabic)",
+      nameArPlaceholder: "مثال: عبدالملك حوساوي",
+      nameHelp: "Fill in at least one. We use each exactly as you write it, and never translate your name.",
       emailLabel: "Email address",
       emailPlaceholder: "you@example.com",
       passwordLabel: "Password",
@@ -509,6 +517,23 @@ export const content = {
         downloadCoverLetter: "Download Cover Letter",
         preview: "Preview",
         missingFields: "Upload a CV and paste a job description to generate.",
+        // Shown when the profile is missing the name for the requested
+        // output language. We ask instead of transliterating — a name has
+        // several valid spellings in another script and getting it wrong
+        // puts the wrong name on someone's CV.
+        namePrompt: {
+          titleAr: "What's your name in Arabic?",
+          titleEn: "What's your name in English?",
+          bodyAr:
+            "Your Arabic CV will show this name exactly as you type it. We don't translate names automatically, because the same name can be spelled several valid ways and only you know which is yours.",
+          bodyEn:
+            "Your English CV will show this name exactly as you type it. We don't translate names automatically, because only you know the spelling you use.",
+          suggested: "Found on your CV, edit if it isn't right.",
+          saveAndGenerate: "Save and generate",
+          skip: "Generate without it",
+          skipHint: "We'll convert your existing name automatically, which may spell it differently than you do.",
+          error: "Couldn't save your name. Please try again.",
+        },
         progress: {
           title: "Preparing your application",
           agentLabel: (n: number) => `Agent ${n}`,
@@ -557,6 +582,14 @@ export const content = {
         sub: "Manage your account and preferences.",
         accountSection: "Account",
         nameLabel: "Full name",
+        nameEnLabel: "Name (English)",
+        nameArLabel: "Name (Arabic)",
+        nameEnPlaceholder: "e.g. Abdulmalik Hawsawi",
+        nameArPlaceholder: "مثال: عبدالملك حوساوي",
+        nameHelp: "Used exactly as written on your generated CV. English CVs use the English name, Arabic CVs use the Arabic one. We never translate your name.",
+        nameSave: "Save name",
+        nameSaved: "Saved.",
+        nameAtLeastOne: "Enter your name in at least one language.",
         emailLabel: "Email",
         passwordSection: "Password",
         changePassword: "Change password",
@@ -1044,6 +1077,11 @@ export const content = {
       dividerLabel: "أو أنشئ حسابًا بالبريد الإلكتروني",
       fullNameLabel: "الاسم الكامل",
       fullNamePlaceholder: "اسمك الكامل",
+      nameEnLabel: "الاسم (بالإنجليزية)",
+      nameEnPlaceholder: "مثال: Abdulmalik Hawsawi",
+      nameArLabel: "الاسم (بالعربية)",
+      nameArPlaceholder: "مثال: عبدالملك حوساوي",
+      nameHelp: "أدخل واحدًا على الأقل. نستخدم كل اسم كما تكتبه تمامًا، ولا نترجم اسمك أبدًا.",
       emailLabel: "البريد الإلكتروني",
       emailPlaceholder: "you@example.com",
       passwordLabel: "كلمة المرور",
@@ -1100,6 +1138,19 @@ export const content = {
         downloadCoverLetter: "تنزيل خطاب التقديم",
         preview: "معاينة",
         missingFields: "ارفع سيرتك الذاتية والصق وصفًا وظيفيًا لإنشاء الطلب.",
+        namePrompt: {
+          titleAr: "ما اسمك بالعربية؟",
+          titleEn: "ما اسمك بالإنجليزية؟",
+          bodyAr:
+            "ستظهر سيرتك الذاتية العربية بهذا الاسم كما تكتبه تمامًا. نحن لا نترجم الأسماء تلقائيًا، لأن الاسم الواحد قد يُكتب بأكثر من صيغة صحيحة وأنت وحدك تعرف صيغتك.",
+          bodyEn:
+            "ستظهر سيرتك الذاتية الإنجليزية بهذا الاسم كما تكتبه تمامًا. نحن لا نترجم الأسماء تلقائيًا، لأنك وحدك تعرف الصيغة التي تستخدمها.",
+          suggested: "وجدناه في سيرتك الذاتية، عدّله إن لم يكن صحيحًا.",
+          saveAndGenerate: "حفظ ثم الإنشاء",
+          skip: "الإنشاء بدونه",
+          skipHint: "سنحوّل اسمك الحالي تلقائيًا، وقد تختلف طريقة كتابته عمّا تستخدمه.",
+          error: "تعذّر حفظ اسمك. حاول مرة أخرى.",
+        },
         progress: {
           title: "جارٍ تجهيز طلبك",
           agentLabel: (n: number) => `الوكيل ${n}`,
@@ -1148,6 +1199,14 @@ export const content = {
         sub: "إدارة حسابك وتفضيلاتك.",
         accountSection: "الحساب",
         nameLabel: "الاسم الكامل",
+        nameEnLabel: "الاسم (بالإنجليزية)",
+        nameArLabel: "الاسم (بالعربية)",
+        nameEnPlaceholder: "مثال: Abdulmalik Hawsawi",
+        nameArPlaceholder: "مثال: عبدالملك حوساوي",
+        nameHelp: "يُستخدم كما هو مكتوب تمامًا في سيرتك الذاتية. السير الإنجليزية تستخدم الاسم الإنجليزي، والعربية تستخدم الاسم العربي. لا نترجم اسمك أبدًا.",
+        nameSave: "حفظ الاسم",
+        nameSaved: "تم الحفظ.",
+        nameAtLeastOne: "أدخل اسمك بلغة واحدة على الأقل.",
         emailLabel: "البريد الإلكتروني",
         passwordSection: "كلمة المرور",
         changePassword: "تغيير كلمة المرور",

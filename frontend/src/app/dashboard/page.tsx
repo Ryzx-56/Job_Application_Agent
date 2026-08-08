@@ -31,6 +31,11 @@ import { createClient } from "@/lib/supabase/client";
 import { ManualCvForm, ManualCvData, emptyManualCvData } from "@/components/manual-cv-form";
 import { saveResumeResult } from "@/lib/supabase/resumes";
 import { fetchCredits } from "@/lib/supabase/credits";
+import { updateProfileNames, suggestNameFromCv } from "@/lib/supabase/profile-names";
+
+// Detects Arabic script. Used only to decide whether a manually-typed name
+// can be offered back as an Arabic suggestion — never to transform a name.
+const ARABIC_TEXT_RE = /[؀-ۿ]/;
 
 type TailoredBullet = {
   original: string;
@@ -142,6 +147,42 @@ export class InsufficientCreditsError extends Error {
   }
 }
 
+// Localized copy for the backend's machine-readable failure codes (see
+// ERROR_MESSAGES in backend/main.py). Every one of these outcomes is
+// refunded server-side before the error is emitted, so the copy says so
+// explicitly — a user who sees "generation failed" with no mention of their
+// credits reasonably assumes they were charged anyway.
+const GENERATION_ERROR_COPY: Record<string, { en: string; ar: string }> = {
+  unreadable_upload: {
+    en: "We couldn't read that file. Please upload your CV as a PDF or Word (.docx) file with selectable text.",
+    ar: "تعذّرت قراءة هذا الملف. يرجى رفع سيرتك الذاتية بصيغة PDF أو Word ‏(.docx) بنص قابل للتحديد.",
+  },
+  tailoring_failed: {
+    en: "We couldn't finish tailoring your CV, so you haven't been charged. Please try again.",
+    ar: "لم نتمكن من إكمال تخصيص سيرتك الذاتية، ولم يتم خصم أي رصيد. يرجى المحاولة مرة أخرى.",
+  },
+  fact_check_failed: {
+    en: "Fact check did not fully pass, so you haven't been charged. Please try again.",
+    ar: "لم يجتز التحقق من الحقائق بالكامل، ولم يتم خصم أي رصيد. يرجى المحاولة مرة أخرى.",
+  },
+  fact_check_unavailable: {
+    en: "Our fact checker is temporarily unavailable, so you haven't been charged. Please try again in a moment.",
+    ar: "خدمة التحقق من الحقائق غير متاحة مؤقتًا، ولم يتم خصم أي رصيد. يرجى المحاولة بعد قليل.",
+  },
+  wrong_language: {
+    en: "We couldn't generate your CV in Arabic this time, so you haven't been charged. Please try again.",
+    ar: "لم نتمكن من إنشاء سيرتك الذاتية بالعربية هذه المرة، ولم يتم خصم أي رصيد. يرجى المحاولة مرة أخرى.",
+  },
+  cv_unreadable: {
+    en: "We couldn't read your CV, so you haven't been charged. Please try again in a moment.",
+    ar: "تعذّرت قراءة سيرتك الذاتية، ولم يتم خصم أي رصيد. يرجى المحاولة بعد قليل.",
+  },
+  jd_unreadable: {
+    en: "We couldn't analyze that job description, so you haven't been charged. Please try again in a moment.",
+    ar: "تعذّر تحليل الوصف الوظيفي، ولم يتم خصم أي رصيد. يرجى المحاولة بعد قليل.",
+  },
+};
+
 async function throwForFailedResponse(res: Response): Promise<never> {
   if (res.status === 402) {
     const body = await res.json().catch(() => null);
@@ -191,7 +232,11 @@ function buildUploadFormData(
   jobDescription: string,
   additionalInfo: string,
   cvLanguage: "en" | "ar",
-  templateId: string
+  templateId: string,
+  // Explicit opt-in to the legacy name path — only ever true when the user
+  // clicked "Generate without it" on the name prompt. See
+  // apply_candidate_names() in backend/main.py.
+  allowNameFallback = false
 ): FormData {
   const formData = new FormData();
   formData.append("cv", cv);
@@ -199,6 +244,7 @@ function buildUploadFormData(
   formData.append("additional_info", additionalInfo);
   formData.append("cv_language", cvLanguage);
   formData.append("template_id", templateId);
+  formData.append("allow_name_fallback", String(allowNameFallback));
   return formData;
 }
 
@@ -211,7 +257,9 @@ function buildManualPayload(
   jobDescription: string,
   additionalInfo: string,
   cvLanguage: "en" | "ar",
-  templateId: string
+  templateId: string,
+  // See buildUploadFormData's note — same explicit legacy-path opt-in.
+  allowNameFallback = false
 ) {
   return {
     personal: {
@@ -261,6 +309,7 @@ function buildManualPayload(
     additional_info: additionalInfo || "",
     cv_language: cvLanguage,
     template_id: templateId,
+    allow_name_fallback: allowNameFallback,
   };
 }
 
@@ -364,6 +413,58 @@ export default function DashboardHomePage() {
   const additionalInfoRef = useRef<HTMLTextAreaElement>(null);
   const agentProgressRef = useRef<HTMLDivElement>(null);
 
+  // Name prompt — shown when the profile has no name in the language being
+  // generated. See the missing_profile_name branch in handleGenerate.
+  const [namePromptOpen, setNamePromptOpen] = useState(false);
+  const [namePromptField, setNamePromptField] = useState<"en" | "ar">("ar");
+  const [namePromptValue, setNamePromptValue] = useState("");
+  const [namePromptSuggested, setNamePromptSuggested] = useState(false);
+  const [namePromptSaving, setNamePromptSaving] = useState(false);
+  const [namePromptError, setNamePromptError] = useState("");
+  const nameCopy = copy.namePrompt;
+
+  async function handleSaveNameAndGenerate() {
+    const value = namePromptValue.trim();
+    if (!value) return;
+    setNamePromptError("");
+    setNamePromptSaving(true);
+    try {
+      await updateProfileNames(
+        namePromptField === "ar" ? { nameAr: value } : { nameEn: value }
+      );
+      setNamePromptOpen(false);
+      // Retry without the fallback flag — the name now exists, so the
+      // backend gate passes on this second attempt.
+      await handleGenerate(false);
+    } catch (err) {
+      console.error(err);
+      setNamePromptError(nameCopy.error);
+    } finally {
+      setNamePromptSaving(false);
+    }
+  }
+
+  // Scroll the agent list into view as soon as generation starts, so the
+  // user immediately sees Agent 1..8 running instead of having to scroll
+  // down to discover anything is happening — this matters most on mobile,
+  // where the generate button sits well above the progress list.
+  //
+  // This has to be an effect, not a call inside handleGenerate: the progress
+  // block only mounts once `generating` is true, so scrolling in the same
+  // tick as setGenerating(true) targets an element that doesn't exist yet.
+  // The rAF defers one more frame so AgentProgress has finished expanding
+  // and the element has its real height before we scroll to it.
+  useEffect(() => {
+    if (!generating) return;
+    const frame = requestAnimationFrame(() => {
+      agentProgressRef.current?.scrollIntoView({
+        behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth",
+        block: "start",
+      });
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [generating]);
+
   // Auto-grow the "Additional information" textarea as the user types, capped
   // at ADDITIONAL_INFO_MAX_HEIGHT (slightly taller than the job description
   // block below it). Past that cap it stays fixed size and scrolls.
@@ -411,7 +512,7 @@ export default function DashboardHomePage() {
     setClDownloadUrl(`${API_URL}/api/v1/download/cover-letter?token=${tokenParam}&request_id=${reqParam}`);
   }, [result, accessToken]);
 
-  async function handleGenerate() {
+  async function handleGenerate(allowNameFallback = false) {
     setError("");
     if (cvMode === "upload" && (!cvFile || !jobDescription.trim())) {
       setError(copy.missingFields);
@@ -421,13 +522,16 @@ export default function DashboardHomePage() {
       setError(copy.missingFields);
       return;
     }
+    setNamePromptOpen(false);
     setGenerating(true);
     setResult(null);
-    // Scroll the agent progress list into view immediately, before the
-    // first SSE `step` event even arrives — otherwise a user on a smaller
-    // screen (most Tarshih users are on mobile) has to manually scroll
-    // down to discover anything is happening at all.
-    agentProgressRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    // NOTE: the scroll-into-view used to happen right here, and it never
+    // worked. The whole progress block is rendered behind
+    // `{(generating || result) && ...}`, so at this point in the same tick
+    // React hasn't committed the re-render yet — agentProgressRef.current is
+    // still null and the call silently no-ops. That's why you had to scroll
+    // down by hand to see the agents running. It now lives in a useEffect
+    // keyed on `generating`, which runs after the element actually exists.
     try {
       const token = await getAccessToken();
       setAccessToken(token);
@@ -435,12 +539,14 @@ export default function DashboardHomePage() {
         cvMode === "upload"
           ? await runOptimizeStream(
               `${API_URL}/api/v1/optimize/stream`,
-              buildUploadFormData(cvFile!, jobDescription, additionalInfo, cvLanguage, templateId),
+              buildUploadFormData(cvFile!, jobDescription, additionalInfo, cvLanguage, templateId, allowNameFallback),
               token
             )
           : await runOptimizeStream(
               `${API_URL}/api/v1/optimize-manual/stream`,
-              JSON.stringify(buildManualPayload(manualData, jobDescription, additionalInfo, cvLanguage, templateId)),
+              JSON.stringify(
+                buildManualPayload(manualData, jobDescription, additionalInfo, cvLanguage, templateId, allowNameFallback)
+              ),
               token
             );
       const data = mapBackendResponse(raw);
@@ -457,8 +563,48 @@ export default function DashboardHomePage() {
       }).catch((err) => console.error("Failed to save resume to history:", err));
     } catch (err) {
       console.error(err);
+      const code = (err as Error & { code?: string })?.code;
+
+      // The profile has no name in the language being generated. Ask for it
+      // rather than transliterating — see apply_candidate_names() in
+      // backend/main.py. Nothing was charged: the check runs before credits
+      // are reserved.
+      if (code === "missing_profile_name") {
+        const field = (err as Error & { field?: string })?.field === "name_ar" ? "ar" : "en";
+        setNamePromptField(field);
+        setNamePromptValue("");
+        setNamePromptSuggested(false);
+        setNamePromptError("");
+        setNamePromptOpen(true);
+        // Pre-fill from the uploaded CV where we can — a CV already written
+        // in Arabic carries the candidate's own spelling, which beats any
+        // transliteration we could produce.
+        if (cvMode === "upload" && cvFile) {
+          suggestNameFromCv(cvFile)
+            .then((s) => {
+              const suggestion = field === "ar" ? s.nameAr : s.nameEn;
+              if (suggestion) {
+                setNamePromptValue(suggestion);
+                setNamePromptSuggested(true);
+              }
+            })
+            .catch(() => {});
+        } else if (cvMode === "manual" && field === "ar" && ARABIC_TEXT_RE.test(manualData.name)) {
+          // Manual entry: the typed name is already Arabic, offer it back.
+          setNamePromptValue(manualData.name);
+          setNamePromptSuggested(true);
+        }
+        return;
+      }
+
       if (err instanceof InsufficientCreditsError || (err as Error & { status?: number })?.status === 402) {
         setError((err as Error).message);
+      } else if (code && GENERATION_ERROR_COPY[code]) {
+        // Show what actually went wrong instead of the catch-all. The old
+        // branch swallowed every backend detail, which is why a failed run
+        // looked identical to a network blip and gave the user no signal
+        // that their credit had been returned.
+        setError(GENERATION_ERROR_COPY[code][lang === "ar" ? "ar" : "en"]);
       } else {
         setError(
           lang === "ar"
@@ -639,12 +785,80 @@ export default function DashboardHomePage() {
           </p>
         )}
 
+        {/* NAME PROMPT — appears only when the profile has no name in the
+            language being generated. Nothing has been charged at this
+            point: the backend checks before reserving credits. */}
+        {namePromptOpen && (
+          <div
+            role="group"
+            aria-label={namePromptField === "ar" ? nameCopy.titleAr : nameCopy.titleEn}
+            className="rounded-xl border border-blue-200 bg-blue-50/60 p-4 sm:p-5"
+          >
+            <h3 className="text-sm font-semibold text-slate-900">
+              {namePromptField === "ar" ? nameCopy.titleAr : nameCopy.titleEn}
+            </h3>
+            <p className="mt-1.5 text-xs leading-relaxed text-slate-600">
+              {namePromptField === "ar" ? nameCopy.bodyAr : nameCopy.bodyEn}
+            </p>
+
+            <input
+              type="text"
+              autoFocus
+              dir={namePromptField === "ar" ? "rtl" : "ltr"}
+              value={namePromptValue}
+              onChange={(e) => {
+                setNamePromptValue(e.target.value);
+                setNamePromptSuggested(false);
+              }}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && namePromptValue.trim() && !namePromptSaving) {
+                  e.preventDefault();
+                  handleSaveNameAndGenerate();
+                }
+              }}
+              placeholder={namePromptField === "ar" ? "عبدالملك حوساوي" : "Abdulmalik Hawsawi"}
+              className="mt-3 block w-full rounded-lg border border-slate-200 bg-white px-4 py-2.5 text-sm text-slate-900 placeholder:text-slate-400 outline-none transition-colors focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20"
+            />
+
+            {namePromptSuggested && (
+              <p className="mt-1.5 text-xs text-slate-500">{nameCopy.suggested}</p>
+            )}
+            {namePromptError && <p className="mt-1.5 text-xs text-rose-600">{namePromptError}</p>}
+
+            <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:items-center">
+              <DashboardButton
+                type="button"
+                size="sm"
+                disabled={!namePromptValue.trim() || namePromptSaving}
+                onClick={handleSaveNameAndGenerate}
+                className="w-full sm:w-auto"
+              >
+                {nameCopy.saveAndGenerate}
+              </DashboardButton>
+              <DashboardButton
+                type="button"
+                variant="outline"
+                size="sm"
+                disabled={namePromptSaving}
+                // Requirement 7's escape hatch: proceed on the legacy path.
+                // The backend records name_fallback_used so we can measure
+                // how many users end up here.
+                onClick={() => handleGenerate(true)}
+                className="w-full sm:w-auto"
+              >
+                {nameCopy.skip}
+              </DashboardButton>
+            </div>
+            <p className="mt-2 text-xs text-slate-500">{nameCopy.skipHint}</p>
+          </div>
+        )}
+
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
           <DashboardButton
             type="button"
             size="lg"
             disabled={!canGenerate}
-            onClick={handleGenerate}
+            onClick={() => handleGenerate()}
             className="w-full sm:w-auto"
           >
             <Sparkles className={`size-4 ${generating ? "animate-pulse" : ""}`} aria-hidden />

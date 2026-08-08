@@ -123,7 +123,14 @@ function SignupForm() {
 
   const ForwardIcon = isRTL ? ArrowLeft : ArrowRight;
 
-  const [fullName, setFullName] = useState("");
+  // Two script-specific name fields instead of one `fullName`. At least one
+  // must be filled, but NOT both — we deliberately never auto-generate the
+  // missing side: a name has several valid spellings in another script and
+  // only its owner knows which is theirs. If the other one is needed later
+  // (generating an Arabic CV with no Arabic name), the user is prompted
+  // then, pre-filled from their CV where possible.
+  const [nameEn, setNameEn] = useState("");
+  const [nameAr, setNameAr] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
@@ -151,7 +158,8 @@ function SignupForm() {
     setError("");
     setSuccess("");
 
-    if (!fullName.trim() || !email.trim() || !password || !confirmPassword) {
+    // At least one name, not both — see the useState note above.
+    if ((!nameEn.trim() && !nameAr.trim()) || !email.trim() || !password || !confirmPassword) {
       setError(t.signup.errors.missingFields);
       return;
     }
@@ -192,7 +200,15 @@ function SignupForm() {
         // (or equivalent) into profiles.location, so jobs_finder.py has a
         // fallback for whenever an uploaded CV doesn't yield a location.
         data: {
-          full_name: fullName.trim(),
+          // name_en / name_ar are the real fields — handle_new_user() reads
+          // them into profiles (see supabase/migrations/002_profile_names.sql).
+          // full_name is still written so anything already reading
+          // user_metadata.full_name keeps working; it gets whichever name
+          // matches the signup language, falling back to the other.
+          name_en: nameEn.trim() || null,
+          name_ar: nameAr.trim() || null,
+          full_name:
+            (lang === "ar" ? nameAr.trim() || nameEn.trim() : nameEn.trim() || nameAr.trim()),
           selected_plan: planSlug,
           preferred_language: lang,
           location: resolvedLocation,
@@ -283,20 +299,43 @@ function SignupForm() {
             </div>
 
             <form onSubmit={handleSubmit} noValidate className="space-y-5">
-              <div>
-                <label htmlFor="fullName" className="mb-2 block text-base font-medium text-zinc-300">
-                  {t.signup.fullNameLabel}
-                </label>
-                <input
-                  id="fullName"
-                  name="fullName"
-                  type="text"
-                  autoComplete="name"
-                  value={fullName}
-                  onChange={(e) => setFullName(e.target.value)}
-                  placeholder={t.signup.fullNamePlaceholder}
-                  className="block w-full rounded-lg border border-white/10 bg-white/5 px-4 py-3 text-base text-white placeholder:text-zinc-600 outline-none transition-colors focus:border-blue-400/60 focus:bg-white/[0.07] focus:ring-2 focus:ring-blue-400/30"
-                />
+              <div className="space-y-3">
+                <div>
+                  <label htmlFor="nameEn" className="mb-2 block text-base font-medium text-zinc-300">
+                    {t.signup.nameEnLabel}
+                  </label>
+                  <input
+                    id="nameEn"
+                    name="nameEn"
+                    type="text"
+                    autoComplete="name"
+                    dir="ltr"
+                    value={nameEn}
+                    onChange={(e) => setNameEn(e.target.value)}
+                    placeholder={t.signup.nameEnPlaceholder}
+                    className="block w-full rounded-lg border border-white/10 bg-white/5 px-4 py-3 text-base text-white placeholder:text-zinc-600 outline-none transition-colors focus:border-blue-400/60 focus:bg-white/[0.07] focus:ring-2 focus:ring-blue-400/30"
+                  />
+                </div>
+
+                <div>
+                  <label htmlFor="nameAr" className="mb-2 block text-base font-medium text-zinc-300">
+                    {t.signup.nameArLabel}
+                  </label>
+                  <input
+                    id="nameAr"
+                    name="nameAr"
+                    type="text"
+                    // Always RTL regardless of interface language — this
+                    // field only ever holds Arabic script.
+                    dir="rtl"
+                    value={nameAr}
+                    onChange={(e) => setNameAr(e.target.value)}
+                    placeholder={t.signup.nameArPlaceholder}
+                    className="block w-full rounded-lg border border-white/10 bg-white/5 px-4 py-3 text-base text-white placeholder:text-zinc-600 outline-none transition-colors focus:border-blue-400/60 focus:bg-white/[0.07] focus:ring-2 focus:ring-blue-400/30"
+                  />
+                </div>
+
+                <p className="text-xs leading-relaxed text-zinc-500">{t.signup.nameHelp}</p>
               </div>
 
               <div>

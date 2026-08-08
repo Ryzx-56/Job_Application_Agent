@@ -16,16 +16,63 @@ GEMINI_MODEL = "gemini-3.1-flash-lite"
 claude_client = anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
 CLAUDE_MODEL = "claude-sonnet-5"
 
-# Ceiling for the auto-escalation in generate_claude_text below. Sonnet 5
-# supports up to 128k output tokens on the synchronous Messages API, so this
-# is nowhere near the model's real limit — it's just a sane cap so a broken
-# prompt can't spin the retry loop into something huge/expensive.
+# Default ceiling for the auto-escalation in generate_claude_text below.
+# Sonnet 5 supports up to 128k output tokens on the synchronous Messages
+# API, so this is nowhere near the model's real limit — it's just a sane cap
+# so a broken prompt can't spin the retry loop into something huge.
+#
+# BUG FIX (Arabic generation): 8000 was a HARD ceiling for every caller, and
+# it is simply not enough for a full Arabic CV JSON. Arabic costs roughly
+# 2-3x more tokens than the same text in English under this tokenizer, so
+# tailoring_engine's 6000-token budget escalated once to 8000, hit this
+# ceiling, came back truncated a second time, and returned invalid JSON —
+# which the caller then retried from scratch. Every Arabic run therefore
+# burned 4 long Claude calls and still failed. Callers that legitimately
+# need more can now pass max_tokens_ceiling explicitly.
 _CLAUDE_MAX_TOKENS_CEILING = 8000
+
+# Hard cap on how many times ONE generate_claude_text call is allowed to
+# double its budget and try again after a truncated/empty response. Separate
+# from max_retries (which also covers transient 429/5xx errors) so a prompt
+# that keeps overflowing can't quietly consume the entire retry allowance in
+# ever-larger — and ever more expensive — calls. Two escalations means a
+# worst case of 3 billed responses instead of 5.
+_CLAUDE_MAX_TRUNCATION_RETRIES = 2
 
 # Shared config for Gemini JSON responses
 gemini_json_config = types.GenerateContentConfig(
     response_mime_type="application/json"
 )
+
+
+class ClaudeTruncationError(RuntimeError):
+    """
+    Raised when a response is still cut off after the truncation escalation
+    above has run out of headroom. Distinct from a transient API error and
+    from malformed model output: retrying the identical prompt cannot fix
+    it, so callers should give up rather than spend another full generation
+    discovering the same thing. This is what stops an over-budget Arabic run
+    from silently retrying itself into a large bill.
+    """
+
+
+# Output-budget presets, by CV language. Arabic needs far more room for the
+# same content — see _CLAUDE_MAX_TOKENS_CEILING's note. Sized from the real
+# failing run: an English CV JSON finishes comfortably inside ~4k output
+# tokens, the same CV in Arabic did not fit in 8k.
+CLAUDE_BUDGETS = {
+    "en": {"tailoring": 6000,  "tailoring_ceiling": 12000,
+           "purity": 6000,     "purity_ceiling": 12000},
+    "ar": {"tailoring": 14000, "tailoring_ceiling": 32000,
+           "purity": 14000,    "purity_ceiling": 32000},
+}
+
+
+def claude_budget(cv_language: str, key: str) -> int:
+    """Look up an output-token budget for this CV language, defaulting to
+    the English preset for any unrecognized language."""
+    lang = "ar" if str(cv_language or "en").lower().startswith("ar") else "en"
+    return CLAUDE_BUDGETS[lang][key]
 
 
 def _retry_delay_seconds(exc: Exception, attempt: int) -> float:
@@ -82,10 +129,28 @@ def _is_retryable_anthropic_error(exc: Exception) -> bool:
     return isinstance(exc, anthropic.APIConnectionError)
 
 
-def generate_claude_text(prompt: str, max_tokens: int = 3000, max_retries: int = 5, on_usage=None, system: str | None = None) -> str:
+def generate_claude_text(
+    prompt: str,
+    max_tokens: int = 3000,
+    max_retries: int = 5,
+    on_usage=None,
+    system: str | None = None,
+    max_tokens_ceiling: int | None = None,
+) -> str:
     """
     Call Claude and return plain text. Retries on rate limits / transient
     server errors with backoff.
+
+    max_tokens_ceiling: how far the truncation auto-escalation below is
+    allowed to raise max_tokens. Defaults to _CLAUDE_MAX_TOKENS_CEILING.
+    Arabic callers pass a higher value — see that constant's docstring for
+    why a single global ceiling made Arabic generation impossible.
+
+    Raises ClaudeTruncationError if the response is still truncated once the
+    ceiling is reached. Previously this returned the truncated text and left
+    every caller to fail on json.loads() a moment later, which read as a
+    "bad model output" and triggered a full, expensive regeneration of a
+    request that was only ever going to overflow again.
 
     on_usage: optional callback `fn(input_tokens: int, output_tokens: int)`.
     If provided, it's called once for every response actually received from
@@ -135,6 +200,8 @@ def generate_claude_text(prompt: str, max_tokens: int = 3000, max_retries: int =
     """
     last_error = None
     current_max_tokens = max_tokens
+    ceiling = max(max_tokens, max_tokens_ceiling or _CLAUDE_MAX_TOKENS_CEILING)
+    truncation_retries = 0
 
     for attempt in range(1, max_retries + 1):
         try:
@@ -191,16 +258,40 @@ def generate_claude_text(prompt: str, max_tokens: int = 3000, max_retries: int =
             truncated = response.stop_reason == "max_tokens"
             empty = not text
 
-            if (truncated or empty) and attempt < max_retries and current_max_tokens < _CLAUDE_MAX_TOKENS_CEILING:
+            if truncated or empty:
                 reason = "truncated by max_tokens" if truncated else "empty (thinking used the whole budget)"
-                current_max_tokens = min(current_max_tokens * 2, _CLAUDE_MAX_TOKENS_CEILING)
-                print(
-                    f"[Claude] Response {reason} at max_tokens={current_max_tokens // 2}. "
-                    f"Retrying with max_tokens={current_max_tokens} (attempt {attempt}/{max_retries})..."
+                can_escalate = (
+                    attempt < max_retries
+                    and truncation_retries < _CLAUDE_MAX_TRUNCATION_RETRIES
+                    and current_max_tokens < ceiling
                 )
-                continue
+                if can_escalate:
+                    truncation_retries += 1
+                    previous_max_tokens = current_max_tokens
+                    current_max_tokens = min(current_max_tokens * 2, ceiling)
+                    # NOTE: this used to report the failing budget as
+                    # `current_max_tokens // 2`, computed AFTER the min()
+                    # clamp — so a 6000-token call that clamped to 8000 was
+                    # logged as having failed at 4000, a number no caller
+                    # ever passed. That made the real Arabic failure point
+                    # impossible to find in the logs.
+                    print(
+                        f"[Claude] Response {reason} at max_tokens={previous_max_tokens}. "
+                        f"Retrying with max_tokens={current_max_tokens} "
+                        f"(truncation retry {truncation_retries}/{_CLAUDE_MAX_TRUNCATION_RETRIES})..."
+                    )
+                    continue
+
+                # Out of headroom. Fail loudly instead of handing back a
+                # half-finished string — see the docstring.
+                raise ClaudeTruncationError(
+                    f"Claude response {reason} and could not be completed within "
+                    f"max_tokens={current_max_tokens} (ceiling={ceiling})."
+                )
 
             return text
+        except ClaudeTruncationError:
+            raise
         except Exception as e:
             last_error = e
             if _is_retryable_anthropic_error(e) and attempt < max_retries:

@@ -29,8 +29,9 @@ except ImportError:
     _ARABIC_SHAPING_AVAILABLE = False
 
 from utils.template_registry import resolve_template_path, DEFAULT_TEMPLATE_ID
-from utils.cv_context import build_cv_context
+from utils.cv_context import build_cv_context, resolve_candidate_name
 from utils.fit_to_page import render_html_fit_to_page
+from utils.arabic_localizer import to_eastern_arabic_numerals, translate_date_terms
 
 OUTPUT_DIR = "outputs"
 os.makedirs(OUTPUT_DIR, exist_ok=True)
@@ -51,27 +52,13 @@ os.makedirs(OUTPUT_DIR, exist_ok=True)
 # won't do "January" -> "يناير" or "5" -> "٥" on its own.
 # ---------------------------------------------------------------------------
 
-_EASTERN_ARABIC_DIGITS = str.maketrans("0123456789", "٠١٢٣٤٥٦٧٨٩")
-
-_MONTH_AR = {
-    "january": "يناير", "february": "فبراير", "march": "مارس", "april": "أبريل",
-    "may": "مايو", "june": "يونيو", "july": "يوليو", "august": "أغسطس",
-    "september": "سبتمبر", "october": "أكتوبر", "november": "نوفمبر", "december": "ديسمبر",
-    "present": "حتى الآن", "current": "حتى الآن", "ongoing": "حتى الآن",
-}
-
-
-def _to_eastern_arabic_numerals(text: str) -> str:
-    return text.translate(_EASTERN_ARABIC_DIGITS)
-
-
-def _translate_date_terms(date_str: str) -> str:
-    if not date_str:
-        return date_str
-    result = str(date_str)
-    for en, ar in _MONTH_AR.items():
-        result = re.sub(rf"\b{en}\b", ar, result, flags=re.IGNORECASE)
-    return result
+# MOVED to utils/arabic_localizer.py so utils/cv_context.py can apply the
+# same translation for BOTH generators. The DOCX path never had this, so an
+# Arabic CV exported as .docx kept English month names while the PDF of the
+# identical CV didn't. Re-exported under the old private names so the rest
+# of this file (and render_cover_letter_pdf's date line) is unchanged.
+_to_eastern_arabic_numerals = to_eastern_arabic_numerals
+_translate_date_terms = translate_date_terms
 
 
 def _arabicize_prose(context: dict) -> None:
@@ -280,7 +267,11 @@ def render_cover_letter_pdf(state: dict, output_path: str) -> str:
     personal = facts.get("personal", {}) or {}
     wf = state.get("weight_factors", {}) or {}
 
-    name = personal.get("name") or ("اسم المتقدم" if is_arabic else "Candidate Name")
+    # Verbatim from profiles.name_ar / profiles.name_en, exactly like the CV
+    # header — see resolve_candidate_name. Previously this took the parsed
+    # facts_json name, so on an Arabic run the letter could sign off with a
+    # different spelling than the CV it accompanied.
+    name = resolve_candidate_name(state) or ("اسم المتقدم" if is_arabic else "Candidate Name")
     story.append(Paragraph(f"<b>{body(name)}</b>", styles['CL_Bold']))
     if personal.get("location"):
         story.append(Paragraph(body(personal["location"]), styles['CL_Body']))

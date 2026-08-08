@@ -9,6 +9,7 @@ import { createClient } from "@/lib/supabase/client";
 import { passwordErrorKey } from "@/lib/auth-errors";
 import { fetchCredits, Tier } from "@/lib/supabase/credits";
 import { updateLocation } from "@/lib/supabase/location";
+import { fetchProfileNames, updateProfileNames } from "@/lib/supabase/profile-names";
 import { getCountryList, getCitiesForCountry, formatLocation, parseLocation, OTHER_CITY_VALUE, CountryOption, CityOption } from "@/lib/countries";
 import { SearchableSelect } from "@/components/searchable-select";
 import { LegalModal } from "@/components/legal-modal";
@@ -35,6 +36,13 @@ export default function SettingsPage() {
   const [locationError, setLocationError] = useState("");
   const initialLocationRef = useRef<string>("");
   const [openDoc, setOpenDoc] = useState<LegalDocKey | null>(null);
+
+  // Both name scripts, editable any time — not just at registration.
+  const [nameEn, setNameEn] = useState("");
+  const [nameAr, setNameAr] = useState("");
+  const [namesSaving, setNamesSaving] = useState(false);
+  const [namesJustSaved, setNamesJustSaved] = useState(false);
+  const [namesError, setNamesError] = useState("");
 
   const countryOptions: CountryOption[] = useMemo(() => getCountryList(isAr ? "ar" : "en"), [isAr]);
   const cityOptions: CityOption[] = useMemo(
@@ -63,7 +71,36 @@ export default function SettingsPage() {
         }
       })
       .catch((err) => console.error("fetchCredits failed:", err));
+
+    fetchProfileNames()
+      .then((n) => {
+        setNameEn(n.nameEn ?? "");
+        setNameAr(n.nameAr ?? "");
+      })
+      .catch((err) => console.error("fetchProfileNames failed:", err));
   }, []);
+
+  async function handleSaveNames() {
+    // Mirrors the backend rule: at least one, never both required.
+    if (!nameEn.trim() && !nameAr.trim()) {
+      setNamesError(copy.nameAtLeastOne);
+      return;
+    }
+    setNamesError("");
+    setNamesSaving(true);
+    try {
+      // Both sent explicitly (empty string, not null) so clearing a field
+      // here actually clears it — updateProfileNames treats null/undefined
+      // as "leave unchanged".
+      await updateProfileNames({ nameEn: nameEn.trim(), nameAr: nameAr.trim() });
+      setNamesJustSaved(true);
+      setTimeout(() => setNamesJustSaved(false), 2500);
+    } catch (err) {
+      setNamesError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setNamesSaving(false);
+    }
+  }
 
   async function handleSaveLocation() {
     if (!city) return;
@@ -104,7 +141,10 @@ export default function SettingsPage() {
     setTimeout(() => setLanguageJustSaved(false), 2500);
   }
 
-  const fullName = (user?.user_metadata?.full_name as string | undefined) ?? "";
+  // full_name is no longer read here — the Account section now edits
+  // profiles.name_en / name_ar directly (see handleSaveNames). The auth
+  // metadata field still exists and is still written at signup for the
+  // dashboard header, it just isn't the source of truth for CV output.
   const email = user?.email ?? "";
 
   const [showPasswordForm, setShowPasswordForm] = useState(false);
@@ -180,14 +220,57 @@ export default function SettingsPage() {
       <section className="space-y-5 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-7">
         <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500">{copy.accountSection}</h2>
 
-        <div>
-          <label className="mb-1.5 block text-sm font-medium text-slate-700">{copy.nameLabel}</label>
-          <input
-            type="text"
-            value={fullName}
-            readOnly
-            className="block w-full cursor-not-allowed rounded-lg border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm text-slate-600"
-          />
+        {/* Two editable name fields, one per script. Previously this was a
+            single read-only full_name. Editable here (not only at signup)
+            because an Arabic CV needs the Arabic spelling and plenty of
+            accounts were created before that field existed. */}
+        <div className="space-y-4">
+          <div>
+            <label htmlFor="settingsNameEn" className="mb-1.5 block text-sm font-medium text-slate-700">
+              {copy.nameEnLabel}
+            </label>
+            <input
+              id="settingsNameEn"
+              type="text"
+              dir="ltr"
+              value={nameEn}
+              onChange={(e) => setNameEn(e.target.value)}
+              placeholder={copy.nameEnPlaceholder}
+              className="block w-full rounded-lg border border-slate-200 bg-white px-4 py-2.5 text-sm text-slate-900 outline-none transition-colors focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20"
+            />
+          </div>
+
+          <div>
+            <label htmlFor="settingsNameAr" className="mb-1.5 block text-sm font-medium text-slate-700">
+              {copy.nameArLabel}
+            </label>
+            <input
+              id="settingsNameAr"
+              type="text"
+              dir="rtl"
+              value={nameAr}
+              onChange={(e) => setNameAr(e.target.value)}
+              placeholder={copy.nameArPlaceholder}
+              className="block w-full rounded-lg border border-slate-200 bg-white px-4 py-2.5 text-sm text-slate-900 outline-none transition-colors focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20"
+            />
+          </div>
+
+          <p className="text-xs leading-relaxed text-slate-500">{copy.nameHelp}</p>
+
+          {namesError && <p className="text-xs text-red-600">{namesError}</p>}
+
+          <div className="flex items-center gap-3">
+            <DashboardButton
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={handleSaveNames}
+              disabled={namesSaving || (!nameEn.trim() && !nameAr.trim())}
+            >
+              {copy.nameSave}
+            </DashboardButton>
+            {namesJustSaved && <span className="text-xs text-emerald-600">{copy.nameSaved}</span>}
+          </div>
         </div>
 
         <div>

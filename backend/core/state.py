@@ -20,6 +20,32 @@ class AgentState(TypedDict):
     raw_cv_text:             str
     job_description:         str
 
+    # BUG FIX (silent state-drop): LangGraph builds its channels from THIS
+    # TypedDict's annotations and silently discards any key that isn't
+    # declared here — both on input (map_input logs a warning and drops it)
+    # and on every node's return value (_get_updates filters to schema keys).
+    # `user_id` was being set on initial_state in main.py but was never
+    # declared, so `state.get("user_id")` inside jobs_finder.py was ALWAYS
+    # None and the Supabase profile-location fallback could never run — the
+    # user's saved location was silently ignored on every single request.
+    # Same class of bug hit tailored_experience_titles, hit_max_retries and
+    # every usage_* counter below: nodes returned them, LangGraph dropped
+    # them, nothing errored. Anything a node writes or reads MUST be
+    # declared here.
+    user_id:                 Optional[str]
+
+    # ── CANDIDATE NAME (never machine-translated) ───────────────────────
+    # Read from profiles.name_en / profiles.name_ar in main.py and used
+    # VERBATIM by utils/cv_context.py for the matching output language. A
+    # name is not a translation problem — see core/profile_names.py.
+    # name_fallback_used records the legacy path: the required field was
+    # empty and the user chose to generate anyway, so the name went through
+    # the Arabic glossary after all. Tracked so we can see how many users
+    # are still hitting the old behavior.
+    profile_name_en:         Optional[str]
+    profile_name_ar:         Optional[str]
+    name_fallback_used:      bool
+
     # ── CV INPUT MODE ────────────────────────────────────────
     # "upload" (PDF parsed by cv_parser) or "manual" (form data
     # parsed by manual_cv_parser) — orchestrator routes on this.
@@ -57,10 +83,27 @@ class AgentState(TypedDict):
     tailored_projects:       List[dict]   # [{"name": str, "display_name": str, "tailored_description": str}]
     tailored_volunteer_work: List[str]
     tailored_skills:         dict         # cleaned/filtered version of facts_json["skills"]
+    # [{"company": str, "title": str}] — the job title localized/translated
+    # by Agent 3. Read back by utils/cv_context.py's title_lookup. Was
+    # missing from this schema, so on an Arabic CV the job title silently
+    # stayed in the source CV's language while the bullets under it were
+    # translated. See the note on user_id above.
+    tailored_experience_titles: List[dict]
+    # {latin_term: arabic_term} built once per Arabic run by
+    # tailoring_engine.py and reused by utils/cv_context.py (to localize the
+    # raw facts_json fields the CV renders — employer, university, degree,
+    # certifications, city) and agents/document_generator.py (the cover
+    # letter). Shared so a term can't be translated one way on the CV and a
+    # different way in the letter. Always {} for English CVs.
+    arabic_glossary:            dict
 
     # ── FACT CHECK LOOP (Gemini) ────────────────────────────
     hallucination_flags:     List[dict]
     fact_check_passed:       bool
+    # True only when the fact checker itself couldn't run (Gemini down /
+    # quota exhausted), as opposed to running and rejecting content. Kept
+    # separate so the user-facing error can say which one actually happened.
+    fact_check_unavailable:  bool
 
     # ── AGENT 4 OUTPUT ──────────────────────────────────────
     cover_letter_text:       str
@@ -84,3 +127,27 @@ class AgentState(TypedDict):
     tailoring_attempts:      int
     error:                   Annotated[Optional[str], merge_errors]
     current_step:            str
+    # Set by any node whose failure makes the rest of the pipeline pointless
+    # (currently: tailoring_engine exhausting its retries, and the fact
+    # checker rejecting everything). orchestrator.py routes straight to END
+    # when this is set instead of fanning out to the remaining agents, so a
+    # dead run stops costing Claude/Tavily calls the moment it's known dead.
+    # A short machine-readable code, NOT a message — main.py maps it to the
+    # user-facing text so wording lives in one place.
+    fatal_error_code:        Optional[str]
+    hit_max_retries:         bool
+
+    # ── USAGE / COST INSTRUMENTATION ────────────────────────
+    # Written cumulatively by tailoring_engine.py and fact_checker.py, read
+    # by core/usage_tracker.py's UsageEvent.from_pipeline_result. Every one
+    # of these was being dropped by LangGraph before being declared here,
+    # so every cv_generation_events row logged 0 tokens and 0 calls.
+    usage_tailoring_calls:            int
+    usage_tailoring_input_tokens:     int
+    usage_tailoring_output_tokens:    int
+    usage_arabic_purity_fired:        bool
+    usage_arabic_purity_still_bad:    bool
+    usage_bullets_regenerated_count:  int
+    usage_regen_calls:                int
+    usage_regen_input_tokens:         int
+    usage_regen_output_tokens:        int

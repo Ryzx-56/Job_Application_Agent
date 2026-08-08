@@ -4,8 +4,15 @@ import re
 from loguru import logger
 from pydantic import ValidationError
 from core.state import AgentState
-from core.llm_config import generate_claude_text
+from core.llm_config import generate_claude_text, claude_budget, ClaudeTruncationError
 from schemas.tailored_cv_schema import TailoredCV
+from utils.arabic_localizer import (
+    build_glossary,
+    find_latin_terms,
+    iter_strings,
+    localize_structure,
+    whole_latin_values,
+)
 
 # Split into a static system block (identical on every single call —
 # English or Arabic, retry or first attempt — so it's what actually
@@ -37,6 +44,35 @@ WHAT YOU SHOULD DO — BE BOLD HERE, THIS IS WHERE MOST OF YOUR VALUE IS:
     identically to the original is a failure of this task even if it's technically accurate.
     Rule of thumb: if more than a couple of words in a row still match the original verbatim
     (excluding proper nouns, numbers, and tool/skill names), rewrite it again.
+  - LEAD WITH SCOPE OR OUTCOME, NOT THE TASK. Restructure each bullet so the first few words
+    say what the candidate OWNED or what CHANGED, then how. The raw fact usually arrives as a
+    flat activity ("Managed reception operations, ticket sales, and visitor check-in"); the
+    tailored version should open on ownership and scale that is already implicit in that fact
+    ("Ran front-of-house operations end to end for a high-traffic museum, covering ticketing,
+    visitor check-in, and daily reception flow"). Nothing new was asserted there — the same
+    facts were reordered and framed. Do this on EVERY bullet.
+  - UPGRADE THE WHOLE SENTENCE, NOT JUST THE VERB. All four of these are phrasing changes, not
+    new claims, and all four are explicitly wanted:
+      * VERBS — "managed" -> "owned"/"ran"/"directed"; "helped with" -> "drove"/"supported
+        delivery of"; "worked on" -> the specific action actually performed.
+      * ADJECTIVES — characterize the work truthfully: "high-traffic", "customer-facing",
+        "end-to-end", "day-to-day", "hands-on", "cross-functional", "production". Use them
+        where the facts genuinely support them.
+      * ADVERBS — describe how the work was done: "consistently", "directly", "proactively",
+        "independently", "closely". These add texture without adding facts.
+      * NOUNS — name things the way a professional CV would: "customers" -> "clients" /
+        "visitors" / "stakeholders"; "reception work" -> "front-of-house operations";
+        "fixing bugs" -> "defect resolution".
+    The rule for all of these is identical: a word that RENAMES or CHARACTERIZES something
+    already in FACTS_JSON is allowed. A word that introduces a number, a name, a tool, a team,
+    a date, or an outcome that isn't in FACTS_JSON is not.
+  - CALIBRATE THE SIZE OF THE CHANGE. Compare your "tailored" text against "original" before
+    you return it. If a reader who saw both would call the second one "the same sentence,
+    lightly edited", it is not finished. The intended distance is "clearly the same facts,
+    obviously rewritten by a different and better writer."
+  - What you must NOT do while being bold: add a number, a team size, a percentage, a duration,
+    a tool, a client, or an outcome that is not already in FACTS_JSON or RAW_ADDITIONAL_INFO.
+    Scope and framing are yours to shape. Facts are not.
   - Reframe implementation details as business outcomes and strategic decisions wherever
     that framing is honestly supported. "Set up a payment gateway" can become "owned
     payment infrastructure decisions to enable monetization" — same fact, elevated framing.
@@ -210,38 +246,80 @@ Never use em dashes (—) or en dashes as punctuation. Use a comma or write two 
 Return ONLY the corrected bullet text, nothing else.
 """
 
-# Second-pass corrective prompt — only used when an Arabic generation still
-# has leftover Latin-script words after the first pass (see
-# _find_latin_leaks / _enforce_arabic_purity below). Sends back exactly the
-# JSON that was produced plus a pointer to which fields still have Latin
-# text, and asks for ONLY a translation fix — not a full regeneration — so
-# it can't accidentally re-introduce a fabrication the first pass avoided.
-ARABIC_PURITY_FIX_PROMPT = """
-You previously produced this JSON for an Arabic-language CV, but some fields
-still contain English/Latin-script words that must not be there.
-
-RULE: every string value in this JSON must be fully Modern Standard Arabic.
-Technical terms, tool names, and framework names must be translated into
-Arabic (e.g. "بايثون" not "Python", "واجهة برمجة التطبيقات" not "API").
-Do not translate or alter anything under the "original" key of any bullet —
-leave those exactly as they are. Do not add, remove, or invent any new
-information — this is a translation pass only, not a rewrite.
-
-FIELDS STILL CONTAINING LATIN TEXT: {offending_fields}
-
-CURRENT JSON:
-{current_json}
-
-Return the corrected JSON in the exact same structure, with every remaining
-Latin word replaced by its Arabic equivalent. Return ONLY the JSON, no
-markdown, no explanation.
-"""
-
 _SKILL_CATEGORIES = ("languages", "frameworks", "tools", "soft_skills", "other")
 
-# Matches any run of Latin letters. Used only for the Arabic-purity check —
-# never applied to English-mode output.
-_LATIN_WORD_RE = re.compile(r"[A-Za-z]{2,}")
+# facts_json fields that get RENDERED on the CV but that no agent
+# translates — employer names, universities, degree titles, certifications,
+# the candidate's city. These were the largest remaining source of English
+# on an "Arabic" CV: the bullets came back in Arabic while the company and
+# university sitting directly above them stayed in English. Their terms are
+# folded into the same glossary so the whole document localizes together.
+# Deliberately EXCLUDES personal.email / linkedin / github / phone —
+# identifiers must render byte-for-byte.
+def _facts_strings_for_glossary(facts_json: dict, include_name: bool = False) -> list[str]:
+    facts_json = facts_json or {}
+    personal = facts_json.get("personal", {}) or {}
+    out: list[str] = []
+
+    # personal.name is EXCLUDED BY DEFAULT.
+    #
+    # A name is not a translation problem. "Abdulmalik Hawsawi" has several
+    # defensible Arabic spellings and only its owner knows which is theirs —
+    # machine-transliterating it produced names that were simply wrong. The
+    # name normally comes verbatim from profiles.name_ar / profiles.name_en
+    # (see core/profile_names.py), on the same "preserve as-is" path that
+    # already protects email, phone, LinkedIn and GitHub.
+    #
+    # include_name is the ONE exception: the user had no name saved for this
+    # language and explicitly chose "generate without it". That's the legacy
+    # path, and on it a transliterated name still beats a Latin name sitting
+    # alone on an otherwise fully-Arabic CV. main.py sets name_fallback_used
+    # in exactly that case, and nowhere else.
+    if include_name and personal.get("name"):
+        out.append(str(personal["name"]))
+    if personal.get("location"):
+        out.append(str(personal["location"]))
+
+    for edu in facts_json.get("education", []) or []:
+        for key in ("institution", "degree"):
+            if edu.get(key):
+                out.append(str(edu[key]))
+        for key in ("distinctions", "relevant_coursework"):
+            out.extend(str(item) for item in (edu.get(key) or []) if item)
+
+    for exp in facts_json.get("experience", []) or []:
+        for key in ("company", "title"):
+            if exp.get(key):
+                out.append(str(exp[key]))
+        # cv_parser appends a venue/location sub-line onto `company`
+        # ("TeamLab - Borderless Museum, Jeddah"). A tailored bullet
+        # naturally refers to just the employer ("TeamLab"), which the full
+        # composite string doesn't cover — so seed the bare name too, or the
+        # employer stays in Latin everywhere it's mentioned in prose.
+        company = str(exp.get("company") or "")
+        for separator in (" - ", " — ", " – ", ","):
+            if separator in company:
+                head = company.split(separator)[0].strip()
+                if head:
+                    out.append(head)
+                break
+
+    out.extend(str(cert) for cert in (facts_json.get("certifications", []) or []) if cert)
+    out.extend(str(v) for v in (facts_json.get("volunteer_work", []) or []) if v)
+    if facts_json.get("summary"):
+        out.append(str(facts_json["summary"]))
+
+    for proj in facts_json.get("projects", []) or []:
+        for key in ("name", "description"):
+            if proj.get(key):
+                out.append(str(proj[key]))
+        out.extend(str(t) for t in (proj.get("tech_stack") or []) if t)
+
+    for category in (facts_json.get("skills", {}) or {}).values():
+        if isinstance(category, list):
+            out.extend(str(s) for s in category if s)
+
+    return out
 
 
 def _build_language_instruction(cv_language: str) -> str:
@@ -265,45 +343,6 @@ def _strip_dashes(text: str) -> str:
     return text.replace(" — ", ", ").replace(" – ", ", ").replace("—", ",").replace("–", ",")
 
 
-def _find_latin_leaks(core_data: dict) -> list[str]:
-    """
-    Scans every generated field (except bullets[].original, which must stay
-    untranslated on purpose) for leftover Latin-script words. Returns the
-    list of field labels that still have Latin text, e.g.
-    ["professional_summary", "bullets[2].tailored", "tailored_skills.tools"].
-    Empty list means the output is clean.
-    """
-    offenders = []
-
-    if _LATIN_WORD_RE.search(core_data.get("professional_summary") or ""):
-        offenders.append("professional_summary")
-
-    for i, b in enumerate(core_data.get("bullets", [])):
-        if _LATIN_WORD_RE.search(b.get("tailored") or ""):
-            offenders.append(f"bullets[{i}].tailored")
-
-    for i, p in enumerate(core_data.get("tailored_projects", [])):
-        if _LATIN_WORD_RE.search(p.get("display_name") or "") or _LATIN_WORD_RE.search(p.get("tailored_description") or ""):
-            offenders.append(f"tailored_projects[{i}]")
-        if any(_LATIN_WORD_RE.search(str(t)) for t in (p.get("tech_stack") or [])):
-            offenders.append(f"tailored_projects[{i}].tech_stack")
-
-    for i, v in enumerate(core_data.get("tailored_volunteer_work", [])):
-        if _LATIN_WORD_RE.search(v or ""):
-            offenders.append(f"tailored_volunteer_work[{i}]")
-
-    for i, t in enumerate(core_data.get("tailored_experience_titles", [])):
-        if _LATIN_WORD_RE.search(t.get("title") or ""):
-            offenders.append(f"tailored_experience_titles[{i}].title")
-
-    tailored_skills = core_data.get("tailored_skills", {}) or {}
-    for cat, items in tailored_skills.items():
-        if isinstance(items, list) and any(_LATIN_WORD_RE.search(str(item)) for item in items):
-            offenders.append(f"tailored_skills.{cat}")
-
-    return offenders
-
-
 def _make_usage_recorder(usage_counters: dict):
     """
     Returns an on_usage callback for generate_claude_text that accumulates
@@ -320,60 +359,84 @@ def _make_usage_recorder(usage_counters: dict):
     return _record
 
 
-def _enforce_arabic_purity(core_data: dict, usage_counters: dict) -> dict:
+def _enforce_arabic_purity(
+    core_data: dict,
+    usage_counters: dict,
+    cv_language: str = "ar",
+    facts_json: dict | None = None,
+    include_name: bool = False,
+) -> tuple[dict, dict]:
     """
-    If the initial generation still has Latin-script leaks, sends ONE
-    corrective pass asking Claude to translate only the offending fields,
-    then re-parses and re-validates the result. If the fix call itself
-    fails or still doesn't come back clean, logs it and returns the best
-    version available rather than blocking the whole pipeline — same
-    best-effort philosophy as the rest of this file.
+    Localizes any leftover Latin text in an Arabic CV, and returns
+    (localized_core_data, glossary).
 
-    usage_counters is mutated in place: "arabic_purity_fired" is set True
-    the moment we decide to run the corrective pass (regardless of whether
-    it ends up succeeding), and "arabic_purity_still_bad" reflects whether
-    leaks remained afterward.
+    REWRITTEN: this used to re-send the entire tailored JSON and ask for a
+    fully translated copy back. See utils/arabic_localizer.py's module
+    docstring for why that was replaced — in short it was expensive enough
+    to truncate (so the pass was billed and then discarded), it could
+    reshape the JSON or reword an already-fact-checked claim, and it only
+    ever covered the GENERATED fields while employer names, universities,
+    degrees and certifications rendered on the same page stayed in English.
+
+    Now: collect the distinct Latin terms from the generated fields AND from
+    the raw facts fields that get rendered, translate them once as a small
+    term glossary, and substitute deterministically. Structure cannot change,
+    no claim can be reworded, and the returned glossary is reused by
+    cv_context.py (for the raw facts) and document_generator.py (for the
+    cover letter) so all three localize identically.
+
+    usage_counters is mutated in place, same contract as before.
     """
-    offenders = _find_latin_leaks(core_data)
-    if not offenders:
-        return core_data
+    generated_strings = list(iter_strings({k: v for k, v in core_data.items() if k != "bullets"}))
+    # bullets[].original is ground truth and must stay untranslated, so only
+    # the tailored side of each bullet contributes terms.
+    for bullet in core_data.get("bullets", []) or []:
+        if isinstance(bullet, dict):
+            generated_strings.append(bullet.get("tailored") or "")
+
+    facts_strings = _facts_strings_for_glossary(facts_json or {}, include_name=include_name)
+    all_strings = generated_strings + facts_strings
+
+    # Whole short field values first (they're longer, and apply_glossary
+    # substitutes longest-first, so a complete "B.Sc. Artificial
+    # Intelligence" beats its own fragments) — then every sub-term found
+    # anywhere, which is what catches tool names embedded mid-sentence.
+    terms = whole_latin_values(facts_strings)
+    for term in find_latin_terms(all_strings):
+        if term not in terms:
+            terms.append(term)
+    terms.sort(key=len, reverse=True)
+
+    if not terms:
+        logger.info("✅ Arabic output is already fully Arabic — no localization pass needed.")
+        return core_data, {}
 
     usage_counters["arabic_purity_fired"] = True
-    logger.warning(f"🔤 Arabic purity check found leftover Latin text in: {offenders} — running corrective pass...")
+    logger.warning(f"🔤 Arabic localization: {len(terms)} Latin term(s) found (e.g. {terms[:6]}) — building glossary...")
 
-    prompt = ARABIC_PURITY_FIX_PROMPT.format(
-        offending_fields=json.dumps(offenders, ensure_ascii=False),
-        current_json=json.dumps(core_data, ensure_ascii=False),
-    )
-
-    try:
-        raw = generate_claude_text(prompt, max_tokens=6000, on_usage=_make_usage_recorder(usage_counters))
-        raw = re.sub(r"```json|```", "", raw).strip()
-        fixed = json.loads(raw)
-
-        # Only accept the fix if it's still the same shape (same bullet
-        # count etc.) — if the model reshaped the JSON unexpectedly, keep
-        # the original rather than risk corrupting the structure.
-        if (
-            isinstance(fixed, dict)
-            and len(fixed.get("bullets", [])) == len(core_data.get("bullets", []))
-        ):
-            still_offending = _find_latin_leaks(fixed)
-            usage_counters["arabic_purity_still_bad"] = bool(still_offending)
-            if still_offending:
-                logger.warning(f"🔤 Corrective pass still has Latin text in: {still_offending} — proceeding with best-effort result.")
-            else:
-                logger.info("✅ Arabic purity corrective pass succeeded — all fields now fully Arabic.")
-            return fixed
-        else:
-            usage_counters["arabic_purity_still_bad"] = True
-            logger.warning("🔤 Corrective pass returned an unexpected shape — keeping original output.")
-            return core_data
-
-    except Exception as e:
+    glossary = build_glossary(terms, on_usage=_make_usage_recorder(usage_counters))
+    if not glossary:
         usage_counters["arabic_purity_still_bad"] = True
-        logger.error(f"🔤 Arabic purity corrective pass failed: {e} — proceeding with best-effort original output.")
-        return core_data
+        logger.error("🔤 Glossary came back empty — proceeding with best-effort untranslated terms.")
+        return core_data, {}
+
+    localized = localize_structure(core_data, glossary, skip_keys=("original", "name"))
+
+    # "name" is skipped above because tailored_projects[].name is the
+    # join key cv_context.py matches back against facts_json.projects[].name
+    # — translating it would silently orphan every project. The user-visible
+    # "display_name" is localized normally.
+    still_latin = find_latin_terms(
+        [s for s in iter_strings({k: v for k, v in localized.items() if k != "bullets"})]
+        + [(b.get("tailored") or "") for b in localized.get("bullets", []) or [] if isinstance(b, dict)]
+    )
+    usage_counters["arabic_purity_still_bad"] = bool(still_latin)
+    if still_latin:
+        logger.warning(f"🔤 Still Latin after localization: {still_latin[:6]} — proceeding with best-effort result.")
+    else:
+        logger.info("✅ Arabic localization complete — all generated fields are now fully Arabic.")
+
+    return localized, glossary
 
 
 def run_tailoring_engine(state: AgentState) -> dict:
@@ -450,7 +513,8 @@ def run_tailoring_engine(state: AgentState) -> dict:
             # instead of paying full input-token price for it again.
             raw = generate_claude_text(
                 prompt,
-                max_tokens=6000,
+                max_tokens=claude_budget(cv_language, "tailoring"),
+                max_tokens_ceiling=claude_budget(cv_language, "tailoring_ceiling"),
                 on_usage=_make_usage_recorder(usage_counters),
                 system=TAILORING_SYSTEM_PROMPT,
             )
@@ -477,10 +541,21 @@ def run_tailoring_engine(state: AgentState) -> dict:
                 "tailored_skills": data.get("tailored_skills", {}),
             }
 
-            # Arabic-purity check + one corrective pass — see
-            # _enforce_arabic_purity docstring. No-op for English CVs.
+            # Arabic localization — see _enforce_arabic_purity. No-op for
+            # English CVs. The glossary rides through state so cv_context.py
+            # can localize the raw facts fields and document_generator.py
+            # can localize the cover letter with the SAME translations.
+            arabic_glossary: dict = {}
             if cv_language == "ar":
-                core_data = _enforce_arabic_purity(core_data, usage_counters)
+                core_data, arabic_glossary = _enforce_arabic_purity(
+                    core_data,
+                    usage_counters,
+                    cv_language,
+                    facts_json,
+                    # Only true when the user generated without a saved
+                    # Arabic name — see _facts_strings_for_glossary.
+                    include_name=bool(state.get("name_fallback_used")),
+                )
 
             validated = TailoredCV.model_validate({
                 "professional_summary": core_data["professional_summary"],
@@ -538,9 +613,25 @@ def run_tailoring_engine(state: AgentState) -> dict:
                 "tailored_volunteer_work": tailored_volunteer_work,
                 "tailored_experience_titles": tailored_experience_titles,
                 "tailored_skills": tailored_skills,
+                "arabic_glossary": arabic_glossary,
                 "tailoring_attempts": attempts,
                 "error": None,
                 **_cumulative_usage_fields(),
+            }
+
+        # FAIL FAST: a response that overflowed the ceiling will overflow it
+        # again on an identical prompt. Retrying was pure waste — it was the
+        # single biggest source of burned tokens on failed Arabic runs (two
+        # full generations, each escalating its budget, all discarded). Stop
+        # on the first one and let the pipeline abort.
+        except ClaudeTruncationError as e:
+            logger.error(f"❌ Agent 3 output exceeded the max token budget and cannot be retried: {e}")
+            return {
+                "tailoring_attempts": attempts,
+                "error": f"Agent 3 failed (output exceeded token budget): {e}",
+                "fatal_error_code": "tailoring_failed",
+                **_cumulative_usage_fields(),
+                "hit_max_retries": True,
             }
 
         except (json.JSONDecodeError, KeyError, ValidationError) as e:
@@ -549,6 +640,7 @@ def run_tailoring_engine(state: AgentState) -> dict:
                 return {
                     "tailoring_attempts": attempts,
                     "error": f"Agent 3 failed after {MAX_RETRIES} retries (invalid output): {e}",
+                    "fatal_error_code": "tailoring_failed",
                     **_cumulative_usage_fields(),
                     "hit_max_retries": True,
                 }
@@ -558,6 +650,7 @@ def run_tailoring_engine(state: AgentState) -> dict:
                 return {
                     "tailoring_attempts": attempts,
                     "error": f"Agent 3 failed after {MAX_RETRIES} retries (API error): {e}",
+                    "fatal_error_code": "tailoring_failed",
                     **_cumulative_usage_fields(),
                     "hit_max_retries": True,
                 }
@@ -580,7 +673,11 @@ def make_regeneration_fn(facts_json: dict, cv_language: str = "en", on_usage=Non
         # 300 -> 1000: same Sonnet 5 thinking-shares-the-budget issue as the
         # main call above. A single rewritten bullet is short, but if
         # thinking eats most of a 300-token budget there's nothing left for
-        # the actual sentence.
-        return generate_claude_text(prompt, max_tokens=1000, on_usage=on_usage).strip()
+        # the actual sentence. Arabic gets double, for the same
+        # tokens-per-character reason as the main generation budgets.
+        budget = 2000 if cv_language == "ar" else 1000
+        return generate_claude_text(
+            prompt, max_tokens=budget, max_tokens_ceiling=budget * 2, on_usage=on_usage
+        ).strip()
 
     return regenerate
