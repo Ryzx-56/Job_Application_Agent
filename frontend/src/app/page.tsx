@@ -2,6 +2,7 @@
 
 import React, { useEffect, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import {
   ArrowRight,
   ArrowLeft,
@@ -1181,17 +1182,21 @@ function SiteFooter({ setOpenDoc }: { setOpenDoc: (key: LegalDocKey | null) => v
 ======================================================================== */
 export default function LandingPage() {
   const { lang, isRTL } = useLang();
+  const router = useRouter();
   const [openDoc, setOpenDoc] = useState<LegalDocKey | null>(null);
   return (
     <>
-      <SiteHeader onOpenAbout={() => setOpenDoc("about")} />
+      {/* About is a real page now (linkable, shareable), not a modal.
+          The legal docs below still use the modal — they are reference
+          text you glance at, not a story you send someone. */}
+      <SiteHeader onOpenAbout={() => router.push("/about")} />
       <main id="main">
         <Hero />
         <TrustBar />
         <Features />
         <HowItWorks />
         <TrustSection />
-        <Pricing onOpenAbout={() => setOpenDoc("about")} />
+        <Pricing onOpenAbout={() => router.push("/about")} />
         <PayAsYouGo />
         <Faq />
         <FinalCta />

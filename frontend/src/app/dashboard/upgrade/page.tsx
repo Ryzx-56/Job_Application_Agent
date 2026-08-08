@@ -63,6 +63,27 @@ export default function UpgradePage() {
         </p>
       </div>
 
+      {/* Same founder note the landing page shows. It's the honest reason
+          the free tier exists at a loss, and it belongs here more than
+          anywhere: this is the moment someone is deciding whether to pay. */}
+      <section className="rounded-2xl border border-slate-200 bg-slate-50/70 p-5 sm:p-6">
+        <div className="flex gap-3">
+          <span className="grid size-9 shrink-0 place-items-center rounded-lg bg-rose-50 text-rose-500">
+            <Heart className="size-4.5" aria-hidden />
+          </span>
+          <div className="min-w-0">
+            <h3 className="text-sm font-semibold text-slate-900">{pricing.founderNote.title}</h3>
+            <p className="mt-1.5 text-sm leading-relaxed text-slate-600">{pricing.founderNote.body}</p>
+            <Link
+              href="/about?from=upgrade"
+              className="mt-2 inline-block text-sm font-medium text-blue-600 underline underline-offset-2 hover:text-blue-500"
+            >
+              {pricing.founderNote.cta}
+            </Link>
+          </div>
+        </div>
+      </section>
+
       {/* ── Subscriptions ── */}
       <section className="space-y-3">
         <h2 className="flex items-center gap-2 text-sm font-semibold uppercase tracking-wide text-slate-500">
@@ -145,12 +166,16 @@ export default function UpgradePage() {
                     lang={isAr ? "ar" : "en"}
                     withTooltip={false}
                   />
-                  {plan.limitedOffer && (
-                    <Badge badge="founding_member" size="sm" lang={isAr ? "ar" : "en"} withTooltip={false} />
-                  )}
+                  <Badge badge="founding_member" size="sm" lang={isAr ? "ar" : "en"} withTooltip={false} />
                 </div>
-                {plan.limitedOffer && (
+                {plan.limitedOffer ? (
                   <p className="mt-2 text-xs leading-relaxed text-orange-700">{plan.limitedOffer}</p>
+                ) : (
+                  <p className="mt-2 text-xs leading-relaxed text-slate-500">
+                    {isAr
+                      ? "شارة عضو مؤسس دائمة لأول 50 مشتركًا يدفعون، في أي خطة."
+                      : "A permanent Founding Member badge goes to the first 50 people to pay, on any plan."}
+                  </p>
                 )}
               </div>
 
@@ -211,26 +236,6 @@ export default function UpgradePage() {
         </div>
       </section>
 
-      {/* Same founder note the landing page shows. It's the honest reason
-          the free tier exists at a loss, and it belongs here more than
-          anywhere: this is the moment someone is deciding whether to pay. */}
-      <section className="rounded-2xl border border-slate-200 bg-slate-50/70 p-5 sm:p-6">
-        <div className="flex gap-3">
-          <span className="grid size-9 shrink-0 place-items-center rounded-lg bg-rose-50 text-rose-500">
-            <Heart className="size-4.5" aria-hidden />
-          </span>
-          <div className="min-w-0">
-            <h3 className="text-sm font-semibold text-slate-900">{pricing.founderNote.title}</h3>
-            <p className="mt-1.5 text-sm leading-relaxed text-slate-600">{pricing.founderNote.body}</p>
-            <Link
-              href="/about"
-              className="mt-2 inline-block text-sm font-medium text-blue-600 underline underline-offset-2 hover:text-blue-500"
-            >
-              {pricing.founderNote.cta}
-            </Link>
-          </div>
-        </div>
-      </section>
     </div>
   );
 }
