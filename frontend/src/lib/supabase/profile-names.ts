@@ -105,7 +105,8 @@ export async function suggestNameFromCv(file: File): Promise<ProfileNames> {
 }
 
 /**
- * Whether to show the Settings link to the admin Resume Viewer.
+ * Role flags: which badges to render, and whether to show the Settings
+ * link to the admin Resume Viewer.
  *
  * Its own call rather than a field on the profile row, because that row is
  * fetched with a fixed column list and PostgREST 400s the whole query on
@@ -115,15 +116,17 @@ export async function suggestNameFromCv(file: File): Promise<ProfileNames> {
  * Display only. Every admin route re-checks server-side, so faking this
  * reveals a link with nothing behind it.
  */
-export async function fetchAdminStatus(): Promise<boolean> {
+export type RoleFlags = { isAdmin: boolean; isOwner: boolean };
+
+export async function fetchAdminStatus(): Promise<RoleFlags> {
   try {
     const res = await fetch(`${API_URL}/api/v1/profile/admin-status`, {
       headers: await authHeader(),
     });
-    if (!res.ok) return false;
+    if (!res.ok) return { isAdmin: false, isOwner: false };
     const data = await res.json();
-    return Boolean(data?.is_admin);
+    return { isAdmin: Boolean(data?.is_admin), isOwner: Boolean(data?.is_owner) };
   } catch {
-    return false;
+    return { isAdmin: false, isOwner: false };
   }
 }

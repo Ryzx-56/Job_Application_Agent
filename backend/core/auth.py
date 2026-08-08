@@ -99,15 +99,32 @@ def get_current_user_id(authorization: str = Header(None)) -> str:
 # rename being a hard prerequisite.
 _ADMIN_COLUMN_CANDIDATES = ("is_admin", "admin")
 
+# Owner is an IDENTITY, not a capability. is_admin decides what you can do;
+# is_owner only decides which badge renders. Deliberately not implied by
+# is_admin, so support access can be granted without handing over the
+# product's identity.
+_OWNER_COLUMN_CANDIDATES = ("is_owner", "owner")
 
-def read_admin_flag(user_id: str | None) -> bool:
+
+def _read_bool_column(user_id: str | None, candidates: tuple[str, ...], label: str) -> bool:
     """
-    True if this user is an admin. Never raises.
+    Reads a boolean profile flag that may live under more than one column
+    name. Never raises.
 
-    Tries each known column name in turn: selecting a column that doesn't
-    exist is a PostgREST error, not a null, so the miss has to be caught
-    rather than tested for. Any other failure (network, missing row) is
-    treated as "not an admin", which is the safe direction to fail.
+    Checks EVERY known column name and returns true if any of them is true,
+    rather than trusting the first one that happens to exist. That matters
+    for one specific half-migrated state: if the `admin` -> `is_admin`
+    rename in 003_admin_access.sql was skipped for any reason, the
+    `ADD COLUMN IF NOT EXISTS is_admin ... DEFAULT false` that follows it
+    creates a SECOND column defaulted to false, while the original `admin`
+    column still holds the real value. Reading only the first existing
+    column would then report every admin as a non-admin, with nothing
+    obviously wrong in the schema.
+
+    Selecting a column that doesn't exist is a PostgREST error rather than
+    a null, so a missing name has to be caught rather than tested for. Any
+    other failure (network, missing row) is treated as "not an admin",
+    which is the safe direction to fail.
     """
     if not user_id:
         return False
@@ -121,10 +138,11 @@ def read_admin_flag(user_id: str | None) -> bool:
     try:
         admin = get_admin_client()
     except Exception as e:
-        logger.error(f"Admin check could not reach Supabase: {e}")
+        logger.error(f"{label} check could not reach Supabase: {e}")
         return False
 
-    for column in _ADMIN_COLUMN_CANDIDATES:
+    found_any_column = False
+    for column in candidates:
         try:
             row = (
                 admin.table("profiles")
@@ -136,10 +154,28 @@ def read_admin_flag(user_id: str | None) -> bool:
             )
         except Exception:
             continue  # column doesn't exist on this schema — try the next name
-        if row is not None:
-            return bool(row.get(column))
 
+        found_any_column = True
+        if row is not None and bool(row.get(column)):
+            return True
+
+    if not found_any_column:
+        logger.warning(
+            f"{label} check found no {' or '.join(candidates)} column on profiles — "
+            f"treating user {user_id} as not {label.lower()}. Run the matching migration in supabase/migrations/."
+        )
     return False
+
+
+def read_admin_flag(user_id: str | None) -> bool:
+    """True if this user may use /api/v1/admin/*. This is the real gate."""
+    return _read_bool_column(user_id, _ADMIN_COLUMN_CANDIDATES, "Admin")
+
+
+def read_owner_flag(user_id: str | None) -> bool:
+    """True if this user gets the Owner badge. Cosmetic only — no route
+    anywhere authorizes on this."""
+    return _read_bool_column(user_id, _OWNER_COLUMN_CANDIDATES, "Owner")
 
 
 def _require_admin(user_id: str) -> str:

@@ -20,7 +20,7 @@ from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
 from pydantic import BaseModel, Field
 from loguru import logger
 
-from core.auth import get_current_user_id, read_admin_flag
+from core.auth import get_current_user_id, read_admin_flag, read_owner_flag
 from core.credits import get_admin_client
 
 router = APIRouter()
@@ -99,7 +99,8 @@ def read_names(user_id: str = Depends(get_current_user_id)) -> dict:
 @router.get("/api/v1/profile/admin-status", tags=["Profile"])
 def read_admin_status(user_id: str = Depends(get_current_user_id)) -> dict:
     """
-    Whether to render the Settings link to the Resume Viewer.
+    Which role badges to render, and whether to show the Settings link to
+    the Resume Viewer.
 
     Deliberately its OWN endpoint rather than another field on the profile
     row the browser already reads. The frontend fetches profiles directly
@@ -114,7 +115,7 @@ def read_admin_status(user_id: str = Depends(get_current_user_id)) -> dict:
     server-side (see _require_admin), so a forged `true` here would reveal
     a link and nothing behind it.
     """
-    return {"is_admin": read_admin_flag(user_id)}
+    return {"is_admin": read_admin_flag(user_id), "is_owner": read_owner_flag(user_id)}
 
 
 @router.patch("/api/v1/profile/names", tags=["Profile"])

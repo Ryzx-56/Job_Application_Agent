@@ -6,6 +6,7 @@ import { useLang } from "@/lib/language";
 import { useAuth } from "@/lib/auth";
 import { DashboardButton } from "@/components/dashboard";
 import { Shield } from "lucide-react";
+import { RoleBadges } from "@/components/badges";
 import { createClient } from "@/lib/supabase/client";
 import { passwordErrorKey } from "@/lib/auth-errors";
 import { fetchCredits, Tier } from "@/lib/supabase/credits";
@@ -35,6 +36,7 @@ export default function SettingsPage() {
   // stops nothing and showing it grants nothing. Users have SELECT-only RLS
   // on profiles, so this flag can't be set by the person it describes.
   const [isAdmin, setIsAdmin] = useState(false);
+  const [isOwner, setIsOwner] = useState(false);
   const [countryIso, setCountryIso] = useState("SA");
   const [city, setCity] = useState("");
   const [locationOther, setLocationOther] = useState("");
@@ -80,7 +82,10 @@ export default function SettingsPage() {
       .catch((err) => console.error("fetchCredits failed:", err));
 
     // Separate call from fetchCredits on purpose — see fetchAdminStatus.
-    fetchAdminStatus().then(setIsAdmin);
+    fetchAdminStatus().then(({ isAdmin: admin, isOwner: owner }) => {
+      setIsAdmin(admin);
+      setIsOwner(owner);
+    });
 
     fetchProfileNames()
       .then((n) => {
@@ -228,7 +233,12 @@ export default function SettingsPage() {
 
       {/* Account */}
       <section className="space-y-5 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-7">
-        <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500">{copy.accountSection}</h2>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500">{copy.accountSection}</h2>
+          {/* Cosmetic only. Flags come from the backend, which re-checks
+              them on every privileged request regardless of what renders. */}
+          <RoleBadges isOwner={isOwner} isAdmin={isAdmin} size="sm" />
+        </div>
 
         {/* Two editable name fields, one per script. Previously this was a
             single read-only full_name. Editable here (not only at signup)
