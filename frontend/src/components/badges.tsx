@@ -21,12 +21,61 @@ import React from "react";
 
 type BadgeSize = "sm" | "md" | "lg";
 
+/* ------------------------------------------------------------------------
+   Tooltip.
+
+   A native `title` attribute would be simpler, but it can't be styled, it
+   takes ~1s to appear, and it never shows on touch. This is a styled
+   bubble on hover AND keyboard focus, with the same text also exposed as
+   the element's accessible name so screen readers get the explanation
+   rather than just the word "Owner".
+
+   Positioned above and centred; `pointer-events-none` so it can never sit
+   between the cursor and whatever is underneath.
+------------------------------------------------------------------------ */
+function Tooltip({ text, children }: { text: string; children: React.ReactNode }) {
+  return (
+    <span className="group/tip relative inline-flex" tabIndex={0} aria-label={text}>
+      {children}
+      <span
+        role="tooltip"
+        className="pointer-events-none absolute bottom-full left-1/2 z-50 mb-1.5 hidden -translate-x-1/2 whitespace-nowrap rounded-md bg-slate-900 px-2 py-1 text-[11px] font-medium normal-case tracking-normal text-white shadow-lg group-hover/tip:block group-focus/tip:block"
+      >
+        {text}
+        <span
+          className="absolute left-1/2 top-full -ml-1 border-4 border-transparent border-t-slate-900"
+          aria-hidden
+        />
+      </span>
+    </span>
+  );
+}
+
+/** One short line each. Kept here so both the Dashboard and Settings show
+ *  identical wording. */
+export const BADGE_TOOLTIPS = {
+  owner: {
+    en: "Given to the owner of Tarshih.",
+    ar: "تُمنح لمالك ترشيح.",
+  },
+  admin: {
+    en: "Given to an admin of Tarshih.",
+    ar: "تُمنح لمشرف في ترشيح.",
+  },
+  founder: {
+    en: "Given to Tarshih's earliest subscribers.",
+    ar: "تُمنح لأوائل المشتركين في ترشيح.",
+  },
+};
+
 const SIZES: Record<BadgeSize, { pad: string; text: string; icon: string; gap: string }> = {
   sm: { pad: "px-2 py-0.5", text: "text-[10px]", icon: "9px", gap: "gap-1" },
   md: { pad: "px-2.5 py-1", text: "text-xs", icon: "11px", gap: "gap-1.5" },
   // For the Dashboard badge row, where these are the thing you're meant to
-  // notice rather than a label tucked beside a heading.
-  lg: { pad: "px-3.5 py-1.5", text: "text-sm", icon: "15px", gap: "gap-2" },
+  // notice rather than a label tucked beside a heading. A step down from
+  // the original lg (px-3.5/text-sm/15px) — still clearly the emphasis
+  // size, just no longer overpowering the heading beneath it.
+  lg: { pad: "px-3 py-1", text: "text-[13px]", icon: "13px", gap: "gap-1.5" },
 };
 
 /* ------------------------------------------------------------------------
@@ -42,9 +91,9 @@ const SIZES: Record<BadgeSize, { pad: string; text: string; icon: string; gap: s
    aria-hidden on the decorative layers: a screen reader should hear
    "Admin" once, not three times.
 ------------------------------------------------------------------------ */
-export function AdminBadge({ size = "md", className = "" }: { size?: BadgeSize; className?: string }) {
+export function AdminBadge({ size = "md", className = "", tooltip }: { size?: BadgeSize; className?: string; tooltip?: string }) {
   const s = SIZES[size];
-  return (
+  const chip = (
     <>
       <style>{`
         .jbaa-admin {
@@ -88,23 +137,26 @@ export function AdminBadge({ size = "md", className = "" }: { size?: BadgeSize; 
         .jbaa-admin__ghost--magenta { color: #f472b6; }
 
         @media (prefers-reduced-motion: no-preference) {
-          .jbaa-admin__ghost--cyan { animation: jbaa-glitch-cyan 3.2s infinite steps(1); }
-          .jbaa-admin__ghost--magenta { animation: jbaa-glitch-magenta 3.2s infinite steps(1); }
-          .jbaa-admin__label { animation: jbaa-glitch-jitter 3.2s infinite steps(1); }
+          .jbaa-admin__ghost--cyan { animation: jbaa-glitch-cyan 2.2s infinite steps(1); }
+          .jbaa-admin__ghost--magenta { animation: jbaa-glitch-magenta 2.2s infinite steps(1); }
+          .jbaa-admin__label { animation: jbaa-glitch-jitter 2.2s infinite steps(1); }
           .jbaa-admin::before {
             content: "";
             position: absolute;
             inset: 0;
             background: linear-gradient(180deg, transparent 0%, rgba(34, 211, 238, 0.18) 50%, transparent 100%);
             transform: translateY(-100%);
-            animation: jbaa-scan 3.2s linear infinite;
+            animation: jbaa-scan 2.2s linear infinite;
             pointer-events: none;
             z-index: 2;
           }
         }
 
         /* Idle most of the cycle, then two short bursts. Constant glitching
-           looks broken; intermittent glitching looks deliberate. */
+           looks broken; intermittent glitching looks deliberate. Cycle is
+           2.2s (was 3.2s) so the bursts come round noticeably more often
+           while each burst stays the same length — the keyframe percentages
+           are unchanged, only the period shortened. */
         @keyframes jbaa-glitch-cyan {
           0%, 88%, 100% { transform: translate(0, 0); clip-path: inset(0 0 0 0); }
           89% { transform: translate(-2px, -1px); clip-path: inset(0 0 62% 0); }
@@ -147,6 +199,7 @@ export function AdminBadge({ size = "md", className = "" }: { size?: BadgeSize; 
       </span>
     </>
   );
+  return tooltip ? <Tooltip text={tooltip}>{chip}</Tooltip> : chip;
 }
 
 /* ------------------------------------------------------------------------
@@ -158,9 +211,9 @@ export function AdminBadge({ size = "md", className = "" }: { size?: BadgeSize; 
    the whole chip blinking. Slow (5s) and mostly idle so it reads as
    expensive instead of attention-seeking.
 ------------------------------------------------------------------------ */
-export function OwnerBadge({ size = "md", className = "" }: { size?: BadgeSize; className?: string }) {
+export function OwnerBadge({ size = "md", className = "", tooltip }: { size?: BadgeSize; className?: string; tooltip?: string }) {
   const s = SIZES[size];
-  return (
+  const chip = (
     <>
       <style>{`
         .jbaa-owner {
@@ -236,6 +289,7 @@ export function OwnerBadge({ size = "md", className = "" }: { size?: BadgeSize; 
       </span>
     </>
   );
+  return tooltip ? <Tooltip text={tooltip}>{chip}</Tooltip> : chip;
 }
 
 /* ------------------------------------------------------------------------
@@ -257,16 +311,18 @@ export function FoundingMemberBadge({
   label,
   size = "md",
   className = "",
+  tooltip,
 }: {
   number?: number | null;
   /** Full display text. Defaults to English; pass the Arabic string for RTL. */
   label?: string;
   size?: BadgeSize;
   className?: string;
+  tooltip?: string;
 }) {
   const s = SIZES[size];
   const text = label ?? `Founding Member${number ? ` #${number}` : ""}`;
-  return (
+  const chip = (
     <>
       <style>{`
         .jbaa-founder {
@@ -285,6 +341,7 @@ export function FoundingMemberBadge({
             inset 0 1px 0 rgba(226, 214, 255, 0.14);
         }
         .jbaa-founder__text {
+          position: relative;
           background: linear-gradient(115deg, #e9d5ff 0%, #a5f3fc 30%, #f5d0fe 55%, #99f6e4 80%, #e9d5ff 100%);
           background-size: 300% 100%;
           -webkit-background-clip: text;
@@ -295,6 +352,39 @@ export function FoundingMemberBadge({
         @media (prefers-reduced-motion: no-preference) {
           .jbaa-founder { animation: jbaa-iris 7s linear infinite; }
           .jbaa-founder__text { animation: jbaa-iris-text 7s linear infinite; }
+          /* The iridescent drift alone reads as static at a glance, since
+             the hue shift is subtle. These two add the same kind of
+             punctuated moment the other badges have: a bright sweep across
+             the text and a matching flare on the gem, on a 4.5s cycle so it
+             never lands in step with Owner's 5s shine or Admin's 2.2s
+             glitch. Same vocabulary as Owner (a travelling highlight),
+             different colour and rhythm. */
+          .jbaa-founder__text::after {
+            content: attr(data-text);
+            position: absolute;
+            inset: 0;
+            background: linear-gradient(
+              100deg,
+              transparent 0%, transparent 42%,
+              rgba(255, 255, 255, 0.95) 50%,
+              transparent 58%, transparent 100%
+            );
+            background-size: 250% 100%;
+            -webkit-background-clip: text;
+            background-clip: text;
+            color: transparent;
+            animation: jbaa-founder-sweep 4.5s ease-in-out infinite;
+            pointer-events: none;
+          }
+          .jbaa-founder__gem { animation: jbaa-gem-flare 4.5s ease-in-out infinite; }
+        }
+        @keyframes jbaa-founder-sweep {
+          0%, 60%, 100% { background-position: 140% 0; }
+          85% { background-position: -40% 0; }
+        }
+        @keyframes jbaa-gem-flare {
+          0%, 60%, 100% { filter: drop-shadow(0 0 0 rgba(196, 181, 253, 0)); }
+          78% { filter: drop-shadow(0 0 3.5px rgba(216, 202, 255, 0.95)); }
         }
         /* Only the BORDER layer moves. The first background-position keeps
            the solid fill pinned, otherwise the chip's interior would slide
@@ -314,7 +404,7 @@ export function FoundingMemberBadge({
       >
         {/* Faceted gem. Deliberately not a crown, not a star — those read as
             rank and rating respectively; a cut stone reads as "rare". */}
-        <svg width={s.icon} height={s.icon} viewBox="0 0 14 14" fill="none" aria-hidden className="shrink-0">
+        <svg width={s.icon} height={s.icon} viewBox="0 0 14 14" fill="none" aria-hidden className="jbaa-founder__gem shrink-0">
           <path d="M3.4 1.8h7.2l2.2 3.3L7 12.4 1.2 5.1l2.2-3.3Z" fill="url(#jbaa-gem-fill)" stroke="#a78bfa" strokeWidth="0.5" strokeLinejoin="round" />
           <path d="M1.2 5.1h11.6M5 1.8 7 5.1l2-3.3M7 5.1v7.3" stroke="#f5f3ff" strokeWidth="0.45" strokeOpacity="0.75" strokeLinejoin="round" />
           <defs>
@@ -325,10 +415,15 @@ export function FoundingMemberBadge({
             </linearGradient>
           </defs>
         </svg>
-        <span className="jbaa-founder__text">{text}</span>
+        {/* data-text feeds the ::after sweep overlay, which re-renders the
+            same string clipped to a moving highlight. */}
+        <span className="jbaa-founder__text" data-text={text}>
+          {text}
+        </span>
       </span>
     </>
   );
+  return tooltip ? <Tooltip text={tooltip}>{chip}</Tooltip> : chip;
 }
 
 /* ------------------------------------------------------------------------
@@ -341,6 +436,7 @@ export function RoleBadges({
   isFoundingMember,
   foundingMemberNumber,
   foundingMemberLabel,
+  lang = "en",
   size = "md",
   className = "",
 }: {
@@ -349,16 +445,24 @@ export function RoleBadges({
   isFoundingMember?: boolean;
   foundingMemberNumber?: number | null;
   foundingMemberLabel?: string;
+  /** Picks the tooltip language. Defaults to English. */
+  lang?: "en" | "ar";
   size?: BadgeSize;
   className?: string;
 }) {
   if (!isOwner && !isAdmin && !isFoundingMember) return null;
+  const tip = (k: keyof typeof BADGE_TOOLTIPS) => BADGE_TOOLTIPS[k][lang === "ar" ? "ar" : "en"];
   return (
     <span className={`inline-flex flex-wrap items-center gap-2 ${className}`}>
-      {isOwner && <OwnerBadge size={size} />}
-      {isAdmin && <AdminBadge size={size} />}
+      {isOwner && <OwnerBadge size={size} tooltip={tip("owner")} />}
+      {isAdmin && <AdminBadge size={size} tooltip={tip("admin")} />}
       {isFoundingMember && (
-        <FoundingMemberBadge size={size} number={foundingMemberNumber} label={foundingMemberLabel} />
+        <FoundingMemberBadge
+          size={size}
+          number={foundingMemberNumber}
+          label={foundingMemberLabel}
+          tooltip={tip("founder")}
+        />
       )}
     </span>
   );

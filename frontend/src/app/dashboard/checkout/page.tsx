@@ -18,11 +18,21 @@ const PLAN_NAME: Record<string, { en: string; ar: string }> = {
  * to change.
  */
 export default function CheckoutPage() {
-  const { lang } = useLang();
+  const { t, lang } = useLang();
   const isAr = lang === "ar";
   const params = useSearchParams();
-  const plan = params.get("plan") ?? "pro";
-  const planLabel = PLAN_NAME[plan]?.[isAr ? "ar" : "en"] ?? plan;
+  // The upgrade page links here with ?plan= for subscriptions and ?pack=
+  // for one-off credit packs. Without handling `pack`, every pack link fell
+  // through to the "pro" default and told the user they were upgrading to
+  // Pro, which is simply the wrong product.
+  const plan = params.get("plan");
+  const pack = params.get("pack");
+  const isPack = Boolean(pack && !plan);
+  const slug = plan ?? pack ?? "pro";
+  // Pack names come from the shared pricing data so they match the upgrade
+  // page and the landing page exactly.
+  const packName = t.payg.packs.find((p) => p.slug === pack)?.name;
+  const productLabel = isPack ? packName ?? pack ?? "" : PLAN_NAME[slug]?.[isAr ? "ar" : "en"] ?? slug;
 
   return (
     <div className="mx-auto flex max-w-lg flex-col items-center space-y-4 rounded-2xl border border-slate-200 bg-white p-10 text-center shadow-sm">
@@ -30,7 +40,13 @@ export default function CheckoutPage() {
         <Sparkles className="size-6" aria-hidden />
       </span>
       <h1 className="text-xl font-semibold text-slate-900">
-        {isAr ? `الترقية إلى ${planLabel} قريبًا` : `Upgrading to ${planLabel} — coming soon`}
+        {isPack
+          ? isAr
+            ? `شراء باقة ${productLabel} قريبًا`
+            : `${productLabel} pack — coming soon`
+          : isAr
+          ? `الترقية إلى ${productLabel} قريبًا`
+          : `Upgrading to ${productLabel} — coming soon`}
       </h1>
       <p className="text-sm leading-relaxed text-slate-500">
         {isAr

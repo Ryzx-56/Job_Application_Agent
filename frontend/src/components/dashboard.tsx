@@ -413,7 +413,7 @@ function useNavItems(isAdmin = false) {
     // re-checks profiles.is_admin server-side, so a non-admin who types the
     // URL still gets nothing but "Admin access required".
     ...(isAdmin
-      ? [{ href: "/dashboard/admin/resumes", label: t.dashboard.sidebar.admin, icon: Shield }]
+      ? [{ href: "/dashboard/admin", label: t.dashboard.sidebar.admin, icon: Shield }]
       : []),
   ];
 }
@@ -434,7 +434,11 @@ function SidebarContent({ onNavigate, isAdmin }: { onNavigate?: () => void; isAd
 
       <nav className="flex-1 space-y-1 px-3">
         {navItems.map(({ href, label, icon: Icon }) => {
-          const active = pathname === href;
+          // Admin has sub-routes (/admin/analytics, /admin/users, ...), so
+          // it stays active for the whole section rather than only its
+          // index. Every other item is a leaf and matches exactly.
+          const active =
+            href === "/dashboard/admin" ? pathname.startsWith(href) : pathname === href;
           return (
             <Link
               key={href}

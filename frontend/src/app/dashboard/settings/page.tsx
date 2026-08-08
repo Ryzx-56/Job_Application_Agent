@@ -249,6 +249,7 @@ export default function SettingsPage() {
             foundingMemberLabel={
               isAr ? `عضو مؤسس #${foundingMemberNumber}` : `Founding Member #${foundingMemberNumber}`
             }
+            lang={isAr ? "ar" : "en"}
             size="sm"
           />
         </div>

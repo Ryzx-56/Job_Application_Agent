@@ -649,10 +649,13 @@ export default function DashboardHomePage() {
           <span className="flex items-center gap-2.5 font-medium">
             <AlertTriangle className="size-4 shrink-0" aria-hidden />
             {lang === "ar"
-              ? "لا تملك أي رصيد متبقٍ. قم بالترقية للمتابعة."
-              : "You have 0 credits left. Upgrade to keep generating."}
+              ? "لا تملك أي رصيد متبقٍ. قم بالترقية أو اشترِ رصيدًا إضافيًا للمتابعة."
+              : "You have 0 credits left. Upgrade or buy more credits to keep generating."}
           </span>
-          <DashboardButton as={Link} href="/dashboard/checkout?plan=pro" variant="primary" size="sm">
+          {/* Goes to the in-dashboard plan/pack picker, not Settings (which
+              had nothing purchasable on it) and not straight to checkout
+              (which would pre-pick a tier the user never chose). */}
+          <DashboardButton as={Link} href="/dashboard/upgrade" variant="primary" size="sm">
             {lang === "ar" ? "الترقية الآن" : "Upgrade Now"}
           </DashboardButton>
         </div>
@@ -677,6 +680,7 @@ export default function DashboardHomePage() {
             foundingMemberLabel={
               lang === "ar" ? `عضو مؤسس #${foundingMemberNumber}` : `Founding Member #${foundingMemberNumber}`
             }
+            lang={lang === "ar" ? "ar" : "en"}
             size="lg"
           />
         </div>
@@ -934,6 +938,28 @@ export default function DashboardHomePage() {
         <p className="-mt-1.5 text-xs text-slate-400">
           {lang === "ar" ? "الإنجليزية: نقطة واحدة · العربية: نقطتان" : "English uses 1 credit · Arabic uses 2 credits"}
         </p>
+
+        {/* The same out-of-credits prompt as the top banner, repeated right
+            where the user actually hits the wall. The banner sits above the
+            whole form and is easy to scroll past on mobile; by the time
+            someone has filled everything in and reached a disabled Generate
+            button, they need the explanation here, not 800px up. */}
+        {creditsRemaining <= 0 && (
+          <div className="-mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 rounded-lg border border-amber-200 bg-amber-50 px-3.5 py-2.5 text-xs text-amber-800">
+            <AlertTriangle className="size-3.5 shrink-0" aria-hidden />
+            <span className="font-medium">
+              {lang === "ar"
+                ? "لا تملك أي رصيد متبقٍ. قم بالترقية أو اشترِ رصيدًا إضافيًا للمتابعة."
+                : "You have 0 credits left. Upgrade or buy more credits to keep generating."}
+            </span>
+            <Link
+              href="/dashboard/upgrade"
+              className="font-semibold text-amber-900 underline underline-offset-2 hover:text-amber-950"
+            >
+              {lang === "ar" ? "عرض الخطط والباقات" : "View plans and packs"}
+            </Link>
+          </div>
+        )}
       </div>
 
       {(generating || result) && (

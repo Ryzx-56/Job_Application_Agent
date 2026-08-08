@@ -1,7 +1,8 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
-import { Loader2, AlertCircle, FileText, Mail, FileType2, Search } from "lucide-react";
+import { Loader2, FileText, Mail, FileType2, Search } from "lucide-react";
+import { AdminPage, ErrorNote, ADMIN_MONO } from "@/components/admin-ui";
 import {
   fetchAdminResumes,
   getAdminDocumentUrl,
@@ -94,14 +95,10 @@ export default function AdminResumesPage() {
   }, [page, appliedSearch]);
 
   return (
-    <div className="mx-auto max-w-5xl space-y-6">
-      <div>
-        <h1 className="text-2xl font-semibold tracking-tight text-slate-900">Resume Viewer</h1>
-        <p className="mt-2 text-sm text-slate-500">
-          Search by email, name, or user id to open the CV and cover letter someone actually received.
-          Leave the box empty to see the most recent resumes from everyone.
-        </p>
-      </div>
+    <AdminPage
+      title="Resume Viewer"
+      subtitle="Search by email, name, or user id to open the CV and cover letter someone actually received. Leave the box empty to see the most recent resumes from everyone."
+    >
 
       <form
         className="flex items-center gap-2"
@@ -116,7 +113,7 @@ export default function AdminResumesPage() {
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           placeholder="Email, name, or user id"
-          className="w-full max-w-md rounded-lg border border-slate-200 px-3 py-2 text-sm focus:border-blue-400 focus:outline-none"
+          className={`${ADMIN_MONO} w-full max-w-md rounded-lg border border-slate-200 px-3 py-2 text-sm focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-500/15`}
         />
         <button
           type="submit"
@@ -135,12 +132,7 @@ export default function AdminResumesPage() {
         </p>
       )}
 
-      {error && (
-        <div className="flex items-center gap-2 rounded-xl border border-rose-200 bg-rose-50/60 px-4 py-3 text-sm text-rose-600">
-          <AlertCircle className="size-4 shrink-0" aria-hidden />
-          <span>{error}</span>
-        </div>
-      )}
+      {error && <ErrorNote message={error} />}
 
       {loading ? (
         <div className="flex items-center justify-center gap-2 rounded-2xl border border-slate-200 bg-white py-16 text-sm text-slate-400">
@@ -219,6 +211,6 @@ export default function AdminResumesPage() {
           </button>
         </div>
       </div>
-    </div>
+    </AdminPage>
   );
 }
