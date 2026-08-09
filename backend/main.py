@@ -26,6 +26,11 @@ from core.location import router as location_router
 from core.documents import router as documents_router
 from core.admin_stats import router as admin_stats_router
 from core.badges import router as badges_router
+# Self-contained LinkedIn add-on (purchases, generation, history, premium
+# fulfillment queue). Nothing in the CV pipeline calls into it and it calls
+# nothing in the pipeline — it only READS the facts_json a CV generation
+# already saved. See core/linkedin.py.
+from core.linkedin import router as linkedin_router
 from core.profile_names import (
     router as profile_names_router,
     get_profile_names,
@@ -81,6 +86,7 @@ app.include_router(documents_router)
 app.include_router(profile_names_router)
 app.include_router(admin_stats_router)
 app.include_router(badges_router)
+app.include_router(linkedin_router)
 
 OUTPUT_DIR = "outputs"
 

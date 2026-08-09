@@ -62,6 +62,7 @@ const CRUMBS: Record<string, string> = {
   "/dashboard/admin/users": "admin / users",
   "/dashboard/admin/resumes": "admin / resumes",
   "/dashboard/admin/health": "admin / health",
+  "/dashboard/admin/linkedin": "admin / linkedin",
 };
 
 function AdminBreadcrumb() {

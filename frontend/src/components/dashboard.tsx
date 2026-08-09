@@ -18,6 +18,8 @@ import {
   Loader2,
   Shield,
 } from "lucide-react";
+// lucide-react v1 has no brand icons, so the LinkedIn mark is our own glyph.
+import { LinkedInGlyph } from "@/components/linkedin-ui";
 import { Globe } from "lucide-react";
 import { useLang, useSyncLanguageFromAccount } from "@/lib/language";
 import { fetchAdminStatus } from "@/lib/supabase/profile-names";
@@ -407,6 +409,9 @@ function useNavItems(isAdmin = false) {
   return [
     { href: "/dashboard", label: t.dashboard.sidebar.dashboard, icon: LayoutDashboard },
     { href: "/dashboard/resumes", label: t.dashboard.sidebar.myResumes, icon: FileText },
+    // The LinkedIn add-on. Sits directly above Settings, under My Resumes,
+    // because it's something you do with a CV you've already made.
+    { href: "/dashboard/linkedin", label: t.dashboard.sidebar.linkedin, icon: LinkedInGlyph },
     { href: "/dashboard/settings", label: t.dashboard.sidebar.settings, icon: Settings },
     // Sits directly under Settings, and only for admins. Hiding it is
     // convenience, not access control — every /api/v1/admin/* route
@@ -434,11 +439,14 @@ function SidebarContent({ onNavigate, isAdmin }: { onNavigate?: () => void; isAd
 
       <nav className="flex-1 space-y-1 px-3">
         {navItems.map(({ href, label, icon: Icon }) => {
-          // Admin has sub-routes (/admin/analytics, /admin/users, ...), so
-          // it stays active for the whole section rather than only its
-          // index. Every other item is a leaf and matches exactly.
-          const active =
-            href === "/dashboard/admin" ? pathname.startsWith(href) : pathname === href;
+          // Admin has sub-routes (/admin/analytics, /admin/users, ...) and
+          // LinkedIn has /linkedin/checkout, so both stay active for their
+          // whole section rather than only their index. Every other item is
+          // a leaf and matches exactly.
+          const sectionRoutes = ["/dashboard/admin", "/dashboard/linkedin"];
+          const active = sectionRoutes.includes(href)
+            ? pathname.startsWith(href)
+            : pathname === href;
           return (
             <Link
               key={href}

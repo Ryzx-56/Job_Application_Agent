@@ -1,10 +1,12 @@
 "use client";
 
-import React from "react";
+import React, { useEffect, useState } from "react";
 import { Check, Sparkles, Zap, Clock, Heart } from "lucide-react";
 import { Badge } from "@/components/badges";
 import Link from "next/link";
 import { useLang } from "@/lib/language";
+import { fetchLinkedInOverview, LinkedInOverview } from "@/lib/supabase/linkedin";
+import { formatSar, LinkedInGlyph } from "@/components/linkedin-ui";
 
 /**
  * In-dashboard upgrade page. Replaces the old behaviour where an
@@ -42,6 +44,28 @@ export default function UpgradePage() {
   const isAr = lang === "ar";
   const pricing = t.pricing;
   const payg = t.payg;
+  const li = t.dashboard.linkedin;
+
+  // LinkedIn add-on prices are read from the backend (PRICING in
+  // core/linkedin.py) rather than restated here, so the number on this page
+  // can never disagree with the number actually charged.
+  const [linkedinData, setLinkedinData] = useState<LinkedInOverview | null>(null);
+  useEffect(() => {
+    fetchLinkedInOverview()
+      .then(setLinkedinData)
+      .catch(() => setLinkedinData(null));
+  }, []);
+
+  // The LinkedIn tab links here with #linkedin-tiers. A client-side
+  // navigation doesn't restore hash scrolling on its own, so do it once the
+  // section is on the page.
+  useEffect(() => {
+    if (typeof window === "undefined" || window.location.hash !== "#linkedin-tiers") return;
+    const id = requestAnimationFrame(() => {
+      document.getElementById("linkedin-tiers")?.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
+    return () => cancelAnimationFrame(id);
+  }, [linkedinData]);
 
   // The free tier isn't purchasable, so it has no place on a page whose
   // entire purpose is choosing something to buy.
@@ -236,6 +260,77 @@ export default function UpgradePage() {
         </div>
       </section>
 
+      {/* ── LinkedIn add-on ──
+          Not a plan and not a credit pack: a one-time add-on for a CV you've
+          already made. Both buy paths (here and the LinkedIn tab) funnel into
+          the same checkout, so the tier is chosen here and the CV is chosen on
+          the LinkedIn page immediately after — there is one checkout flow, not
+          two. The #linkedin-tiers id is what the LinkedIn tab deep-links to. */}
+      <section id="linkedin-tiers" className="scroll-mt-6 space-y-3">
+        <h2 className="flex items-center gap-2 text-sm font-semibold uppercase tracking-wide text-slate-500">
+          <LinkedInGlyph className="size-4 text-[#0A66C2]" />
+          {isAr ? "إضافة لينكدإن" : "LinkedIn add-on"}
+        </h2>
+        <p className="text-sm text-slate-500">{li.sub}</p>
+
+        <div className="grid gap-4 sm:grid-cols-2">
+          {(["normal", "premium"] as const).map((tier) => {
+            const isPremium = tier === "premium";
+            const price = linkedinData?.pricing?.[tier]?.price;
+            return (
+              <div
+                key={tier}
+                className={`relative flex flex-col rounded-2xl border bg-white p-5 shadow-sm transition-shadow hover:shadow-md ${
+                  isPremium ? "border-[#0A66C2]/40 ring-1 ring-[#0A66C2]/15" : "border-slate-200"
+                }`}
+              >
+                {isPremium && (
+                  <span className="absolute -top-2.5 start-5 rounded-full bg-[#0A66C2] px-2.5 py-0.5 text-[11px] font-semibold text-white">
+                    {li.tiers.premiumBadge}
+                  </span>
+                )}
+                <h3 className="text-base font-semibold text-slate-900">
+                  {isPremium ? li.tiers.premiumName : li.tiers.normalName}
+                </h3>
+                <p className="mt-0.5 text-xs text-slate-500">
+                  {isPremium ? li.tiers.premiumTagline : li.tiers.normalTagline}
+                </p>
+                <div className="mt-2 flex items-baseline gap-1.5">
+                  <span className="text-2xl font-semibold text-slate-900">
+                    {price !== undefined ? formatSar(price, lang) : "—"}
+                  </span>
+                  <span className="text-xs text-slate-500">{li.tiers.oneTime}</span>
+                </div>
+
+                <ul className="mt-4 flex-1 space-y-2">
+                  {(isPremium ? li.explainer.premiumItems : li.explainer.normalItems).map((feature) => (
+                    <li key={feature} className="flex gap-2 text-sm leading-relaxed text-slate-600">
+                      <Check className="mt-0.5 size-4 shrink-0 text-emerald-500" aria-hidden />
+                      <span>{feature}</span>
+                    </li>
+                  ))}
+                </ul>
+
+                {/* Straight to the LinkedIn tab with the tier preselected —
+                    the CV has to be chosen before checkout, and that's where
+                    the picker lives. */}
+                <Link
+                  href={`/dashboard/linkedin?tier=${tier}`}
+                  className={`mt-5 inline-flex items-center justify-center rounded-lg px-4 py-2.5 text-sm font-medium transition-colors ${
+                    isPremium
+                      ? "bg-[#0A66C2] text-white hover:bg-[#095196]"
+                      : "border border-[#0A66C2]/30 text-[#0A66C2] hover:bg-[#EAF4FB]"
+                  }`}
+                >
+                  {isPremium ? li.tiers.premiumCta : li.tiers.normalCta}
+                </Link>
+              </div>
+            );
+          })}
+        </div>
+
+        <p className="text-xs leading-relaxed text-slate-400">{li.refundNote.oneTime}</p>
+      </section>
     </div>
   );
 }

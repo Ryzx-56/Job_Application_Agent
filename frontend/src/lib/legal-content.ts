@@ -342,21 +342,32 @@ export const legalContent: Record<Lang, Record<LegalDocKey, LegalDoc>> = {
           ],
         },
         {
-          heading: "4. When a refund does apply",
+          heading: "4. One-time add-ons: the LinkedIn profile service",
+          body: [
+            "The LinkedIn add-on is a one-time purchase, not a subscription, and it comes in two tiers with different refund terms because they are delivered differently.",
+            "Normal tier is fully automated and delivered the moment you press Generate. Once your LinkedIn content has been generated it is non-refundable, because it has been delivered in full and cannot be returned. If you have bought it but have NOT generated yet, email support@tarshih.com and we will refund it.",
+            "Premium tier includes the same generated content plus a member of our team building and optimizing your actual LinkedIn profile with you. It is refundable in full at any time before we begin that work. Once we have started building your profile, the fee is no longer refundable, since both the generated content and part of the service have been delivered by then. If you paid for Premium and we have not contacted you, the work has not started and you are still entitled to a refund.",
+            "In both tiers, the content we generate is based on facts from a CV you created on Tarshih. We do not guarantee any particular outcome from using it, including profile views, recruiter contact, interviews, or job offers.",
+          ],
+        },
+        {
+          heading: "5. When a refund does apply",
           body: [
             "If a technical failure on our side prevents the Service from delivering something you paid for, for example a credit is deducted but no document is produced, email support@tarshih.com with your account email and a brief description. We will restore the credit or, at our discretion, refund that specific charge.",
+            "A LinkedIn add-on generation that fails does not consume your purchase: you can generate again at no extra cost. If it keeps failing, contact us and we will refund that purchase.",
             "Fees already paid and credits already consumed are otherwise non-refundable, except where required by applicable law.",
           ],
         },
         {
-          heading: "5. Right of withdrawal under Saudi e-commerce law",
+          heading: "6. Right of withdrawal under Saudi e-commerce law",
           body: [
             "Saudi Arabia's e-commerce regulations generally give consumers a right to withdraw from an online purchase within a set period. That right does not extend to digital content or services supplied on a non-tangible medium once performance has begun with your prior express consent and acknowledgment that you lose the right of withdrawal by doing so.",
             "By purchasing a subscription or credit pack and generating at least one document with it, you expressly ask us to begin performing the Service immediately and acknowledge that your right of withdrawal ends once that generation is delivered. If you haven't used any credit from a purchase yet, contact support@tarshih.com within a reasonable time and we'll review the request under applicable consumer protection law.",
+            "The same applies to the LinkedIn add-on: generating your content, or asking us to begin a Premium profile build, is you asking us to start performing the Service immediately.",
           ],
         },
         {
-          heading: "6. How to request a refund",
+          heading: "7. How to request a refund",
           body: [
             "Email support@tarshih.com from the address on your account, describe what happened, and we'll respond as quickly as we can. Refunds are issued by us and returned to the original payment method through our payment provider. Once approved, it can take a few business days for your bank or card issuer to show the amount.",
           ],
@@ -769,21 +780,32 @@ export const legalContent: Record<Lang, Record<LegalDocKey, LegalDoc>> = {
           ],
         },
         {
-          heading: "4. متى ينطبق الاسترداد",
+          heading: "4. الإضافات لمرة واحدة: خدمة ملف لينكدإن",
+          body: [
+            "إضافة لينكدإن عملية شراء لمرة واحدة وليست اشتراكًا، وتأتي بباقتين لكل منهما شروط استرداد مختلفة، لأن طريقة تسليم كل منهما مختلفة.",
+            "الباقة العادية آلية بالكامل وتُسلَّم لحظة ضغطك على «إنشاء». وبعد توليد محتوى لينكدإن الخاص بك تصبح غير قابلة للاسترداد، لأنها سُلِّمت بالكامل ولا يمكن إرجاعها. وإن كنت قد اشتريتها ولم تولّد المحتوى بعد، فراسلنا على support@tarshih.com وسنعيد المبلغ.",
+            "الباقة المميزة تشمل المحتوى المُولَّد نفسه، بالإضافة إلى قيام أحد أعضاء فريقنا ببناء ملفك على لينكدإن وتحسينه معك. وهي قابلة للاسترداد كاملًا في أي وقت قبل أن نبدأ ذلك العمل. وبعد بدئنا ببناء ملفك تصبح الرسوم غير قابلة للاسترداد، لأن المحتوى المُولَّد وجزءًا من الخدمة قد سُلِّما بذلك. وإذا دفعت مقابل الباقة المميزة ولم نتواصل معك بعد، فهذا يعني أن العمل لم يبدأ وأنك ما زلت مستحقًا للاسترداد.",
+            "في الباقتين، يُبنى المحتوى الذي نولّده على معلومات من سيرة ذاتية أنشأتها في ترشيح. ولا نضمن أي نتيجة معيّنة من استخدامه، بما في ذلك عدد مشاهدات الملف أو تواصل جهات التوظيف أو المقابلات أو عروض العمل.",
+          ],
+        },
+        {
+          heading: "5. متى ينطبق الاسترداد",
           body: [
             "إذا حال عطل تقني من جانبنا دون تسليم ما دفعت مقابله، كأن يُخصم رصيد دون إنتاج مستند، راسلنا على support@tarshih.com مع بريد حسابك ووصف موجز لما حدث. سنعيد الرصيد أو، وفق تقديرنا، نسترد تلك العملية تحديدًا.",
+            "وفشل توليد إضافة لينكدإن لا يستهلك عملية شرائك: يمكنك التوليد مرة أخرى دون أي تكلفة إضافية. وإن تكرر الفشل، فتواصل معنا وسنسترد لك تلك العملية.",
             "بخلاف ذلك، فإن الرسوم المدفوعة والرصيد المستهلك غير قابلة للاسترداد، إلا في الحالات التي يقتضيها القانون المعمول به.",
           ],
         },
         {
-          heading: "5. حق التراجع بموجب نظام التجارة الإلكترونية السعودي",
+          heading: "6. حق التراجع بموجب نظام التجارة الإلكترونية السعودي",
           body: [
             "تمنح أنظمة التجارة الإلكترونية في المملكة العربية السعودية المستهلكين عمومًا حق التراجع عن عملية شراء إلكترونية خلال مدة محددة. لا يمتد هذا الحق إلى المحتوى الرقمي أو الخدمات التي تُقدَّم على وسيط غير ملموس متى بدأ التنفيذ بموافقتك الصريحة المسبقة وإقرارك بأنك تفقد بذلك حق التراجع.",
             "بشرائك اشتراكًا أو باقة رصيد وإنشائك مستندًا واحدًا على الأقل بها، فإنك تطلب منا صراحةً البدء في تنفيذ الخدمة فورًا وتقرّ بأن حق تراجعك ينتهي بمجرد تسليم ذلك المستند. إن لم تكن قد استخدمت أي رصيد من عملية الشراء بعد، راسلنا على support@tarshih.com خلال مدة معقولة وسنراجع طلبك وفق نظام حماية المستهلك المعمول به.",
+            "وينطبق الأمر نفسه على إضافة لينكدإن: توليد محتواك، أو طلبك منا بدء بناء الملف في الباقة المميزة، يعني أنك تطلب منا البدء في تنفيذ الخدمة فورًا.",
           ],
         },
         {
-          heading: "6. كيفية طلب الاسترداد",
+          heading: "7. كيفية طلب الاسترداد",
           body: [
             "راسلنا على support@tarshih.com من البريد الإلكتروني المسجّل في حسابك، مع وصف ما حدث، وسنرد بأسرع ما يمكن. نحن من يصدر المبالغ المستردة، وتُعاد إلى وسيلة الدفع الأصلية عبر مزود خدمات الدفع لدينا. وبعد الموافقة، قد يستغرق ظهور المبلغ لدى بنكك أو مُصدِر بطاقتك بضعة أيام عمل.",
           ],

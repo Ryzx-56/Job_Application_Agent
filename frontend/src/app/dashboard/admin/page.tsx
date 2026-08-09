@@ -2,7 +2,7 @@
 
 import React from "react";
 import Link from "next/link";
-import { FileText, BarChart3, Users, Activity, ArrowRight } from "lucide-react";
+import { FileText, BarChart3, Users, Activity, ArrowRight, BadgeCheck } from "lucide-react";
 import { AdminPage, ADMIN_MONO } from "@/components/admin-ui";
 
 /**
@@ -43,6 +43,15 @@ const TOOLS = [
     accent: "text-blue-600",
     ring: "group-hover:border-blue-300",
     desc: "Open the exact CV or cover letter a user received, re-rendered from their saved generation snapshot.",
+  },
+  {
+    href: "/dashboard/admin/linkedin",
+    name: "LinkedIn Orders",
+    cmd: "linkedin",
+    icon: BadgeCheck,
+    accent: "text-[#0A66C2]",
+    ring: "group-hover:border-[#0A66C2]/40",
+    desc: "The premium LinkedIn queue: who paid for a hand-built profile, how to reach them, and what's still owed.",
   },
   {
     href: "/dashboard/admin/health",

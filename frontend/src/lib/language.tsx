@@ -492,6 +492,9 @@ export const content = {
       sidebar: {
         dashboard: "Dashboard",
         myResumes: "My Resumes",
+        // Sits between My Resumes and Settings — the LinkedIn add-on is
+        // something you do AFTER making a CV, so it reads in that order.
+        linkedin: "LinkedIn",
         settings: "Settings",
         admin: "Admin",
         logout: "Log out",
@@ -600,6 +603,239 @@ export const content = {
         languageSection: "Language",
         languageLabel: "Preferred language",
         languageSaved: "Saved — applies on any device you log in from.",
+      },
+      /* ── LinkedIn add-on (/dashboard/linkedin) ──────────────────────────
+         The UI copy here follows the language toggle like everything else.
+         The GENERATED content it wraps is always English — see
+         englishOnlyNote, and the language rule in
+         backend/agents/linkedin_generator.py. */
+      linkedin: {
+        eyebrow: "One-time add-on",
+        title: "Your LinkedIn profile, written from your CV",
+        sub: "Turn a CV you've already made on Tarshih into LinkedIn content you can paste straight in, or have our team build the whole profile for you.",
+        englishOnlyNote:
+          "Your LinkedIn content is written in English whatever language your CV is in. That's deliberate: professionals here keep their profiles in English because that's how recruiters search, so an English profile reaches more of them.",
+
+        explainer: {
+          title: "What you actually get",
+          body: "Normal gives you everything you need to fill in your LinkedIn yourself. Premium means our team builds it for you.",
+          normalTitle: "Normal — you fill it in",
+          normalItems: [
+            "A headline, an About section, and your 5 strongest skills, written from your CV",
+            "One ready-to-paste block for every job in your experience",
+            "3 post ideas based on your real projects and roles, not generic prompts",
+            "Exactly what to add under Featured, Education, Certifications and Projects",
+            "A copy button on every single field, so nothing gets retyped",
+            "Delivered instantly and kept in your account, so you can come back to it",
+          ],
+          premiumTitle: "Premium — we build it for you",
+          premiumItems: [
+            "Everything in Normal, generated instantly",
+            "Someone from our team contacts you on WhatsApp or by phone",
+            "We build and optimize your actual LinkedIn profile with you, section by section",
+            "Your headline, About, experience and skills written and placed for you",
+            "One round of changes after it's live",
+          ],
+          honest:
+            "That is the whole difference. Normal is content you paste in yourself. Premium is a person doing it with you.",
+        },
+
+        refundNote: {
+          title: "Before you pay, plainly",
+          oneTime: "This is a one-time digital service, not a subscription. Nothing renews and nothing recurs.",
+          normal:
+            "Normal tier is delivered the instant you press Generate, so it can't be refunded once your content has been generated. Bought it and changed your mind before generating? Email us and we'll refund it.",
+          premium:
+            "Premium is refundable any time before our team starts building your profile. Once we've started, the work is under way and the automated content has already been delivered.",
+          contact: "Either way, questions go to support@tarshih.com.",
+          policyLink: "Read the full refund policy",
+        },
+
+        tiers: {
+          sectionTitle: "Pick a tier",
+          oneTime: "one-time",
+          included: "What's included",
+          normalName: "Normal",
+          normalTagline: "Automated, delivered instantly",
+          normalCta: "Choose Normal",
+          premiumName: "Premium",
+          premiumTagline: "We build your profile for you",
+          premiumCta: "Choose Premium",
+          premiumBadge: "Done for you",
+          seeOnPlans: "See this on the plans page",
+        },
+
+        teaser: {
+          heading: "Tip: aim for 500+ connections and post consistently to be visible to recruiters",
+          locked: "Unlocks after purchase",
+          body: "The rest of this — who to connect with in your field, how often to actually post, the recruiter-facing settings most people leave switched off — comes with your content.",
+        },
+
+        cvSelector: {
+          title: "Which CV should we build from?",
+          sub: "We use the facts from a CV you've already generated here. Nothing gets invented, and you don't have to re-enter anything.",
+          empty: "You'll need a generated CV first — that's where the facts come from.",
+          emptyCta: "Generate a CV",
+          unsupported: "Saved before we stored structured data, so it can't be used here",
+          untitled: "Untitled role",
+          unknownCompany: "Unknown company",
+          continue: "Continue to checkout",
+          selectFirst: "Pick a CV to continue.",
+          loading: "Loading your CVs…",
+          changeCv: "Change CV",
+        },
+
+        checkout: {
+          title: "Checkout",
+          sub: "One payment, no subscription.",
+          orderTitle: "Your order",
+          tierLabel: "Tier",
+          cvLabel: "Based on",
+          totalLabel: "Total",
+          contactTitle: "How we reach you",
+          phoneLabel: "Phone number (WhatsApp)",
+          phonePlaceholder: "05X XXX XXXX",
+          phoneHint: "Premium is a person building your profile, so we need a way to reach you.",
+          consentLabel: "I agree to be contacted on WhatsApp or by phone about this order.",
+          payCta: (amount: string) => `Pay ${amount}`,
+          paying: "Starting payment…",
+          comingSoonTitle: "Online payment is nearly ready",
+          comingSoonBody:
+            "We're finishing the payment setup with our provider. This page will take the payment as soon as that's live. Nothing has been charged.",
+          comingSoonCta: "Back to LinkedIn",
+          mockNotice: "Test mode: this payment is simulated and no money moves.",
+          back: "Back",
+          paidTitle: "Payment received",
+          paidBody: "You can generate your LinkedIn content now.",
+          goGenerate: "Generate my profile",
+          errors: {
+            consent: "Tick the consent box so we're allowed to contact you.",
+            phone: "Add a phone number we can reach you on.",
+            missingSelection: "Something's missing from this order. Start again from the LinkedIn page.",
+            generic: "Couldn't start the payment. Please try again.",
+          },
+        },
+
+        generateBox: {
+          title: "Your purchase is ready to use",
+          bodyNormal: "Generate your LinkedIn content from the CV you picked. Takes about a minute.",
+          bodyPremium:
+            "Generate your content now, and our team will contact you about building your profile.",
+          cta: "Generate my LinkedIn content",
+          running: "Writing your profile…",
+          runningHint: "One pass over your CV, usually under a minute. Keep this page open.",
+          failed: "That didn't finish. Your purchase is still valid, so nothing was lost.",
+          retry: "Try again",
+          basedOn: "Based on",
+          pickReplacementCv: "The CV this was based on was deleted. Pick another one to use it with.",
+        },
+
+        nameNeeded: {
+          title: "What's your name in English?",
+          body: "Your LinkedIn profile will show this name exactly as you type it. We don't translate or re-spell names, because only you know the spelling you use.",
+          placeholder: "",
+          save: "Save and generate",
+          error: "Couldn't save your name. Please try again.",
+        },
+
+        results: {
+          title: "Your LinkedIn content",
+          sub: "Work top to bottom, in this order — it matches how LinkedIn's own sections are laid out. Anything with a copy button is ready to paste as-is.",
+          copy: "Copy",
+          copied: "Copied",
+          step: (n: number) => `Step ${n}`,
+          backToLinkedin: "Back to LinkedIn",
+          generatedOn: "Generated",
+          fromCv: "From",
+          translatedNote: "Your CV was in Arabic, so the facts were translated for this profile.",
+          charCount: (used: number, max: number) => `${used} / ${max} characters`,
+          sections: {
+            intro: "Intro",
+            about: "About",
+            skills: "Your 5 skills",
+            featured: "Featured",
+            experience: "Experience",
+            posts: "Post ideas",
+            education: "Education & certifications",
+            projects: "Projects",
+            growth: "Getting seen by recruiters",
+          },
+          labels: {
+            firstName: "First name",
+            lastName: "Last name",
+            headline: "Headline",
+            currentPosition: "Current position",
+            industry: "Industry",
+            education: "Education",
+            location: "Location",
+            aboutText: "About text",
+            jobTitle: "Title",
+            organization: "Company",
+            location2: "Location",
+            locationType: "Location type",
+            employmentType: "Employment type",
+            startDate: "Start date",
+            endDate: "End date",
+            description: "Description",
+            highlights: "Lines it's built from",
+            roleSkills: "Skills to tag on this role",
+            angle: "What to say",
+            hook: "Opening line",
+            why: "Why it's worth it",
+            issuer: "Issuer",
+            suggestion: "Suggestion",
+            link: "Link",
+          },
+          notes: {
+            intro: "Paste these into LinkedIn's \"Edit intro\" panel.",
+            aboutFirstLine:
+              "LinkedIn only shows the first ~300 characters before \"…see more\", so the opening line is doing most of the work here.",
+            skills: "Add these under Skills, then pin them to the top of your profile.",
+            featured: "Add these under Featured, so a recruiter can see the work, not just read about it.",
+            experienceNa:
+              "\"N/A\" means your CV didn't say. Fill those in yourself — we don't guess dates, employers or titles.",
+            posts: "Yours to post. Each one is tied to something you actually did.",
+            manualEntry:
+              "LinkedIn needs these typed in directly so it can match your school and issuer to the real ones.",
+            recommendedCerts:
+              "Your CV lists no certifications. These are the ones worth having in your field — recommendations, not something to list as already earned.",
+            existingCerts: "Add the certificates you already have here.",
+            projectEntries: "Add each of these under Projects on your profile.",
+            recommendedProjects: "Ideas worth building. Only add them to your profile once they're real.",
+            growth: "This is the part most people skip, and it's the part that gets a profile seen.",
+          },
+          empty: "Nothing here yet.",
+        },
+
+        history: {
+          title: "Your LinkedIn profiles",
+          sub: "Everything you've bought and generated. Open any one, any time.",
+          open: "Open",
+          columns: { date: "Date", tier: "Tier", cv: "Based on", status: "Status" },
+          status: { ready: "Ready", generating: "Generating", failed: "Failed" },
+          empty: "You haven't generated anything yet.",
+          buyAgainTitle: "Want another one?",
+          buyAgainBody:
+            "Changed roles, or made a new CV? Buy again and generate a fresh profile from a different CV.",
+          buyAgainCta: "Buy another profile",
+          hideBuyAgain: "Never mind",
+        },
+
+        premiumPending: {
+          title: "Our team is on it",
+          body: "You bought Premium, so someone from Tarshih will contact you on the number you gave us and build your profile with you. Your generated content is here in the meantime.",
+        },
+
+        errors: {
+          load: "Couldn't load your LinkedIn add-on. Please try again.",
+          alreadyGenerated: "This purchase has already been used — open it from your history below.",
+          inProgress: "That profile is still generating. Give it a moment.",
+          notPaid: "This purchase hasn't been paid for yet.",
+          cvDeleted: "The CV this purchase was based on was deleted. Pick another CV to use it with.",
+          cvNotSupported:
+            "That CV was saved before we stored structured data, so we can't build from it. Pick a newer one.",
+          generationFailed: "Something went wrong generating your profile. Your purchase is still valid — try again.",
+        },
       },
     },
   },
@@ -1111,6 +1347,7 @@ export const content = {
       sidebar: {
         dashboard: "لوحة التحكم",
         myResumes: "سيري الذاتية",
+        linkedin: "لينكدإن",
         settings: "الإعدادات",
         admin: "الإدارة",
         logout: "تسجيل الخروج",
@@ -1214,6 +1451,235 @@ export const content = {
         languageSection: "اللغة",
         languageLabel: "اللغة المفضلة",
         languageSaved: "تم الحفظ — ستُطبَّق على أي جهاز تسجّل الدخول منه.",
+      },
+      /* ── إضافة لينكدإن (/dashboard/linkedin) ────────────────────────────
+         نصوص الواجهة تتبع لغة الموقع كالمعتاد. أما المحتوى المُولَّد نفسه
+         فهو بالإنجليزية دائمًا — راجع englishOnlyNote. */
+      linkedin: {
+        eyebrow: "إضافة لمرة واحدة",
+        title: "ملفك على لينكدإن، مكتوبًا من سيرتك الذاتية",
+        sub: "حوّل سيرة ذاتية أنشأتها في ترشيح إلى محتوى لينكدإن جاهز للّصق مباشرة، أو دع فريقنا يبني لك الملف بالكامل.",
+        englishOnlyNote:
+          "محتوى لينكدإن يُكتب بالإنجليزية دائمًا، أيًا كانت لغة سيرتك الذاتية. هذا مقصود: المحترفون هنا يحتفظون بملفاتهم بالإنجليزية لأن هذه هي طريقة بحث جهات التوظيف، فالملف الإنجليزي يصل إلى عدد أكبر منهم.",
+
+        explainer: {
+          title: "ما تحصل عليه فعليًا",
+          body: "الباقة العادية تمنحك كل ما تحتاجه لتعبئة لينكدإن بنفسك. الباقة المميزة تعني أن فريقنا يبنيه لك.",
+          normalTitle: "العادية — تعبّئها بنفسك",
+          normalItems: [
+            "عنوان مهني، وقسم «نبذة»، وأقوى 5 مهارات لديك، مكتوبة من سيرتك الذاتية",
+            "نص جاهز للّصق لكل وظيفة في خبراتك",
+            "3 أفكار منشورات مبنية على مشاريعك ووظائفك الحقيقية، لا أفكار عامة",
+            "ما يجب إضافته بالضبط في «المميز» و«التعليم» و«الشهادات» و«المشاريع»",
+            "زر نسخ عند كل حقل، فلا تحتاج إلى إعادة كتابة أي شيء",
+            "يُسلَّم فورًا ويبقى محفوظًا في حسابك لتعود إليه وقتما تشاء",
+          ],
+          premiumTitle: "المميزة — نبنيه لك",
+          premiumItems: [
+            "كل ما في الباقة العادية، ويُولَّد فورًا",
+            "يتواصل معك أحد أعضاء فريقنا عبر واتساب أو هاتفيًا",
+            "نبني ملفك على لينكدإن ونحسّنه معك، قسمًا بقسم",
+            "نكتب ونضع لك العنوان المهني و«نبذة» والخبرات والمهارات",
+            "جولة تعديلات واحدة بعد نشره",
+          ],
+          honest:
+            "هذا هو الفرق كله: العادية محتوى تلصقه بنفسك، والمميزة شخص ينفّذه معك.",
+        },
+
+        refundNote: {
+          title: "قبل الدفع، بوضوح",
+          oneTime: "هذه خدمة رقمية لمرة واحدة، وليست اشتراكًا. لا تجديد ولا خصم متكرر.",
+          normal:
+            "الباقة العادية تُسلَّم لحظة ضغطك على «إنشاء»، لذا لا يمكن استردادها بعد توليد المحتوى. أما إذا غيّرت رأيك قبل التوليد فراسلنا ونعيد المبلغ.",
+          premium:
+            "الباقة المميزة قابلة للاسترداد في أي وقت قبل أن يبدأ فريقنا ببناء ملفك. وبعد بدء العمل يكون التنفيذ جاريًا والمحتوى الآلي قد سُلِّم بالفعل.",
+          contact: "في الحالتين، أي سؤال يُرسل إلى support@tarshih.com.",
+          policyLink: "اقرأ سياسة الاسترداد كاملة",
+        },
+
+        tiers: {
+          sectionTitle: "اختر الباقة",
+          oneTime: "لمرة واحدة",
+          included: "ما تشمله",
+          normalName: "العادية",
+          normalTagline: "آلية بالكامل، وتُسلَّم فورًا",
+          normalCta: "اختيار العادية",
+          premiumName: "المميزة",
+          premiumTagline: "نبني ملفك لك",
+          premiumCta: "اختيار المميزة",
+          premiumBadge: "ننفّذها لك",
+          seeOnPlans: "اعرضها في صفحة الخطط",
+        },
+
+        teaser: {
+          heading: "نصيحة: استهدف أكثر من 500 متابع وانشر بانتظام لتكون مرئيًا لجهات التوظيف",
+          locked: "يُفتح بعد الشراء",
+          body: "بقية هذا الدليل — بمن تتواصل في مجالك، وكم مرة تنشر فعليًا، وإعدادات الظهور لجهات التوظيف التي يتركها معظم الناس مغلقة — يأتي مع محتواك.",
+        },
+
+        cvSelector: {
+          title: "من أي سيرة ذاتية نبني؟",
+          sub: "نستخدم المعلومات من سيرة ذاتية أنشأتها هنا مسبقًا. لا نختلق شيئًا، ولا تحتاج إلى إعادة إدخال أي بيانات.",
+          empty: "تحتاج أولًا إلى سيرة ذاتية مُنشأة — فمنها تأتي المعلومات.",
+          emptyCta: "إنشاء سيرة ذاتية",
+          unsupported: "محفوظة قبل تخزيننا للبيانات المنظمة، لذا لا يمكن استخدامها هنا",
+          untitled: "وظيفة بدون عنوان",
+          unknownCompany: "شركة غير معروفة",
+          continue: "المتابعة إلى الدفع",
+          selectFirst: "اختر سيرة ذاتية للمتابعة.",
+          loading: "جارٍ تحميل سيرك الذاتية…",
+          changeCv: "تغيير السيرة الذاتية",
+        },
+
+        checkout: {
+          title: "الدفع",
+          sub: "دفعة واحدة، بدون اشتراك.",
+          orderTitle: "طلبك",
+          tierLabel: "الباقة",
+          cvLabel: "مبنية على",
+          totalLabel: "الإجمالي",
+          contactTitle: "كيف نتواصل معك",
+          phoneLabel: "رقم الجوال (واتساب)",
+          phonePlaceholder: "05X XXX XXXX",
+          phoneHint: "الباقة المميزة يبنيها شخص من فريقنا، لذا نحتاج وسيلة للوصول إليك.",
+          consentLabel: "أوافق على التواصل معي عبر واتساب أو الهاتف بخصوص هذا الطلب.",
+          payCta: (amount: string) => `ادفع ${amount}`,
+          paying: "جارٍ بدء الدفع…",
+          comingSoonTitle: "الدفع الإلكتروني على وشك الجهوزية",
+          comingSoonBody:
+            "نُكمل حاليًا إعداد الدفع مع مزوّد الخدمة. ستتولى هذه الصفحة الدفع بمجرد جهوزيته، ولم يُخصم منك أي مبلغ.",
+          comingSoonCta: "العودة إلى لينكدإن",
+          mockNotice: "وضع تجريبي: هذه عملية دفع محاكاة ولا يُخصم أي مبلغ.",
+          back: "رجوع",
+          paidTitle: "تم استلام الدفع",
+          paidBody: "يمكنك الآن توليد محتوى لينكدإن الخاص بك.",
+          goGenerate: "توليد ملفي",
+          errors: {
+            consent: "فعّل خيار الموافقة حتى يُسمح لنا بالتواصل معك.",
+            phone: "أضف رقم جوال نستطيع الوصول إليك عبره.",
+            missingSelection: "هناك بيانات ناقصة في هذا الطلب. ابدأ من جديد من صفحة لينكدإن.",
+            generic: "تعذّر بدء الدفع. حاول مرة أخرى.",
+          },
+        },
+
+        generateBox: {
+          title: "شراؤك جاهز للاستخدام",
+          bodyNormal: "ولّد محتوى لينكدإن من السيرة الذاتية التي اخترتها. يستغرق الأمر دقيقة تقريبًا.",
+          bodyPremium: "ولّد محتواك الآن، وسيتواصل معك فريقنا لبناء ملفك.",
+          cta: "توليد محتوى لينكدإن",
+          running: "جارٍ كتابة ملفك…",
+          runningHint: "مرور واحد على سيرتك الذاتية، عادة أقل من دقيقة. أبقِ هذه الصفحة مفتوحة.",
+          failed: "لم تكتمل العملية. شراؤك ما زال ساريًا ولم تفقد شيئًا.",
+          retry: "حاول مرة أخرى",
+          basedOn: "مبني على",
+          pickReplacementCv: "السيرة الذاتية التي بُني عليها هذا الشراء محذوفة. اختر سيرة أخرى لاستخدامه.",
+        },
+
+        nameNeeded: {
+          title: "ما اسمك بالإنجليزية؟",
+          body: "سيظهر ملفك على لينكدإن بهذا الاسم كما تكتبه تمامًا. نحن لا نترجم الأسماء ولا نعيد كتابتها، لأنك وحدك تعرف الصيغة التي تستخدمها.",
+          placeholder: "",
+          save: "حفظ ثم التوليد",
+          error: "تعذّر حفظ اسمك. حاول مرة أخرى.",
+        },
+
+        results: {
+          title: "محتوى لينكدإن الخاص بك",
+          sub: "اعمل من الأعلى إلى الأسفل بهذا الترتيب، فهو يطابق ترتيب أقسام لينكدإن نفسها. وكل ما يظهر بجانبه زر نسخ جاهز للّصق كما هو.",
+          copy: "نسخ",
+          copied: "تم النسخ",
+          step: (n: number) => `الخطوة ${n}`,
+          backToLinkedin: "العودة إلى لينكدإن",
+          generatedOn: "تاريخ التوليد",
+          fromCv: "من",
+          translatedNote: "سيرتك الذاتية كانت بالعربية، لذا تُرجمت المعلومات لهذا الملف.",
+          charCount: (used: number, max: number) => `${used} / ${max} حرف`,
+          sections: {
+            intro: "التعريف",
+            about: "نبذة",
+            skills: "مهاراتك الخمس",
+            featured: "المميز",
+            experience: "الخبرات",
+            posts: "أفكار منشورات",
+            education: "التعليم والشهادات",
+            projects: "المشاريع",
+            growth: "الظهور لجهات التوظيف",
+          },
+          labels: {
+            firstName: "الاسم الأول",
+            lastName: "اسم العائلة",
+            headline: "العنوان المهني",
+            currentPosition: "المنصب الحالي",
+            industry: "المجال",
+            education: "التعليم",
+            location: "الموقع",
+            aboutText: "نص النبذة",
+            jobTitle: "المسمى الوظيفي",
+            organization: "جهة العمل",
+            location2: "الموقع",
+            locationType: "نوع الموقع",
+            employmentType: "نوع التوظيف",
+            startDate: "تاريخ البداية",
+            endDate: "تاريخ النهاية",
+            description: "الوصف",
+            highlights: "الأسطر المكوّنة له",
+            roleSkills: "مهارات تُربط بهذه الوظيفة",
+            angle: "ما تقوله",
+            hook: "السطر الافتتاحي",
+            why: "لماذا يستحق",
+            issuer: "الجهة المانحة",
+            suggestion: "اقتراح",
+            link: "الرابط",
+          },
+          notes: {
+            intro: "الصق هذه في لوحة «تعديل التعريف» في لينكدإن.",
+            aboutFirstLine:
+              "لينكدإن يعرض أول 300 حرف تقريبًا فقط قبل «…عرض المزيد»، لذا فإن السطر الأول هو الذي يقوم بمعظم العمل هنا.",
+            skills: "أضف هذه في قسم المهارات، ثم ثبّتها في أعلى ملفك.",
+            featured: "أضف هذه في قسم «المميز»، ليرى المسؤول عملك لا أن يقرأ عنه فقط.",
+            experienceNa:
+              "«N/A» تعني أن سيرتك الذاتية لم تذكر ذلك. اكتبها بنفسك — نحن لا نخمّن التواريخ أو جهات العمل أو المسميات.",
+            posts: "هذه لك لتنشرها. كل فكرة مرتبطة بشيء فعلته حقًا.",
+            manualEntry:
+              "لينكدإن يحتاج إدخال هذه مباشرة ليطابق جامعتك والجهة المانحة بالجهات الحقيقية.",
+            recommendedCerts:
+              "سيرتك الذاتية لا تذكر أي شهادات. هذه أفضل ما يستحق الحصول عليه في مجالك — توصيات، وليست شيئًا تدرجه كأنك حصلت عليه.",
+            existingCerts: "أضف هنا الشهادات التي تملكها بالفعل.",
+            projectEntries: "أضف كل واحد من هذه في قسم المشاريع في ملفك.",
+            recommendedProjects: "أفكار تستحق التنفيذ. لا تضفها إلى ملفك إلا بعد أن تصبح حقيقية.",
+            growth: "هذا هو الجزء الذي يتجاوزه معظم الناس، وهو الجزء الذي يجعل الملف مرئيًا.",
+          },
+          empty: "لا يوجد شيء هنا بعد.",
+        },
+
+        history: {
+          title: "ملفاتك على لينكدإن",
+          sub: "كل ما اشتريته وولّدته. افتح أيًا منها في أي وقت.",
+          open: "فتح",
+          columns: { date: "التاريخ", tier: "الباقة", cv: "مبني على", status: "الحالة" },
+          status: { ready: "جاهز", generating: "جارٍ التوليد", failed: "فشل" },
+          empty: "لم تولّد شيئًا بعد.",
+          buyAgainTitle: "تريد واحدًا آخر؟",
+          buyAgainBody: "غيّرت وظيفتك أو أنشأت سيرة ذاتية جديدة؟ اشترِ مرة أخرى وولّد ملفًا جديدًا من سيرة مختلفة.",
+          buyAgainCta: "شراء ملف آخر",
+          hideBuyAgain: "لا داعي",
+        },
+
+        premiumPending: {
+          title: "فريقنا يعمل على ذلك",
+          body: "لقد اشتريت الباقة المميزة، وسيتواصل معك أحد أعضاء فريق ترشيح على الرقم الذي أعطيتنا إياه لبناء ملفك معك. ومحتواك المُولَّد موجود هنا في الوقت الحالي.",
+        },
+
+        errors: {
+          load: "تعذّر تحميل إضافة لينكدإن. حاول مرة أخرى.",
+          alreadyGenerated: "هذا الشراء مُستخدم بالفعل — افتحه من سجلك بالأسفل.",
+          inProgress: "الملف ما زال قيد التوليد. أمهله لحظة.",
+          notPaid: "لم يُدفع مقابل هذا الشراء بعد.",
+          cvDeleted: "السيرة الذاتية التي بُني عليها هذا الشراء محذوفة. اختر سيرة أخرى لاستخدامه معها.",
+          cvNotSupported:
+            "تلك السيرة الذاتية محفوظة قبل تخزيننا للبيانات المنظمة، لذا لا نستطيع البناء منها. اختر واحدة أحدث.",
+          generationFailed: "حدث خطأ أثناء توليد ملفك. شراؤك ما زال ساريًا — حاول مرة أخرى.",
+        },
       },
     },
   },
