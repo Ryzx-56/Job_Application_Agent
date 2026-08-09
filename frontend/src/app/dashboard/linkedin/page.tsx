@@ -80,6 +80,11 @@ export default function LinkedInPage() {
   const [resumes, setResumes] = useState<ResumeRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
+  // The underlying failure, shown in mono under the friendly line — same as
+  // My Resumes. A bare "please try again" on a page whose backend isn't
+  // deployed (or whose tables don't exist yet) is undebuggable from a
+  // screenshot, which is exactly when someone sends you one.
+  const [loadErrorDetail, setLoadErrorDetail] = useState<string | null>(null);
 
   const [tier, setTier] = useState<LinkedInTier | null>(null);
   const [cvId, setCvId] = useState<string | null>(null);
@@ -118,7 +123,14 @@ export default function LinkedInPage() {
       })
       .catch((err) => {
         console.error("LinkedIn overview failed:", err);
-        if (!cancelled) setLoadError(copy.errors.load);
+        if (cancelled) return;
+        setLoadError(copy.errors.load);
+        const apiError = err as ApiError;
+        setLoadErrorDetail(
+          [apiError.status ? `HTTP ${apiError.status}` : null, apiError.code, apiError.message]
+            .filter(Boolean)
+            .join(" · ")
+        );
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
@@ -287,9 +299,14 @@ export default function LinkedInPage() {
   if (loadError || !overview) {
     return (
       <LinkedInPageShell dir={dir}>
-        <div className="flex flex-col items-center gap-2 rounded-2xl border border-rose-200 bg-rose-50/70 py-16 text-sm text-rose-600">
+        <div className="flex flex-col items-center gap-2 rounded-2xl border border-rose-200 bg-rose-50/70 px-6 py-16 text-sm text-rose-600">
           <AlertCircle className="size-5" aria-hidden />
-          {loadError ?? copy.errors.load}
+          <span>{loadError ?? copy.errors.load}</span>
+          {loadErrorDetail && (
+            <span dir="ltr" className="max-w-full break-words text-center font-mono text-xs text-rose-400">
+              {loadErrorDetail}
+            </span>
+          )}
         </div>
       </LinkedInPageShell>
     );
