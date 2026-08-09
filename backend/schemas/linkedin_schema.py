@@ -1,14 +1,14 @@
 # schemas/linkedin_schema.py
 #
 # The LinkedIn add-on's contract, in three parts:
-#   1. CONTENT_LIMITS — LinkedIn's real per-field character maximums.
-#   2. The LinkedInContent tree — exactly what agents/linkedin_generator.py
+#   1. CONTENT_LIMITS: LinkedIn's real per-field character maximums.
+#   2. The LinkedInContent tree, exactly what agents/linkedin_generator.py
 #      returns and what gets stored in linkedin_generations.generated_content
 #      and rendered by frontend/src/components/linkedin-results.tsx.
 #   3. The two request bodies the /linkedin endpoints accept.
 #
 # Every text field in the content tree is ENGLISH, always, whatever language
-# the source CV was in — see the language rule in linkedin_generator.py. The
+# the source CV was in, see the language rule in linkedin_generator.py. The
 # results page's own labels still follow the site's language toggle; only the
 # copy-paste output is fixed to English.
 from typing import List, Literal, Optional
@@ -22,7 +22,7 @@ from pydantic import BaseModel, Field
 # linkedin_generator.py) so an over-long field can never reach the user.
 # Prompt-only enforcement is a request; the clamp is the guarantee.
 #
-# "Best range" for the About box is narrower than its hard limit — LinkedIn
+# "Best range" for the About box is narrower than its hard limit, LinkedIn
 # truncates at roughly 300 characters behind a "See more" link, so the
 # opening line carries most of the weight.
 CONTENT_LIMITS = {
@@ -49,14 +49,14 @@ NOT_AVAILABLE = "N/A"
 # ─── CONTENT TREE ───────────────────────────────────────────────────────────
 #
 # Every field defaults to empty. A model that omits one section must not
-# invalidate the whole payload — the results page renders what's present and
+# invalidate the whole payload, the results page renders what's present and
 # skips what isn't, which is also how "no Featured section when there's
 # nothing to feature" is represented (§3).
 
 
 class LinkedInIntro(BaseModel):
     """The LinkedIn "Edit intro" modal, field for field. Pulled from
-    facts_json rather than written — the one section that must not be
+    facts_json rather than written, the one section that must not be
     creative."""
     first_name: str = ""
     last_name: str = ""
@@ -77,7 +77,7 @@ class LinkedInAbout(BaseModel):
 
 class LinkedInFeaturedItem(BaseModel):
     """A link the user already has (GitHub, portfolio, …) that belongs in the
-    Featured section. Never invented — if facts_json has no links at all the
+    Featured section. Never invented, if facts_json has no links at all the
     whole Featured section is omitted rather than shown empty."""
     label: str = ""
     url: str = ""
@@ -129,7 +129,7 @@ class LinkedInCertificationSuggestion(BaseModel):
 class LinkedInEducationSection(BaseModel):
     """LinkedIn requires Education and Licenses & Certifications to be typed
     in directly (they're structured, searchable entities, not free text), so
-    this section is instructions plus the data to type — not something to
+    this section is instructions plus the data to type, not something to
     paste wholesale."""
     instruction: str = ""
     education_entries: List[LinkedInEducationEntry] = Field(default_factory=list)
@@ -152,7 +152,7 @@ class LinkedInProjectIdea(BaseModel):
 class LinkedInProjectsSection(BaseModel):
     """Real projects get a written description each. If the CV has none AND
     the person's field normally expects them (engineering, dev, data,
-    design), `recommended` carries 2-3 realistic suggestions instead — and
+    design), `recommended` carries 2-3 realistic suggestions instead, and
     those are clearly labeled as suggestions in the UI so they can never
     read as something the person has already built."""
     instruction: str = ""
@@ -173,7 +173,7 @@ class LinkedInGrowthPlaybook(BaseModel):
 class LinkedInContent(BaseModel):
     intro: LinkedInIntro = Field(default_factory=LinkedInIntro)
     about: LinkedInAbout = Field(default_factory=LinkedInAbout)
-    # None (not an empty object) when facts_json has no links to feature —
+    # None (not an empty object) when facts_json has no links to feature,
     # the UI skips the section entirely on None.
     featured: Optional[List[LinkedInFeaturedItem]] = None
     experience: List[LinkedInExperienceEntry] = Field(default_factory=list)
@@ -208,7 +208,7 @@ class LinkedInCheckoutRequest(BaseModel):
 
 class LinkedInGenerateRequest(BaseModel):
     purchase_id: str
-    # Normally omitted — the CV is already recorded on the purchase. Only
+    # Normally omitted, the CV is already recorded on the purchase. Only
     # needed when the original CV was deleted after purchase (the purchase's
     # source_cv_id goes null), in which case the buyer picks a replacement
     # rather than losing what they paid for.

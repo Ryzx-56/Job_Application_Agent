@@ -1,18 +1,18 @@
 # agents/linkedin_generator.py
 #
 # The LinkedIn add-on's only agent. ONE Claude Sonnet call over the
-# facts_json a CV generation already produced — deliberately not a pipeline.
+# facts_json a CV generation already produced, deliberately not a pipeline.
 # Nothing in the existing CV graph (core/orchestrator.py) runs for this
 # feature and nothing here is wired into that graph; this module is called
 # directly by core/linkedin.py's /linkedin/generate endpoint.
 #
 # WHAT IT CONSUMES: facts_json, exactly as cv_parser.py produced it and as
-# it was stored on resumes.generation_snapshot. It is read-only input here —
+# it was stored on resumes.generation_snapshot. It is read-only input here,
 # no agent in the CV pipeline is modified, called, or re-run.
 #
 # ENGLISH, ALWAYS: every copy-paste field this returns is English even when
 # the source CV is Arabic, because that is how LinkedIn is actually used in
-# Saudi/MENA — profiles stay in English for reach. The Arabic facts get
+# Saudi/MENA: profiles stay in English for reach. The Arabic facts get
 # translated as part of generation. The results PAGE still follows the
 # site's language toggle; only this output is fixed.
 import json
@@ -36,8 +36,8 @@ from schemas.linkedin_schema import (
 
 class LinkedInGenerationError(RuntimeError):
     """Generation produced nothing usable. The caller marks the generation
-    row 'failed', which by design does NOT consume the purchase — see the
-    partial unique index in 008_linkedin_addon.sql — so the buyer can retry
+    row 'failed', which by design does NOT consume the purchase, see the
+    partial unique index in 008_linkedin_addon.sql, so the buyer can retry
     without paying again."""
 
 
@@ -51,7 +51,7 @@ class LinkedInLanguageError(LinkedInGenerationError):
 #
 # The spec for the About box's 5 skills says: if the CV lists no skills,
 # infer them from experience/projects "the same way the pipeline already
-# does — reuse that logic, don't rewrite it".
+# does, reuse that logic, don't rewrite it".
 #
 # That logic is not a function. It lives as a block of prompt text inside
 # tailoring_engine.py's TAILORING_SYSTEM_PROMPT (the "MISSING/EMPTY SKILLS"
@@ -85,11 +85,15 @@ def _shared_skills_inference_rule() -> str:
         block = TAILORING_SYSTEM_PROMPT[start:end].strip()
         if not block:
             raise ValueError("empty skills-inference block")
-        return block
+        # The quoted text is the original author's prose, which uses em dashes.
+        # This prompt tells the model never to produce one, so the dashes are
+        # normalized on the way in rather than handing it an instruction that
+        # contradicts the style of the text carrying it. Wording is untouched.
+        return block.replace(" — ", ", ")
     except Exception as e:
         logger.warning(
             "⚠️ Could not quote the shared skills-inference rule from "
-            f"tailoring_engine.TAILORING_SYSTEM_PROMPT ({e}). Using the short fallback — "
+            f"tailoring_engine.TAILORING_SYSTEM_PROMPT ({e}). Using the short fallback, "
             f"check whether the '{_SKILLS_RULE_START}' section was renamed."
         )
         return _SKILLS_RULE_FALLBACK
@@ -103,7 +107,7 @@ def _shared_skills_inference_rule() -> str:
 #
 # The result is assembled ONCE at import time and is byte-identical on every
 # call, which is what lets it be sent as generate_claude_text's cached
-# `system` block. Nothing per-request is spliced into it — the CV goes in the
+# `system` block. Nothing per-request is spliced into it, the CV goes in the
 # user turn below.
 
 _LINKEDIN_SYSTEM_TEMPLATE = """
@@ -114,20 +118,20 @@ LinkedIn, plus clear instructions for the sections LinkedIn makes them type in t
 Your audience is a professional in Saudi Arabia / the wider MENA region applying to roles
 where recruiters read LinkedIn in English.
 
-OUTPUT LANGUAGE — MANDATORY, NO EXCEPTIONS:
+OUTPUT LANGUAGE: MANDATORY, NO EXCEPTIONS:
 
 - EVERY value you return is in professional English. Every headline, every line of the About
   text, every skill, every job title, every company name, every description, every post idea.
 - The CV data may be written in Arabic. If it is, TRANSLATE it into English as part of your
   work. Never pass Arabic text through into any field.
-- Arabic organization, university, city and job-title names must be rendered in English —
-  use the organization's own official English name when it has a well-known one (for example
+- Arabic organization, university, city and job-title names must be rendered in English. Use
+  the organization's own official English name when it has a well-known one (for example
   "جامعة الملك عبدالعزيز" is "King Abdulaziz University"), otherwise a faithful English
   rendering. Do not leave the Arabic, and do not put the Arabic in brackets next to it.
-- The only exception is a proper name that is genuinely written in Latin script already —
-  keep it as-is.
+- The only exception is a proper name that is genuinely written in Latin script already. Keep
+  it as-is.
 
-FACTUAL RULES — THESE OVERRIDE EVERY STYLE INSTRUCTION:
+FACTUAL RULES: THESE OVERRIDE EVERY STYLE INSTRUCTION:
 
 - Never invent a company, job title, date, degree, certification, metric, tool or skill.
   If FACTS_JSON does not contain it, it does not exist.
@@ -138,19 +142,19 @@ FACTUAL RULES — THESE OVERRIDE EVERY STYLE INSTRUCTION:
 - CANDIDATE_FIRST_NAME and CANDIDATE_LAST_NAME are given to you in the user message. Use
   them exactly as given for the name fields. Never transliterate or re-spell a person's name.
 
-LINKEDIN CHARACTER LIMITS — these are real limits enforced by LinkedIn, and they are also
+LINKEDIN CHARACTER LIMITS: these are real limits enforced by LinkedIn, and they are also
 validated after you answer. Content over the limit gets cut, so write inside them:
 
 - Headline: <<HEADLINE_LIMIT>> characters maximum.
 - About / Summary: <<ABOUT_LIMIT>> characters maximum. Aim for <<ABOUT_BEST_MIN>>-<<ABOUT_BEST_MAX>>
-  characters — that is the range that reads as substantial without becoming a wall of text.
+  characters, that is the range that reads as substantial without becoming a wall of text.
 - Experience description, per role: <<EXPERIENCE_LIMIT>> characters maximum.
 - Any position/job title: <<TITLE_LIMIT>> characters maximum.
 - Any single skill: <<SKILL_LIMIT>> characters maximum.
 
 SECTION-BY-SECTION INSTRUCTIONS:
 
-1. INTRO ("intro") — this mirrors LinkedIn's "Edit intro" box. Pull it from FACTS_JSON, do not
+1. INTRO ("intro"), this mirrors LinkedIn's "Edit intro" box. Pull it from FACTS_JSON, do not
    invent it:
    - first_name / last_name: exactly as given in the user message.
    - headline: the one field that decides whether a recruiter keeps reading. Write a specific,
@@ -165,7 +169,7 @@ SECTION-BY-SECTION INSTRUCTIONS:
 2. ABOUT ("about"):
    - "text": first-person, confident, specific. The first <<ABOUT_VISIBLE>> characters are the
      only part LinkedIn shows before "…see more", so FRONT-LOAD the strongest, most concrete
-     line — never open with a generic throwaway sentence. Cover: what they do, the evidence
+     line, never open with a generic throwaway sentence. Cover: what they do, the evidence
      (real projects/roles/results from FACTS_JSON), the specialization, and what they are
      looking to do next. Short paragraphs, blank line between them, no markdown, no bullet
      characters, no emoji, no hashtags.
@@ -173,13 +177,13 @@ SECTION-BY-SECTION INSTRUCTIONS:
      Take them from the CV's own skills where it has them. If the CV's skills are empty or very
      thin, infer them under the rule quoted below.
 
-   SKILLS-INFERENCE RULE — quoted verbatim from the CV tailoring pipeline so both features hold
+   SKILLS-INFERENCE RULE: quoted verbatim from the CV tailoring pipeline so both features hold
    inferred skills to exactly one standard. It is written in terms of "tailored_skills"; here it
    applies to the "about.skills" list and to each role's "skills" list:
 
 <<SKILLS_RULE>>
 
-3. EXPERIENCE ("experience") — ONE entry per role in FACTS_JSON.experience, newest first,
+3. EXPERIENCE ("experience"), ONE entry per role in FACTS_JSON.experience, newest first,
    laid out like LinkedIn's "Add experience" modal so it can be filled in top to bottom:
    - job_title, organization, location, location_type ("On-site" / "Hybrid" / "Remote"),
      employment_type ("Full-time" / "Part-time" / "Internship" / "Freelance" / "Contract" /
@@ -187,7 +191,7 @@ SECTION-BY-SECTION INSTRUCTIONS:
      "YYYY" when it only gives a year), is_current (true only when the CV clearly shows the
      role is ongoing).
    - Any of those the CV does not answer is exactly "<<NA>>". location_type and employment_type
-     are very often not in a CV — "<<NA>>" is the correct answer then, not a guess.
+     are very often not in a CV, "<<NA>>" is the correct answer then, not a guess.
    - "highlights": 3-5 punchy first-person achievement lines for this role, based on the CV's
      own bullets for it. LinkedIn's register is more direct and personal than a CV's: "I led",
      "I built", "I cut". Keep every number and outcome that is in FACTS_JSON; add none.
@@ -197,21 +201,21 @@ SECTION-BY-SECTION INSTRUCTIONS:
    - "skills": up to 5 skills to tag on this specific role, evidenced by this role's own content.
    - If FACTS_JSON.experience is empty, return an empty list. Do not manufacture a role.
 
-4. FEATURED ("featured") — only if FACTS_JSON contains real links (personal.github,
+4. FEATURED ("featured"), only if FACTS_JSON contains real links (personal.github,
    personal.portfolio, personal.linkedin, or a project url). One item per link, each with a
    "label" ("GitHub", "Portfolio", the project's name), the "url" exactly as it appears in
    FACTS_JSON, and a short "instruction" telling them what to add and why it helps. If there
-   are NO links at all, return null for "featured" — do not return an empty list and do not
+   are NO links at all, return null for "featured", do not return an empty list and do not
    tell them to create a portfolio.
 
-5. POST IDEAS ("post_ideas") — exactly <<POST_IDEAS_COUNT>>, each tied to something they
+5. POST IDEAS ("post_ideas"), exactly <<POST_IDEAS_COUNT>>, each tied to something they
    actually did. Name the real project, role or result in the idea. "Post about how you built
    [the real project name]" is right; "post about your career journey" is not. Each has a
    "title" (what the post is about), an "angle" (2-3 sentences on what to say and why people
    would care), and a "draft_hook" (the actual opening line they can paste, under 220
    characters, no hashtags).
 
-6. EDUCATION AND CERTIFICATIONS ("education_and_certifications") — LinkedIn requires these to
+6. EDUCATION AND CERTIFICATIONS ("education_and_certifications"), LinkedIn requires these to
    be entered directly as structured entries, so this section is instructions plus the data to
    type in, not text to paste:
    - "instruction": tell them to add these themselves, and why (LinkedIn matches schools and
@@ -237,7 +241,7 @@ SECTION-BY-SECTION INSTRUCTIONS:
    - If their field does not typically expect a projects section, leave both lists empty and
      say so in "instruction".
 
-8. GROWTH PLAYBOOK ("growth_playbook") — the profile-visibility guidance, unlocked after
+8. GROWTH PLAYBOOK ("growth_playbook"), the profile-visibility guidance, unlocked after
    purchase. "title" is a short heading. "steps" is 5-6 concrete, specific actions covering:
    getting past 500 connections and who to connect with in THEIR field, a realistic posting
    cadence, engaging on other people's posts, keywords recruiters in their field actually
@@ -348,10 +352,10 @@ format given above. Return only the JSON object.
 """
 
 # Appended to the user turn on the one retry we allow after Arabic text slips
-# into the output. Deliberately concrete about which fields were wrong —
+# into the output. Deliberately concrete about which fields were wrong,
 # repeating the same prompt verbatim would just reproduce the same mistake.
 _LANGUAGE_CORRECTION = """
-CORRECTION — YOUR PREVIOUS ANSWER WAS REJECTED:
+CORRECTION: YOUR PREVIOUS ANSWER WAS REJECTED:
 
 It contained Arabic text in these fields: <<FIELDS>>
 
@@ -365,7 +369,7 @@ complete JSON object with no Arabic characters in any value.
 # JSON itself: a CV with several roles lands around 3-4k output tokens, and
 # the reasoning about headline/About framing is the part worth paying for.
 # Output is always English, so there is no Arabic multiplier here (unlike
-# CLAUDE_BUDGETS in core/llm_config.py) — only the INPUT may be Arabic.
+# CLAUDE_BUDGETS in core/llm_config.py), only the INPUT may be Arabic.
 _MAX_TOKENS = 9000
 _MAX_TOKENS_CEILING = 24000
 
@@ -388,7 +392,7 @@ def _clamp(text: str, limit: int, label: str) -> str:
     if len(text) <= limit:
         return text
 
-    logger.warning(f"✂️ LinkedIn {label} came back at {len(text)} chars, over the {limit} limit — trimming.")
+    logger.warning(f"✂️ LinkedIn {label} came back at {len(text)} chars, over the {limit} limit, trimming.")
     cut = text[:limit]
 
     sentence_ends = [m.end() for m in _SENTENCE_END_RE.finditer(cut)]
@@ -441,7 +445,7 @@ def _arabic_fields(node, path: str = "") -> list[str]:
 
 def _split_name(full_name: str) -> tuple[str, str]:
     """First token is the given name, everything after it is the family name.
-    Applied to the name the USER typed in their profile (profiles.name_en) —
+    Applied to the name the USER typed in their profile (profiles.name_en),
     never to a transliteration, which is why this only ever splits a string
     somebody chose for themselves."""
     parts = (full_name or "").strip().split()
@@ -496,7 +500,7 @@ def _postprocess(data: dict, name_en: str, source_cv_language: str) -> dict:
         role.highlights = [h.strip() for h in role.highlights if (h or "").strip()]
         role.skills = _clean_list(role.skills, CONTENT_LIMITS["skill"], "role skill", max_items=5)
 
-    # An empty Featured list means "nothing to feature" — collapse it to None
+    # An empty Featured list means "nothing to feature", collapse it to None
     # so the results page omits the section instead of rendering an empty box.
     if content.featured:
         content.featured = [item for item in content.featured if (item.url or "").strip()]
@@ -543,13 +547,13 @@ def run_linkedin_generator(
     Generates one person's complete LinkedIn content from the facts_json a CV
     generation already produced.
 
-    facts_json: read straight off resumes.generation_snapshot — the same
+    facts_json: read straight off resumes.generation_snapshot, the same
         structure cv_parser.py produces. Never mutated here.
     name_en: the English spelling of their name from profiles.name_en. The
         endpoint requires it before calling (409 otherwise) rather than
         letting a name be transliterated into someone's public profile.
     source_cv_language: "en" or "ar". Only affects logging and the recorded
-        provenance — the OUTPUT is English either way.
+        provenance, the OUTPUT is English either way.
 
     Returns the LinkedInContent payload as a dict, ready to store in
     linkedin_generations.generated_content.
@@ -565,7 +569,7 @@ def run_linkedin_generator(
     first, last = _split_name(name_en)
 
     logger.info(
-        f"💼 LinkedIn generator — building English profile content from a "
+        f"💼 LinkedIn generator, building English profile content from a "
         f"{'n Arabic' if source_is_arabic else 'n English'} CV (Claude Sonnet, single call)..."
     )
 
@@ -581,12 +585,12 @@ def run_linkedin_generator(
         data = _call_model(user_prompt)
     except ClaudeTruncationError as e:
         # Retrying the identical prompt that already overflowed the ceiling
-        # just spends tokens to reach the same place — same reasoning as
+        # just spends tokens to reach the same place, same reasoning as
         # match_scorer.py's handling of this error.
         logger.error(f"❌ LinkedIn generation hit the token ceiling and was not retried: {e}")
         raise LinkedInGenerationError("The profile came back too long to complete. Please try again.") from e
     except json.JSONDecodeError as e:
-        logger.warning(f"LinkedIn generation returned invalid JSON ({e}) — retrying once.")
+        logger.warning(f"LinkedIn generation returned invalid JSON ({e}), retrying once.")
         try:
             data = _call_model(user_prompt)
         except Exception as retry_error:
@@ -599,7 +603,7 @@ def run_linkedin_generator(
     if arabic_paths:
         logger.warning(
             f"🔁 LinkedIn output had Arabic in {len(arabic_paths)} field(s) "
-            f"({', '.join(arabic_paths[:6])}) — regenerating once with a correction."
+            f"({', '.join(arabic_paths[:6])}), regenerating once with a correction."
         )
         corrected_prompt = user_prompt + _render(
             _LANGUAGE_CORRECTION, FIELDS=", ".join(arabic_paths[:12])
@@ -627,7 +631,7 @@ def run_linkedin_generator(
         raise LinkedInGenerationError("The generated profile was malformed. Please try again.") from e
 
     logger.info(
-        f"✅ LinkedIn content ready — headline {len(content['intro']['headline'])} chars, "
+        f"✅ LinkedIn content ready, headline {len(content['intro']['headline'])} chars, "
         f"about {len(content['about']['text'])} chars, {len(content['experience'])} role(s), "
         f"{len(content['post_ideas'])} post idea(s)."
     )

@@ -85,6 +85,7 @@ function SiteHeader({ onOpenAbout }: { onOpenAbout: () => void }) {
     { label: t.nav.features, href: "#features" },
     { label: t.nav.howItWorks, href: "#how-it-works" },
     { label: t.nav.pricing, href: "#pricing" },
+    { label: t.nav.linkedin, href: "#linkedin" },
     { label: t.nav.faq, href: "#faq" },
   ];
 
@@ -1346,11 +1347,11 @@ export default function LandingPage() {
         <Hero />
         <TrustBar />
         <Features />
-        <LinkedInAddOn />
         <HowItWorks />
         <TrustSection />
         <Pricing onOpenAbout={() => router.push("/about")} />
         <PayAsYouGo />
+        <LinkedInAddOn />
         <Faq />
         <FinalCta />
       </main>

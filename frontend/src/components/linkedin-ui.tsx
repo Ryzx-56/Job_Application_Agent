@@ -4,7 +4,7 @@ import React, { useCallback, useEffect, useRef, useState } from "react";
 import { Check, Copy, Lock, Sparkles } from "lucide-react";
 
 /* ========================================================================
-   LINKEDIN ADD-ON — SHARED UI
+   LINKEDIN ADD-ON, SHARED UI
 
    Palette: LinkedIn's own brand blue (#0A66C2) for actions and accents, on a
    pale tint of it for the page ground. Deliberately different from the rest
@@ -20,7 +20,7 @@ import { Check, Copy, Lock, Sparkles } from "lucide-react";
 export const LI_BLUE = "#0A66C2";
 export const LI_TINT = "#EAF4FB";
 
-/* PREMIUM PALETTE — ink and gold.
+/* PREMIUM PALETTE: ink and gold.
    The two tiers must not read as two sizes of the same thing, so Premium
    doesn't get a bigger blue card: it gets a different material. Ink ground,
    gold hairline, gold type. The contrast against Essential's white-and-blue
@@ -37,7 +37,7 @@ export const liOutlineButton =
   "inline-flex items-center justify-center gap-2 rounded-lg border border-[#0A66C2]/30 bg-white px-4 py-2.5 text-sm font-medium text-[#0A66C2] transition-colors hover:bg-[#EAF4FB] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0A66C2]/40 disabled:cursor-not-allowed disabled:opacity-50";
 
 /* ========================================================================
-   LINKEDIN GLYPH — lucide-react v1 dropped its brand icons, so the "in" mark
+   LINKEDIN GLYPH: lucide-react v1 dropped its brand icons, so the "in" mark
    is inlined here. Drawn with currentColor and a 24x24 box so it drops into
    the same slots a lucide icon would (sidebar nav, section headers) and
    inherits size/color from className exactly like one.
@@ -56,7 +56,7 @@ export function LinkedInGlyph({ className, ...props }: React.SVGProps<SVGSVGElem
 export { formatSar, usdApprox } from "@/lib/pricing";
 
 /* ========================================================================
-   PAGE SHELL — paints the baby-blue ground across the whole content area.
+   PAGE SHELL: paints the baby-blue ground across the whole content area.
    The negative margins cancel the dashboard <main>'s padding so the tint
    goes edge to edge instead of sitting in a floating box.
 ======================================================================== */
@@ -72,7 +72,7 @@ export function LinkedInPageShell({ children, dir }: { children: React.ReactNode
 }
 
 /* ========================================================================
-   COPY BUTTON — copies exactly the string it's given: no label, no quotes,
+   COPY BUTTON: copies exactly the string it's given: no label, no quotes,
    no trailing whitespace decoration (§4). Shows a brief "Copied" state.
 ======================================================================== */
 async function writeToClipboard(text: string): Promise<boolean> {
@@ -82,7 +82,7 @@ async function writeToClipboard(text: string): Promise<boolean> {
       return true;
     }
   } catch {
-    // Falls through to the legacy path below — clipboard access can be
+    // Falls through to the legacy path below, clipboard access can be
     // refused (permissions, non-secure context) rather than unavailable.
   }
 
@@ -152,7 +152,7 @@ export function CopyButton({
 }
 
 /* ========================================================================
-   COPY FIELD — one labeled block of paste-ready English text.
+   COPY FIELD: one labeled block of paste-ready English text.
 
    dir="ltr" + text-left on the VALUE, always: the surrounding page can be
    Arabic/RTL, but the content is English by design and English inside an RTL
@@ -230,7 +230,7 @@ export function CopyChip({
 }
 
 /* ========================================================================
-   PANEL — one numbered section of the results page, or a plain card
+   PANEL: one numbered section of the results page, or a plain card
    elsewhere. The step number is what makes the page usable as a checklist
    against LinkedIn's own layout.
 ======================================================================== */
@@ -274,7 +274,7 @@ export function LinkedInPanel({
 }
 
 /* ========================================================================
-   TIER PANEL — one full-width panel per tier, stacked rather than side by
+   TIER PANEL: one full-width panel per tier, stacked rather than side by
    side.
 
    Two tiers presented as adjacent equal columns read as "the same product,
@@ -441,7 +441,7 @@ export function OrDivider({ label }: { label: string }) {
 }
 
 /* ========================================================================
-   LOCKED TEASER — the heading is visible, the guidance is not (§4). The
+   LOCKED TEASER: the heading is visible, the guidance is not (§4). The
    detail genuinely isn't in this bundle: it's generated per person and
    arrives with the paid content, so "locked" here means locked, not
    hidden-but-shipped.

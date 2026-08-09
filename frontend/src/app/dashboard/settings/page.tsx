@@ -501,6 +501,11 @@ export default function SettingsPage() {
       {/* Legal — compact links only, not the full marketing footer. See
           note below on why this lives here and not on every dashboard page. */}
       <div className="flex flex-wrap items-center justify-center gap-x-5 gap-y-1.5 pb-2 pt-1 text-xs text-slate-400">
+        {/* ?from=dashboard so the FAQ page's back link returns here rather
+            than to the marketing home page. Same pattern /about uses. */}
+        <Link href="/questions?from=dashboard" className="rounded transition-colors hover:text-slate-600">
+          {isAr ? "الأسئلة الشائعة" : "FAQ"}
+        </Link>
         <Link href="/terms" className="rounded transition-colors hover:text-slate-600">
           {isAr ? "الشروط والأحكام" : "Terms & Conditions"}
         </Link>

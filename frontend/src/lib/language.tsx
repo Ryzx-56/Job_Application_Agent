@@ -13,6 +13,7 @@ export const content = {
       features: "Features",
       howItWorks: "How it works",
       pricing: "Pricing",
+      linkedin: "LinkedIn",
       faq: "FAQ",
       about: "About",
       login: "Log in",
@@ -62,7 +63,7 @@ export const content = {
       "Encrypted uploads, always",
       "Transparent ATS scoring",
       "Never invents your experience",
-      "Written not to read as AI",
+      "Reads like a person wrote it",
     ],
     features: {
       eyebrow: "Everything you need",
@@ -290,7 +291,7 @@ export const content = {
           body: "You choose which of your tailored CVs it works from, so the headline, the About section and the skills all point at the roles you are actually applying to, instead of a generic summary of your whole career.",
         },
         {
-          title: "Written so it does not read as AI",
+          title: "Written to read like a professional, not a model",
           body: "The same rules that govern your CV apply here: no dash-heavy punctuation, no moreover and furthermore, no padded triples, no inflated significance. It reads like you described your own work, because it is built from what you did.",
         },
       ],
@@ -343,7 +344,7 @@ export const content = {
       searchEmpty: "Nothing matches that. Try a different word, or contact us below.",
       resultCount: (shown: number, total: number) => `${shown} of ${total} questions`,
       contactTitle: "Didn't find your answer?",
-      contactBody: "Email us and a real person will reply.",
+      contactBody: "Send us your question and a member of our support team will get back to you.",
       supportEmail: "support@tarshih.com",
       backToHome: "Back to home",
       // NOTE: the LinkedIn answers below name the 49 / 200 SAR prices in prose.
@@ -623,7 +624,7 @@ export const content = {
       generate: {
         eyebrow: "New application",
         title: "Tailor a resume for your next role",
-        sub: "Build a new CV or upload your existing one, paste the job description, and let Tarshih handle the rest. Everything is written from your real experience, and written not to read as AI.",
+        sub: "Build a new CV or upload your existing one, paste the job description, and let Tarshih handle the rest. Everything is written from your real experience, in language that reads like a professional wrote it.",
         uploadLabel: "Your CV",
         uploadHint: "Drag and drop a PDF or DOCX, or click to browse",
         uploadedLabel: "Parsed",
@@ -1009,6 +1010,7 @@ export const content = {
       features: "المميزات",
       howItWorks: "كيف يعمل",
       pricing: "الأسعار",
+      linkedin: "لينكدإن",
       faq: "الأسئلة الشائعة",
       about: "من نحن",
       login: "تسجيل الدخول",
@@ -1058,7 +1060,7 @@ export const content = {
       "تشفير كامل لكل ما ترفعه",
       "نتائج توافق ATS واضحة وشفافة",
       "لا يخترع خبرات لم تعشها أبدًا",
-      "مكتوب بحيث لا يبدو كأن الذكاء الاصطناعي كتبه",
+      "يُقرأ كأن إنسانًا كتبه",
     ],
     features: {
       eyebrow: "كل ما تحتاجه",
@@ -1305,7 +1307,7 @@ export const content = {
           body: "أنت تختار أي سيرة ذاتية مخصصة يعمل منها، فيصبح العنوان المهني و«نبذة» والمهارات موجّهة إلى الوظائف التي تتقدم لها فعلًا، لا ملخصًا عامًا لمسيرتك كلها.",
         },
         {
-          title: "مكتوب بحيث لا يبدو كأن الذكاء الاصطناعي كتبه",
+          title: "مكتوب بأسلوب محترف، لا بأسلوب نموذج آلي",
           body: "القواعد نفسها التي تحكم سيرتك الذاتية تنطبق هنا: لا إكثار من الشرطات، ولا «علاوة على ذلك»، ولا قوائم ثلاثية محشوة، ولا عبارات منفوخة. يُقرأ كأنك وصفت عملك بنفسك، لأنه مبني على ما فعلته فعلًا.",
         },
       ],
@@ -1356,7 +1358,7 @@ export const content = {
       searchEmpty: "لا نتائج مطابقة. جرّب كلمة أخرى، أو تواصل معنا بالأسفل.",
       resultCount: (shown: number, total: number) => `${shown} من ${total} سؤالًا`,
       contactTitle: "لم تجد إجابتك؟",
-      contactBody: "راسلنا وسيرد عليك شخص حقيقي.",
+      contactBody: "أرسل لنا سؤالك وسيتواصل معك أحد أعضاء فريق الدعم.",
       supportEmail: "support@tarshih.com",
       backToHome: "العودة إلى الرئيسية",
       items: [
@@ -1624,7 +1626,7 @@ export const content = {
       generate: {
         eyebrow: "طلب جديد",
         title: "خصّص سيرة ذاتية لوظيفتك القادمة",
-        sub: "أنشئ سيرة ذاتية جديدة أو ارفع ملفك الحالي، ثم الصق الوصف الوظيفي ودع ترشيح يتولى الباقي. وكل شيء يُكتب من خبرتك الحقيقية، وبحيث لا يبدو كأن الذكاء الاصطناعي كتبه.",
+        sub: "أنشئ سيرة ذاتية جديدة أو ارفع ملفك الحالي، ثم الصق الوصف الوظيفي ودع ترشيح يتولى الباقي. وكل شيء يُكتب من خبرتك الحقيقية، وبأسلوب يُقرأ كأن محترفًا كتبه.",
         uploadLabel: "سيرتك الذاتية",
         uploadHint: "اسحب وأفلت ملف PDF أو DOCX، أو اضغط للاختيار",
         uploadedLabel: "تم التحليل",

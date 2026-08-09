@@ -10,13 +10,13 @@ import { ApiError, fetchLinkedInOverview, LinkedInOverview, LinkedInTier, startL
 import { formatSar, liOutlineButton, liPrimaryButton, usdApprox, LinkedInPageShell } from "@/components/linkedin-ui";
 
 /* ========================================================================
-   /dashboard/linkedin/checkout — the one checkout flow for both entry points
+   /dashboard/linkedin/checkout, the one checkout flow for both entry points
    (the LinkedIn tab and /dashboard/upgrade#linkedin-tiers both land here).
 
    Three things this page is responsible for:
      1. Showing exactly what's being bought, for how much, based on which CV.
      2. Putting the refund/expectations note ON THIS SCREEN, not behind a ToS
-        link — it's the last thing read before paying, which is the point.
+        link, it's the last thing read before paying, which is the point.
      3. Collecting the phone number and contact consent for premium, since
         premium means a person calls them.
 
@@ -44,7 +44,7 @@ export default function LinkedInCheckoutPage() {
   const [consent, setConsent] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  // Set when the backend says no gateway is live yet — this is the normal
+  // Set when the backend says no gateway is live yet, this is the normal
   // production state right now, not a failure, so it gets its own panel
   // rather than an error message.
   const [comingSoon, setComingSoon] = useState(false);
@@ -102,7 +102,7 @@ export default function LinkedInCheckoutPage() {
         contactConsent: isPremium ? consent : false,
       });
 
-      // A hosted gateway hands back somewhere to pay — leave the app.
+      // A hosted gateway hands back somewhere to pay, leave the app.
       if (result.redirect_url) {
         window.location.href = result.redirect_url;
         return;

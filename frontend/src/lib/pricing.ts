@@ -1,5 +1,5 @@
 /* ========================================================================
-   PRICE DISPLAY — one place, used by every surface that shows a price.
+   PRICE DISPLAY: one place, used by every surface that shows a price.
 
    SAR IS THE PRICE. Every plan, pack and add-on is priced and charged in
    Saudi riyals, so SAR is what's shown large. The dollar figure underneath is

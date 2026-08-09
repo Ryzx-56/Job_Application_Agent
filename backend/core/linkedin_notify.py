@@ -1,13 +1,13 @@
 # core/linkedin_notify.py
 #
-# Premium-tier fulfillment alerts (§7). Premium is a MANUAL service — a human
-# on our team builds the buyer's LinkedIn profile — so the whole automated
+# Premium-tier fulfillment alerts (§7). Premium is a MANUAL service, a human
+# on our team builds the buyer's LinkedIn profile, so the whole automated
 # part of it is: tell us a premium order came in, with everything needed to
 # start work.
 #
 # Two channels, deliberately both:
 #   1. The admin dashboard queue. That's just linkedin_purchases rows with
-#      fulfillment_status in ('pending','in_progress') — see
+#      fulfillment_status in ('pending','in_progress'), see
 #      /api/v1/admin/linkedin/orders in core/linkedin.py. It cannot be missed
 #      or lost, and it survives a failed email.
 #   2. An email, sent directly from this backend via Resend. Self-contained
@@ -48,7 +48,7 @@ def _config() -> tuple[str, str, str]:
 
 def lookup_buyers(user_ids: list[str]) -> dict[str, dict]:
     """
-    Buyers' emails and names, keyed by user id — for the order alert and for
+    Buyers' emails and names, keyed by user id, for the order alert and for
     the admin fulfillment queue.
 
     Emails live in auth.users, which PostgREST can't select from directly, so
@@ -138,7 +138,7 @@ def send_premium_order_alert(order: dict) -> bool:
     Emails the premium-order alert. Returns True only if Resend accepted it.
 
     A missing RESEND_API_KEY is a normal, expected state (the key gets added
-    to the backend environment separately) — it logs the full order at WARNING
+    to the backend environment separately), it logs the full order at WARNING
     level so the order is still recoverable from the logs, and returns False.
     The admin dashboard queue is unaffected either way.
     """

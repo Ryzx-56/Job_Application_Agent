@@ -3,7 +3,7 @@
 # Every HTTP route for the LinkedIn add-on: pricing, checkout, the payment
 # webhook, generation, history, and the admin queue for premium orders.
 #
-# SECURITY MODEL (§8) — the rules this file exists to enforce:
+# SECURITY MODEL (§8), the rules this file exists to enforce:
 #   1. Every route below requires a verified Supabase JWT (get_current_user_id)
 #      except the gateway webhook, which is authenticated by the gateway's own
 #      shared secret instead and fails closed if that secret isn't configured.
@@ -13,12 +13,12 @@
 #      anything the client sent.
 #   3. /linkedin/generate refuses to run without a purchase row that is
 #      actually paid, and one paid purchase entitles exactly one completed
-#      generation (enforced in the database too — see
+#      generation (enforced in the database too, see
 #      008_linkedin_addon.sql).
 #   4. Prices are read from PRICING here, never from the request body.
 #
 # All writes go through the service_role client (get_admin_client), which
-# bypasses RLS — the browser has SELECT-own and nothing else on these tables.
+# bypasses RLS: the browser has SELECT-own and nothing else on these tables.
 import os
 import re
 import threading
@@ -55,7 +55,7 @@ router = APIRouter()
 # the purchase row so a later price change can't rewrite history.
 #
 # normal (49 SAR): a single Claude Sonnet call over structured JSON we already
-# have, so the marginal cost is a couple of cents — priced as an impulse add-on
+# have, so the marginal cost is a couple of cents, priced as an impulse add-on
 # right after CV creation.
 # premium (200 SAR): priced for a human's time building the profile, not for
 # compute. Being manual, the price also caps volume to what one person can
@@ -66,7 +66,7 @@ PRICING = {
 }
 
 # Where a hosted gateway sends the buyer back to after paying. The page they
-# land on shows their purchase and the Generate button — but landing there is
+# land on shows their purchase and the Generate button, but landing there is
 # NOT what unlocks it; the gateway's webhook is (§5). Overridable per
 # environment so a local mock/staging run doesn't bounce people to production.
 APP_URL = (os.getenv("PUBLIC_APP_URL", "") or "https://tarshih.com").rstrip("/")
@@ -91,7 +91,7 @@ def _iso(value: datetime) -> str:
 
 # Every id in this feature is a uuid primary key. Checking the shape before
 # querying turns a guessed/garbage id into the same clean 404 a valid-but-
-# someone-else's id gets, instead of a 500 from PostgREST rejecting the cast —
+# someone-else's id gets, instead of a 500 from PostgREST rejecting the cast,
 # which would both look like a server fault and tell a prober that their input
 # was at least the wrong TYPE, not the wrong id.
 _UUID_RE = re.compile(r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$")
@@ -106,7 +106,7 @@ def _require_uuid(value: str, label: str) -> str:
 def _fetch_purchase(purchase_id: str, user_id: str) -> dict:
     """A purchase, but only if it belongs to the caller.
 
-    404 (not 403) when it isn't theirs — a 403 would confirm the id exists,
+    404 (not 403) when it isn't theirs, a 403 would confirm the id exists,
     which is exactly the leak the admin-panel bug was about. Same reasoning as
     core/documents.py's ownership check.
     """
@@ -146,7 +146,7 @@ def _facts_from_resume(resume: dict) -> dict:
     Pulls facts_json out of a saved CV's generation_snapshot.
 
     This is the read-only consumption of the CV pipeline's output that the
-    whole feature is built on — see build_generation_snapshot in main.py for
+    whole feature is built on, see build_generation_snapshot in main.py for
     the write side. Rows saved before snapshots existed have nothing to read,
     which is a data gap rather than a bug, so it gets its own code the
     frontend can explain.
@@ -227,7 +227,7 @@ def _confirm_paid(reference: str) -> dict:
     """
     Marks the purchase behind `reference` as paid. THE only place that flips a
     purchase to 'paid', used by both the real webhook and the mock gateway's
-    server-side auto-confirm — a mock payment therefore proves the same code
+    server-side auto-confirm, a mock payment therefore proves the same code
     path a real one will take.
 
     IDEMPOTENT (§5): a purchase already marked paid is returned untouched, so
@@ -249,7 +249,7 @@ def _confirm_paid(reference: str) -> dict:
         return {"matched": False}
 
     if purchase.get("payment_status") == PAID:
-        logger.info(f"↩️ Payment {reference} was already recorded as paid — ignoring duplicate confirmation.")
+        logger.info(f"↩️ Payment {reference} was already recorded as paid, ignoring duplicate confirmation.")
         return {"matched": True, "purchase": purchase, "already_paid": True}
 
     updates = {
@@ -271,7 +271,7 @@ def _confirm_paid(reference: str) -> dict:
     )
     if not updated:
         # Another concurrent delivery won the race and already applied it.
-        logger.info(f"↩️ Payment {reference} was confirmed concurrently — nothing further to do.")
+        logger.info(f"↩️ Payment {reference} was confirmed concurrently, nothing further to do.")
         return {"matched": True, "purchase": purchase, "already_paid": True}
 
     purchase = updated[0]
@@ -350,7 +350,7 @@ def _unavailable(error: Exception, user_id: str | None = None) -> HTTPException:
     Turns a database failure into a real, CORS-carrying HTTP response.
 
     WHY THIS EXISTS: an unhandled exception in a FastAPI endpoint is rendered
-    by Starlette's ServerErrorMiddleware, which sits OUTSIDE CORSMiddleware —
+    by Starlette's ServerErrorMiddleware, which sits OUTSIDE CORSMiddleware,
     so that 500 goes back without any Access-Control-Allow-Origin header, the
     browser refuses to hand it to JavaScript, and the frontend sees the
     generic "Failed to fetch" with no status at all. The result is a page that
@@ -387,7 +387,7 @@ def _unavailable(error: Exception, user_id: str | None = None) -> HTTPException:
     # copy of why a request failed is a line in the server log, which is a slow
     # loop when the person debugging is also the person looking at the page.
     # Gated on profiles.is_admin (the same server-side check every /admin route
-    # uses), truncated, and only ever attached on the failure path — a normal
+    # uses), truncated, and only ever attached on the failure path, a normal
     # user still sees nothing but the sentence above.
     if user_id and read_admin_flag(user_id):
         detail["debug"] = f"{type(error).__name__}: {str(error)[:400]}"
@@ -436,7 +436,7 @@ def linkedin_overview(user_id: str = Depends(get_current_user_id)) -> dict:
     labels = _cv_labels(user_id, [p.get("source_cv_id") for p in purchases])
 
     # Which purchases are actually SPENT. A failed generation doesn't spend
-    # one, and neither does a 'generating' row that's gone stale — the process
+    # one, and neither does a 'generating' row that's gone stale, the process
     # behind it died, and /linkedin/generate will reclaim that row. Counting a
     # stale row as spent is what would leave a paying user staring at
     # "generating" with no way to retry.
@@ -464,7 +464,7 @@ def linkedin_overview(user_id: str = Depends(get_current_user_id)) -> dict:
             } if cv else None,
         })
 
-    # Paid purchases with no usable generation yet — each one is a "Generate"
+    # Paid purchases with no usable generation yet, each one is a "Generate"
     # button the user is entitled to press.
     pending = [
         {
@@ -505,7 +505,7 @@ def linkedin_checkout(
     price = PRICING[tier]
 
     # The CV has to be the caller's, and has to be one we can actually
-    # generate from — better to refuse before taking money than after.
+    # generate from, better to refuse before taking money than after.
     resume = _fetch_resume(payload.source_cv_id, user_id)
     _facts_from_resume(resume)
 
@@ -597,7 +597,7 @@ def linkedin_checkout(
 
     if intent.auto_confirm:
         # Mock gateway only. Runs the SAME confirmation the real webhook
-        # runs, server-side — the client is never trusted to say "paid".
+        # runs, server-side, the client is never trusted to say "paid".
         result = _confirm_paid(intent.reference)
         confirmed = bool(result.get("matched"))
         return {
@@ -632,12 +632,12 @@ async def linkedin_payment_webhook(request: Request) -> dict:
     """
     The gateway's own callback, and the ONLY thing that unlocks a generation.
 
-    Not JWT-authenticated (the gateway has no Supabase session) — authenticity
+    Not JWT-authenticated (the gateway has no Supabase session), authenticity
     is proven by the gateway's shared secret inside verify_and_parse_webhook,
     which fails closed when that secret isn't configured.
 
     Always answers 200 for events it understands, including duplicates and
-    references that aren't ours (a subscription payment, say) — a 4xx/5xx here
+    references that aren't ours (a subscription payment, say), a 4xx/5xx here
     makes providers retry indefinitely. Real problems (bad signature) do get a
     4xx, because those should not be silently accepted.
     """
@@ -654,7 +654,7 @@ async def linkedin_payment_webhook(request: Request) -> dict:
     except GatewayUnavailable:
         # A webhook arriving while no gateway is configured is either a
         # misconfiguration or unsolicited. Don't touch anything.
-        logger.warning("Received a payment webhook while PAYMENT_GATEWAY is unset — ignoring.")
+        logger.warning("Received a payment webhook while PAYMENT_GATEWAY is unset, ignoring.")
         return {"ok": True, "ignored": True}
 
     headers = {key.lower(): value for key, value in request.headers.items()}
@@ -668,8 +668,8 @@ async def linkedin_payment_webhook(request: Request) -> dict:
     if event.status == PAID:
         result = _confirm_paid(event.reference)
         if not result.get("matched"):
-            # Not a LinkedIn purchase — fine, and not an error.
-            logger.info(f"Payment webhook for {event.reference} matched no LinkedIn purchase — ignoring.")
+            # Not a LinkedIn purchase, fine, and not an error.
+            logger.info(f"Payment webhook for {event.reference} matched no LinkedIn purchase, ignoring.")
             return {"ok": True, "ignored": True}
         return {"ok": True, "idempotent": bool(result.get("already_paid"))}
 
@@ -677,7 +677,7 @@ async def linkedin_payment_webhook(request: Request) -> dict:
         _mark_failed(event.reference)
         return {"ok": True}
 
-    # Still pending (authorized but not captured, etc.) — nothing to do yet.
+    # Still pending (authorized but not captured, etc.), nothing to do yet.
     return {"ok": True, "pending": True}
 
 
@@ -711,7 +711,7 @@ def linkedin_generate(
     # Which CV to build from. Normally the one recorded on the purchase; a
     # replacement is only accepted when that CV has since been deleted (the
     # column goes null), so nobody can pay for one CV and generate from
-    # another they don't own — and the replacement is ownership-checked too.
+    # another they don't own, and the replacement is ownership-checked too.
     recorded_cv_id = purchase.get("source_cv_id")
     requested_cv_id = (payload.source_cv_id or "").strip() or None
 
@@ -740,7 +740,7 @@ def linkedin_generate(
     facts_json = _facts_from_resume(resume)
 
     # The generated profile carries the person's name, and a name is never
-    # machine-transliterated here — same rule the CV pipeline enforces (see
+    # machine-transliterated here, same rule the CV pipeline enforces (see
     # apply_candidate_names in main.py). LinkedIn output is English, so the
     # English spelling is the one we need, and we ask rather than invent it.
     names = get_profile_names(user_id)
@@ -778,7 +778,7 @@ def linkedin_generate(
             },
         )
 
-    # Reuse a failed or abandoned row instead of inserting — the
+    # Reuse a failed or abandoned row instead of inserting, the
     # one-generation-per-purchase index counts anything not 'failed', so an
     # abandoned 'generating' row has to be reclaimed rather than duplicated.
     if existing:
@@ -841,7 +841,7 @@ def linkedin_generate(
 
 
 def _record_generation_failure(generation_id: str) -> None:
-    """A failed generation must NOT consume the purchase — see the partial
+    """A failed generation must NOT consume the purchase, see the partial
     unique index in 008_linkedin_addon.sql. Recording the failure is what lets
     the buyer retry for free."""
     try:
@@ -906,7 +906,7 @@ def list_premium_orders(
     contact. Admin-gated server-side on profiles.is_admin like every other
     /api/v1/admin/* route.
 
-    Only paid orders appear — an abandoned checkout isn't work owed.
+    Only paid orders appear, an abandoned checkout isn't work owed.
     """
     admin = get_admin_client()
     query = (

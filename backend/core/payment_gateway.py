@@ -4,8 +4,8 @@
 #
 # Why it's separate: the Moyasar application is still pending, so the entire
 # purchase flow has to be buildable and testable before the real gateway
-# exists. Every gateway-specific detail — creating a payment, verifying a
-# webhook's authenticity, reading a status out of a provider's payload —
+# exists. Every gateway-specific detail, creating a payment, verifying a
+# webhook's authenticity, reading a status out of a provider's payload,
 # lives behind the small interface below, so swapping the mock for Moyasar
 # touches this file and nothing in core/linkedin.py.
 #
@@ -16,7 +16,7 @@
 #                                          and the frontend shows its
 #                                          "payment coming soon" screen. THIS
 #                                          IS THE PRODUCTION DEFAULT until
-#                                          Moyasar is live — nobody can buy,
+#                                          Moyasar is live, nobody can buy,
 #                                          and nothing can be unlocked for free.
 #   PAYMENT_GATEWAY="mock"              -> local/dev only. Payments are
 #                                          auto-confirmed SERVER-SIDE through
@@ -41,7 +41,7 @@ from loguru import logger
 
 class GatewayUnavailable(RuntimeError):
     """No usable payment gateway is configured. Callers turn this into a 503
-    with a machine-readable code, never a 500 — nothing is broken, payments
+    with a machine-readable code, never a 500, nothing is broken, payments
     just aren't switched on yet."""
 
 
@@ -76,7 +76,7 @@ class PaymentIntent:
     # True only for the mock gateway: tells the caller to run its normal
     # server-side confirmation immediately instead of waiting for a webhook
     # that will never arrive. The caller still goes through the same
-    # confirm-and-record function the real webhook uses — the mock does not
+    # confirm-and-record function the real webhook uses, the mock does not
     # get a shortcut around that logic, or testing it would prove nothing.
     auto_confirm: bool = False
 
@@ -102,7 +102,7 @@ class MockGateway:
                        reference_hint: str, callback_url: str | None = None) -> PaymentIntent:
         reference = f"mock_{uuid.uuid4().hex}"
         logger.warning(
-            f"🧪 MOCK PAYMENT — {amount} {currency} for '{description}' auto-approved as {reference}. "
+            f"🧪 MOCK PAYMENT: {amount} {currency} for '{description}' auto-approved as {reference}. "
             "This must never be enabled in production (PAYMENT_GATEWAY=mock)."
         )
         return PaymentIntent(
@@ -172,7 +172,7 @@ class MoyasarGateway:
         # CONFIRM WITH MOYASAR: whether this feature uses their hosted
         # invoice flow (POST /invoices, redirect the buyer to invoice.url) or
         # a client-side tokenized payment. An invoice is the better fit for a
-        # one-time add-on — it gives a URL to redirect to and fires a webhook
+        # one-time add-on, it gives a URL to redirect to and fires a webhook
         # on payment, with no card data ever reaching our servers.
         raise GatewayUnavailable(
             "Moyasar is selected but not implemented yet: the account application is still "
@@ -187,12 +187,12 @@ class MoyasarGateway:
         Moyasar's webhooks carry a shared secret token that we set when
         registering the endpoint, rather than an HMAC signature over the body.
         Both delivery spots are accepted (header and body field) because
-        which one they use is CONFIRM WITH MOYASAR — comparison is constant
+        which one they use is CONFIRM WITH MOYASAR: comparison is constant
         time either way, and a missing/empty configured secret fails closed.
         """
         if not self._webhook_secret:
             raise WebhookVerificationError(
-                "MOYASAR_WEBHOOK_SECRET is not set — refusing to trust an unverifiable webhook."
+                "MOYASAR_WEBHOOK_SECRET is not set, refusing to trust an unverifiable webhook."
             )
 
         # CONFIRM WITH MOYASAR: the exact header name / body field.
@@ -220,7 +220,7 @@ class MoyasarGateway:
 
 
 def _dig(payload: dict, path: tuple[str, ...]) -> Any:
-    """Reads a nested key path, tolerating a flat payload too — some
+    """Reads a nested key path, tolerating a flat payload too, some
     providers wrap the object in `data`, some don't."""
     node: Any = payload
     for key in path:

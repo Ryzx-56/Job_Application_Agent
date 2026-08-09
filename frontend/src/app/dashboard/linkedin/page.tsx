@@ -41,7 +41,7 @@ import {
 import { LinkedInResults } from "@/components/linkedin-results";
 
 /* ========================================================================
-   /dashboard/linkedin — the LinkedIn add-on.
+   /dashboard/linkedin, the LinkedIn add-on.
 
    Two faces, decided by whether the user has ever paid (overview.has_purchased):
      · Never bought  -> the sales page: explainer, tiers, locked teaser, and a
@@ -56,7 +56,7 @@ import { LinkedInResults } from "@/components/linkedin-results";
 ======================================================================== */
 
 /** How many saved CVs to offer in the picker. Deliberately more than the
- *  "My Resumes" page size — this is a one-screen choice, not a browsing list. */
+ *  "My Resumes" page size, this is a one-screen choice, not a browsing list. */
 const CV_FETCH_LIMIT = 50;
 
 function formatDate(iso: string | null | undefined, lang: "en" | "ar") {
@@ -82,7 +82,7 @@ export default function LinkedInPage() {
   const [resumes, setResumes] = useState<ResumeRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
-  // The underlying failure, shown in mono under the friendly line — same as
+  // The underlying failure, shown in mono under the friendly line, same as
   // My Resumes. A bare "please try again" on a page whose backend isn't
   // deployed (or whose tables don't exist yet) is undebuggable from a
   // screenshot, which is exactly when someone sends you one.
@@ -99,7 +99,7 @@ export default function LinkedInPage() {
   const [actionError, setActionError] = useState<string | null>(null);
 
   // Shown when the profile has no English name yet. Asked rather than
-  // transliterated — the generated profile carries this name publicly, and
+  // transliterated, the generated profile carries this name publicly, and
   // only its owner knows the spelling they use. Same rule the CV flow follows.
   const [nameNeededFor, setNameNeededFor] = useState<{ purchaseId: string; cvId?: string } | null>(null);
   const [nameValue, setNameValue] = useState("");
@@ -118,7 +118,7 @@ export default function LinkedInPage() {
    * allSettled, not all: the explainer, the tiers' feature lists and the
    * teaser are static copy that need no backend at all, and the CV list and
    * the account's purchase data come from different places. One of them
-   * failing must not blank the page — a visitor who can't reach the API
+   * failing must not blank the page, a visitor who can't reach the API
    * should still be able to read what the product IS. Whatever did load
    * renders; what didn't gets a retry banner.
    */
@@ -189,7 +189,7 @@ export default function LinkedInPage() {
   }, [deepLinkedGeneration]);
 
   /** CVs we can actually build from: a row saved before generation_snapshot
-   *  existed has no facts_json, so the backend would refuse it — better to say
+   *  existed has no facts_json, so the backend would refuse it, better to say
    *  so in the picker than to fail after payment. */
   const usableResumes = useMemo(() => resumes.filter((r) => Boolean(r.generation_snapshot)), [resumes]);
 
@@ -301,7 +301,7 @@ export default function LinkedInPage() {
     setTier(next);
     setSelectorError(null);
     // The picker only exists once a tier is chosen, so it needs bringing into
-    // view — on a phone it renders below the fold.
+    // view, on a phone it renders below the fold.
     requestAnimationFrame(() => {
       document.getElementById("linkedin-cv-picker")?.scrollIntoView({ behavior: "smooth", block: "start" });
     });
@@ -377,7 +377,7 @@ export default function LinkedInPage() {
 
   /* ── Main view ───────────────────────────────────────────────────── */
 
-  // A returning buyer normally sees their own stuff, not the sales pitch —
+  // A returning buyer normally sees their own stuff, not the sales pitch,
   // unless they asked to buy again, or arrived from the plans page with a tier
   // already picked, in which case hiding the CV picker would dead-end them.
   // When the account data couldn't load at all, the sales content is the only
@@ -385,7 +385,7 @@ export default function LinkedInPage() {
   const showSales = !overview || !overview.has_purchased || showBuyAgain || Boolean(tier);
   // Prices and buying both need the backend. Without it the tiers still
   // explain what each one includes, but nothing is purchasable and no price is
-  // shown — a wrong or blank price on a buy button is worse than no button.
+  // shown, a wrong or blank price on a buy button is worse than no button.
   const canBuy = Boolean(overview);
 
   return (
@@ -726,7 +726,7 @@ export default function LinkedInPage() {
 }
 
 /* ========================================================================
-   CV PICKER — which existing CV to build from.
+   CV PICKER: which existing CV to build from.
 
    Rows without a generation_snapshot are listed but disabled with the reason
    shown: the facts_json a profile is built from lives in that snapshot, so a

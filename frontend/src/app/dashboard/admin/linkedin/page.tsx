@@ -7,7 +7,7 @@ import { fetchPremiumOrders, PremiumOrder, updatePremiumOrder } from "@/lib/supa
 /**
  * PREMIUM LINKEDIN FULFILLMENT QUEUE.
  *
- * Premium is a manual service — a person builds the buyer's profile — so this
+ * Premium is a manual service, a person builds the buyer's profile, so this
  * is the work-owed list: who paid, how to reach them, which CV to build from,
  * and a way to mark it done. An email goes out on every premium purchase too
  * (see backend/core/linkedin_notify.py); this page is the copy that can't get
@@ -16,7 +16,7 @@ import { fetchPremiumOrders, PremiumOrder, updatePremiumOrder } from "@/lib/supa
  * Deliberately not a ticketing system: three states and a table. Nothing more
  * until the volume actually asks for it.
  *
- * Only PAID orders appear — an abandoned checkout isn't work owed. Gated
+ * Only PAID orders appear, an abandoned checkout isn't work owed. Gated
  * server-side on profiles.is_admin like every other admin route, plus the
  * layout's server-side guard.
  */

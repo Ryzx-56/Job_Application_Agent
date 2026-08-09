@@ -1,14 +1,15 @@
 "use client";
 
-import React, { useMemo, useState } from "react";
+import React, { Suspense, useMemo, useState } from "react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { ArrowLeft, ArrowRight, Mail, Search, X } from "lucide-react";
 import { useLang } from "@/lib/language";
 import { Button, Logo, LangSwitcher } from "@/components/brand";
 import { FaqRow } from "@/components/faq";
 
 /**
- * /questions — every FAQ entry, searchable.
+ * /questions, every FAQ entry, searchable.
  *
  * The landing page keeps only the highest-impact handful (t.faq.landing) so it
  * stays a landing page; this is where the full list lives, with its own URL so
@@ -22,8 +23,25 @@ import { FaqRow } from "@/components/faq";
  * accent, Plus Jakarta Sans / Cairo) rather than the light dashboard, since
  * this is a public page reached from the landing page and from search.
  */
-export default function QuestionsPage() {
+
+/**
+ * Where "back" goes. The settings footer links here with ?from=dashboard, so a
+ * signed-in reader returns to the app rather than being dropped on the
+ * marketing home page. Same convention /about follows.
+ */
+function useBackTarget(): { href: string; label: string } {
+  const { t, lang } = useLang();
+  const from = useSearchParams().get("from");
+  const backToDashboard = lang === "ar" ? "العودة إلى لوحة التحكم" : "Back to dashboard";
+
+  if (from === "settings") return { href: "/dashboard/settings", label: backToDashboard };
+  if (from === "dashboard") return { href: "/dashboard", label: backToDashboard };
+  return { href: "/", label: t.faq.backToHome };
+}
+
+function QuestionsContent() {
   const { t, lang, isRTL } = useLang();
+  const back = useBackTarget();
   const [query, setQuery] = useState("");
   const [open, setOpen] = useState<string | null>(null);
   const BackIcon = isRTL ? ArrowRight : ArrowLeft;
@@ -50,11 +68,11 @@ export default function QuestionsPage() {
           <div className="flex items-center gap-3">
             <LangSwitcher />
             <Link
-              href="/"
+              href={back.href}
               className="hidden items-center gap-1.5 text-sm font-medium text-zinc-400 transition-colors hover:text-white sm:inline-flex"
             >
               <BackIcon className="size-4" aria-hidden />
-              {t.faq.backToHome}
+              {back.label}
             </Link>
           </div>
         </div>
@@ -156,12 +174,22 @@ export default function QuestionsPage() {
         </div>
 
         <div className="mt-8 flex justify-center">
-          <Button as={Link} href="/" variant="outline">
-            {t.faq.backToHome}
+          <Button as={Link} href={back.href} variant="outline">
+            {back.label}
             <ForwardIcon className="size-4" aria-hidden />
           </Button>
         </div>
       </section>
     </div>
+  );
+}
+
+export default function QuestionsPage() {
+  // useSearchParams needs a Suspense boundary in the app router, otherwise the
+  // whole route opts out of static rendering.
+  return (
+    <Suspense fallback={<div className="min-h-screen bg-zinc-950" />}>
+      <QuestionsContent />
+    </Suspense>
   );
 }

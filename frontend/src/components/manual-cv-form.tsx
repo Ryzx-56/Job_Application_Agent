@@ -467,7 +467,7 @@ export function ManualCvForm({
               className={inputClass}
               value={item.dates}
               onChange={(e) => update({ dates: e.target.value })}
-              placeholder={lang === "ar" ? "الفترة، مثل: يونيو 2024 – أغسطس 2024" : "Dates, e.g. Jun 2024 – Aug 2024"}
+              placeholder={lang === "ar" ? "الفترة، مثل: يونيو 2024 إلى أغسطس 2024" : "Dates, e.g. Jun 2024 to Aug 2024"}
             />
             <textarea
               className={`${inputClass} resize-y`}

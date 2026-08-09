@@ -7,7 +7,7 @@ import type { LinkedInContent } from "@/lib/supabase/linkedin";
 import { CopyButton, CopyChip, CopyField, LinkedInPanel } from "@/components/linkedin-ui";
 
 /* ========================================================================
-   LINKEDIN RESULTS — the paid output.
+   LINKEDIN RESULTS: the paid output.
 
    Laid out in the order a person actually fills LinkedIn in: Intro, About +
    Skills, Featured, Experience, Post ideas, Education & certifications,
@@ -20,7 +20,7 @@ import { CopyButton, CopyChip, CopyField, LinkedInPanel } from "@/components/lin
 
 type LinkedInCopy = (typeof content)["en"]["dashboard"]["linkedin"];
 
-/** Mirrors CONTENT_LIMITS in backend/schemas/linkedin_schema.py — used only
+/** Mirrors CONTENT_LIMITS in backend/schemas/linkedin_schema.py, used only
  *  for the "x / y characters" counters, since the backend has already clamped
  *  the values themselves. If the limits change there, change them here. */
 const LINKEDIN_LIMITS = {
@@ -123,7 +123,7 @@ export function LinkedInResults({ data, copy }: { data: LinkedInContent; copy: L
     ),
   });
 
-  /* ── 3. Featured — omitted entirely when there's nothing to feature ── */
+  /* ── 3. Featured, omitted entirely when there's nothing to feature ── */
   if (hasFeatured) {
     panels.push({
       key: "featured",
@@ -254,7 +254,7 @@ export function LinkedInResults({ data, copy }: { data: LinkedInContent; copy: L
     ),
   });
 
-  /* ── 6. Education & certifications — typed in, not pasted ── */
+  /* ── 6. Education & certifications, typed in, not pasted ── */
   panels.push({
     key: "education",
     title: sections.education,

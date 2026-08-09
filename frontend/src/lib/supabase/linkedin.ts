@@ -4,13 +4,13 @@ import { createClient } from "@/lib/supabase/client";
    LINKEDIN ADD-ON API CLIENT
 
    Every call here goes to the backend (never straight to Supabase), because
-   every one of these routes re-verifies ownership server-side — see the
+   every one of these routes re-verifies ownership server-side, see the
    security notes in backend/core/linkedin.py. The browser has SELECT-own and
    nothing else on the linkedin_* tables, so a purchase can't be created or a
    payment marked paid from here even in principle.
 
    Shapes mirror backend/schemas/linkedin_schema.py. All CONTENT strings are
-   English regardless of the UI language — that's the feature's language rule,
+   English regardless of the UI language, that's the feature's language rule,
    not an oversight. Wrap them in dir="ltr" when rendering under an Arabic UI.
 ======================================================================== */
 
@@ -64,7 +64,7 @@ export type LinkedInProjectsSection = {
 export type LinkedInContent = {
   intro: LinkedInIntro;
   about: LinkedInAbout;
-  /** null when the CV had no links to feature — the section is skipped entirely. */
+  /** null when the CV had no links to feature, the section is skipped entirely. */
   featured: LinkedInFeaturedItem[] | null;
   experience: LinkedInExperienceEntry[];
   post_ideas: LinkedInPostIdea[];
@@ -133,7 +133,7 @@ export type LinkedInGeneration = {
 };
 
 /** Error carrying the backend's machine-readable code so callers can show
- *  localized copy instead of the English fallback message — same convention
+ *  localized copy instead of the English fallback message, same convention
  *  useOptimizeStream.ts already uses. */
 export type ApiError = Error & {
   status?: number;
