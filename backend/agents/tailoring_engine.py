@@ -5,6 +5,7 @@ from loguru import logger
 from pydantic import ValidationError
 from core.state import AgentState
 from core.llm_config import generate_claude_text, claude_budget, ClaudeTruncationError
+from core.humanizer import HUMANIZER_RULES
 from schemas.tailored_cv_schema import TailoredCV
 from utils.arabic_localizer import (
     build_glossary,
@@ -88,6 +89,8 @@ WHAT YOU SHOULD DO — BE BOLD HERE, THIS IS WHERE MOST OF YOUR VALUE IS:
 WRITING STYLE:
   - NEVER use em dashes (—) or en dashes ( – as a standalone punctuation mark) anywhere in your output.
   - Write in plain, direct, human resume language. Avoid generic filler phrases and empty buzzwords.
+
+<<HUMANIZER_RULES>>
 
 KEYWORD COVERAGE — this directly determines the candidate's ATS score, so it matters a lot:
   - Cross-reference every keyword in WEIGHT_FACTORS.ats_keywords_high, WEIGHT_FACTORS.ats_keywords_medium, and WEIGHT_FACTORS.required_skills against FACTS_JSON.
@@ -199,6 +202,13 @@ Return ONLY a JSON object in this exact format (no markdown):
   }}
 }}
 """
+
+# The anti-AI-writing rules are shared with the cover letter and the LinkedIn
+# generator so all three hold one standard, and are spliced in here rather than
+# copied into the string above. Substituted once at import: the result is
+# byte-identical on every call, which is what keeps this block cacheable (see
+# the note above and generate_claude_text's `system` docstring).
+TAILORING_SYSTEM_PROMPT = TAILORING_SYSTEM_PROMPT.replace("<<HUMANIZER_RULES>>", HUMANIZER_RULES)
 
 # The dynamic half of the tailoring call — everything here changes per
 # request, so none of it belongs in the cached system block above.

@@ -62,6 +62,7 @@ export const content = {
       "Encrypted uploads, always",
       "Transparent ATS scoring",
       "Never invents your experience",
+      "Written not to read as AI",
     ],
     features: {
       eyebrow: "Everything you need",
@@ -264,58 +265,175 @@ export const content = {
         { name: "Power", slug: "power", sar: 75, creditCount: 30, credits: "30 credits", blurb: "For a serious, high volume job hunt.", badge: "Max Savings", featured: false },
       ],
     },
+    /* ── LinkedIn add-on, featured section on the landing page ──
+       PRICES ARE REPEATED HERE as numbers because this section renders for
+       signed-out visitors, and /api/v1/linkedin/overview (the normal source)
+       requires a session. They must match PRICING in backend/core/linkedin.py,
+       which is what actually gets charged. Two places, both stated. */
+    linkedinPromo: {
+      eyebrow: "LinkedIn add-on",
+      title: "Your CV gets you past the filter. Your LinkedIn gets you found.",
+      description:
+        "Recruiters search LinkedIn before they ever open a CV. Turn a CV you have already generated here into a complete, paste-ready LinkedIn profile, or have a specialist on our team build the whole thing for you.",
+      whyTitle: "Why not just ask a chatbot?",
+      reasons: [
+        {
+          title: "It starts from a fact-checked CV",
+          body: "Not from a blank chat box. It builds on the facts already extracted from your CV and put through a dedicated fact-check pass, so nothing is retyped, nothing is guessed, and nothing is invented. A chatbot only knows what you paste into it that minute.",
+        },
+        {
+          title: "Built to LinkedIn's real field limits",
+          body: "220 characters for the headline, 2,600 for About, 2,000 per role. Every field is written inside its limit and checked again after generation, so nothing arrives cut off halfway through a sentence when you paste it in.",
+        },
+        {
+          title: "Tied to the job you tailored for",
+          body: "You choose which of your tailored CVs it works from, so the headline, the About section and the skills all point at the roles you are actually applying to, instead of a generic summary of your whole career.",
+        },
+        {
+          title: "Written so it does not read as AI",
+          body: "The same rules that govern your CV apply here: no dash-heavy punctuation, no moreover and furthermore, no padded triples, no inflated significance. It reads like you described your own work, because it is built from what you did.",
+        },
+      ],
+      alwaysEnglish:
+        "Always written in English, whatever language your CV is in, because that is how recruiters across Saudi Arabia and the region search.",
+      essential: {
+        name: "Essential",
+        sar: 49,
+        badge: "Self-directed",
+        tagline: "Written for you, placed by you",
+        bullets: [
+          "Headline, About section and your five strongest skills",
+          "A paste-ready block for every role in your experience",
+          "Three post ideas from your real projects",
+          "A copy button on every field",
+        ],
+        cta: "Get Essential",
+      },
+      premium: {
+        name: "Premium",
+        sar: 200,
+        badge: "Fully managed",
+        tagline: "Created for you by a specialist",
+        bullets: [
+          "Everything in Essential, generated instantly",
+          "A specialist contacts you and builds the profile with you",
+          "A custom cover photo designed for your profile",
+          "A full review plus one round of refinements after it is live",
+        ],
+        cta: "Get Premium",
+      },
+      oneTime: "one-time",
+      footnote: "One-time purchases, not subscriptions. Requires a CV generated on Tarshih, which the free plan covers.",
+      seeDetails: "See full details",
+    },
     faq: {
       eyebrow: "FAQ",
       title: "Questions, answered",
       description: "Everything you need to know before you start your next application.",
+      // The landing page shows only these, by id, and links to /questions for
+      // the rest. Chosen for impact rather than order: money, refunds, trust,
+      // privacy, and what the LinkedIn add-on is. Ids are language-neutral, so
+      // this list is identical in both dictionaries.
+      landing: ["credits", "refunds", "need-existing-cv", "never-invents", "ai-sounding", "data-safe", "linkedin-what-is-it"],
+      seeAll: "See all questions",
+      allTitle: "All questions",
+      allDescription: "Everything about how Tarshih works, what it costs, and what happens to your data.",
+      searchLabel: "Search questions",
+      searchPlaceholder: "Search for a question…",
+      searchEmpty: "Nothing matches that. Try a different word, or contact us below.",
+      resultCount: (shown: number, total: number) => `${shown} of ${total} questions`,
+      contactTitle: "Didn't find your answer?",
+      contactBody: "Email us and a real person will reply.",
+      supportEmail: "support@tarshih.com",
+      backToHome: "Back to home",
+      // NOTE: the LinkedIn answers below name the 49 / 200 SAR prices in prose.
+      // That's the one place a price is written by hand rather than read from
+      // PRICING in backend/core/linkedin.py, so if those change, change these.
       items: [
         {
+          id: "ats-what-is-it",
           q: "What is an ATS and why does it matter?",
           a: "An Applicant Tracking System is software companies use to filter resumes before a human reads them. Tarshih analyzes each job description and optimizes your resume so it reads clearly for both the ATS and the recruiter behind it.",
         },
         {
+          id: "arabic-quality",
           q: "Does Tarshih actually produce good Arabic CVs?",
           a: "Yes. Arabic resumes are notoriously hard to format correctly, broken letters, wrong direction, misplaced diacritics. Tarshih generates properly structured, right to left Arabic CVs and cover letters, not the jumbled output most tools produce.",
         },
         {
+          id: "need-existing-cv",
           q: "Do I need an existing CV to use Tarshih?",
           a: "No. You can upload an existing resume to upgrade it, or build a brand new one from scratch. Either way, the output is tailored to the specific job you're applying for.",
         },
         {
+          id: "job-matching",
           q: "How does the job matching work?",
           a: "Paste a job description and Tarshih returns 5 similar openings, each ranked Strong Match, Partial Match, or Stretch Role, so you always have more roles worth applying to.",
         },
         {
+          id: "score-meaning",
           q: "What exactly does the ATS and match score tell me?",
           a: "It breaks your resume down by keyword match, skills, education, and experience against the job description, then lists exactly what's missing, a certificate, a skill, a keyword, so you know what to add.",
         },
         {
+          id: "never-invents",
           q: "Will Tarshih invent experience I don't have?",
           a: "No. Every fact is extracted from your real CV first, and every generated bullet is checked against it in a dedicated fact-check pass. Tarshih reframes and professionalizes what's true; it never fabricates.",
         },
         {
+          id: "how-many-agents",
           q: "How many AI agents are working on my application?",
           a: "Six. Separate agents handle CV parsing, job description analysis, tailoring, fact-checking, ATS scoring, document generation, and job search, instead of one prompt trying to do everything at once.",
         },
         {
+          id: "credits",
           q: "What's a credit and how many do I get?",
           a: "A credit is what you spend generating one tailored CV and cover letter. English applications cost 1 credit, Arabic applications cost 2, since they take more processing. Free includes 3 credits a month, Pro includes 40, and Elite includes 120.",
         },
         {
+          id: "sounds-like-me",
           q: "Will my resume still sound like me?",
           a: "Yes. Tarshih enhances and reframes your real experience; it never invents jobs or credentials. You can review and edit every suggestion before you export.",
         },
         {
+          id: "file-formats",
           q: "What file formats can I upload and download?",
           a: "You can upload PDF or DOCX files, and export your optimized resume and cover letter in either format, ready to submit anywhere.",
         },
         {
+          id: "data-safe",
           q: "Is my personal data safe?",
           a: "Your documents are encrypted in transit and at rest. We never sell your data or use it to train models, and you can permanently delete your files at any time.",
         },
         {
+          id: "no-card",
           q: "Do I need a credit card to start?",
           a: "No. The Free plan is available forever with no card required. Upgrade to Pro or Elite only when you want more credits each month.",
+        },
+        {
+          id: "refunds",
+          q: "Can I get a refund?",
+          a: "Once a credit has been used, that charge is final, because the document is delivered the moment it's generated. If a technical failure on our side takes a credit without producing anything, email support and we'll restore the credit or refund that specific charge. Subscriptions can be cancelled any time and stay active until the end of the cycle you've already paid for.",
+        },
+        {
+          id: "ai-sounding",
+          q: "Will it be obvious that AI wrote it?",
+          a: "It shouldn't be. Every generation follows an explicit set of rules against the habits that give AI writing away: dash-heavy punctuation, signposting words like moreover and furthermore, inflated phrases such as plays a vital role, padded lists of three adjectives, and the uniform sentence rhythm people notice without being able to name it. What comes out reads like a competent professional describing their own work, which is what it's built from.",
+        },
+        {
+          id: "linkedin-what-is-it",
+          q: "What is the LinkedIn add-on?",
+          a: "A one-time purchase that turns a CV you've already generated here into ready-to-paste LinkedIn content: a headline, an About section, your five strongest skills, a block for every role in your experience, three post ideas drawn from your real projects, and clear instructions for the sections LinkedIn makes you type in directly. It's written in English whatever language your CV is in, because that's how recruiters across the region search.",
+        },
+        {
+          id: "linkedin-tiers",
+          q: "What is the difference between LinkedIn Essential and Premium?",
+          a: "Essential, 49 SAR, gives you the finished content and you place it on your profile yourself, delivered the moment you generate it. Premium, 200 SAR, includes all of that and adds a specialist from our team who contacts you directly, builds and optimizes your whole profile with you, designs a custom cover photo, and reviews it once it's live. Both are one-time payments, not subscriptions.",
+        },
+        {
+          id: "linkedin-refunds",
+          q: "Can I get a refund on the LinkedIn add-on?",
+          a: "Essential is delivered the instant you press Generate, so it can't be refunded once your content exists. If you've paid and haven't generated yet, email us and we'll refund it in full. Premium is refundable in full any time before your specialist begins work. Once the build has started it isn't, because the content has been delivered and the service is already under way.",
         },
       ],
     },
@@ -505,7 +623,7 @@ export const content = {
       generate: {
         eyebrow: "New application",
         title: "Tailor a resume for your next role",
-        sub: "Build a new CV or upload your existing one, paste the job description, and let Tarshih handle the rest.",
+        sub: "Build a new CV or upload your existing one, paste the job description, and let Tarshih handle the rest. Everything is written from your real experience, and written not to read as AI.",
         uploadLabel: "Your CV",
         uploadHint: "Drag and drop a PDF or DOCX, or click to browse",
         uploadedLabel: "Parsed",
@@ -651,6 +769,7 @@ export const content = {
             "A specialist from our team contacts you directly on WhatsApp or by phone",
             "We create your complete LinkedIn profile for you, section by section",
             "Your headline, About section, experience, and skills written, placed, and optimized for recruiter search",
+            "A custom cover photo designed for your profile by our team, matched to your field",
             "A full review of the finished profile, plus one round of refinements",
             "Direct access to the specialist handling your profile until it is complete",
           ],
@@ -702,7 +821,24 @@ export const content = {
           sub: "We use the verified facts from a CV you have already generated here. Nothing is invented, and you do not need to enter anything again.",
           empty: "You will need a generated CV first, as that is where the facts come from.",
           emptyCta: "Generate a CV",
+          // Shown when every CV on the account predates structured storage, so
+          // there is nothing selectable. Says what to do rather than listing
+          // each unusable CV as a dead row.
+          allLegacy: (count: number) =>
+            count === 1
+              ? "Your CV was created before we started storing the structured data this add-on needs."
+              : `All ${count} of your CVs were created before we started storing the structured data this add-on needs.`,
+          allLegacyWhy:
+            "Generating one new CV fixes it, and the free plan covers it. The new CV keeps everything the old one had, plus the underlying facts we build your LinkedIn profile from.",
+          hiddenLegacy: (count: number) =>
+            count === 1
+              ? "1 older CV is not shown here, as it was saved before the structured data this needs."
+              : `${count} older CVs are not shown here, as they were saved before the structured data this needs.`,
           unsupported: "Saved before structured data was stored, so it cannot be used here",
+          atsLabel: "ATS",
+          matchLabel: "Job match",
+          langEn: "English",
+          langAr: "Arabic",
           untitled: "Untitled role",
           unknownCompany: "Unknown company",
           continue: "Continue to checkout",
@@ -922,6 +1058,7 @@ export const content = {
       "تشفير كامل لكل ما ترفعه",
       "نتائج توافق ATS واضحة وشفافة",
       "لا يخترع خبرات لم تعشها أبدًا",
+      "مكتوب بحيث لا يبدو كأن الذكاء الاصطناعي كتبه",
     ],
     features: {
       eyebrow: "كل ما تحتاجه",
@@ -1145,58 +1282,168 @@ export const content = {
         },
       ],
     },
+    /* ── إضافة لينكدإن، قسم مميز في الصفحة الرئيسية ──
+       الأسعار مكرّرة هنا كأرقام لأن هذا القسم يُعرض للزوار غير المسجّلين،
+       ويجب أن تطابق PRICING في backend/core/linkedin.py. */
+    linkedinPromo: {
+      eyebrow: "إضافة لينكدإن",
+      title: "سيرتك الذاتية تتجاوز الفلترة، وملفك على لينكدإن هو ما يجعلهم يجدونك.",
+      description:
+        "جهات التوظيف تبحث في لينكدإن قبل أن تفتح أي سيرة ذاتية. حوّل سيرة ذاتية أنشأتها هنا إلى ملف لينكدإن كامل جاهز للّصق، أو دع متخصصًا من فريقنا يبنيه لك بالكامل.",
+      whyTitle: "ولماذا لا تسأل روبوت محادثة مجانيًا؟",
+      reasons: [
+        {
+          title: "يبدأ من سيرة ذاتية تم التحقق من حقائقها",
+          body: "لا من صفحة محادثة فارغة. فهو يُبنى على المعلومات المستخرجة من سيرتك الذاتية والتي مرّت بمرحلة تحقق مخصصة، فلا إعادة كتابة ولا تخمين ولا اختلاق. أما روبوت المحادثة فلا يعرف إلا ما تلصقه له في تلك اللحظة.",
+        },
+        {
+          title: "مبني على حدود حقول لينكدإن الحقيقية",
+          body: "220 حرفًا للعنوان المهني، و2600 لقسم «نبذة»، و2000 لكل وظيفة. كل حقل يُكتب داخل حدّه ويُراجع مرة أخرى بعد التوليد، فلا يصلك نص مقطوع في منتصف الجملة عند اللصق.",
+        },
+        {
+          title: "مرتبط بالوظيفة التي خصّصت سيرتك لها",
+          body: "أنت تختار أي سيرة ذاتية مخصصة يعمل منها، فيصبح العنوان المهني و«نبذة» والمهارات موجّهة إلى الوظائف التي تتقدم لها فعلًا، لا ملخصًا عامًا لمسيرتك كلها.",
+        },
+        {
+          title: "مكتوب بحيث لا يبدو كأن الذكاء الاصطناعي كتبه",
+          body: "القواعد نفسها التي تحكم سيرتك الذاتية تنطبق هنا: لا إكثار من الشرطات، ولا «علاوة على ذلك»، ولا قوائم ثلاثية محشوة، ولا عبارات منفوخة. يُقرأ كأنك وصفت عملك بنفسك، لأنه مبني على ما فعلته فعلًا.",
+        },
+      ],
+      alwaysEnglish:
+        "يُكتب بالإنجليزية دائمًا أيًا كانت لغة سيرتك الذاتية، لأن هذه هي طريقة بحث جهات التوظيف في السعودية والمنطقة.",
+      essential: {
+        name: "الأساسية",
+        sar: 49,
+        badge: "تنفيذ ذاتي",
+        tagline: "نكتبه لك وتضعه أنت",
+        bullets: [
+          "عنوان مهني، وقسم «نبذة»، وأقوى خمس مهارات لديك",
+          "نص جاهز للّصق لكل وظيفة في خبراتك",
+          "ثلاث أفكار منشورات من مشاريعك الحقيقية",
+          "زر نسخ عند كل حقل",
+        ],
+        cta: "احصل على الأساسية",
+      },
+      premium: {
+        name: "المميزة",
+        sar: 200,
+        badge: "تنفيذ كامل",
+        tagline: "يُنشئه لك متخصص",
+        bullets: [
+          "كل ما في الأساسية، ويُولَّد فورًا",
+          "يتواصل معك متخصص ويبني الملف معك",
+          "صورة غلاف مخصصة مصمّمة لملفك",
+          "مراجعة كاملة وجولة تحسينات واحدة بعد النشر",
+        ],
+        cta: "احصل على المميزة",
+      },
+      oneTime: "لمرة واحدة",
+      footnote: "عمليات شراء لمرة واحدة لا اشتراكات. وتتطلب سيرة ذاتية مُنشأة في ترشيح، والخطة المجانية تكفي لذلك.",
+      seeDetails: "عرض التفاصيل كاملة",
+    },
     faq: {
       eyebrow: "الأسئلة الشائعة",
       title: "أسئلة، وأجوبتها",
       description: "كل ما تحتاج معرفته قبل أن تبدأ طلب توظيفك القادم.",
+      // نفس المعرّفات في اللغتين: الصفحة الرئيسية تعرض هذه فقط وتربط ببقية
+      // الأسئلة في /questions.
+      landing: ["credits", "refunds", "need-existing-cv", "never-invents", "ai-sounding", "data-safe", "linkedin-what-is-it"],
+      seeAll: "عرض كل الأسئلة",
+      allTitle: "كل الأسئلة",
+      allDescription: "كل ما يتعلق بطريقة عمل ترشيح وتكلفته وما يحدث لبياناتك.",
+      searchLabel: "ابحث في الأسئلة",
+      searchPlaceholder: "ابحث عن سؤال…",
+      searchEmpty: "لا نتائج مطابقة. جرّب كلمة أخرى، أو تواصل معنا بالأسفل.",
+      resultCount: (shown: number, total: number) => `${shown} من ${total} سؤالًا`,
+      contactTitle: "لم تجد إجابتك؟",
+      contactBody: "راسلنا وسيرد عليك شخص حقيقي.",
+      supportEmail: "support@tarshih.com",
+      backToHome: "العودة إلى الرئيسية",
       items: [
         {
+          id: "ats-what-is-it",
           q: "ما هو نظام ATS ولماذا يهم؟",
           a: "نظام تتبع المتقدمين هو برنامج تستخدمه الشركات لفرز السير الذاتية قبل أن يطّلع عليها شخص حقيقي. يحلّل ترشيح كل وصف وظيفي ويحسّن سيرتك الذاتية لتُقرأ بوضوح من قبل النظام الآلي والمسؤول عن التوظيف على حد سواء.",
         },
         {
+          id: "arabic-quality",
           q: "هل ينتج ترشيح فعلًا سيرًا ذاتية عربية جيدة؟",
           a: "نعم. السير الذاتية العربية معروفة بصعوبة تنسيقها بشكل صحيح، حروف مكسورة، اتجاه خاطئ، تشكيل في غير مكانه. يُنشئ ترشيح سيرًا ذاتية وخطابات تقديم عربية منسّقة بشكل صحيح من اليمين لليسار، لا النصوص المشوّشة التي تنتجها معظم الأدوات.",
         },
         {
+          id: "need-existing-cv",
           q: "هل أحتاج سيرة ذاتية جاهزة لاستخدام ترشيح؟",
           a: "لا. يمكنك رفع سيرتك الحالية لتطويرها، أو بناء سيرة جديدة تمامًا من الصفر. في الحالتين، يكون الناتج مخصصًا للوظيفة التي تتقدم لها تحديدًا.",
         },
         {
+          id: "job-matching",
           q: "كيف يعمل اقتراح الوظائف المشابهة؟",
           a: "الصق وصفًا وظيفيًا ويُرجع ترشيح 5 وظائف مشابهة، كل واحدة مصنّفة كتطابق قوي أو تطابق جزئي أو فرصة طموحة، لتجد دائمًا فرصًا أخرى تستحق التقديم.",
         },
         {
+          id: "score-meaning",
           q: "ماذا تخبرني نتيجة ATS والتوافق بالضبط؟",
           a: "تقسّم سيرتك الذاتية إلى تطابق الكلمات المفتاحية والمهارات والتعليم والخبرة مقارنة بالوصف الوظيفي، ثم تسرد بالضبط ما ينقصك، شهادة أو مهارة أو كلمة مفتاحية، لتعرف ما يجب إضافته.",
         },
         {
+          id: "never-invents",
           q: "هل سيختلق ترشيح خبرات لا أملكها؟",
           a: "لا. تُستخرج كل حقيقة من سيرتك الذاتية الحقيقية أولًا، وتُراجع كل نقطة يتم توليدها مقارنة بها في مرحلة تحقق مخصصة من الحقائق. يعيد ترشيح صياغة ما هو حقيقي فقط ولا يختلق شيئًا أبدًا.",
         },
         {
+          id: "how-many-agents",
           q: "كم عدد وكلاء الذكاء الاصطناعي الذين يعملون على طلبي؟",
           a: "ستة. وكلاء منفصلون يتولون تحليل السيرة الذاتية، وتحليل الوصف الوظيفي، والتخصيص، والتحقق من الحقائق، وتقييم التوافق مع ATS، وتوليد المستندات، والبحث عن وظائف، بدلًا من طلب واحد يحاول فعل كل شيء.",
         },
         {
+          id: "credits",
           q: "ما هي النقطة (Credit) وكم أحصل منها؟",
           a: "النقطة هي ما تستهلكه لتوليد سيرة ذاتية وخطاب تقديم مخصصين. الطلبات بالإنجليزية تكلّف نقطة واحدة، والطلبات بالعربية تكلّف نقطتين لأنها تتطلب معالجة أكبر. تشمل الخطة المجانية 3 نقاط شهريًا، وبرو 40 نقطة، والنخبة 120 نقطة.",
         },
         {
+          id: "sounds-like-me",
           q: "هل ستبقى سيرتي الذاتية تعبّر عني فعلًا؟",
           a: "نعم. يعزز ترشيح خبرتك الحقيقية ويعيد صياغتها، ولا يخترع أبدًا وظائف أو مؤهلات. يمكنك مراجعة كل اقتراح وتعديله قبل التصدير.",
         },
         {
+          id: "file-formats",
           q: "ما هي صيغ الملفات التي يمكنني رفعها وتنزيلها؟",
           a: "يمكنك رفع ملفات بصيغة PDF أو DOCX، وتصدير سيرتك الذاتية وخطاب التقديم المحسّنين بأي من الصيغتين، جاهزين للتقديم في أي مكان.",
         },
         {
+          id: "data-safe",
           q: "هل بياناتي الشخصية آمنة؟",
           a: "مستنداتك مشفّرة أثناء النقل والتخزين. نحن لا نبيع بياناتك ولا نستخدمها لتدريب النماذج، ويمكنك حذف ملفاتك نهائيًا في أي وقت.",
         },
         {
+          id: "no-card",
           q: "هل أحتاج بطاقة ائتمان للبدء؟",
           a: "لا. الخطة المجانية متاحة للأبد دون الحاجة لبطاقة. طوّر إلى برو أو النخبة فقط عندما تريد نقاطًا أكثر كل شهر.",
+        },
+        {
+          id: "refunds",
+          q: "هل يمكنني استرداد المبلغ؟",
+          a: "بعد استخدام النقطة تصبح العملية نهائية، لأن المستند يُسلَّم لحظة إنشائه. وإذا حال عطل تقني من جانبنا دون إنتاج أي مستند بعد خصم النقطة، فراسل الدعم وسنعيد النقطة أو نسترد تلك العملية تحديدًا. أما الاشتراكات فيمكن إلغاؤها في أي وقت، وتبقى فعّالة حتى نهاية الدورة التي دفعت مقابلها.",
+        },
+        {
+          id: "ai-sounding",
+          q: "هل سيكون واضحًا أن الذكاء الاصطناعي كتبه؟",
+          a: "لا ينبغي ذلك. كل عملية توليد تتبع قواعد صريحة ضد العادات التي تكشف الكتابة الآلية: الإكثار من الشرطات، وكلمات الربط مثل «علاوة على ذلك» و«بالإضافة إلى ذلك»، والعبارات المنفوخة مثل «يلعب دورًا حيويًا»، وقوائم الصفات الثلاثية المحشوة، ورتابة أطوال الجمل التي يلاحظها الناس دون أن يعرفوا تسميتها. والنتيجة تُقرأ كما لو أن محترفًا يصف عمله بنفسه، وهذا ما بُنيت منه أصلًا.",
+        },
+        {
+          id: "linkedin-what-is-it",
+          q: "ما هي إضافة لينكدإن؟",
+          a: "عملية شراء لمرة واحدة تحوّل سيرة ذاتية أنشأتها هنا إلى محتوى لينكدإن جاهز للّصق: عنوان مهني، وقسم «نبذة»، وأقوى خمس مهارات لديك، ونص لكل وظيفة في خبراتك، وثلاث أفكار منشورات مستخرجة من مشاريعك الحقيقية، وإرشادات واضحة للأقسام التي يشترط لينكدإن إدخالها مباشرة. ويُكتب بالإنجليزية أيًا كانت لغة سيرتك الذاتية، لأن هذه هي طريقة بحث جهات التوظيف في المنطقة.",
+        },
+        {
+          id: "linkedin-tiers",
+          q: "ما الفرق بين الباقة الأساسية والمميزة في إضافة لينكدإن؟",
+          a: "الأساسية، 49 ريالًا، تمنحك المحتوى النهائي وتضعه أنت في ملفك، ويُسلَّم لحظة توليده. والمميزة، 200 ريال، تشمل كل ذلك وتضيف متخصصًا من فريقنا يتواصل معك مباشرة، ويبني ملفك بالكامل ويحسّنه معك، ويصمم صورة غلاف مخصصة، ويراجعه بعد نشره. وكلتاهما دفعة واحدة لا اشتراك.",
+        },
+        {
+          id: "linkedin-refunds",
+          q: "هل يمكنني استرداد مبلغ إضافة لينكدإن؟",
+          a: "الباقة الأساسية تُسلَّم لحظة ضغطك على «إنشاء»، لذا لا يمكن استردادها بعد أن يصبح المحتوى موجودًا. وإن كنت قد دفعت ولم تولّد بعد، فراسلنا ونعيد المبلغ كاملًا. والباقة المميزة قابلة للاسترداد كاملًا في أي وقت قبل أن يبدأ المتخصص عمله، وبعد بدء التنفيذ لا تعود قابلة للاسترداد لأن المحتوى قد سُلِّم والخدمة جارية.",
         },
       ],
     },
@@ -1377,7 +1624,7 @@ export const content = {
       generate: {
         eyebrow: "طلب جديد",
         title: "خصّص سيرة ذاتية لوظيفتك القادمة",
-        sub: "أنشئ سيرة ذاتية جديدة أو ارفع ملفك الحالي، ثم الصق الوصف الوظيفي ودع ترشيح يتولى الباقي.",
+        sub: "أنشئ سيرة ذاتية جديدة أو ارفع ملفك الحالي، ثم الصق الوصف الوظيفي ودع ترشيح يتولى الباقي. وكل شيء يُكتب من خبرتك الحقيقية، وبحيث لا يبدو كأن الذكاء الاصطناعي كتبه.",
         uploadLabel: "سيرتك الذاتية",
         uploadHint: "اسحب وأفلت ملف PDF أو DOCX، أو اضغط للاختيار",
         uploadedLabel: "تم التحليل",
@@ -1509,6 +1756,7 @@ export const content = {
             "يتواصل معك متخصص من فريقنا مباشرة عبر واتساب أو هاتفيًا",
             "ننشئ لك ملفك الكامل على لينكدإن، قسمًا بقسم",
             "نكتب ونضع لك العنوان المهني و«نبذة» والخبرات والمهارات، ونهيّئها لبحث جهات التوظيف",
+            "صورة غلاف مخصصة يصممها فريقنا لملفك، مناسبة لمجالك",
             "مراجعة كاملة للملف بعد إنجازه، مع جولة تحسينات واحدة",
             "تواصل مباشر مع المتخصص المسؤول عن ملفك حتى يكتمل",
           ],
@@ -1559,7 +1807,21 @@ export const content = {
           sub: "نستخدم المعلومات الموثوقة من سيرة ذاتية أنشأتها هنا مسبقًا. لا نختلق شيئًا، ولا تحتاج إلى إدخال أي بيانات من جديد.",
           empty: "تحتاج أولًا إلى سيرة ذاتية مُنشأة، فمنها تأتي المعلومات.",
           emptyCta: "إنشاء سيرة ذاتية",
+          allLegacy: (count: number) =>
+            count === 1
+              ? "سيرتك الذاتية أُنشئت قبل أن نبدأ بتخزين البيانات المنظمة التي تحتاجها هذه الإضافة."
+              : `جميع سيرك الذاتية (${count}) أُنشئت قبل أن نبدأ بتخزين البيانات المنظمة التي تحتاجها هذه الإضافة.`,
+          allLegacyWhy:
+            "إنشاء سيرة ذاتية جديدة واحدة يحل الأمر، والخطة المجانية تكفي لذلك. والسيرة الجديدة تحتفظ بكل ما في القديمة، بالإضافة إلى المعلومات الأساسية التي نبني منها ملفك على لينكدإن.",
+          hiddenLegacy: (count: number) =>
+            count === 1
+              ? "سيرة ذاتية أقدم واحدة غير معروضة هنا، لأنها حُفظت قبل توفر البيانات المنظمة اللازمة."
+              : `${count} سير ذاتية أقدم غير معروضة هنا، لأنها حُفظت قبل توفر البيانات المنظمة اللازمة.`,
           unsupported: "محفوظة قبل تخزين البيانات المنظمة، لذا لا يمكن استخدامها هنا",
+          atsLabel: "ATS",
+          matchLabel: "التوافق الوظيفي",
+          langEn: "الإنجليزية",
+          langAr: "العربية",
           untitled: "وظيفة بدون عنوان",
           unknownCompany: "شركة غير معروفة",
           continue: "المتابعة إلى الدفع",

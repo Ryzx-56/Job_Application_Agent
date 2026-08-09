@@ -20,6 +20,7 @@ import re
 
 from loguru import logger
 
+from core.humanizer import HUMANIZER_RULES
 from core.llm_config import generate_claude_text, ClaudeTruncationError
 from core.profile_names import has_arabic
 from schemas.linkedin_schema import (
@@ -245,10 +246,14 @@ SECTION-BY-SECTION INSTRUCTIONS:
 WRITING STYLE:
 
 - First person, active voice, specific. Every sentence should carry information.
-- Never use em dashes or en dashes. Use commas, periods, or separate sentences.
-- No markdown, no asterisks, no bullet characters, no emoji, no hashtags anywhere in any value.
-- No quotation marks wrapping a whole field — the values get copied straight to the clipboard
-  and pasted into LinkedIn exactly as returned.
+- No quotation marks wrapping a whole field. The values get copied straight to the clipboard and
+  pasted into LinkedIn exactly as returned.
+
+<<HUMANIZER_RULES>>
+
+- One more, specific to this task: a LinkedIn profile that reads as machine-written costs the
+  person credibility with the exact recruiters they are trying to reach. Write the way a competent
+  professional describes their own work out loud.
 
 Return ONLY a valid JSON object, no markdown fences, in EXACTLY this shape:
 
@@ -314,6 +319,7 @@ def _render(template: str, **tokens) -> str:
 
 LINKEDIN_SYSTEM_PROMPT = _render(
     _LINKEDIN_SYSTEM_TEMPLATE,
+    HUMANIZER_RULES=HUMANIZER_RULES,
     NA=NOT_AVAILABLE,
     HEADLINE_LIMIT=CONTENT_LIMITS["headline"],
     ABOUT_LIMIT=CONTENT_LIMITS["about"],

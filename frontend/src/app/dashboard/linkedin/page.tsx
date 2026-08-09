@@ -750,14 +750,26 @@ function CvPicker({
   lang: "en" | "ar";
   compact?: boolean;
 }) {
-  const unusable = allResumes.filter((r) => !r.generation_snapshot);
+  const unusableCount = allResumes.filter((r) => !r.generation_snapshot).length;
+  const nothingUsable = resumes.length === 0;
 
-  if (allResumes.length === 0) {
+  // Nothing at all, or nothing we can build from: both end in the same place,
+  // which is "generate one CV and come back". Previously a person with five
+  // older CVs got five identical greyed-out rows and no way forward, which
+  // read as the feature being broken rather than as an action to take.
+  if (nothingUsable) {
     return (
       <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50/70 p-5 text-center">
         <FileText className="mx-auto size-5 text-slate-400" aria-hidden />
-        <p className="mt-2 text-sm text-slate-600">{copy.cvSelector.empty}</p>
-        <Link href="/dashboard" className={`mt-3 ${liOutlineButton}`}>
+        <p className="mt-2 text-sm leading-relaxed text-slate-600">
+          {allResumes.length === 0 ? copy.cvSelector.empty : copy.cvSelector.allLegacy(allResumes.length)}
+        </p>
+        {allResumes.length > 0 && (
+          <p className="mx-auto mt-1.5 max-w-md text-xs leading-relaxed text-slate-500">
+            {copy.cvSelector.allLegacyWhy}
+          </p>
+        )}
+        <Link href="/dashboard" className={`mt-3 ${liPrimaryButton}`}>
           {copy.cvSelector.emptyCta}
         </Link>
       </div>
@@ -766,7 +778,7 @@ function CvPicker({
 
   return (
     <div className="space-y-2">
-      <ul className={`space-y-2 ${compact ? "max-h-64 overflow-y-auto" : ""}`}>
+      <ul className={`space-y-2 ${compact ? "max-h-80 overflow-y-auto" : ""}`}>
         {resumes.map((resume) => {
           const selected = selectedId === resume.id;
           return (
@@ -775,27 +787,53 @@ function CvPicker({
                 type="button"
                 onClick={() => onSelect(resume.id)}
                 aria-pressed={selected}
-                className={`flex w-full items-center justify-between gap-3 rounded-xl border px-4 py-3 text-start transition-colors ${
+                className={`flex w-full items-start justify-between gap-3 rounded-xl border px-4 py-3 text-start transition-colors ${
                   selected
                     ? "border-[#0A66C2] bg-[#EAF4FB]"
                     : "border-slate-200 bg-white hover:border-[#0A66C2]/40 hover:bg-[#EAF4FB]/50"
                 }`}
               >
-                <span className="min-w-0">
+                <span className="min-w-0 flex-1">
                   <span className="block truncate text-sm font-medium text-slate-900">
                     {resume.role || copy.cvSelector.untitled}
                   </span>
-                  <span className="mt-0.5 block truncate text-xs text-slate-500">
-                    {resume.company || copy.cvSelector.unknownCompany} ·{" "}
-                    {new Date(resume.created_at).toLocaleDateString(lang === "ar" ? "ar-SA" : "en-US", {
-                      year: "numeric",
-                      month: "short",
-                      day: "numeric",
-                    })}
+
+                  {/* The same facts My Resumes shows, so a person with several
+                      near-identical job titles can actually tell them apart.
+                      A single job title is not enough to choose by. */}
+                  <span className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-slate-500">
+                    <span className="truncate">{resume.company || copy.cvSelector.unknownCompany}</span>
+                    <span className="text-slate-300" aria-hidden>
+                      ·
+                    </span>
+                    <span>{formatDate(resume.created_at, lang)}</span>
+                    <span
+                      className={`rounded-full px-1.5 py-0.5 text-[10px] font-medium ${
+                        resume.cv_language === "ar"
+                          ? "bg-violet-50 text-violet-700"
+                          : "bg-blue-50 text-blue-700"
+                      }`}
+                    >
+                      {resume.cv_language === "ar"
+                        ? copy.cvSelector.langAr
+                        : copy.cvSelector.langEn}
+                    </span>
+                  </span>
+
+                  <span className="mt-1.5 flex flex-wrap gap-x-4 gap-y-1 text-xs">
+                    <span className="text-slate-500">
+                      {copy.cvSelector.atsLabel}{" "}
+                      <span className="font-semibold text-slate-800">{resume.ats_score}%</span>
+                    </span>
+                    <span className="text-slate-500">
+                      {copy.cvSelector.matchLabel}{" "}
+                      <span className="font-semibold text-slate-800">{resume.job_match_score}%</span>
+                    </span>
                   </span>
                 </span>
+
                 <span
-                  className={`grid size-5 shrink-0 place-items-center rounded-full border ${
+                  className={`mt-0.5 grid size-5 shrink-0 place-items-center rounded-full border ${
                     selected ? "border-[#0A66C2] bg-[#0A66C2] text-white" : "border-slate-300 bg-white"
                   }`}
                 >
@@ -807,18 +845,11 @@ function CvPicker({
         })}
       </ul>
 
-      {unusable.length > 0 && (
-        <ul className="space-y-1.5">
-          {unusable.map((resume) => (
-            <li
-              key={resume.id}
-              className="flex items-center justify-between gap-3 rounded-xl border border-slate-200 bg-slate-50 px-4 py-2.5 opacity-70"
-            >
-              <span className="min-w-0 truncate text-sm text-slate-500">{resume.role || copy.cvSelector.untitled}</span>
-              <span className="shrink-0 text-[11px] text-slate-400">{copy.cvSelector.unsupported}</span>
-            </li>
-          ))}
-        </ul>
+      {/* One line, not one row per CV. The count is the only useful part. */}
+      {unusableCount > 0 && (
+        <p className="px-1 text-xs leading-relaxed text-slate-400">
+          {copy.cvSelector.hiddenLegacy(unusableCount)}
+        </p>
       )}
     </div>
   );

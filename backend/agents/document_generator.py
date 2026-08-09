@@ -3,6 +3,7 @@ import json
 from loguru import logger
 from core.state import AgentState
 from core.llm_config import generate_claude_text
+from core.humanizer import HUMANIZER_RULES
 from utils.arabic_localizer import apply_glossary, build_glossary, find_latin_terms
 from utils.cv_context import resolve_candidate_name
 import anthropic
@@ -40,11 +41,19 @@ HARD RULES:
     AI-generated text. Use a comma, period, colon, or "and" instead. Write two sentences if you need to.
     Ordinary hyphens inside compound words are fine (e.g. "well-suited"), just not as a standalone dash.
 
+<<HUMANIZER_RULES>>
+
 {language_instruction}
 
 FACTS_JSON: {facts_json}
 WEIGHT_FACTORS: {weight_factors}
 """
+
+# Shared with the tailored CV and the LinkedIn generator so all three hold one
+# standard for not reading as machine-written. Substituted here rather than
+# copied into the string above, and done BEFORE any .format() call so the rules
+# text is never treated as a format template itself.
+COVER_LETTER_PROMPT = COVER_LETTER_PROMPT.replace("<<HUMANIZER_RULES>>", HUMANIZER_RULES)
 
 # BUG FIX (Arabic cover letter): this used to instruct Claude to KEEP tool
 # names, technical terms and acronyms in Latin script inline. On a

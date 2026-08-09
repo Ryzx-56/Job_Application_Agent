@@ -16,7 +16,6 @@ import {
   FileUp,
   Download,
   Check,
-  Plus,
   Menu,
   X,
   FileText,
@@ -30,6 +29,8 @@ import {
 } from "lucide-react";
 import { useLang } from "@/lib/language";
 import { formatSar, sarPerCredit, usdApprox } from "@/lib/pricing";
+import { FaqRow } from "@/components/faq";
+import { LinkedInGlyph } from "@/components/linkedin-ui";
 import { Button, Logo, LangSwitcher } from "@/components/brand";
 import { useAuth } from "@/lib/auth";
 import { fetchCredits, Tier } from "@/lib/supabase/credits";
@@ -495,10 +496,11 @@ function Hero() {
 ======================================================================== */
 function TrustBar() {
   const { t } = useLang();
-  const icons = [Lock, ScanSearch, BadgeCheck];
+  // Fourth icon covers the humanizer line: content written not to read as AI.
+  const icons = [Lock, ScanSearch, BadgeCheck, PenLine];
   return (
     <section className="mx-auto max-w-6xl px-4 py-10 sm:px-6">
-      <div className="flex flex-col items-center gap-6 border-y border-white/10 py-6 sm:flex-row sm:justify-center sm:gap-10 sm:py-5">
+      <div className="flex flex-col items-center gap-5 border-y border-white/10 py-6 sm:flex-row sm:flex-wrap sm:justify-center sm:gap-x-8 sm:gap-y-3 sm:py-5">
         {t.trustBar.map((label, i) => {
           const Icon = icons[i];
           return (
@@ -535,6 +537,141 @@ function Features() {
             </div>
           );
         })}
+      </div>
+    </section>
+  );
+}
+
+/* ========================================================================
+   LINKEDIN ADD-ON
+
+   A real section, directly after "everything you need", because that's the
+   section that frames the whole journey and this is the last step of it: CV,
+   tailoring, job matching, then the profile recruiters actually search.
+
+   Both tiers and both prices are on the page. Nothing about what it costs is
+   hidden behind a click, since the objection this section exists to answer is
+   "why would I pay for this when a chatbot is free" and the price is half of
+   that conversation.
+======================================================================== */
+function LinkedInAddOn() {
+  const { t, lang, isRTL } = useLang();
+  const { isLoggedIn } = useAuth();
+  const copy = t.linkedinPromo;
+  const ForwardIcon = isRTL ? ArrowLeft : ArrowRight;
+  // Signed-out visitors have no dashboard to land on, so they go to signup.
+  // Signed-in ones go straight to the tab.
+  const buyHref = isLoggedIn ? "/dashboard/linkedin" : "/signup?plan=free";
+
+  const tiers = [
+    { key: "essential" as const, data: copy.essential, premium: false },
+    { key: "premium" as const, data: copy.premium, premium: true },
+  ];
+
+  return (
+    <section id="linkedin" className="scroll-mt-24 border-y border-white/10 bg-zinc-900/30">
+      <div className="mx-auto max-w-6xl px-4 py-20 sm:px-6 sm:py-28">
+        <div className="mx-auto max-w-2xl text-center">
+          <span className="inline-flex items-center gap-2 text-sm font-medium text-[#4DA3E8]">
+            <LinkedInGlyph className="size-4" />
+            {copy.eyebrow}
+          </span>
+          <h2 className="mt-3 text-3xl font-semibold tracking-tight text-white sm:text-4xl">{copy.title}</h2>
+          <p className="mt-4 text-lg leading-relaxed text-zinc-400">{copy.description}</p>
+        </div>
+
+        {/* ── The four reasons this isn't a chatbot prompt ── */}
+        <h3 className="mt-14 text-center text-sm font-medium uppercase tracking-wide text-zinc-500">
+          {copy.whyTitle}
+        </h3>
+        <div className="mt-6 grid gap-4 sm:grid-cols-2">
+          {copy.reasons.map((reason) => (
+            <div
+              key={reason.title}
+              className="rounded-2xl border border-white/10 bg-zinc-900/60 p-6 transition-colors duration-300 hover:border-[#0A66C2]/50"
+            >
+              <div className="flex items-start gap-3">
+                <span className="mt-0.5 grid size-8 shrink-0 place-items-center rounded-lg border border-white/10 bg-white/5 text-[#4DA3E8]">
+                  <Check className="size-4" aria-hidden />
+                </span>
+                <div className="min-w-0">
+                  <h4 className="text-base font-semibold text-white">{reason.title}</h4>
+                  <p className="mt-1.5 text-sm leading-relaxed text-zinc-400">{reason.body}</p>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        <p className="mx-auto mt-6 max-w-2xl text-center text-sm leading-relaxed text-zinc-500">
+          {copy.alwaysEnglish}
+        </p>
+
+        {/* ── Both tiers, both prices, on the page ──
+            Premium in ink and gold rather than a second blue card, matching
+            the dashboard so the two surfaces read as one product. */}
+        <div className="mt-12 grid gap-4 lg:grid-cols-2">
+          {tiers.map(({ key, data, premium }) => (
+            <div
+              key={key}
+              className={`relative flex flex-col overflow-hidden rounded-2xl border p-6 sm:p-7 ${
+                premium
+                  ? "border-[#D4AF37]/40 bg-gradient-to-b from-[#141d31] to-[#0b1220]"
+                  : "border-white/10 bg-zinc-900/60"
+              }`}
+            >
+              {premium && (
+                <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-[#D4AF37] to-transparent" />
+              )}
+
+              <span
+                className={`self-start rounded-full px-2.5 py-0.5 text-[11px] font-semibold uppercase tracking-wide ${
+                  premium ? "bg-[#D4AF37] text-[#0B1220]" : "bg-[#0A66C2]/15 text-[#4DA3E8]"
+                }`}
+              >
+                {data.badge}
+              </span>
+
+              <div className="mt-3 flex flex-wrap items-end justify-between gap-3">
+                <div>
+                  <h4 className="text-xl font-semibold text-white">{data.name}</h4>
+                  <p className={`mt-0.5 text-sm ${premium ? "text-[#E4CE86]" : "text-zinc-400"}`}>{data.tagline}</p>
+                </div>
+                <div className="text-end">
+                  <div className="text-3xl font-semibold tracking-tight text-white">{formatSar(data.sar, lang)}</div>
+                  {usdApprox(data.sar) && <div className="text-xs text-zinc-500">{usdApprox(data.sar)}</div>}
+                  <div className="text-xs text-zinc-500">{copy.oneTime}</div>
+                </div>
+              </div>
+
+              <ul className="mt-6 flex-1 space-y-2.5">
+                {data.bullets.map((bullet) => (
+                  <li key={bullet} className="flex gap-2.5 text-sm leading-relaxed text-zinc-300">
+                    <Check
+                      className={`mt-0.5 size-4 shrink-0 ${premium ? "text-[#D4AF37]" : "text-[#4DA3E8]"}`}
+                      aria-hidden
+                    />
+                    <span>{bullet}</span>
+                  </li>
+                ))}
+              </ul>
+
+              <Link
+                href={buyHref}
+                className={`mt-7 inline-flex items-center justify-center gap-2 rounded-lg px-4 py-3 text-sm font-semibold transition-colors ${
+                  premium
+                    ? "bg-[#D4AF37] text-[#0B1220] hover:bg-[#E0BF54]"
+                    : "bg-[#0A66C2] text-white hover:bg-[#0b74dc]"
+                }`}
+              >
+                {data.cta}
+                <ForwardIcon className="size-4" aria-hidden />
+              </Link>
+            </div>
+          ))}
+        </div>
+
+        <p className="mt-6 text-center text-xs leading-relaxed text-zinc-500">{copy.footnote}</p>
       </div>
     </section>
   );
@@ -1043,39 +1180,43 @@ function PayAsYouGo() {
    FAQ
 ======================================================================== */
 function Faq() {
-  const { t } = useLang();
-  const [open, setOpen] = useState<number | null>(0);
+  const { t, isRTL } = useLang();
+  const [open, setOpen] = useState<string | null>(null);
+  const ForwardIcon = isRTL ? ArrowLeft : ArrowRight;
+
+  // Only the high-impact questions live here now, selected by id in
+  // language.tsx rather than by slicing the array, so reordering the full list
+  // can't silently change what the landing page promotes. Everything else is a
+  // click away on /questions.
+  const featured = t.faq.landing
+    .map((id) => t.faq.items.find((item) => item.id === id))
+    .filter((item): item is (typeof t.faq.items)[number] => Boolean(item));
+
   return (
     <section id="faq" className="mx-auto max-w-3xl scroll-mt-24 px-4 py-20 sm:px-6 sm:py-28">
       <SectionHeading eyebrow={t.faq.eyebrow} title={t.faq.title} description={t.faq.description} />
-      <div className="mt-12 divide-y divide-white/10 rounded-2xl border border-white/10 bg-zinc-900/60">
-        {t.faq.items.map((item, i) => {
-          const isOpen = open === i;
-          const panelId = `faq-panel-${i}`;
-          return (
-            <div key={item.q}>
-              <button
-                type="button"
-                onClick={() => setOpen(isOpen ? null : i)}
-                className="flex w-full items-center justify-between gap-4 px-6 py-5 text-start focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400/60 focus-visible:ring-inset"
-                aria-expanded={isOpen}
-                aria-controls={panelId}
-              >
-                <span className="text-sm font-medium text-white">{item.q}</span>
-                <Plus className={`size-4 shrink-0 text-zinc-500 transition-transform duration-300 ${isOpen ? "rotate-45 text-blue-400" : ""}`} aria-hidden />
-              </button>
-              <div
-                id={panelId}
-                role="region"
-                className={`grid overflow-hidden transition-all duration-300 ease-out ${isOpen ? "grid-rows-[1fr] opacity-100" : "grid-rows-[0fr] opacity-0"}`}
-              >
-                <div className="overflow-hidden">
-                  <p className="px-6 pb-5 text-sm leading-relaxed text-zinc-400">{item.a}</p>
-                </div>
-              </div>
-            </div>
-          );
-        })}
+
+      {/* Separate cards rather than one divided block: each question gets its
+          own surface, the open one lifts with a blue edge, and the number rail
+          gives the eye something to follow. Same dark palette and blue accent
+          as the rest of the page. */}
+      <div className="mt-12 space-y-2.5">
+        {featured.map((item, i) => (
+          <FaqRow
+            key={item.id}
+            index={i + 1}
+            item={item}
+            isOpen={open === item.id}
+            onToggle={() => setOpen(open === item.id ? null : item.id)}
+          />
+        ))}
+      </div>
+
+      <div className="mt-8 flex justify-center">
+        <Button as={Link} href="/questions" variant="outline" size="lg">
+          {t.faq.seeAll}
+          <ForwardIcon className="size-4" aria-hidden />
+        </Button>
       </div>
     </section>
   );
@@ -1205,6 +1346,7 @@ export default function LandingPage() {
         <Hero />
         <TrustBar />
         <Features />
+        <LinkedInAddOn />
         <HowItWorks />
         <TrustSection />
         <Pricing onOpenAbout={() => router.push("/about")} />
