@@ -110,39 +110,55 @@ export default function LinkedInPage() {
     return data;
   }, []);
 
-  useEffect(() => {
-    let cancelled = false;
+  /**
+   * Loads the two independent things this page needs.
+   *
+   * allSettled, not all: the explainer, the tiers' feature lists and the
+   * teaser are static copy that need no backend at all, and the CV list and
+   * the account's purchase data come from different places. One of them
+   * failing must not blank the page — a visitor who can't reach the API
+   * should still be able to read what the product IS. Whatever did load
+   * renders; what didn't gets a retry banner.
+   */
+  const load = useCallback(async () => {
     setLoading(true);
     setLoadError(null);
+    setLoadErrorDetail(null);
 
-    Promise.all([fetchLinkedInOverview(), fetchResumes(0, CV_FETCH_LIMIT)])
-      .then(([data, saved]) => {
-        if (cancelled) return;
-        setOverview(data);
-        setResumes(saved.resumes);
-      })
-      .catch((err) => {
-        console.error("LinkedIn overview failed:", err);
-        if (cancelled) return;
-        setLoadError(copy.errors.load);
-        const apiError = err as ApiError;
-        setLoadErrorDetail(
-          [apiError.status ? `HTTP ${apiError.status}` : null, apiError.code, apiError.message]
-            .filter(Boolean)
-            .join(" · ")
-        );
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
+    const [overviewResult, resumesResult] = await Promise.allSettled([
+      fetchLinkedInOverview(),
+      fetchResumes(0, CV_FETCH_LIMIT),
+    ]);
 
-    return () => {
-      cancelled = true;
-    };
+    if (overviewResult.status === "fulfilled") {
+      setOverview(overviewResult.value);
+    } else {
+      const apiError = overviewResult.reason as ApiError;
+      console.error("LinkedIn overview failed:", apiError);
+      setOverview(null);
+      setLoadError(copy.errors.load);
+      setLoadErrorDetail(
+        [apiError?.status ? `HTTP ${apiError.status}` : null, apiError?.code, apiError?.message]
+          .filter(Boolean)
+          .join(" · ")
+      );
+    }
+
+    if (resumesResult.status === "fulfilled") {
+      setResumes(resumesResult.value.resumes);
+    } else {
+      console.error("fetchResumes failed on the LinkedIn page:", resumesResult.reason);
+    }
+
+    setLoading(false);
     // copy.errors.load is stable per language; re-running on a language switch
     // would pointlessly refetch.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
 
   // Arriving from /dashboard/upgrade#linkedin-tiers with a tier already
   // chosen (?tier=normal). The tier cards live on both surfaces; the CV
@@ -296,22 +312,6 @@ export default function LinkedInPage() {
     );
   }
 
-  if (loadError || !overview) {
-    return (
-      <LinkedInPageShell dir={dir}>
-        <div className="flex flex-col items-center gap-2 rounded-2xl border border-rose-200 bg-rose-50/70 px-6 py-16 text-sm text-rose-600">
-          <AlertCircle className="size-5" aria-hidden />
-          <span>{loadError ?? copy.errors.load}</span>
-          {loadErrorDetail && (
-            <span dir="ltr" className="max-w-full break-words text-center font-mono text-xs text-rose-400">
-              {loadErrorDetail}
-            </span>
-          )}
-        </div>
-      </LinkedInPageShell>
-    );
-  }
-
   /* ── Results view ────────────────────────────────────────────────── */
 
   if (openGeneration?.content) {
@@ -363,7 +363,13 @@ export default function LinkedInPage() {
   // A returning buyer normally sees their own stuff, not the sales pitch —
   // unless they asked to buy again, or arrived from the plans page with a tier
   // already picked, in which case hiding the CV picker would dead-end them.
-  const showSales = !overview.has_purchased || showBuyAgain || Boolean(tier);
+  // When the account data couldn't load at all, the sales content is the only
+  // thing there is to show, and it's worth showing.
+  const showSales = !overview || !overview.has_purchased || showBuyAgain || Boolean(tier);
+  // Prices and buying both need the backend. Without it the tiers still
+  // explain what each one includes, but nothing is purchasable and no price is
+  // shown — a wrong or blank price on a buy button is worse than no button.
+  const canBuy = Boolean(overview);
 
   return (
     <LinkedInPageShell dir={dir}>
@@ -383,8 +389,33 @@ export default function LinkedInPage() {
         </div>
       )}
 
+      {/* Account data unreachable. A banner, not a blank page: everything
+          below that doesn't need the backend still renders. */}
+      {loadError && (
+        <div className="flex flex-wrap items-start justify-between gap-3 rounded-xl border border-rose-200 bg-rose-50/70 px-4 py-3 text-sm text-rose-700">
+          <div className="flex min-w-0 items-start gap-2">
+            <AlertCircle className="mt-0.5 size-4 shrink-0" aria-hidden />
+            <div className="min-w-0">
+              <span>{loadError}</span>
+              {loadErrorDetail && (
+                <p dir="ltr" className="mt-0.5 break-words text-left font-mono text-xs text-rose-400">
+                  {loadErrorDetail}
+                </p>
+              )}
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => void load()}
+            className="shrink-0 rounded-md border border-rose-300 bg-white px-2.5 py-1 text-xs font-medium text-rose-700 hover:bg-rose-50"
+          >
+            {copy.generateBox.retry}
+          </button>
+        </div>
+      )}
+
       {/* ── Paid and waiting to be generated ── */}
-      {overview.pending_generations.map((pending) => {
+      {(overview?.pending_generations ?? []).map((pending) => {
         const cv = pending.source_cv;
         const needsReplacementCv = !pending.source_cv_id;
         const busy = busyPurchaseId === pending.purchase_id;
@@ -479,7 +510,7 @@ export default function LinkedInPage() {
       })}
 
       {/* ── History (only once they own something) ── */}
-      {overview.has_purchased && (
+      {overview?.has_purchased && (
         <LinkedInPanel title={copy.history.title} note={copy.history.sub}>
           {overview.history.length === 0 ? (
             <p className="text-sm text-slate-400">{copy.history.empty}</p>
@@ -594,7 +625,7 @@ export default function LinkedInPage() {
               <TierCard
                 name={copy.tiers.normalName}
                 tagline={copy.tiers.normalTagline}
-                price={normalPrice}
+                price={canBuy ? normalPrice : "—"}
                 oneTimeLabel={copy.tiers.oneTime}
                 includedLabel={copy.tiers.included}
                 features={copy.explainer.normalItems}
@@ -602,11 +633,13 @@ export default function LinkedInPage() {
                 featured
                 selected={tier === "normal"}
                 onSelect={() => chooseTier("normal")}
+                disabled={!canBuy}
+                disabledHint={copy.errors.load}
               />
               <TierCard
                 name={copy.tiers.premiumName}
                 tagline={copy.tiers.premiumTagline}
-                price={premiumPrice}
+                price={canBuy ? premiumPrice : "—"}
                 oneTimeLabel={copy.tiers.oneTime}
                 includedLabel={copy.tiers.included}
                 features={copy.explainer.premiumItems}
@@ -614,6 +647,8 @@ export default function LinkedInPage() {
                 badge={copy.tiers.premiumBadge}
                 selected={tier === "premium"}
                 onSelect={() => chooseTier("premium")}
+                disabled={!canBuy}
+                disabledHint={copy.errors.load}
               />
             </div>
             <Link

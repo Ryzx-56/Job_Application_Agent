@@ -6,7 +6,7 @@ import { FileText, BarChart3, Users, Activity, ArrowRight, BadgeCheck } from "lu
 import { AdminPage, ADMIN_MONO } from "@/components/admin-ui";
 
 /**
- * Admin landing page. Four tools, each its own route — real navigation
+ * Admin landing page. Five tools, each its own route — real navigation
  * rather than tabs, so any one of them can be linked to or bookmarked
  * directly (which matters when you're mid-support-conversation).
  *

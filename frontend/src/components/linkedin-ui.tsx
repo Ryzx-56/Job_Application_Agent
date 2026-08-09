@@ -288,6 +288,8 @@ export function TierCard({
   featured = false,
   selected = false,
   onSelect,
+  disabled = false,
+  disabledHint,
 }: {
   name: string;
   tagline: string;
@@ -300,6 +302,10 @@ export function TierCard({
   featured?: boolean;
   selected?: boolean;
   onSelect: () => void;
+  /** Buying is unavailable (the price couldn't be read from the backend). The
+   *  card still explains the tier — only the action is off. */
+  disabled?: boolean;
+  disabledHint?: string;
 }) {
   return (
     <div
@@ -335,9 +341,17 @@ export function TierCard({
         ))}
       </ul>
 
-      <button type="button" onClick={onSelect} className={`mt-5 w-full ${featured ? liPrimaryButton : liOutlineButton}`}>
+      <button
+        type="button"
+        onClick={onSelect}
+        disabled={disabled}
+        className={`mt-5 w-full ${featured ? liPrimaryButton : liOutlineButton}`}
+      >
         {cta}
       </button>
+      {disabled && disabledHint && (
+        <p className="mt-2 text-center text-xs text-slate-400">{disabledHint}</p>
+      )}
     </div>
   );
 }
