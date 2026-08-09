@@ -345,6 +345,48 @@ def _notify_premium_async(purchase: dict) -> None:
 # ─── ROUTES: BUYING ─────────────────────────────────────────────────────────
 
 
+def _unavailable(error: Exception) -> HTTPException:
+    """
+    Turns a database failure into a real, CORS-carrying HTTP response.
+
+    WHY THIS EXISTS: an unhandled exception in a FastAPI endpoint is rendered
+    by Starlette's ServerErrorMiddleware, which sits OUTSIDE CORSMiddleware —
+    so that 500 goes back without any Access-Control-Allow-Origin header, the
+    browser refuses to hand it to JavaScript, and the frontend sees the
+    generic "Failed to fetch" with no status at all. The result is a page that
+    can't tell the user (or us) anything about what broke. Raising an
+    HTTPException instead means the response passes back THROUGH the CORS
+    layer, so the code below actually reaches the browser.
+
+    The one hint that gets through to the client is the "tables missing" case,
+    which is a deployment step nobody has run yet rather than anything about a
+    user or their data.
+    """
+    text = str(error).lower()
+    if "does not exist" in text or "could not find the table" in text or "pgrst205" in text:
+        logger.error(
+            f"❌ LinkedIn tables are missing from this database: {error}. "
+            "Run supabase/migrations/008_linkedin_addon.sql."
+        )
+        return HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail={
+                "code": "linkedin_not_set_up",
+                "message": "The LinkedIn add-on isn't set up on this environment yet.",
+                "hint": "008_linkedin_addon.sql has not been applied to this database.",
+            },
+        )
+
+    logger.error(f"❌ LinkedIn overview query failed: {error}")
+    return HTTPException(
+        status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+        detail={
+            "code": "linkedin_unavailable",
+            "message": "We couldn't reach your LinkedIn add-on just now. Please try again.",
+        },
+    )
+
+
 @router.get("/api/v1/linkedin/overview", tags=["LinkedIn"])
 def linkedin_overview(user_id: str = Depends(get_current_user_id)) -> dict:
     """
@@ -358,25 +400,30 @@ def linkedin_overview(user_id: str = Depends(get_current_user_id)) -> dict:
     """
     admin = get_admin_client()
 
-    purchases = (
-        admin.table("linkedin_purchases")
-        .select("id, tier, source_cv_id, price_paid, currency, payment_status, "
-                "fulfillment_status, created_at, paid_at")
-        .eq("user_id", user_id)
-        .order("created_at", desc=True)
-        .execute()
-        .data
-        or []
-    )
-    generations = (
-        admin.table("linkedin_generations")
-        .select("id, purchase_id, status, created_at, updated_at")
-        .eq("user_id", user_id)
-        .order("created_at", desc=True)
-        .execute()
-        .data
-        or []
-    )
+    try:
+        purchases = (
+            admin.table("linkedin_purchases")
+            .select("id, tier, source_cv_id, price_paid, currency, payment_status, "
+                    "fulfillment_status, created_at, paid_at")
+            .eq("user_id", user_id)
+            .order("created_at", desc=True)
+            .execute()
+            .data
+            or []
+        )
+        generations = (
+            admin.table("linkedin_generations")
+            .select("id, purchase_id, status, created_at, updated_at")
+            .eq("user_id", user_id)
+            .order("created_at", desc=True)
+            .execute()
+            .data
+            or []
+        )
+    except Exception as e:
+        # See _unavailable: a raw 500 here would reach the browser stripped of
+        # its CORS headers and show up as an untraceable "Failed to fetch".
+        raise _unavailable(e)
 
     labels = _cv_labels(user_id, [p.get("source_cv_id") for p in purchases])
 

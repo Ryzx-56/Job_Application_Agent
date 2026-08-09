@@ -28,7 +28,7 @@ const STATUS_STYLES: Record<PremiumOrder["fulfillment_status"], string> = {
 };
 
 function formatDateTime(iso: string | null) {
-  if (!iso) return "—";
+  if (!iso) return "n/a";
   try {
     return new Date(iso).toLocaleString("en-US", {
       year: "numeric",
@@ -105,8 +105,8 @@ export default function AdminLinkedInOrdersPage() {
 
       {error && <ErrorNote message={error} />}
 
-      <Notice title="normal tier isn't here">
-        Normal-tier purchases need nothing from you — they generate themselves. This queue is only the premium
+      <Notice title="essential tier isn't here">
+        Essential-tier purchases need nothing from you, as they generate themselves. This queue is only the premium
         orders where someone is owed a hand-built profile.
       </Notice>
 
@@ -114,7 +114,7 @@ export default function AdminLinkedInOrdersPage() {
         {loading ? (
           <Loading label="loading orders" />
         ) : orders.length === 0 ? (
-          <Empty message={includeDone ? "no premium orders yet" : "nothing owed — queue is clear"} />
+          <Empty message={includeDone ? "no premium orders yet" : "nothing owed, queue is clear"} />
         ) : (
           <Table head={["paid", "buyer", "contact", "based on CV", "amount", "status", ""]}>
             {orders.map((order) => (
@@ -125,24 +125,24 @@ export default function AdminLinkedInOrdersPage() {
 
                 <Cell>
                   <div className="font-medium text-slate-900">
-                    {order.buyer?.name_en || order.buyer?.name_ar || "—"}
+                    {order.buyer?.name_en || order.buyer?.name_ar || "n/a"}
                   </div>
-                  <div className={`${ADMIN_MONO} text-[11px] text-slate-500`}>{order.buyer?.email ?? "—"}</div>
+                  <div className={`${ADMIN_MONO} text-[11px] text-slate-500`}>{order.buyer?.email ?? "n/a"}</div>
                 </Cell>
 
                 <Cell>
                   <div className={`${ADMIN_MONO} text-slate-900`} dir="ltr">
-                    {order.contact_phone || "—"}
+                    {order.contact_phone || "n/a"}
                   </div>
                   <div className={`text-[11px] ${order.contact_consent ? "text-emerald-600" : "text-rose-600"}`}>
-                    {order.contact_consent ? "consented to contact" : "NO consent — do not call"}
+                    {order.contact_consent ? "consented to contact" : "NO consent, do not call"}
                   </div>
                 </Cell>
 
                 <Cell>
-                  <div className="text-slate-900">{order.source_cv?.role ?? "—"}</div>
+                  <div className="text-slate-900">{order.source_cv?.role ?? "n/a"}</div>
                   <div className="text-[11px] text-slate-500">
-                    {order.source_cv?.company ?? "—"}
+                    {order.source_cv?.company ?? "n/a"}
                     {order.source_cv?.cv_language ? ` · ${order.source_cv.cv_language}` : ""}
                   </div>
                 </Cell>

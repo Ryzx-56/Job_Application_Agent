@@ -20,6 +20,14 @@ import { Check, Copy, Lock, Sparkles } from "lucide-react";
 export const LI_BLUE = "#0A66C2";
 export const LI_TINT = "#EAF4FB";
 
+/* PREMIUM PALETTE — ink and gold.
+   The two tiers must not read as two sizes of the same thing, so Premium
+   doesn't get a bigger blue card: it gets a different material. Ink ground,
+   gold hairline, gold type. The contrast against Essential's white-and-blue
+   is doing the explaining before anyone reads a word of it. */
+export const LI_INK = "#0B1220";
+export const LI_GOLD = "#D4AF37";
+
 /** Filled primary action, LinkedIn blue. */
 export const liPrimaryButton =
   "inline-flex items-center justify-center gap-2 rounded-lg bg-[#0A66C2] px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-[#095196] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0A66C2]/40 disabled:cursor-not-allowed disabled:opacity-50";
@@ -272,86 +280,161 @@ export function LinkedInPanel({
 }
 
 /* ========================================================================
-   TIER CARD — normal vs premium. Feature lists come from the language file
-   so the exact deliverables per tier are stated where the price is, and
-   nobody can later say they were misled about which tier does what (§4).
+   TIER PANEL — one full-width panel per tier, stacked rather than side by
+   side.
+
+   Two tiers presented as adjacent equal columns read as "the same product,
+   two sizes", which is exactly the wrong impression here: one is words you
+   place yourself, the other is a person building the thing for you. So each
+   tier gets its own full-width panel, its own material (white/blue vs
+   ink/gold), its own "who this is for" line, and they're separated by an
+   explicit divider.
+
+   Feature lists come from the language file, so the exact deliverables sit
+   next to the price and nobody can later say they were misled about which
+   tier does what (§4).
 ======================================================================== */
-export function TierCard({
+export function TierPanel({
+  variant,
   name,
-  tagline,
+  subtitle,
+  bestFor,
   price,
   oneTimeLabel,
   includedLabel,
   features,
   cta,
   badge,
-  featured = false,
+  footnote,
   selected = false,
   onSelect,
   disabled = false,
   disabledHint,
 }: {
+  variant: "essential" | "premium";
   name: string;
-  tagline: string;
+  subtitle: string;
+  bestFor: string;
   price: string;
   oneTimeLabel: string;
   includedLabel: string;
   features: readonly string[];
   cta: string;
-  badge?: string;
-  featured?: boolean;
+  badge: string;
+  footnote?: string;
   selected?: boolean;
   onSelect: () => void;
   /** Buying is unavailable (the price couldn't be read from the backend). The
-   *  card still explains the tier — only the action is off. */
+   *  panel still explains the tier; only the action is off. */
   disabled?: boolean;
   disabledHint?: string;
 }) {
+  const premium = variant === "premium";
+
   return (
-    <div
-      className={`relative flex flex-col rounded-2xl border bg-white p-5 shadow-sm transition-shadow hover:shadow-md ${
-        selected
-          ? "border-[#0A66C2] ring-2 ring-[#0A66C2]/25"
-          : featured
-          ? "border-[#0A66C2]/40 ring-1 ring-[#0A66C2]/15"
-          : "border-slate-200"
-      }`}
+    <section
+      className={`relative overflow-hidden rounded-2xl border shadow-sm transition-shadow hover:shadow-md ${
+        premium
+          ? "border-[#D4AF37]/45 bg-gradient-to-b from-[#131C2E] to-[#0B1220]"
+          : "border-slate-200 bg-white"
+      } ${selected ? (premium ? "ring-2 ring-[#D4AF37]/50" : "ring-2 ring-[#0A66C2]/30") : ""}`}
     >
-      {badge && (
-        <span className="absolute -top-2.5 start-5 rounded-full bg-[#0A66C2] px-2.5 py-0.5 text-[11px] font-semibold text-white">
-          {badge}
-        </span>
-      )}
+      {/* Gold hairline across the top: the whole visual claim of the tier, in
+          one line, before any copy is read. */}
+      {premium && <div className="h-px w-full bg-gradient-to-r from-transparent via-[#D4AF37] to-transparent" />}
 
-      <h3 className="text-base font-semibold text-slate-900">{name}</h3>
-      <p className="mt-0.5 text-xs text-slate-500">{tagline}</p>
+      <div className="p-5 sm:p-6">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div className="min-w-0">
+            <span
+              className={`inline-block rounded-full px-2.5 py-0.5 text-[11px] font-semibold uppercase tracking-wide ${
+                premium ? "bg-[#D4AF37] text-[#0B1220]" : "bg-[#EAF4FB] text-[#0A66C2]"
+              }`}
+            >
+              {badge}
+            </span>
+            <h3
+              className={`mt-2.5 text-xl font-semibold tracking-tight sm:text-2xl ${
+                premium ? "text-white" : "text-slate-900"
+              }`}
+            >
+              {name}
+            </h3>
+            <p className={`mt-1 text-sm ${premium ? "text-[#E4CE86]" : "text-slate-500"}`}>{subtitle}</p>
+          </div>
 
-      <div className="mt-3 flex items-baseline gap-1.5">
-        <span className="text-2xl font-semibold text-slate-900">{price}</span>
-        <span className="text-xs text-slate-500">{oneTimeLabel}</span>
+          <div className={premium ? "text-end" : "text-end"}>
+            <div className={`text-2xl font-semibold ${premium ? "text-white" : "text-slate-900"} sm:text-3xl`}>
+              {price}
+            </div>
+            <div className={`text-xs ${premium ? "text-slate-400" : "text-slate-500"}`}>{oneTimeLabel}</div>
+          </div>
+        </div>
+
+        <p
+          className={`mt-4 rounded-xl px-3.5 py-2.5 text-sm leading-relaxed ${
+            premium ? "bg-white/5 text-slate-300" : "bg-slate-50 text-slate-600"
+          }`}
+        >
+          {bestFor}
+        </p>
+
+        <p
+          className={`mt-5 text-[11px] font-semibold uppercase tracking-wide ${
+            premium ? "text-[#D4AF37]" : "text-slate-400"
+          }`}
+        >
+          {includedLabel}
+        </p>
+        <ul className="mt-2.5 space-y-2.5">
+          {features.map((feature) => (
+            <li
+              key={feature}
+              className={`flex gap-2.5 text-sm leading-relaxed ${premium ? "text-slate-200" : "text-slate-600"}`}
+            >
+              <Check
+                className={`mt-0.5 size-4 shrink-0 ${premium ? "text-[#D4AF37]" : "text-emerald-500"}`}
+                aria-hidden
+              />
+              <span>{feature}</span>
+            </li>
+          ))}
+        </ul>
+
+        <button
+          type="button"
+          onClick={onSelect}
+          disabled={disabled}
+          className={
+            premium
+              ? "mt-6 inline-flex w-full items-center justify-center gap-2 rounded-lg bg-[#D4AF37] px-4 py-3 text-sm font-semibold text-[#0B1220] transition-colors hover:bg-[#E0BF54] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#D4AF37]/40 disabled:cursor-not-allowed disabled:opacity-50"
+              : `mt-6 w-full ${liPrimaryButton}`
+          }
+        >
+          {cta}
+        </button>
+
+        {footnote && (
+          <p className={`mt-2.5 text-center text-xs leading-relaxed ${premium ? "text-slate-400" : "text-slate-400"}`}>
+            {footnote}
+          </p>
+        )}
+        {disabled && disabledHint && (
+          <p className={`mt-2 text-center text-xs ${premium ? "text-slate-400" : "text-slate-400"}`}>{disabledHint}</p>
+        )}
       </div>
+    </section>
+  );
+}
 
-      <p className="mt-4 text-[11px] font-semibold uppercase tracking-wide text-slate-400">{includedLabel}</p>
-      <ul className="mt-2 flex-1 space-y-2">
-        {features.map((feature) => (
-          <li key={feature} className="flex gap-2 text-sm leading-relaxed text-slate-600">
-            <Check className="mt-0.5 size-4 shrink-0 text-emerald-500" aria-hidden />
-            <span>{feature}</span>
-          </li>
-        ))}
-      </ul>
-
-      <button
-        type="button"
-        onClick={onSelect}
-        disabled={disabled}
-        className={`mt-5 w-full ${featured ? liPrimaryButton : liOutlineButton}`}
-      >
-        {cta}
-      </button>
-      {disabled && disabledHint && (
-        <p className="mt-2 text-center text-xs text-slate-400">{disabledHint}</p>
-      )}
+/** Explicit separator between the two tiers. Cheap, and it stops the eye from
+ *  reading them as one continuous list of features. */
+export function OrDivider({ label }: { label: string }) {
+  return (
+    <div className="flex items-center gap-3" aria-hidden>
+      <span className="h-px flex-1 bg-slate-300/70" />
+      <span className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">{label}</span>
+      <span className="h-px flex-1 bg-slate-300/70" />
     </div>
   );
 }

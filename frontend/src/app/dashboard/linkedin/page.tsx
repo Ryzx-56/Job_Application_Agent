@@ -34,7 +34,8 @@ import {
   LinkedInPageShell,
   LinkedInPanel,
   LockedTeaser,
-  TierCard,
+  OrDivider,
+  TierPanel,
 } from "@/components/linkedin-ui";
 import { LinkedInResults } from "@/components/linkedin-results";
 
@@ -572,85 +573,56 @@ export default function LinkedInPage() {
         </LinkedInPanel>
       )}
 
-      {/* ── Sales: explainer -> tiers -> teaser -> CV picker ── */}
+      {/* ── Sales: the two tiers, then teaser, then CV picker ──
+          The tier panels ARE the explainer. Listing the deliverables once, in
+          the panel that carries the price and the buy button, is both shorter
+          and harder to misread than an explainer section above a set of cards
+          repeating the same lines. */}
       {showSales && (
         <>
-          <LinkedInPanel title={copy.explainer.title} note={copy.explainer.body}>
-            <div className="grid gap-4 sm:grid-cols-2">
-              <div>
-                <p className="text-sm font-semibold text-slate-900">{copy.explainer.normalTitle}</p>
-                <ul className="mt-2 space-y-1.5">
-                  {copy.explainer.normalItems.map((item) => (
-                    <li key={item} className="flex gap-2 text-sm leading-relaxed text-slate-600">
-                      <Check className="mt-0.5 size-4 shrink-0 text-emerald-500" aria-hidden />
-                      <span>{item}</span>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-              <div>
-                <p className="text-sm font-semibold text-slate-900">{copy.explainer.premiumTitle}</p>
-                <ul className="mt-2 space-y-1.5">
-                  {copy.explainer.premiumItems.map((item) => (
-                    <li key={item} className="flex gap-2 text-sm leading-relaxed text-slate-600">
-                      <Check className="mt-0.5 size-4 shrink-0 text-[#0A66C2]" aria-hidden />
-                      <span>{item}</span>
-                    </li>
-                  ))}
-                </ul>
-              </div>
+          <section id="linkedin-tiers" className="scroll-mt-4 space-y-4">
+            <div>
+              <h2 className="text-lg font-semibold tracking-tight text-slate-900">{copy.explainer.title}</h2>
+              <p className="mt-1 text-sm leading-relaxed text-slate-600">{copy.explainer.body}</p>
             </div>
-            <p className="rounded-lg bg-[#EAF4FB] px-3 py-2 text-xs leading-relaxed text-slate-600">
-              {copy.explainer.honest}
-            </p>
-            <p className="text-xs leading-relaxed text-slate-500">{copy.englishOnlyNote}</p>
-          </LinkedInPanel>
 
-          {/* The expectations note also lives on the checkout screen itself,
-              where it can't be missed before paying. This is the short form. */}
-          <div className="rounded-2xl border border-slate-200 bg-white p-4">
-            <p className="text-sm font-semibold text-slate-900">{copy.refundNote.title}</p>
-            <p className="mt-1 text-sm leading-relaxed text-slate-600">{copy.refundNote.oneTime}</p>
-            <Link
-              href="/refund-policy"
-              className="mt-2 inline-block text-xs font-medium text-[#0A66C2] underline underline-offset-2"
-            >
-              {copy.refundNote.policyLink}
-            </Link>
-          </div>
+            <TierPanel
+              variant="essential"
+              name={copy.explainer.normalTitle}
+              subtitle={copy.explainer.normalSubtitle}
+              bestFor={copy.explainer.normalBestFor}
+              price={canBuy ? normalPrice : "—"}
+              oneTimeLabel={copy.tiers.oneTime}
+              includedLabel={copy.tiers.included}
+              features={copy.explainer.normalItems}
+              cta={copy.tiers.normalCta}
+              badge={copy.tiers.normalBadge}
+              selected={tier === "normal"}
+              onSelect={() => chooseTier("normal")}
+              disabled={!canBuy}
+              disabledHint={copy.errors.load}
+            />
 
-          <section id="linkedin-tiers" className="space-y-3">
-            <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500">{copy.tiers.sectionTitle}</h2>
-            <div className="grid gap-4 sm:grid-cols-2">
-              <TierCard
-                name={copy.tiers.normalName}
-                tagline={copy.tiers.normalTagline}
-                price={canBuy ? normalPrice : "—"}
-                oneTimeLabel={copy.tiers.oneTime}
-                includedLabel={copy.tiers.included}
-                features={copy.explainer.normalItems}
-                cta={copy.tiers.normalCta}
-                featured
-                selected={tier === "normal"}
-                onSelect={() => chooseTier("normal")}
-                disabled={!canBuy}
-                disabledHint={copy.errors.load}
-              />
-              <TierCard
-                name={copy.tiers.premiumName}
-                tagline={copy.tiers.premiumTagline}
-                price={canBuy ? premiumPrice : "—"}
-                oneTimeLabel={copy.tiers.oneTime}
-                includedLabel={copy.tiers.included}
-                features={copy.explainer.premiumItems}
-                cta={copy.tiers.premiumCta}
-                badge={copy.tiers.premiumBadge}
-                selected={tier === "premium"}
-                onSelect={() => chooseTier("premium")}
-                disabled={!canBuy}
-                disabledHint={copy.errors.load}
-              />
-            </div>
+            <OrDivider label={copy.tiers.or} />
+
+            <TierPanel
+              variant="premium"
+              name={copy.explainer.premiumTitle}
+              subtitle={copy.explainer.premiumSubtitle}
+              bestFor={copy.explainer.premiumBestFor}
+              price={canBuy ? premiumPrice : "—"}
+              oneTimeLabel={copy.tiers.oneTime}
+              includedLabel={copy.tiers.included}
+              features={copy.explainer.premiumItems}
+              cta={copy.tiers.premiumCta}
+              badge={copy.tiers.premiumBadge}
+              footnote={copy.tiers.premiumScarcity}
+              selected={tier === "premium"}
+              onSelect={() => chooseTier("premium")}
+              disabled={!canBuy}
+              disabledHint={copy.errors.load}
+            />
+
             <Link
               href="/dashboard/upgrade#linkedin-tiers"
               className="inline-block text-xs font-medium text-[#0A66C2] underline underline-offset-2"
@@ -658,6 +630,21 @@ export default function LinkedInPage() {
               {copy.tiers.seeOnPlans}
             </Link>
           </section>
+
+          {/* The expectations note appears again on the checkout screen
+              itself, where it can't be missed before paying. This is the
+              short form. */}
+          <div className="rounded-2xl border border-slate-200 bg-white p-4">
+            <p className="text-sm font-semibold text-slate-900">{copy.refundNote.title}</p>
+            <p className="mt-1 text-sm leading-relaxed text-slate-600">{copy.refundNote.oneTime}</p>
+            <p className="mt-2 text-xs leading-relaxed text-slate-500">{copy.englishOnlyNote}</p>
+            <Link
+              href="/refund-policy"
+              className="mt-2 inline-block text-xs font-medium text-[#0A66C2] underline underline-offset-2"
+            >
+              {copy.refundNote.policyLink}
+            </Link>
+          </div>
 
           <LockedTeaser heading={copy.teaser.heading} body={copy.teaser.body} lockedLabel={copy.teaser.locked} />
 

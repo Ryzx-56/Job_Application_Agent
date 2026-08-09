@@ -96,7 +96,7 @@ def _order_lines(order: dict) -> list[tuple[str, str]]:
         ("Buyer", name),
         ("Email", buyer.get("email") or "(unknown)"),
         ("Phone", order.get("contact_phone") or "(not provided)"),
-        ("Contact consent", "Yes" if order.get("contact_consent") else "NO — do not call"),
+        ("Contact consent", "Yes" if order.get("contact_consent") else "NO, do not call"),
         ("Chosen CV", cv_label),
         ("CV id", cv.get("id") or order.get("source_cv_id") or "(none)"),
         ("Amount", f"{order.get('price_paid')} {order.get('currency') or 'SAR'}"),
@@ -108,7 +108,7 @@ def _order_lines(order: dict) -> list[tuple[str, str]]:
 def _plain_text(order: dict) -> str:
     lines = [f"{label}: {value}" for label, value in _order_lines(order)]
     return (
-        "New PREMIUM LinkedIn order — a human profile build is owed.\n\n"
+        "New PREMIUM LinkedIn order. A specialist profile build is owed.\n\n"
         + "\n".join(lines)
         + "\n\nMark it done in the admin panel: https://tarshih.com/dashboard/admin\n"
     )
@@ -125,7 +125,7 @@ def _html(order: dict) -> str:
         '<p style="font-size:15px;color:#0f172a;margin:0 0 4px">'
         "<strong>New premium LinkedIn order.</strong></p>"
         '<p style="font-size:13px;color:#64748b;margin:0 0 16px">'
-        "This tier is fulfilled manually — contact the buyer and build their profile.</p>"
+        "This tier is fulfilled by hand. Contact the buyer and build their profile.</p>"
         f'<table cellpadding="0" cellspacing="0" style="border-collapse:collapse">{rows}</table>'
         '<p style="font-size:13px;color:#64748b;margin:20px 0 0">'
         '<a href="https://tarshih.com/dashboard/admin" style="color:#0A66C2">Open the admin panel</a>'
@@ -158,7 +158,7 @@ def send_premium_order_alert(order: dict) -> bool:
             json={
                 "from": sender,
                 "to": [recipient],
-                "subject": f"Premium LinkedIn order — {(order.get('buyer') or {}).get('email') or 'new buyer'}",
+                "subject": f"Premium LinkedIn order: {(order.get('buyer') or {}).get('email') or 'new buyer'}",
                 "text": _plain_text(order),
                 "html": _html(order),
             },

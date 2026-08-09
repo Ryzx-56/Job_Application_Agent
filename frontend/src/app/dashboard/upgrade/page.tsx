@@ -273,57 +273,85 @@ export default function UpgradePage() {
         </h2>
         <p className="text-sm text-slate-500">{li.sub}</p>
 
-        <div className="grid gap-4 sm:grid-cols-2">
+        {/* Stacked, not a 2-up grid, and Premium in ink and gold rather than
+            a second blue card. Two adjacent matching cards read as one product
+            in two sizes, which is the wrong idea: one tier is words you place
+            yourself, the other is a specialist building the profile for you.
+            Same treatment as the LinkedIn tab, so the two surfaces agree. */}
+        <div className="space-y-4">
           {(["normal", "premium"] as const).map((tier) => {
             const isPremium = tier === "premium";
             const price = linkedinData?.pricing?.[tier]?.price;
             return (
               <div
                 key={tier}
-                className={`relative flex flex-col rounded-2xl border bg-white p-5 shadow-sm transition-shadow hover:shadow-md ${
-                  isPremium ? "border-[#0A66C2]/40 ring-1 ring-[#0A66C2]/15" : "border-slate-200"
+                className={`relative flex flex-col overflow-hidden rounded-2xl border p-5 shadow-sm transition-shadow hover:shadow-md ${
+                  isPremium
+                    ? "border-[#D4AF37]/45 bg-gradient-to-b from-[#131C2E] to-[#0B1220]"
+                    : "border-slate-200 bg-white"
                 }`}
               >
-                {isPremium && (
-                  <span className="absolute -top-2.5 start-5 rounded-full bg-[#0A66C2] px-2.5 py-0.5 text-[11px] font-semibold text-white">
-                    {li.tiers.premiumBadge}
-                  </span>
-                )}
-                <h3 className="text-base font-semibold text-slate-900">
-                  {isPremium ? li.tiers.premiumName : li.tiers.normalName}
-                </h3>
-                <p className="mt-0.5 text-xs text-slate-500">
-                  {isPremium ? li.tiers.premiumTagline : li.tiers.normalTagline}
-                </p>
-                <div className="mt-2 flex items-baseline gap-1.5">
-                  <span className="text-2xl font-semibold text-slate-900">
-                    {price !== undefined ? formatSar(price, lang) : "—"}
-                  </span>
-                  <span className="text-xs text-slate-500">{li.tiers.oneTime}</span>
+                <span
+                  className={`self-start rounded-full px-2.5 py-0.5 text-[11px] font-semibold uppercase tracking-wide ${
+                    isPremium ? "bg-[#D4AF37] text-[#0B1220]" : "bg-[#EAF4FB] text-[#0A66C2]"
+                  }`}
+                >
+                  {isPremium ? li.tiers.premiumBadge : li.tiers.normalBadge}
+                </span>
+
+                <div className="mt-2.5 flex flex-wrap items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <h3 className={`text-lg font-semibold ${isPremium ? "text-white" : "text-slate-900"}`}>
+                      {isPremium ? li.tiers.premiumName : li.tiers.normalName}
+                    </h3>
+                    <p className={`mt-0.5 text-sm ${isPremium ? "text-[#E4CE86]" : "text-slate-500"}`}>
+                      {isPremium ? li.tiers.premiumTagline : li.tiers.normalTagline}
+                    </p>
+                  </div>
+                  <div className="text-end">
+                    <div className={`text-2xl font-semibold ${isPremium ? "text-white" : "text-slate-900"}`}>
+                      {price !== undefined ? formatSar(price, lang) : "—"}
+                    </div>
+                    <div className={`text-xs ${isPremium ? "text-slate-400" : "text-slate-500"}`}>
+                      {li.tiers.oneTime}
+                    </div>
+                  </div>
                 </div>
 
                 <ul className="mt-4 flex-1 space-y-2">
                   {(isPremium ? li.explainer.premiumItems : li.explainer.normalItems).map((feature) => (
-                    <li key={feature} className="flex gap-2 text-sm leading-relaxed text-slate-600">
-                      <Check className="mt-0.5 size-4 shrink-0 text-emerald-500" aria-hidden />
+                    <li
+                      key={feature}
+                      className={`flex gap-2 text-sm leading-relaxed ${isPremium ? "text-slate-200" : "text-slate-600"}`}
+                    >
+                      <Check
+                        className={`mt-0.5 size-4 shrink-0 ${isPremium ? "text-[#D4AF37]" : "text-emerald-500"}`}
+                        aria-hidden
+                      />
                       <span>{feature}</span>
                     </li>
                   ))}
                 </ul>
 
-                {/* Straight to the LinkedIn tab with the tier preselected —
-                    the CV has to be chosen before checkout, and that's where
-                    the picker lives. */}
+                {/* Straight to the LinkedIn tab with the tier preselected: the
+                    CV has to be chosen before checkout, and that's where the
+                    picker lives. */}
                 <Link
                   href={`/dashboard/linkedin?tier=${tier}`}
-                  className={`mt-5 inline-flex items-center justify-center rounded-lg px-4 py-2.5 text-sm font-medium transition-colors ${
+                  className={`mt-5 inline-flex items-center justify-center rounded-lg px-4 py-2.5 text-sm font-semibold transition-colors ${
                     isPremium
-                      ? "bg-[#0A66C2] text-white hover:bg-[#095196]"
-                      : "border border-[#0A66C2]/30 text-[#0A66C2] hover:bg-[#EAF4FB]"
+                      ? "bg-[#D4AF37] text-[#0B1220] hover:bg-[#E0BF54]"
+                      : "bg-[#0A66C2] text-white hover:bg-[#095196]"
                   }`}
                 >
                   {isPremium ? li.tiers.premiumCta : li.tiers.normalCta}
                 </Link>
+
+                {isPremium && (
+                  <p className="mt-2.5 text-center text-xs leading-relaxed text-slate-400">
+                    {li.tiers.premiumScarcity}
+                  </p>
+                )}
               </div>
             );
           })}
