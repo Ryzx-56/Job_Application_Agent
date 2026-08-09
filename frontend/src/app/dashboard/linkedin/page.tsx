@@ -30,6 +30,7 @@ import {
   formatSar,
   liOutlineButton,
   liPrimaryButton,
+  usdApprox,
   LinkedInGlyph,
   LinkedInPageShell,
   LinkedInPanel,
@@ -195,6 +196,14 @@ export default function LinkedInPage() {
   const pricing = overview?.pricing;
   const normalPrice = pricing ? formatSar(pricing.normal.price, lang) : "";
   const premiumPrice = pricing ? formatSar(pricing.premium.price, lang) : "";
+  const normalUsd = pricing ? usdApprox(pricing.normal.price) : null;
+  const premiumUsd = pricing ? usdApprox(pricing.premium.price) : null;
+
+  /** No CV at all means this feature has nothing to build from. Said once at
+   *  the top rather than only inside the picker, which a first-time visitor
+   *  never reaches: they'd choose a tier, pay, and only then discover they
+   *  needed a CV first. */
+  const hasNoCvs = resumes.length === 0;
 
   async function openGeneration_(generationId: string) {
     setOpeningId(generationId);
@@ -394,6 +403,26 @@ export default function LinkedInPage() {
         <div className="flex items-start gap-2 rounded-xl border border-rose-200 bg-rose-50/70 px-4 py-3 text-sm text-rose-700">
           <AlertCircle className="mt-0.5 size-4 shrink-0" aria-hidden />
           <span>{actionError}</span>
+        </div>
+      )}
+
+      {/* No CV yet, so there is nothing to build a profile from. Stated before
+          the tiers, not after payment, and it names the free plan because
+          that's genuinely all it takes to unlock this. */}
+      {hasNoCvs && !loadError && (
+        <div className="flex flex-wrap items-start justify-between gap-3 rounded-2xl border border-[#0A66C2]/25 bg-white p-4">
+          <div className="flex min-w-0 items-start gap-3">
+            <span className="grid size-9 shrink-0 place-items-center rounded-lg bg-[#EAF4FB] text-[#0A66C2]">
+              <FileText className="size-4.5" aria-hidden />
+            </span>
+            <div className="min-w-0">
+              <p className="text-sm font-semibold text-slate-900">{copy.needCv.title}</p>
+              <p className="mt-1 text-sm leading-relaxed text-slate-600">{copy.needCv.body}</p>
+            </div>
+          </div>
+          <Link href="/dashboard" className={liPrimaryButton}>
+            {copy.needCv.cta}
+          </Link>
         </div>
       )}
 
@@ -599,6 +628,7 @@ export default function LinkedInPage() {
               subtitle={copy.explainer.normalSubtitle}
               bestFor={copy.explainer.normalBestFor}
               price={canBuy ? normalPrice : "n/a"}
+              priceUsdNote={canBuy ? normalUsd : null}
               oneTimeLabel={copy.tiers.oneTime}
               includedLabel={copy.tiers.included}
               features={copy.explainer.normalItems}
@@ -618,6 +648,7 @@ export default function LinkedInPage() {
               subtitle={copy.explainer.premiumSubtitle}
               bestFor={copy.explainer.premiumBestFor}
               price={canBuy ? premiumPrice : "n/a"}
+              priceUsdNote={canBuy ? premiumUsd : null}
               oneTimeLabel={copy.tiers.oneTime}
               includedLabel={copy.tiers.included}
               features={copy.explainer.premiumItems}

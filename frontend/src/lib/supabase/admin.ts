@@ -30,7 +30,20 @@ async function adminGet<T>(path: string): Promise<T> {
   return res.json();
 }
 
+/** SAR is the charged amount; usd is a converted reference. Both come from the
+ *  backend so no surface converts differently. */
 export type MoneyAmount = { usd: number; sar: number };
+
+/** Revenue minus worst-case AI cost, where worst case assumes every granted
+ *  credit is burned on the most expensive generation. See §7 of the pricing
+ *  reference and worst_case_cost_sar in backend/core/admin_stats.py. */
+export type WorstCase = {
+  worst_case_cost: MoneyAmount;
+  worst_case_profit: MoneyAmount;
+  /** null when there's no revenue to divide by, which is not the same as 0%. */
+  worst_case_margin_pct: number | null;
+  unit_worst_case_cost: MoneyAmount;
+};
 
 export type AdminAnalytics = {
   generated_at: string;
@@ -47,28 +60,28 @@ export type AdminAnalytics = {
     failed_total: number | null;
   };
   founding_members: number | null;
-  tiers: {
+  tiers: ({
     tier: string;
     label: string;
     current_count: number;
     active_count: number;
     founding_count: number;
-    price_usd: number | null;
-    founding_price_usd?: number | null;
-    credits: number | null;
+    price_sar: number | null;
+    founding_price_sar?: number | null;
+    credits: number;
     estimated_monthly: MoneyAmount;
     /** Free tier: the figure is a cost, shown negative. */
     is_cost: boolean;
-  }[];
-  packs_catalogue: {
+  } & WorstCase)[];
+  packs_catalogue: ({
     slug: string;
     label: string;
-    price_usd: number;
+    price_sar: number;
     credits: number;
     sold_ever: number;
     sold_this_month: number;
     revenue: MoneyAmount;
-  }[];
+  } & WorstCase)[];
   /** Projected from who is subscribed right now at their actual price.
    *  Distinct from `revenue`, which is money actually recorded. */
   estimated_mrr: MoneyAmount;
@@ -87,6 +100,42 @@ export type AdminAnalytics = {
     count_month: number;
     revenue: MoneyAmount;
   }[];
+  /** Running worst-case total across paid tiers, packs and LinkedIn Essential.
+   *  `excludes` names what is deliberately left out (LinkedIn Premium, whose
+   *  cost is manual time rather than compute). */
+  worst_case: {
+    revenue: MoneyAmount;
+    cost: MoneyAmount;
+    profit: MoneyAmount;
+    margin_pct: number | null;
+    cost_per_credit: MoneyAmount;
+    excludes: string[];
+  };
+  /** Actual LinkedIn add-on sales, read from linkedin_purchases rather than
+   *  projected. `available: false` means those tables couldn't be read on this
+   *  environment, which is an unread figure, not zero sales. */
+  linkedin: {
+    available: boolean;
+    essential: {
+      label: string;
+      sold: number;
+      revenue: MoneyAmount;
+      worst_case_cost: MoneyAmount | null;
+      worst_case_profit: MoneyAmount | null;
+      worst_case_margin_pct: number | null;
+      cost_tracked: boolean;
+    };
+    premium: {
+      label: string;
+      sold: number;
+      revenue: MoneyAmount;
+      /** Always null: premium's cost is manual labour, not a fixed API charge. */
+      worst_case_cost: MoneyAmount | null;
+      worst_case_profit: MoneyAmount | null;
+      worst_case_margin_pct: number | null;
+      cost_tracked: boolean;
+    };
+  };
 };
 
 export type AdminPipelineHealth = {

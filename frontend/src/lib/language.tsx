@@ -168,14 +168,17 @@ export const content = {
       },
       mostPopular: "Most popular",
       premiumBadgeLabel: "Premium tier",
-      currencyNote: null as string | null,
+      currencyNote: "All prices are charged in Saudi riyals. The dollar figure under each price is an approximate reference at 3.75 SAR to the dollar, not a payment option." as string | null,
       plans: [
         {
           name: "Free",
           slug: "free",
-          price: "$0",
-          originalPrice: null as string | null,
-          priceSar: null as string | null,
+          // Locked SAR pricing, pricing reference v2 §2. SAR is the amount
+          // actually charged; the dollar line shown under it is a reference
+          // only, derived at the 3.75 peg in src/lib/pricing.ts rather than
+          // stored a second time where it could drift.
+          sar: 0,
+          originalSar: null as number | null,
           period: "/ month",
           description: "Everything you need to try Tarshih on your next application.",
           features: [
@@ -195,9 +198,10 @@ export const content = {
         {
           name: "Pro",
           slug: "pro",
-          price: "$10.99",
-          originalPrice: "$12.99",
-          priceSar: null as string | null,
+          // 41 SAR is the founding-member price for the first 50 payers,
+          // 49 SAR is list. Reference v2 §2 and §2a.
+          sar: 41,
+          originalSar: 49 as number | null,
           period: "/ month",
           description: "For active job seekers who want serious volume, every time.",
           features: [
@@ -213,8 +217,8 @@ export const content = {
           ],
           cta: "Start Pro",
           badge: "Most Popular",
-          offerBanner: "Limited time offer: 15% off, forever",
-          discountLabel: "15% OFF",
+          offerBanner: "Founding offer: 16% off, locked forever",
+          discountLabel: "16% OFF",
           limitedOffer: "This price is locked in for as long as you stay subscribed. The first 50 people to pay, on any plan, also keep a permanent Founding Member badge on their profile.",
           featured: true,
           premium: false,
@@ -222,9 +226,8 @@ export const content = {
         {
           name: "Elite",
           slug: "elite",
-          price: "$34.99",
-          originalPrice: null as string | null,
-          priceSar: null as string | null,
+          sar: 129,
+          originalSar: null as number | null,
           period: "/ month",
           description: "The premium tier for candidates who want every advantage.",
           features: [
@@ -256,9 +259,9 @@ export const content = {
       perApp: "per credit",
       cta: "Buy pack",
       packs: [
-        { name: "Starter", slug: "starter", price: "$4.99", priceSar: null as string | null, credits: "5 credits", blurb: "A couple of applications to test the waters.", perAppValue: "≈ $1.00", badge: null as string | null, featured: false },
-        { name: "Best Value", slug: "best-value", price: "$11.99", priceSar: null as string | null, credits: "15 credits", blurb: "The sweet spot for an active search.", perAppValue: "≈ $0.80", badge: "Best Value", featured: true },
-        { name: "Power", slug: "power", price: "$19.99", priceSar: null as string | null, credits: "30 credits", blurb: "For a serious, high volume job hunt.", perAppValue: "≈ $0.67", badge: "Max Savings", featured: false },
+        { name: "Starter", slug: "starter", sar: 19, creditCount: 5, credits: "5 credits", blurb: "A couple of applications to test the waters.", badge: null as string | null, featured: false },
+        { name: "Best Value", slug: "best-value", sar: 45, creditCount: 15, credits: "15 credits", blurb: "The sweet spot for an active search.", badge: "Best Value", featured: true },
+        { name: "Power", slug: "power", sar: 75, creditCount: 30, credits: "30 credits", blurb: "For a serious, high volume job hunt.", badge: "Max Savings", featured: false },
       ],
     },
     faq: {
@@ -688,6 +691,12 @@ export const content = {
           body: "The full playbook, covering exactly who to connect with in your field, a posting cadence you can realistically keep, and the recruiter visibility settings most people never switch on, is delivered with your content.",
         },
 
+        needCv: {
+          title: "Create a CV first, it is free",
+          body: "This add-on is written from a CV you have generated on Tarshih, so there is nothing to build from yet. The free plan includes three CVs a month, which is all you need to unlock this.",
+          cta: "Create a free CV",
+        },
+
         cvSelector: {
           title: "Which CV should we build from?",
           sub: "We use the verified facts from a CV you have already generated here. Nothing is invented, and you do not need to enter anything again.",
@@ -1019,14 +1028,13 @@ export const content = {
       },
       mostPopular: "الأكثر رواجًا",
       premiumBadgeLabel: "الفئة المميزة",
-      currencyNote: "الأسعار بالدولار الأمريكي، والقيمة المقابلة بالريال السعودي للمرجعية فقط (1$ ≈ 3.75 ر.س).",
+      currencyNote: "تُحصَّل جميع الأسعار بالريال السعودي. ورقم الدولار الظاهر تحت كل سعر للمرجعية فقط بسعر التعادل 3.75 ريال للدولار، وليس خيار دفع.",
       plans: [
         {
           name: "مجاني",
           slug: "free",
-          price: "0$",
-          originalPrice: null as string | null,
-          priceSar: "0 ر.س",
+          sar: 0,
+          originalSar: null as number | null,
           period: "شهريًا",
           description: "كل ما تحتاجه لتجربة ترشيح في طلبك القادم.",
           features: [
@@ -1046,9 +1054,8 @@ export const content = {
         {
           name: "برو",
           slug: "pro",
-          price: "10.99$",
-          originalPrice: "12.99$",
-          priceSar: "≈ 41.21 ر.س",
+          sar: 41,
+          originalSar: 49 as number | null,
           period: "شهريًا",
           description: "لمن يبحث عن عمل بنشاط ويريد كمية أكبر من الطلبات، في كل مرة.",
           features: [
@@ -1064,8 +1071,8 @@ export const content = {
           ],
           cta: "ابدأ مع برو",
           badge: "الأكثر رواجًا",
-          offerBanner: "عرض لفترة محدودة: خصم 15% إلى الأبد",
-          discountLabel: "خصم 15%",
+          offerBanner: "عرض التأسيس: خصم 16% ثابت إلى الأبد",
+          discountLabel: "خصم 16%",
           limitedOffer: "سعر ثابت طوال فترة اشتراكك. وأول 50 شخصًا يدفعون، في أي خطة، يحصلون أيضًا على شارة عضو مؤسس دائمة على ملفهم الشخصي.",
           featured: true,
           premium: false,
@@ -1073,9 +1080,8 @@ export const content = {
         {
           name: "النخبة",
           slug: "elite",
-          price: "34.99$",
-          originalPrice: null as string | null,
-          priceSar: "≈ 131.21 ر.س",
+          sar: 129,
+          originalSar: null as number | null,
           period: "شهريًا",
           description: "الفئة المميزة لمن يريد كل ميزة ممكنة في طلباته.",
           features: [
@@ -1110,33 +1116,30 @@ export const content = {
         {
           name: "البداية",
           slug: "starter",
-          price: "4.99$",
-          priceSar: "≈ 18.71 ر.س",
+          sar: 19,
+          creditCount: 5,
           credits: "5 نقاط",
           blurb: "بضعة طلبات لتجربة الخدمة.",
-          perAppValue: "≈ 1.00$",
           badge: null as string | null,
           featured: false,
         },
         {
           name: "أفضل قيمة",
           slug: "best-value",
-          price: "11.99$",
-          priceSar: "≈ 44.96 ر.س",
+          sar: 45,
+          creditCount: 15,
           credits: "15 نقطة",
           blurb: "الخيار الأمثل لبحث نشط عن عمل.",
-          perAppValue: "≈ 0.80$",
           badge: "أفضل قيمة",
           featured: true,
         },
         {
           name: "الأقوى",
           slug: "power",
-          price: "19.99$",
-          priceSar: "≈ 74.96 ر.س",
+          sar: 75,
+          creditCount: 30,
           credits: "30 نقطة",
           blurb: "لبحث جاد وعالي الكثافة عن وظيفة.",
-          perAppValue: "≈ 0.67$",
           badge: "أعلى توفير",
           featured: false,
         },
@@ -1543,6 +1546,12 @@ export const content = {
           heading: "تجاوز 500 متابع وانشر بانتظام لتبقى مرئيًا لجهات التوظيف",
           locked: "يُفتح بعد الشراء",
           body: "الدليل الكامل، بما فيه من تتواصل معه تحديدًا في مجالك، ووتيرة نشر يمكنك الالتزام بها فعليًا، وإعدادات الظهور لجهات التوظيف التي لا يفعّلها معظم الناس، يُسلَّم مع محتواك.",
+        },
+
+        needCv: {
+          title: "أنشئ سيرة ذاتية أولًا، والأمر مجاني",
+          body: "تُكتب هذه الإضافة من سيرة ذاتية أنشأتها في ترشيح، ولا يوجد ما نبني منه حتى الآن. والخطة المجانية تتضمن ثلاث سير ذاتية شهريًا، وهذا كل ما يلزم لتفعيل هذه الميزة.",
+          cta: "إنشاء سيرة ذاتية مجانًا",
         },
 
         cvSelector: {

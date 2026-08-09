@@ -174,18 +174,21 @@ export function StatGrid({ children, cols = 4 }: { children: React.ReactNode; co
 }
 
 /* ---------------- Money ----------------
-   Both currencies always shown together, converted server-side at the
-   fixed 3.75 peg so no two surfaces can disagree. */
+   SAR FIRST, because SAR is the currency customers are charged in. The dollar
+   figure is a parenthetical reference, converted server-side at the fixed 3.75
+   peg so no two surfaces can disagree. This used to lead with dollars, which
+   made every riyal figure on the page look like the derived one when it is in
+   fact the real one. */
 
 export function Money({ usd, sar, pending = false }: { usd?: number | null; sar?: number | null; pending?: boolean }) {
-  if (pending || usd === null || usd === undefined) {
+  if (pending || sar === null || sar === undefined) {
     return <span className="text-slate-300">n/a</span>;
   }
   const fmt = (n: number) => n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   return (
     <span className={ADMIN_MONO}>
-      ${fmt(usd)}
-      <span className="ml-1.5 text-slate-400">({fmt(sar ?? usd * 3.75)} SAR)</span>
+      {fmt(sar)} SAR
+      <span className="ml-1.5 text-slate-400">(${fmt(usd ?? sar / 3.75)})</span>
     </span>
   );
 }

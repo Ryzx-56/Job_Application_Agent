@@ -7,7 +7,7 @@ import { AlertCircle, ArrowLeft, ArrowRight, Clock, Loader2, Lock, ShieldCheck, 
 import { useLang } from "@/lib/language";
 import { fetchResumes, ResumeRecord } from "@/lib/supabase/resumes";
 import { ApiError, fetchLinkedInOverview, LinkedInOverview, LinkedInTier, startLinkedInCheckout } from "@/lib/supabase/linkedin";
-import { formatSar, liOutlineButton, liPrimaryButton, LinkedInPageShell } from "@/components/linkedin-ui";
+import { formatSar, liOutlineButton, liPrimaryButton, usdApprox, LinkedInPageShell } from "@/components/linkedin-ui";
 
 /* ========================================================================
    /dashboard/linkedin/checkout — the one checkout flow for both entry points
@@ -233,8 +233,13 @@ export default function LinkedInCheckoutPage() {
               </div>
               <div className="flex items-baseline justify-between gap-3 border-t border-slate-100 pt-2">
                 <dt className="text-slate-500">{copy.checkout.totalLabel}</dt>
-                <dd className="text-base font-semibold text-slate-900">
-                  {priceLabel} <span className="text-xs font-normal text-slate-500">{copy.tiers.oneTime}</span>
+                <dd className="text-end">
+                  <span className="text-base font-semibold text-slate-900">{priceLabel}</span>{" "}
+                  <span className="text-xs font-normal text-slate-500">{copy.tiers.oneTime}</span>
+                  {/* Reference only. The SAR figure above is what gets charged. */}
+                  {price !== null && usdApprox(price) && (
+                    <span className="block text-xs font-normal text-slate-400">{usdApprox(price)}</span>
+                  )}
                 </dd>
               </div>
             </dl>

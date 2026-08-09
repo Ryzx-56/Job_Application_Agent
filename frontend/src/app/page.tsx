@@ -29,6 +29,7 @@ import {
   User,
 } from "lucide-react";
 import { useLang } from "@/lib/language";
+import { formatSar, sarPerCredit, usdApprox } from "@/lib/pricing";
 import { Button, Logo, LangSwitcher } from "@/components/brand";
 import { useAuth } from "@/lib/auth";
 import { fetchCredits, Tier } from "@/lib/supabase/credits";
@@ -840,11 +841,19 @@ function Pricing({ onOpenAbout }: { onOpenAbout: () => void }) {
                 )}
               </div>
 
+              {/* SAR large, because SAR is what gets charged. The dollar line
+                  underneath is a reference for readers who think in USD, and
+                  it is derived from the same number at the peg, so the two can
+                  never disagree. See src/lib/pricing.ts. */}
               <div className="mt-3 flex flex-wrap items-baseline gap-1.5">
-                {plan.originalPrice && (
-                  <span className="text-lg font-medium text-zinc-600 line-through">{plan.originalPrice}</span>
+                {plan.originalSar !== null && (
+                  <span className="text-lg font-medium text-zinc-600 line-through">
+                    {formatSar(plan.originalSar, lang)}
+                  </span>
                 )}
-                <span className="text-4xl font-semibold tracking-tight text-white">{plan.price}</span>
+                <span className="text-4xl font-semibold tracking-tight text-white">
+                  {formatSar(plan.sar, lang)}
+                </span>
                 <span className="text-sm text-zinc-500">{plan.period}</span>
                 {plan.discountLabel && (
                   <span className="ms-1 rounded-full bg-amber-400/15 px-2 py-0.5 text-xs font-bold text-amber-300">
@@ -852,7 +861,7 @@ function Pricing({ onOpenAbout }: { onOpenAbout: () => void }) {
                   </span>
                 )}
               </div>
-              {plan.priceSar && <p className="mt-1 text-xs text-zinc-500">{plan.priceSar}</p>}
+              {usdApprox(plan.sar) && <p className="mt-1 text-xs text-zinc-500">{usdApprox(plan.sar)}</p>}
               <p className="mt-3 text-sm leading-relaxed text-zinc-400">{plan.description}</p>
               {plan.limitedOffer && (
                 <div className="mt-4 flex items-start gap-2 rounded-lg border border-amber-400/25 bg-amber-400/[0.07] px-3 py-2.5">
@@ -969,7 +978,7 @@ function Pricing({ onOpenAbout }: { onOpenAbout: () => void }) {
    PAY AS YOU GO
 ======================================================================== */
 function PayAsYouGo() {
-  const { t } = useLang();
+  const { t, lang } = useLang();
   const packIcons = [Zap, Sparkles, Gauge];
   return (
     <section className="border-y border-white/10 bg-zinc-900/30">
@@ -1002,13 +1011,15 @@ function PayAsYouGo() {
               </div>
               <h3 className="mt-4 text-sm font-medium text-white">{pack.name}</h3>
               <div className="mt-2 flex items-baseline gap-1.5">
-                <span className="text-3xl font-semibold tracking-tight text-white">{pack.price}</span>
+                <span className="text-3xl font-semibold tracking-tight text-white">
+                  {formatSar(pack.sar, lang)}
+                </span>
               </div>
-              {pack.priceSar && <p className="mt-1 text-xs text-zinc-500">{pack.priceSar}</p>}
+              {usdApprox(pack.sar) && <p className="mt-1 text-xs text-zinc-500">{usdApprox(pack.sar)}</p>}
               <p className="mt-3 text-sm text-zinc-300">{pack.credits}</p>
               {pack.blurb && <p className="mt-1 text-xs text-zinc-500">{pack.blurb}</p>}
               <p className="mt-1 text-xs text-zinc-500">
-                {pack.perAppValue} {t.payg.perApp}
+                {sarPerCredit(pack.sar, pack.creditCount, lang)} {t.payg.perApp}
               </p>
               <Button
                 variant={pack.featured ? "default" : "outline"}

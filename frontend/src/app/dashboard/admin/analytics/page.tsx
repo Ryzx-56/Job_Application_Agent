@@ -83,7 +83,9 @@ export default function AdminAnalyticsPage() {
       </Panel>
 
       <Panel title="subscriptions" hint="current state from profiles · history from payment_events">
-        <Table head={["Tier", "Price", "On tier", "Active", "Ever", `${month}`, "Revenue / month"]}>
+        <Table
+          head={["Tier", "Price", "On tier", "Active", "Revenue / month", "Worst-case cost", "Worst-case profit", "Margin"]}
+        >
           {data.tiers.map((t) => (
             <Row key={t.tier}>
               <Cell className="font-medium text-slate-900">
@@ -94,21 +96,41 @@ export default function AdminAnalyticsPage() {
                   </span>
                 )}
               </Cell>
-              <Cell mono className="text-slate-500">
-                {t.price_usd === 0 ? "free" : `$${t.price_usd?.toFixed(2)}`}
+              <Cell mono className="whitespace-nowrap text-slate-500">
+                {t.price_sar === 0 ? "free" : `${t.price_sar?.toFixed(2)} SAR`}
+                {t.founding_price_sar != null && (
+                  <div className="text-[10px] text-violet-500">{t.founding_price_sar.toFixed(2)} founding</div>
+                )}
               </Cell>
               <Cell mono>{t.current_count?.toLocaleString() ?? "n/a"}</Cell>
               <Cell mono>{t.active_count?.toLocaleString() ?? "n/a"}</Cell>
-              <Cell mono className="text-slate-300">n/a</Cell>
-              <Cell mono className="text-slate-300">n/a</Cell>
               <Cell>
                 <span className={t.is_cost ? "text-rose-600" : "text-emerald-700"}>
                   {t.is_cost && <span className={ADMIN_MONO}>−</span>}
-                  <Money
-                    usd={Math.abs(t.estimated_monthly.usd)}
-                    sar={Math.abs(t.estimated_monthly.sar)}
-                  />
+                  <Money usd={Math.abs(t.estimated_monthly.usd)} sar={Math.abs(t.estimated_monthly.sar)} />
                 </span>
+              </Cell>
+              <Cell>
+                <span className="text-rose-600">
+                  <Money usd={t.worst_case_cost.usd} sar={t.worst_case_cost.sar} />
+                </span>
+                <div className={`${ADMIN_MONO} text-[10px] text-slate-400`}>
+                  {t.credits} cr × {data.worst_case.cost_per_credit.sar.toFixed(2)}
+                </div>
+              </Cell>
+              <Cell>
+                <span className={t.worst_case_profit.sar < 0 ? "text-rose-600" : "text-emerald-700"}>
+                  <Money usd={t.worst_case_profit.usd} sar={t.worst_case_profit.sar} />
+                </span>
+              </Cell>
+              <Cell mono className="whitespace-nowrap">
+                {t.worst_case_margin_pct === null ? (
+                  <span className="text-slate-300">n/a</span>
+                ) : (
+                  <span className={t.worst_case_margin_pct < 0 ? "text-rose-600" : "text-slate-700"}>
+                    {t.worst_case_margin_pct}%
+                  </span>
+                )}
               </Cell>
             </Row>
           ))}
@@ -139,7 +161,7 @@ export default function AdminAnalyticsPage() {
           price each actually pays, using{" "}
           <code className={ADMIN_MONO}>locked_price</code> for founding members rather than list. It is not money
           received, which needs the payment ledger. Free is negative because those users cost{" "}
-          <span className={ADMIN_MONO}>$0.60</span> each per month at full credit usage and generate no income.
+          <span className={ADMIN_MONO}>2.25 SAR</span> each per month at full credit usage and generate no income.
           &ldquo;Ever&rdquo; and per-month counts also need the ledger:{" "}
           <code className={ADMIN_MONO}>profiles.tier</code> is a snapshot, so someone who subscribed and later
           cancelled is indistinguishable from someone who never did.
@@ -147,11 +169,13 @@ export default function AdminAnalyticsPage() {
       </Panel>
 
       <Panel title="pay-as-you-go packs">
-        <Table head={["Pack", "Price", "Credits", "Sold · all time", `Sold · ${month}`, "Revenue"]}>
+        <Table
+          head={["Pack", "Price", "Credits", "Sold · all time", `Sold · ${month}`, "Revenue", "Worst-case cost", "Worst-case profit", "Margin"]}
+        >
           {data.packs_catalogue.map((p) => (
             <Row key={p.slug}>
               <Cell className="font-medium text-slate-900">{p.label}</Cell>
-              <Cell mono className="text-slate-500">${p.price_usd.toFixed(2)}</Cell>
+              <Cell mono className="whitespace-nowrap text-slate-500">{p.price_sar.toFixed(2)} SAR</Cell>
               <Cell mono className="text-slate-500">{p.credits}</Cell>
               <Cell mono className={pending ? "text-slate-300" : ""}>
                 {pending ? "n/a" : p.sold_ever.toLocaleString()}
@@ -166,6 +190,34 @@ export default function AdminAnalyticsPage() {
                   <span className="text-emerald-700">
                     <Money usd={p.revenue.usd} sar={p.revenue.sar} />
                   </span>
+                )}
+              </Cell>
+              <Cell>
+                {pending ? (
+                  <span className="text-slate-300">n/a</span>
+                ) : (
+                  <span className="text-rose-600">
+                    <Money usd={p.worst_case_cost.usd} sar={p.worst_case_cost.sar} />
+                  </span>
+                )}
+                <div className={`${ADMIN_MONO} text-[10px] text-slate-400`}>
+                  {p.unit_worst_case_cost.sar.toFixed(2)} / pack
+                </div>
+              </Cell>
+              <Cell>
+                {pending ? (
+                  <span className="text-slate-300">n/a</span>
+                ) : (
+                  <span className={p.worst_case_profit.sar < 0 ? "text-rose-600" : "text-emerald-700"}>
+                    <Money usd={p.worst_case_profit.usd} sar={p.worst_case_profit.sar} />
+                  </span>
+                )}
+              </Cell>
+              <Cell mono className="whitespace-nowrap">
+                {p.worst_case_margin_pct === null ? (
+                  <span className="text-slate-300">n/a</span>
+                ) : (
+                  `${p.worst_case_margin_pct}%`
                 )}
               </Cell>
             </Row>
@@ -188,13 +240,76 @@ export default function AdminAnalyticsPage() {
         </div>
       </Panel>
 
+      {/* ── LinkedIn add-on ──
+          Real money, not a projection: linkedin_purchases records what was
+          actually paid, so this is measured rather than estimated. Premium is
+          split out because its cost is manual time, not compute. */}
+      <Panel title="linkedin add-on" hint="from linkedin_purchases · actual, not projected">
+        {!data.linkedin.available ? (
+          <Empty message="linkedin tables not readable on this environment" />
+        ) : (
+          <>
+            <Table head={["Tier", "Sold", "Revenue", "Worst-case cost", "Worst-case profit", "Margin"]}>
+              <Row>
+                <Cell className="font-medium text-slate-900">{data.linkedin.essential.label}</Cell>
+                <Cell mono>{data.linkedin.essential.sold.toLocaleString()}</Cell>
+                <Cell>
+                  <span className="text-emerald-700">
+                    <Money usd={data.linkedin.essential.revenue.usd} sar={data.linkedin.essential.revenue.sar} />
+                  </span>
+                </Cell>
+                <Cell>
+                  <span className="text-rose-600">
+                    <Money
+                      usd={data.linkedin.essential.worst_case_cost?.usd}
+                      sar={data.linkedin.essential.worst_case_cost?.sar}
+                    />
+                  </span>
+                </Cell>
+                <Cell>
+                  <span className="text-emerald-700">
+                    <Money
+                      usd={data.linkedin.essential.worst_case_profit?.usd}
+                      sar={data.linkedin.essential.worst_case_profit?.sar}
+                    />
+                  </span>
+                </Cell>
+                <Cell mono>
+                  {data.linkedin.essential.worst_case_margin_pct === null
+                    ? "n/a"
+                    : `${data.linkedin.essential.worst_case_margin_pct}%`}
+                </Cell>
+              </Row>
+              <Row>
+                <Cell className="font-medium text-slate-900">{data.linkedin.premium.label}</Cell>
+                <Cell mono>{data.linkedin.premium.sold.toLocaleString()}</Cell>
+                <Cell>
+                  <span className="text-emerald-700">
+                    <Money usd={data.linkedin.premium.revenue.usd} sar={data.linkedin.premium.revenue.sar} />
+                  </span>
+                </Cell>
+                <Cell mono className="text-amber-600">cost not tracked</Cell>
+                <Cell mono className="text-slate-300">n/a</Cell>
+                <Cell mono className="text-slate-300">n/a</Cell>
+              </Row>
+            </Table>
+
+            <Notice title="why premium has no cost figure">
+              Premium is fulfilled by hand, so its cost is your time rather than a fixed API charge. Assuming zero
+              would overstate profit and inventing a labour rate would be arbitrary, so premium revenue is shown on
+              its own and left out of the worst-case totals below.
+            </Notice>
+          </>
+        )}
+      </Panel>
+
       <Panel title="total revenue" hint="subscriptions + packs">
         <StatGrid cols={3}>
           <Stat
             label="projected mrr"
             value={<Money usd={data.estimated_mrr.usd} sar={data.estimated_mrr.sar} />}
             sub="net of free-tier cost"
-            accent={data.estimated_mrr.usd >= 0 ? "emerald" : "rose"}
+            accent={data.estimated_mrr.sar >= 0 ? "emerald" : "rose"}
           />
           <Stat
             label="all time"
@@ -209,6 +324,43 @@ export default function AdminAnalyticsPage() {
             accent="emerald"
           />
         </StatGrid>
+      </Panel>
+
+      {/* ── Worst-case profit, running total (pricing reference §7) ── */}
+      <Panel title="worst-case profit" hint="every granted credit burned on the most expensive generation">
+        <StatGrid>
+          <Stat
+            label="revenue"
+            value={<Money usd={data.worst_case.revenue.usd} sar={data.worst_case.revenue.sar} />}
+            accent="emerald"
+            sub="paid tiers, packs, LinkedIn Essential"
+          />
+          <Stat
+            label="worst-case cost"
+            value={<Money usd={data.worst_case.cost.usd} sar={data.worst_case.cost.sar} />}
+            accent="rose"
+            sub="includes the free tier's cost"
+          />
+          <Stat
+            label="worst-case profit"
+            value={<Money usd={data.worst_case.profit.usd} sar={data.worst_case.profit.sar} />}
+            accent={data.worst_case.profit.sar >= 0 ? "emerald" : "rose"}
+          />
+          <Stat
+            label="worst-case margin"
+            value={data.worst_case.margin_pct === null ? null : `${data.worst_case.margin_pct}%`}
+            accent={
+              data.worst_case.margin_pct !== null && data.worst_case.margin_pct < 0 ? "rose" : "slate"
+            }
+          />
+        </StatGrid>
+
+        <p className="mt-3 text-xs leading-relaxed text-slate-400">
+          Cost is <span className={ADMIN_MONO}>credits × {data.worst_case.cost_per_credit.sar.toFixed(2)} SAR</span>,
+          the price of a credit spent on the most expensive generation. It is a ceiling, not an average, so real profit
+          should sit above this. The free tier contributes cost and no revenue, which is intended: those users are an
+          acquisition cost. LinkedIn Premium is excluded entirely, since its cost is manual time.
+        </p>
       </Panel>
 
     </AdminPage>

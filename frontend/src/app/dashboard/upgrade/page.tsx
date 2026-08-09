@@ -6,7 +6,8 @@ import { Badge } from "@/components/badges";
 import Link from "next/link";
 import { useLang } from "@/lib/language";
 import { fetchLinkedInOverview, LinkedInOverview } from "@/lib/supabase/linkedin";
-import { formatSar, LinkedInGlyph } from "@/components/linkedin-ui";
+import { LinkedInGlyph } from "@/components/linkedin-ui";
+import { formatSar, sarPerCredit, usdApprox } from "@/lib/pricing";
 
 /**
  * In-dashboard upgrade page. Replaces the old behaviour where an
@@ -22,22 +23,12 @@ import { formatSar, LinkedInGlyph } from "@/components/linkedin-ui";
  * elsewhere already use.
  */
 /**
- * Most customers are in Saudi Arabia, so every price shows its SAR value
- * underneath. Derived from the USD string at the fixed 3.75 peg rather than
- * stored separately — the landing page's `priceSar` fields are null on the
- * English side, and a second hand-maintained number is one that eventually
- * disagrees with the first.
+ * Prices come from the shared helpers in src/lib/pricing.ts, in SAR, with the
+ * dollar figure as a small reference line beneath. This page used to do the
+ * opposite: show a USD string and derive SAR from it by parsing the string
+ * back into a number. SAR is what customers are actually charged, so it is
+ * now the stored value and the primary display, and USD is what gets derived.
  */
-const USD_TO_SAR = 3.75;
-
-function toSar(price: string): string | null {
-  const usd = parseFloat(price.replace(/[^0-9.]/g, ""));
-  if (!Number.isFinite(usd) || usd <= 0) return null;
-  return `${(usd * USD_TO_SAR).toLocaleString(undefined, {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  })} SAR`;
-}
 
 export default function UpgradePage() {
   const { t, lang } = useLang();
@@ -153,15 +144,15 @@ export default function UpgradePage() {
               )}
               <h3 className="text-lg font-semibold text-slate-900">{plan.name}</h3>
               <div className="mt-1 flex items-baseline gap-2">
-                <span className="text-2xl font-semibold text-slate-900">{plan.price}</span>
-                {plan.originalPrice && (
-                  <span className="text-sm text-slate-400 line-through">{plan.originalPrice}</span>
+                <span className="text-2xl font-semibold text-slate-900">{formatSar(plan.sar, lang)}</span>
+                {plan.originalSar !== null && (
+                  <span className="text-sm text-slate-400 line-through">{formatSar(plan.originalSar, lang)}</span>
                 )}
                 <span className="text-sm text-slate-500">{plan.period}</span>
               </div>
-              {toSar(plan.price) && (
-                <p className="mt-0.5 text-sm text-slate-500">
-                  {toSar(plan.price)} {plan.period}
+              {usdApprox(plan.sar) && (
+                <p className="mt-0.5 text-xs text-slate-400">
+                  {usdApprox(plan.sar)} {plan.period}
                 </p>
               )}
               <p className="mt-2 text-sm leading-relaxed text-slate-500">{plan.description}</p>
@@ -242,12 +233,12 @@ export default function UpgradePage() {
                 </span>
               )}
               <h3 className="text-base font-semibold text-slate-900">{pack.name}</h3>
-              <div className="mt-1 text-2xl font-semibold text-slate-900">{pack.price}</div>
-              {toSar(pack.price) && <p className="mt-0.5 text-sm text-slate-500">{toSar(pack.price)}</p>}
+              <div className="mt-1 text-2xl font-semibold text-slate-900">{formatSar(pack.sar, lang)}</div>
+              {usdApprox(pack.sar) && <p className="mt-0.5 text-xs text-slate-400">{usdApprox(pack.sar)}</p>}
               <p className="mt-1 text-sm font-medium text-blue-600">{pack.credits}</p>
               <p className="mt-2 flex-1 text-sm leading-relaxed text-slate-500">{pack.blurb}</p>
               <p className="mt-2 text-xs text-slate-400">
-                {pack.perAppValue} {payg.perApp}
+                {sarPerCredit(pack.sar, pack.creditCount, lang)} {payg.perApp}
               </p>
               <Link
                 href={`/dashboard/checkout?pack=${pack.slug}`}
@@ -312,6 +303,11 @@ export default function UpgradePage() {
                     <div className={`text-2xl font-semibold ${isPremium ? "text-white" : "text-slate-900"}`}>
                       {price !== undefined ? formatSar(price, lang) : "n/a"}
                     </div>
+                    {price !== undefined && usdApprox(price) && (
+                      <div className={`text-xs ${isPremium ? "text-slate-500" : "text-slate-400"}`}>
+                        {usdApprox(price)}
+                      </div>
+                    )}
                     <div className={`text-xs ${isPremium ? "text-slate-400" : "text-slate-500"}`}>
                       {li.tiers.oneTime}
                     </div>

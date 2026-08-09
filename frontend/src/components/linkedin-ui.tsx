@@ -50,16 +50,10 @@ export function LinkedInGlyph({ className, ...props }: React.SVGProps<SVGSVGElem
   );
 }
 
-/** Prices for this add-on are set in SAR (see PRICING in
- *  backend/core/linkedin.py), not converted from USD like the subscription
- *  plans — so there's no peg maths here, just the currency word in the
- *  reader's language. */
-export function formatSar(amount: number, lang: string): string {
-  const value = Number(amount ?? 0).toLocaleString(lang === "ar" ? "ar-EG" : "en-US", {
-    maximumFractionDigits: Number.isInteger(Number(amount)) ? 0 : 2,
-  });
-  return lang === "ar" ? `${value} ريال` : `${value} SAR`;
-}
+/* Price formatting lives in src/lib/pricing.ts, shared with the plans and
+   credit packs so every price on the site is rendered the same way: SAR large
+   (the amount actually charged), a small dollar reference underneath. */
+export { formatSar, usdApprox } from "@/lib/pricing";
 
 /* ========================================================================
    PAGE SHELL — paints the baby-blue ground across the whole content area.
@@ -300,6 +294,7 @@ export function TierPanel({
   subtitle,
   bestFor,
   price,
+  priceUsdNote,
   oneTimeLabel,
   includedLabel,
   features,
@@ -315,7 +310,10 @@ export function TierPanel({
   name: string;
   subtitle: string;
   bestFor: string;
+  /** The charged amount, in SAR. */
   price: string;
+  /** Small dollar reference under the price. Never the charged amount. */
+  priceUsdNote?: string | null;
   oneTimeLabel: string;
   includedLabel: string;
   features: readonly string[];
@@ -363,10 +361,13 @@ export function TierPanel({
             <p className={`mt-1 text-sm ${premium ? "text-[#E4CE86]" : "text-slate-500"}`}>{subtitle}</p>
           </div>
 
-          <div className={premium ? "text-end" : "text-end"}>
+          <div className="text-end">
             <div className={`text-2xl font-semibold ${premium ? "text-white" : "text-slate-900"} sm:text-3xl`}>
               {price}
             </div>
+            {priceUsdNote && (
+              <div className={`text-xs ${premium ? "text-slate-500" : "text-slate-400"}`}>{priceUsdNote}</div>
+            )}
             <div className={`text-xs ${premium ? "text-slate-400" : "text-slate-500"}`}>{oneTimeLabel}</div>
           </div>
         </div>

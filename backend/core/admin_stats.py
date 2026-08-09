@@ -26,30 +26,62 @@ USD_TO_SAR = 3.75
 
 # ─── PRICING ────────────────────────────────────────────────────────────────
 # Source of truth for every revenue figure the admin pages show. Kept
-# server-side so the maths happens once, next to the SAR conversion, rather
-# than being reimplemented per page.
+# server-side so the maths happens once rather than being reimplemented per
+# page, and denominated in SAR because SAR is what customers are actually
+# charged. USD is derived for display only, at the peg above.
 #
-# Numbers come from the pricing reference. `worst_case_cost_usd` is what a
-# user on that tier costs if they burn their entire credit allotment on the
-# most expensive generations, which is what makes the Free tier a NEGATIVE
-# revenue line: every free user is an acquisition cost, not income.
+# Values are the locked prices from pricing reference v2 §2 and §3. They must
+# stay in step with the `sar` fields in frontend/src/lib/language.tsx, which is
+# what a customer sees.
 #
 # NOTE: these are LIST prices. Founding members are grandfathered lower, so
 # estimated revenue uses profiles.locked_price where it's set (see
-# admin_tier_counts in 006_tier_revenue.sql) and only falls back to list
-# price for everyone else.
+# admin_tier_counts in 006_tier_revenue.sql) and only falls back to list price
+# for everyone else.
+#
+# WORST-CASE COST is the cost of a user who burns their entire allotment on the
+# most expensive generations: credits × COST_PER_CREDIT_SAR. It's what makes
+# Free a NEGATIVE line, since every free user is an acquisition cost rather
+# than income. Derived, not hardcoded per tier, so the two can never disagree.
+COST_PER_CREDIT_SAR = 0.75  # $0.20 per credit at the 3.75 peg (reference §1, §7)
+
 TIER_PRICING = {
-    "free":  {"label": "Free",  "price_usd": 0.00,  "credits": 3,   "worst_case_cost_usd": 0.60},
-    "pro":   {"label": "Pro",   "price_usd": 12.99, "credits": 40,  "worst_case_cost_usd": 8.00,
-              "founding_price_usd": 10.99},
-    "elite": {"label": "Elite", "price_usd": 34.99, "credits": 120, "worst_case_cost_usd": 24.00},
+    "free":  {"label": "Free",  "price_sar": 0.00,   "credits": 3},
+    "pro":   {"label": "Pro",   "price_sar": 49.00,  "credits": 40,  "founding_price_sar": 41.00},
+    "elite": {"label": "Elite", "price_sar": 129.00, "credits": 120},
 }
 
 PACK_PRICING = {
-    "starter":    {"label": "Starter",    "price_usd": 4.99,  "credits": 5},
-    "best-value": {"label": "Best Value", "price_usd": 11.99, "credits": 15},
-    "power":      {"label": "Power",      "price_usd": 19.99, "credits": 30},
+    "starter":    {"label": "Starter",    "price_sar": 19.00, "credits": 5},
+    "best-value": {"label": "Best Value", "price_sar": 45.00, "credits": 15},
+    "power":      {"label": "Power",      "price_sar": 75.00, "credits": 30},
 }
+
+# LinkedIn add-on (reference §4). Prices mirror PRICING in core/linkedin.py.
+#
+# Premium carries NO cost figure on purpose. Its cost is manual time, not
+# compute, and both available shortcuts are wrong: assuming zero overstates
+# profit, and inventing a labour rate makes the number arbitrary. So premium
+# revenue is reported on its own with cost explicitly marked as not tracked,
+# and it is excluded from every automatic worst-case total (§7).
+LINKEDIN_PRICING = {
+    "normal":  {"label": "Essential", "price_sar": 49.00,  "worst_case_cost_sar": 0.15},
+    "premium": {"label": "Premium",   "price_sar": 200.00, "worst_case_cost_sar": None},
+}
+
+
+def worst_case_cost_sar(credits: int) -> float:
+    """Worst-case AI cost of granting this many credits, in SAR."""
+    return round(float(credits or 0) * COST_PER_CREDIT_SAR, 2)
+
+
+def _margin_pct(revenue: float, cost: float) -> float | None:
+    """Profit as a share of revenue. None when there's no revenue to divide
+    by, which must render as "not applicable" rather than 0% — a tier nobody
+    has bought has no margin, it doesn't have a zero margin."""
+    if not revenue:
+        return None
+    return round((revenue - cost) / revenue * 100, 1)
 
 
 def _rpc(name: str, params: dict | None = None):
@@ -78,13 +110,99 @@ def _first_row(name: str, params: dict | None = None) -> dict | None:
     return rows if isinstance(rows, dict) else {}
 
 
-def _money(usd) -> dict:
-    """One amount rendered both ways, converted server-side."""
+def _money(sar) -> dict:
+    """
+    One amount rendered both ways, converted server-side.
+
+    TAKES SAR NOW, not USD. SAR is the charged currency, so it's the input and
+    the primary figure; the dollar value is derived for reference. This used to
+    be the other way round, which meant every riyal figure on the admin pages
+    was a conversion of a conversion.
+    """
+    try:
+        value = float(sar or 0)
+    except (TypeError, ValueError):
+        value = 0.0
+    return {"sar": round(value, 2), "usd": round(value / USD_TO_SAR, 2)}
+
+
+def _linkedin_revenue() -> dict:
+    """
+    Actual LinkedIn add-on revenue, split by tier.
+
+    Unlike the subscription figures, this is money genuinely recorded rather
+    than a projection: linkedin_purchases stores price_paid per paid purchase
+    (see 008_linkedin_addon.sql), so summing it is a measurement.
+
+    Premium's cost is reported as null, and `cost_tracked: false` says why in a
+    way the UI can act on. Never 0 — a zero would quietly turn manual labour
+    into pure profit on the dashboard.
+    """
+    empty = {
+        "essential": {
+            "label": LINKEDIN_PRICING["normal"]["label"],
+            "sold": 0, "revenue": _money(0), "worst_case_cost": _money(0),
+            "worst_case_profit": _money(0), "worst_case_margin_pct": None,
+            "cost_tracked": True,
+        },
+        "premium": {
+            "label": LINKEDIN_PRICING["premium"]["label"],
+            "sold": 0, "revenue": _money(0), "worst_case_cost": None,
+            "worst_case_profit": None, "worst_case_margin_pct": None,
+            "cost_tracked": False,
+        },
+        "available": False,
+    }
+
+    try:
+        rows = (
+            get_admin_client()
+            .table("linkedin_purchases")
+            .select("tier, price_paid")
+            .eq("payment_status", "paid")
+            .execute()
+            .data
+            or []
+        )
+    except Exception as e:
+        # The add-on's tables may not exist on this environment yet. That's a
+        # missing figure, not a zero, so `available` stays false and the UI
+        # renders it as unread rather than as "no sales".
+        logger.warning(f"LinkedIn revenue could not be read: {e}")
+        return empty
+
+    result = empty
+    result["available"] = True
+
+    essential_sold = sum(1 for r in rows if r.get("tier") == "normal")
+    premium_sold = sum(1 for r in rows if r.get("tier") == "premium")
+    essential_revenue = sum(float(r.get("price_paid") or 0) for r in rows if r.get("tier") == "normal")
+    premium_revenue = sum(float(r.get("price_paid") or 0) for r in rows if r.get("tier") == "premium")
+    essential_cost = round(essential_sold * float(LINKEDIN_PRICING["normal"]["worst_case_cost_sar"]), 2)
+
+    result["essential"].update({
+        "sold": essential_sold,
+        "revenue": _money(essential_revenue),
+        "worst_case_cost": _money(essential_cost),
+        "worst_case_profit": _money(essential_revenue - essential_cost),
+        "worst_case_margin_pct": _margin_pct(essential_revenue, essential_cost),
+    })
+    result["premium"].update({
+        "sold": premium_sold,
+        "revenue": _money(premium_revenue),
+    })
+    return result
+
+
+def _money_from_usd(usd) -> dict:
+    """For figures that genuinely arrive in USD, i.e. the payment_events ledger
+    rows written before SAR became the unit. Converts, then hands back the same
+    shape as _money."""
     try:
         value = float(usd or 0)
     except (TypeError, ValueError):
         value = 0.0
-    return {"usd": round(value, 2), "sar": round(value * USD_TO_SAR, 2)}
+    return _money(value * USD_TO_SAR)
 
 
 @router.get("/api/v1/admin/analytics", tags=["Admin"])
@@ -117,6 +235,13 @@ def get_analytics(admin_user_id: str = Depends(get_current_admin_user_id)) -> di
     # Free is deliberately negative: those users generate cost, not income.
     tier_rows = []
     estimated_mrr = 0.0
+    # Running worst-case totals across the paid tiers. Free is deliberately
+    # excluded from the revenue side (it has none) but its cost is real, so it
+    # lands in total_cost — that's what makes the total honest rather than
+    # flattering.
+    total_revenue = 0.0
+    total_cost = 0.0
+
     for row in tiers:
         slug = row.get("tier") or "free"
         pricing = TIER_PRICING.get(slug, {})
@@ -124,28 +249,44 @@ def get_analytics(admin_user_id: str = Depends(get_current_admin_user_id)) -> di
         active = int(row.get("active_count") or 0)
         locked_total = float(row.get("locked_price_total") or 0)
         locked_count = int(row.get("locked_price_count") or 0)
+        credits = int(pricing.get("credits") or 0)
+        unit_cost = worst_case_cost_sar(credits)
 
         if slug == "free":
             # Cost of serving the free tier, shown as negative revenue.
-            monthly = -(current * float(pricing.get("worst_case_cost_usd", 0)))
+            monthly = -(current * unit_cost)
+            cost = current * unit_cost
+            revenue = 0.0
         else:
-            # Founding members pay their locked price; everyone else pays
-            # list. Counting them separately avoids overstating by the
-            # grandfathered discount.
+            # Founding members pay their locked price; everyone else pays list.
+            # Counting them separately avoids overstating by the grandfathered
+            # discount. locked_price is stored in SAR alongside the tier price.
             list_payers = max(active - locked_count, 0)
-            monthly = locked_total + list_payers * float(pricing.get("price_usd", 0))
+            revenue = locked_total + list_payers * float(pricing.get("price_sar", 0))
+            monthly = revenue
+            # Cost follows ACTIVE subscribers, not everyone sitting on the
+            # tier: a lapsed subscriber gets no allotment, so they cost nothing.
+            cost = active * unit_cost
 
         estimated_mrr += monthly
+        total_revenue += revenue
+        total_cost += cost
+
         tier_rows.append({
             "tier": slug,
             "label": pricing.get("label", slug.title()),
             "current_count": current,
             "active_count": active,
             "founding_count": row.get("founding_count") or 0,
-            "price_usd": pricing.get("price_usd"),
-            "founding_price_usd": pricing.get("founding_price_usd"),
-            "credits": pricing.get("credits"),
+            "price_sar": pricing.get("price_sar"),
+            "founding_price_sar": pricing.get("founding_price_sar"),
+            "credits": credits,
             "estimated_monthly": _money(monthly),
+            # ── Worst case, per §7 of the pricing reference ──
+            "worst_case_cost": _money(cost),
+            "worst_case_profit": _money(revenue - cost),
+            "worst_case_margin_pct": _margin_pct(revenue, cost),
+            "unit_worst_case_cost": _money(unit_cost),
             # Free's figure is a cost, so the UI renders it differently.
             "is_cost": slug == "free",
         })
@@ -166,20 +307,44 @@ def get_analytics(admin_user_id: str = Depends(get_current_admin_user_id)) -> di
         sold = sold_by_slug.get(slug, {})
         ever = int(sold.get("count_ever") or 0)
         month = int(sold.get("count_month") or 0)
-        revenue = float(sold.get("revenue_usd") or 0)
+        # payment_events records revenue in USD; convert to SAR to keep one unit
+        # across the whole response.
+        revenue = float(sold.get("revenue_usd") or 0) * USD_TO_SAR
+        unit_cost = worst_case_cost_sar(pricing["credits"])
+        cost = ever * unit_cost
+
         packs_revenue_all += revenue
-        # Per-pack monthly revenue isn't returned separately, so derive it
-        # from this month's unit count at list price.
-        packs_revenue_month += month * float(pricing["price_usd"])
+        # Per-pack monthly revenue isn't returned separately, so derive it from
+        # this month's unit count at list price.
+        packs_revenue_month += month * float(pricing["price_sar"])
+        total_revenue += revenue
+        total_cost += cost
+
         pack_rows.append({
             "slug": slug,
             "label": pricing["label"],
-            "price_usd": pricing["price_usd"],
+            "price_sar": pricing["price_sar"],
             "credits": pricing["credits"],
             "sold_ever": ever,
             "sold_this_month": month,
             "revenue": _money(revenue),
+            "worst_case_cost": _money(cost),
+            "worst_case_profit": _money(revenue - cost),
+            "worst_case_margin_pct": _margin_pct(revenue, cost),
+            "unit_worst_case_cost": _money(unit_cost),
         })
+
+    # ── LinkedIn add-on (§7) ──
+    # Read from linkedin_purchases directly rather than payment_events, because
+    # that table is ours and already records what was actually paid. This is
+    # therefore REAL revenue, not a projection like the tier figures above.
+    linkedin = _linkedin_revenue()
+    total_revenue += linkedin["essential"]["revenue"]["sar"]
+    total_cost += linkedin["essential"]["worst_case_cost"]["sar"]
+    # Premium is deliberately NOT added to total_cost: its cost is manual time,
+    # and both alternatives (assume zero, or invent a rate) would lie. Its
+    # revenue is also kept out of the worst-case total so profit and cost stay
+    # comparable; it's reported on its own instead.
 
     now = datetime.now(timezone.utc)
 
@@ -212,6 +377,25 @@ def get_analytics(admin_user_id: str = Depends(get_current_admin_user_id)) -> di
         # did.
         "tiers": tier_rows,
         "packs_catalogue": pack_rows,
+
+        # ── WORST-CASE PROFIT (pricing reference §7) ──
+        # Revenue minus worst-case AI cost, where worst case means every credit
+        # granted is burned on the most expensive generation. Per tier and per
+        # pack above; this is the running total.
+        #
+        # Free's cost IS included while its revenue is zero, so the total shows
+        # the real position rather than a flattering one. LinkedIn Premium is
+        # excluded entirely (no fixed cost to compute) and reported on its own
+        # under `linkedin`.
+        "worst_case": {
+            "revenue": _money(total_revenue),
+            "cost": _money(total_cost),
+            "profit": _money(total_revenue - total_cost),
+            "margin_pct": _margin_pct(total_revenue, total_cost),
+            "cost_per_credit": _money(COST_PER_CREDIT_SAR),
+            "excludes": ["linkedin_premium"],
+        },
+        "linkedin": linkedin,
         # Projected from who is subscribed right now at their actual price.
         # Distinct from `revenue`, which is money actually recorded.
         "estimated_mrr": _money(estimated_mrr),
@@ -226,8 +410,10 @@ def get_analytics(admin_user_id: str = Depends(get_current_admin_user_id)) -> di
 
         "payments_wired": total_payment_events > 0,
         "revenue": {
-            "all_time": _money(payments.get("revenue_all_time_usd")),
-            "this_month": _money(payments.get("revenue_this_month_usd")),
+            # The ledger stores USD, so these two convert rather than being
+            # taken as riyals. See _money_from_usd.
+            "all_time": _money_from_usd(payments.get("revenue_all_time_usd")),
+            "this_month": _money_from_usd(payments.get("revenue_this_month_usd")),
         },
         "subscriptions": {
             "ever": payments.get("subs_ever") or 0,
@@ -243,7 +429,7 @@ def get_analytics(admin_user_id: str = Depends(get_current_admin_user_id)) -> di
                 "product_slug": row.get("product_slug"),
                 "count_ever": row.get("count_ever"),
                 "count_month": row.get("count_month"),
-                "revenue": _money(row.get("revenue_usd")),
+                "revenue": _money_from_usd(row.get("revenue_usd")),
             }
             for row in by_product
         ],
