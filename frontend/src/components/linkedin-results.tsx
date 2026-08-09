@@ -267,9 +267,9 @@ export function LinkedInResults({ data, copy }: { data: LinkedInContent; copy: L
           <div className="space-y-2 rounded-xl border border-slate-200 bg-white p-3.5">
             {certs.education_entries.map((entry, index) => (
               <div key={index} className="space-y-0.5 border-b border-slate-100 pb-2 last:border-0 last:pb-0">
-                <PlainRow label={labels.education} value={entry.degree || "—"} />
-                <PlainRow label={labels.organization} value={entry.school || "—"} />
-                <PlainRow label={labels.startDate} value={entry.dates || "—"} />
+                <PlainRow label={labels.education} value={entry.degree || "N/A"} />
+                <PlainRow label={labels.organization} value={entry.school || "N/A"} />
+                <PlainRow label={labels.startDate} value={entry.dates || "N/A"} />
               </div>
             ))}
           </div>

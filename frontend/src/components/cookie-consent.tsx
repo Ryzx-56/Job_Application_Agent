@@ -10,7 +10,7 @@ import { COOKIE_CONSENT_KEY, updateConsent } from "@/lib/analytics";
 const copy = {
   en: {
     title: "We use cookies",
-    body: "We use essential cookies to keep you signed in and remember your language, and — only with your permission — Google Analytics to understand how Tarshih is used. See our ",
+    body: "We use essential cookies to keep you signed in and remember your language, and, only with your permission, Google Analytics to understand how Tarshih is used. See our ",
     privacyLink: "Privacy Policy",
     accept: "Accept",
     reject: "Reject",
@@ -18,7 +18,7 @@ const copy = {
     manageTitle: "Manage cookie preferences",
     essential: "Essential",
     essentialBadge: "Always on",
-    essentialDesc: "Keeps you signed in and remembers your language. Required — cannot be turned off.",
+    essentialDesc: "Keeps you signed in and remembers your language. Required, and cannot be turned off.",
     analytics: "Analytics",
     analyticsDesc: "Google Analytics. Helps us understand usage and improve Tarshih. Optional.",
     save: "Save preferences",
@@ -34,7 +34,7 @@ const copy = {
     manageTitle: "إدارة تفضيلات ملفات تعريف الارتباط",
     essential: "أساسية",
     essentialBadge: "مفعّلة دائمًا",
-    essentialDesc: "تحافظ على تسجيل دخولك وتتذكّر لغتك. مطلوبة — لا يمكن إيقافها.",
+    essentialDesc: "تحافظ على تسجيل دخولك وتتذكّر لغتك. مطلوبة، ولا يمكن إيقافها.",
     analytics: "تحليلات",
     analyticsDesc: "Google Analytics. تساعدنا على فهم الاستخدام وتحسين ترشيح. اختيارية.",
     save: "حفظ التفضيلات",

@@ -517,7 +517,7 @@ export default function DashboardHomePage() {
       // Older cached result predating the request_id fix, or the backend
       // response genuinely didn't include one — don't build URLs that are
       // guaranteed to 422 against the backend's now-required param.
-      console.error("mapBackendResponse: missing request_id — download/preview links will not work.");
+      console.error("mapBackendResponse: missing request_id, so download/preview links will not work.");
       return;
     }
     const tokenParam = encodeURIComponent(accessToken);

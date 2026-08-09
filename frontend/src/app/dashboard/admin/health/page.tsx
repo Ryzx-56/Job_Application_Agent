@@ -145,7 +145,7 @@ export default function AdminHealthPage() {
                     <Cell mono className="w-16 text-rose-600">{e.count}</Cell>
                     <Cell mono className="text-xs text-slate-700">{e.message}</Cell>
                     <Cell mono className="w-40 whitespace-nowrap text-xs text-slate-400">
-                      {e.last_seen ? new Date(e.last_seen).toLocaleString() : "—"}
+                      {e.last_seen ? new Date(e.last_seen).toLocaleString() : "n/a"}
                     </Cell>
                   </Row>
                 ))}

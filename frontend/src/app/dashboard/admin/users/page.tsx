@@ -18,7 +18,7 @@ import { fetchAdminUsers, AdminUserRow } from "@/lib/supabase/admin";
  */
 
 function fmtDate(iso: string | null) {
-  if (!iso) return "—";
+  if (!iso) return "n/a";
   try {
     return new Date(iso).toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
   } catch {
@@ -66,14 +66,14 @@ function UserCard({ u }: { u: AdminUserRow }) {
           {u.is_owner && <Pill tone="amber">owner</Pill>}
           {u.is_admin && <Pill tone="emerald">admin</Pill>}
           {u.is_founding_member && <Pill tone="violet">founder #{u.founding_member_number ?? "?"}</Pill>}
-          <Pill>{u.tier ?? "—"}</Pill>
+          <Pill>{u.tier ?? "n/a"}</Pill>
         </div>
       </div>
 
       <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <Field label="credits">
           <span className={`${ADMIN_MONO} ${lowCredits ? "text-rose-600" : ""}`}>
-            {u.credits_remaining ?? "—"} / {u.credits_total ?? "—"}
+            {u.credits_remaining ?? "n/a"} / {u.credits_total ?? "n/a"}
           </span>
         </Field>
         <Field label="cvs generated">

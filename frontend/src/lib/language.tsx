@@ -179,7 +179,7 @@ export const content = {
           period: "/ month",
           description: "Everything you need to try Tarshih on your next application.",
           features: [
-            "3 credits / month — 3 English CVs, or mix in Arabic",
+            "3 credits / month: 3 English CVs, or mix in Arabic",
             "Full ATS & job match scoring",
             "Tailored CV + matching cover letter",
             "Resume history, last 10 kept",
@@ -201,7 +201,7 @@ export const content = {
           period: "/ month",
           description: "For active job seekers who want serious volume, every time.",
           features: [
-            "40 credits / month — 40 English CVs, or mix in Arabic",
+            "40 credits / month: 40 English CVs, or mix in Arabic",
             "Tailored CV + personalized cover letter",
             "Full ATS & job match scoring",
             "Shows exactly what you're missing",
@@ -213,7 +213,7 @@ export const content = {
           ],
           cta: "Start Pro",
           badge: "Most Popular",
-          offerBanner: "Limited time offer — 15% off, forever",
+          offerBanner: "Limited time offer: 15% off, forever",
           discountLabel: "15% OFF",
           limitedOffer: "This price is locked in for as long as you stay subscribed. The first 50 people to pay, on any plan, also keep a permanent Founding Member badge on their profile.",
           featured: true,
@@ -228,7 +228,7 @@ export const content = {
           period: "/ month",
           description: "The premium tier for candidates who want every advantage.",
           features: [
-            "120 credits / month — 120 English CVs, or mix in Arabic",
+            "120 credits / month: 120 English CVs, or mix in Arabic",
             "Tailored CV + personalized cover letter",
             "Full ATS & job match scoring",
             "Shows exactly what you're missing",
@@ -602,7 +602,7 @@ export const content = {
         changePlan: "Change plan",
         languageSection: "Language",
         languageLabel: "Preferred language",
-        languageSaved: "Saved — applies on any device you log in from.",
+        languageSaved: "Saved. This applies on any device you log in from.",
       },
       /* ── LinkedIn add-on (/dashboard/linkedin) ──────────────────────────
          UI copy follows the language toggle like everything else. The
@@ -1030,7 +1030,7 @@ export const content = {
           period: "شهريًا",
           description: "كل ما تحتاجه لتجربة ترشيح في طلبك القادم.",
           features: [
-            "3 نقاط شهريًا — 3 سير ذاتية إنجليزية، أو مزيج مع العربية",
+            "3 نقاط شهريًا: 3 سير ذاتية إنجليزية، أو مزيج مع العربية",
             "نتيجة ATS وتوافق وظيفي كاملة",
             "سيرة ذاتية مخصصة + خطاب تقديم مطابق",
             "سجل يحفظ آخر 10 سير ذاتية",
@@ -1052,7 +1052,7 @@ export const content = {
           period: "شهريًا",
           description: "لمن يبحث عن عمل بنشاط ويريد كمية أكبر من الطلبات، في كل مرة.",
           features: [
-            "40 نقطة شهريًا — 40 سيرة ذاتية إنجليزية، أو مزيج مع العربية",
+            "40 نقطة شهريًا: 40 سيرة ذاتية إنجليزية، أو مزيج مع العربية",
             "سيرة ذاتية مخصصة + خطاب تقديم شخصي",
             "نتيجة ATS وتوافق وظيفي كاملة",
             "يوضح بالضبط ما ينقصك",
@@ -1064,7 +1064,7 @@ export const content = {
           ],
           cta: "ابدأ مع برو",
           badge: "الأكثر رواجًا",
-          offerBanner: "عرض لفترة محدودة — خصم 15% إلى الأبد",
+          offerBanner: "عرض لفترة محدودة: خصم 15% إلى الأبد",
           discountLabel: "خصم 15%",
           limitedOffer: "سعر ثابت طوال فترة اشتراكك. وأول 50 شخصًا يدفعون، في أي خطة، يحصلون أيضًا على شارة عضو مؤسس دائمة على ملفهم الشخصي.",
           featured: true,
@@ -1079,7 +1079,7 @@ export const content = {
           period: "شهريًا",
           description: "الفئة المميزة لمن يريد كل ميزة ممكنة في طلباته.",
           features: [
-            "120 نقطة شهريًا — 120 سيرة ذاتية إنجليزية، أو مزيج مع العربية",
+            "120 نقطة شهريًا: 120 سيرة ذاتية إنجليزية، أو مزيج مع العربية",
             "سيرة ذاتية مخصصة + خطاب تقديم شخصي",
             "نتيجة ATS وتوافق وظيفي كاملة",
             "يوضح بالضبط ما ينقصك",
@@ -1469,7 +1469,7 @@ export const content = {
         changePlan: "تغيير الخطة",
         languageSection: "اللغة",
         languageLabel: "اللغة المفضلة",
-        languageSaved: "تم الحفظ — ستُطبَّق على أي جهاز تسجّل الدخول منه.",
+        languageSaved: "تم الحفظ. سيُطبَّق على أي جهاز تسجّل الدخول منه.",
       },
       /* ── إضافة لينكدإن (/dashboard/linkedin) ────────────────────────────
          نصوص الواجهة تتبع لغة الموقع كالمعتاد، أما المحتوى المُولَّد نفسه فهو

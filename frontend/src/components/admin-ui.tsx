@@ -144,9 +144,9 @@ export function Stat({
     rose: "text-rose-600",
   };
   const display = pending
-    ? "—"
+    ? "n/a"
     : value === null || value === undefined
-    ? "—"
+    ? "n/a"
     : typeof value === "number"
     ? value.toLocaleString()
     : value;
@@ -179,7 +179,7 @@ export function StatGrid({ children, cols = 4 }: { children: React.ReactNode; co
 
 export function Money({ usd, sar, pending = false }: { usd?: number | null; sar?: number | null; pending?: boolean }) {
   if (pending || usd === null || usd === undefined) {
-    return <span className="text-slate-300">—</span>;
+    return <span className="text-slate-300">n/a</span>;
   }
   const fmt = (n: number) => n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   return (

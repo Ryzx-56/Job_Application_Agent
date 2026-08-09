@@ -110,7 +110,7 @@ export const legalContent: Record<Lang, Record<LegalDocKey, LegalDoc>> = {
         {
           heading: "11. Third-party services",
           body: [
-            "Delivering the Service relies on third-party providers, including AI model providers — currently Anthropic (Claude) and Google (Gemini) — and search providers used to tailor documents and surface similar jobs, an authentication and database provider, and a licensed third-party payment provider that processes card payments made through the Service on our behalf. These providers process data on our behalf under their own terms and, where applicable, data processing agreements, as described further in our Privacy Policy. We select providers with appropriate safeguards but are not responsible for outages or failures caused solely by a third-party provider outside our control.",
+            "Delivering the Service relies on third-party providers, including AI model providers (currently Anthropic Claude and Google Gemini) and search providers used to tailor documents and surface similar jobs, an authentication and database provider, and a licensed third-party payment provider that processes card payments made through the Service on our behalf. These providers process data on our behalf under their own terms and, where applicable, data processing agreements, as described further in our Privacy Policy. We select providers with appropriate safeguards but are not responsible for outages or failures caused solely by a third-party provider outside our control.",
           ],
         },
         {
@@ -200,14 +200,14 @@ export const legalContent: Record<Lang, Record<LegalDocKey, LegalDoc>> = {
             "To operate your account: authentication, credit tracking, billing, customer support, and service-related communications (for example, confirming a plan change or responding to a support request).",
             "To maintain and improve the Service: monitoring performance, diagnosing and fixing errors, and understanding aggregate usage patterns, using data that is anonymized or aggregated where feasible.",
             "To meet legal obligations, prevent fraud or abuse, and enforce our Terms & Conditions.",
-            "We do not use Your Content to train our own foundational AI models. Content sent to third-party AI providers — currently Anthropic (Claude) and Google (Gemini) — is processed under those providers' API terms in order to generate your requested output; we do not authorize those providers to use it to train models serving other customers, to the extent their own commercial API terms allow us to make that election.",
+            "We do not use Your Content to train our own foundational AI models. Content sent to third-party AI providers (currently Anthropic Claude and Google Gemini) is processed under those providers' API terms in order to generate your requested output; we do not authorize those providers to use it to train models serving other customers, to the extent their own commercial API terms allow us to make that election.",
           ],
         },
         {
           heading: "4. Who we share data with",
           body: [
             "We share personal data only with service providers who process it on our behalf to deliver the Service (\"sub-processors\"), and only to the extent necessary for the purpose each one serves:",
-            "• AI model providers — currently Anthropic (Claude) and Google (Gemini) — and search providers, to parse your CV and job description, tailor your resume and cover letter, calculate scores, and find similar jobs. Relevant content from Your Content is sent to these providers solely to generate the output you requested.",
+            "• AI model providers (currently Anthropic Claude and Google Gemini) and search providers, to parse your CV and job description, tailor your resume and cover letter, calculate scores, and find similar jobs. Relevant content from Your Content is sent to these providers solely to generate the output you requested.",
             "• Our authentication, database, and hosting provider, to store your account, content, and application data securely.",
             "• Our third-party payment provider, to process card payments for subscriptions and pay-as-you-go purchases and to handle related billing operations such as refunds and disputed charges. The payment details you enter at checkout go directly to that provider, which processes them under its own privacy policy; we receive only the transaction record needed to credit your account.",
             "We do not sell your personal data, and we do not share it with third parties for their own independent marketing purposes.",
@@ -299,7 +299,7 @@ export const legalContent: Record<Lang, Record<LegalDocKey, LegalDoc>> = {
         {
           heading: "Third-party AI processing",
           body: [
-            "When your CV or a job description is tailored, relevant content is sent to third-party AI providers — currently Anthropic (Claude) and Google (Gemini) — over encrypted connections solely to generate your requested output. This is described in more detail in our Privacy Policy.",
+            "When your CV or a job description is tailored, relevant content is sent to third-party AI providers (currently Anthropic Claude and Google Gemini) over encrypted connections solely to generate your requested output. This is described in more detail in our Privacy Policy.",
           ],
         },
         {
@@ -560,7 +560,7 @@ export const legalContent: Record<Lang, Record<LegalDocKey, LegalDoc>> = {
         {
           heading: "11. خدمات الأطراف الثالثة",
           body: [
-            "يعتمد تقديم الخدمة على مزودين من أطراف ثالثة، بما يشمل مزودي نماذج الذكاء الاصطناعي — حاليًا Anthropic (Claude) و Google (Gemini) — ومزودي البحث المستخدَمين لتخصيص المستندات وإظهار الوظائف المشابهة، ومزود المصادقة وقواعد البيانات، ومزود خدمات دفع خارجي مرخّص يعالج مدفوعات البطاقات التي تتم عبر الخدمة نيابةً عنا. يعالج هؤلاء المزودون البيانات نيابة عنا بموجب شروطهم الخاصة، وحسب الاقتضاء، اتفاقيات معالجة بيانات، كما هو موضح بمزيد من التفصيل في سياسة الخصوصية. نختار مزودين يوفرون ضمانات مناسبة، لكننا لسنا مسؤولين عن انقطاعات أو أعطال ناتجة حصرًا عن طرف ثالث خارج عن سيطرتنا.",
+            "يعتمد تقديم الخدمة على مزودين من أطراف ثالثة، بما يشمل مزودي نماذج الذكاء الاصطناعي (حاليًا Anthropic Claude و Google Gemini) ومزودي البحث المستخدَمين لتخصيص المستندات وإظهار الوظائف المشابهة، ومزود المصادقة وقواعد البيانات، ومزود خدمات دفع خارجي مرخّص يعالج مدفوعات البطاقات التي تتم عبر الخدمة نيابةً عنا. يعالج هؤلاء المزودون البيانات نيابة عنا بموجب شروطهم الخاصة، وحسب الاقتضاء، اتفاقيات معالجة بيانات، كما هو موضح بمزيد من التفصيل في سياسة الخصوصية. نختار مزودين يوفرون ضمانات مناسبة، لكننا لسنا مسؤولين عن انقطاعات أو أعطال ناتجة حصرًا عن طرف ثالث خارج عن سيطرتنا.",
           ],
         },
         {
@@ -650,14 +650,14 @@ export const legalContent: Record<Lang, Record<LegalDocKey, LegalDoc>> = {
             "لإدارة حسابك: المصادقة، تتبع النقاط، الفوترة، دعم العملاء، والتواصل المتعلق بالخدمة (مثل تأكيد تغيير خطة أو الرد على طلب دعم).",
             "لصيانة الخدمة وتحسينها: مراقبة الأداء، تشخيص الأخطاء وإصلاحها، وفهم أنماط الاستخدام الإجمالية، باستخدام بيانات مجهولة المصدر أو مجمّعة حيثما أمكن.",
             "للوفاء بالالتزامات القانونية، ومنع الاحتيال أو إساءة الاستخدام، وتطبيق شروطنا وأحكامنا.",
-            "نحن لا نستخدم محتواك لتدريب نماذج ذكاء اصطناعي أساسية خاصة بنا. تتم معالجة المحتوى المُرسَل إلى مزودي الذكاء الاصطناعي من أطراف ثالثة — حاليًا Anthropic (Claude) و Google (Gemini) — بموجب شروط واجهة برمجة التطبيقات الخاصة بهم بهدف توليد المخرجات التي طلبتها؛ ونحن لا نأذن لهؤلاء المزودين باستخدامه لتدريب نماذج تخدم عملاء آخرين، بالقدر الذي تسمح لنا شروطهم التجارية الخاصة بذلك.",
+            "نحن لا نستخدم محتواك لتدريب نماذج ذكاء اصطناعي أساسية خاصة بنا. تتم معالجة المحتوى المُرسَل إلى مزودي الذكاء الاصطناعي من أطراف ثالثة (حاليًا Anthropic Claude و Google Gemini) بموجب شروط واجهة برمجة التطبيقات الخاصة بهم بهدف توليد المخرجات التي طلبتها؛ ونحن لا نأذن لهؤلاء المزودين باستخدامه لتدريب نماذج تخدم عملاء آخرين، بالقدر الذي تسمح لنا شروطهم التجارية الخاصة بذلك.",
           ],
         },
         {
           heading: "4. مع من نشارك بياناتك",
           body: [
             "نشارك البيانات الشخصية فقط مع مزودي خدمات يعالجونها نيابة عنا لتقديم الخدمة (\"معالجو البيانات الفرعيون\")، وفقط بالقدر اللازم للغرض الذي يخدمه كل منهم:",
-            "• مزودو نماذج الذكاء الاصطناعي — حاليًا Anthropic (Claude) و Google (Gemini) — ومزودو البحث، لتحليل سيرتك الذاتية ووصفك الوظيفي وتخصيص مستنداتك وتوليد خطابات التقديم وحساب النتائج وإيجاد وظائف مشابهة. يُرسَل المحتوى ذو الصلة من محتواك إلى هؤلاء المزودين فقط لتوليد المخرجات التي طلبتها.",
+            "• مزودو نماذج الذكاء الاصطناعي (حاليًا Anthropic Claude و Google Gemini) ومزودو البحث، لتحليل سيرتك الذاتية ووصفك الوظيفي وتخصيص مستنداتك وتوليد خطابات التقديم وحساب النتائج وإيجاد وظائف مشابهة. يُرسَل المحتوى ذو الصلة من محتواك إلى هؤلاء المزودين فقط لتوليد المخرجات التي طلبتها.",
             "• مزود المصادقة وقواعد البيانات والاستضافة لدينا، لتخزين بيانات حسابك ومحتواك وطلباتك بأمان.",
             "• مزود خدمات الدفع الخارجي لدينا، لمعالجة مدفوعات البطاقات الخاصة بالاشتراكات ومشتريات الدفع حسب الاستخدام، وإدارة العمليات المرتبطة بالفوترة مثل المبالغ المستردة والمعاملات المتنازع عليها. تنتقل بيانات الدفع التي تدخلها عند إتمام الشراء مباشرةً إلى هذا المزود الذي يعالجها بموجب سياسة الخصوصية الخاصة به؛ ولا نستلم نحن سوى سجل المعاملة اللازم لإضافة الرصيد إلى حسابك.",
             "نحن لا نبيع بياناتك الشخصية، ولا نشاركها مع أطراف ثالثة لأغراضها التسويقية المستقلة.",
@@ -740,7 +740,7 @@ export const legalContent: Record<Lang, Record<LegalDocKey, LegalDoc>> = {
         },
         {
           heading: "معالجة الذكاء الاصطناعي من أطراف ثالثة",
-          body: ["عند تخصيص سيرتك الذاتية أو وصف وظيفي، يُرسَل المحتوى ذو الصلة إلى مزودي ذكاء اصطناعي من أطراف ثالثة — حاليًا Anthropic (Claude) و Google (Gemini) — عبر اتصالات مشفّرة فقط لتوليد المخرجات التي طلبتها. مزيد من التفاصيل موضح في سياسة الخصوصية."],
+          body: ["عند تخصيص سيرتك الذاتية أو وصف وظيفي، يُرسَل المحتوى ذو الصلة إلى مزودي ذكاء اصطناعي من أطراف ثالثة (حاليًا Anthropic Claude و Google Gemini) عبر اتصالات مشفّرة فقط لتوليد المخرجات التي طلبتها. مزيد من التفاصيل موضح في سياسة الخصوصية."],
         },
         {
           heading: "عزل البيانات",

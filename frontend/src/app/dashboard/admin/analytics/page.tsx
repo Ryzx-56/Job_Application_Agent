@@ -54,7 +54,7 @@ export default function AdminAnalyticsPage() {
         <Notice title="payment integration pending">
           Revenue, pay-as-you-go packs and subscription history all read from the{" "}
           <code className={ADMIN_MONO}>payment_events</code> ledger, which has no rows yet. These tiles will populate
-          on their own once the payment provider writes to it — no further changes needed here.
+          on their own once the payment provider writes to it, with no further changes needed here.
         </Notice>
       )}
 
@@ -97,10 +97,10 @@ export default function AdminAnalyticsPage() {
               <Cell mono className="text-slate-500">
                 {t.price_usd === 0 ? "free" : `$${t.price_usd?.toFixed(2)}`}
               </Cell>
-              <Cell mono>{t.current_count?.toLocaleString() ?? "—"}</Cell>
-              <Cell mono>{t.active_count?.toLocaleString() ?? "—"}</Cell>
-              <Cell mono className="text-slate-300">—</Cell>
-              <Cell mono className="text-slate-300">—</Cell>
+              <Cell mono>{t.current_count?.toLocaleString() ?? "n/a"}</Cell>
+              <Cell mono>{t.active_count?.toLocaleString() ?? "n/a"}</Cell>
+              <Cell mono className="text-slate-300">n/a</Cell>
+              <Cell mono className="text-slate-300">n/a</Cell>
               <Cell>
                 <span className={t.is_cost ? "text-rose-600" : "text-emerald-700"}>
                   {t.is_cost && <span className={ADMIN_MONO}>−</span>}
@@ -138,7 +138,7 @@ export default function AdminAnalyticsPage() {
           Revenue per tier is a <strong className="text-slate-500">projection</strong>: current subscribers at the
           price each actually pays, using{" "}
           <code className={ADMIN_MONO}>locked_price</code> for founding members rather than list. It is not money
-          received — that needs the payment ledger. Free is negative because those users cost{" "}
+          received, which needs the payment ledger. Free is negative because those users cost{" "}
           <span className={ADMIN_MONO}>$0.60</span> each per month at full credit usage and generate no income.
           &ldquo;Ever&rdquo; and per-month counts also need the ledger:{" "}
           <code className={ADMIN_MONO}>profiles.tier</code> is a snapshot, so someone who subscribed and later
@@ -154,14 +154,14 @@ export default function AdminAnalyticsPage() {
               <Cell mono className="text-slate-500">${p.price_usd.toFixed(2)}</Cell>
               <Cell mono className="text-slate-500">{p.credits}</Cell>
               <Cell mono className={pending ? "text-slate-300" : ""}>
-                {pending ? "—" : p.sold_ever.toLocaleString()}
+                {pending ? "n/a" : p.sold_ever.toLocaleString()}
               </Cell>
               <Cell mono className={pending ? "text-slate-300" : ""}>
-                {pending ? "—" : p.sold_this_month.toLocaleString()}
+                {pending ? "n/a" : p.sold_this_month.toLocaleString()}
               </Cell>
               <Cell>
                 {pending ? (
-                  <span className="text-slate-300">—</span>
+                  <span className="text-slate-300">n/a</span>
                 ) : (
                   <span className="text-emerald-700">
                     <Money usd={p.revenue.usd} sar={p.revenue.sar} />

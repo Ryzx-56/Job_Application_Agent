@@ -488,8 +488,8 @@ export default function SettingsPage() {
           <p className="mt-2.5 text-sm text-rose-600">
             {locationError.toLowerCase().includes("not found")
               ? isAr
-                ? "تعذّر الحفظ حاليًا (خطأ في الخادم) — يرجى المحاولة لاحقًا"
-                : "Couldn't save right now (server error) — please try again later"
+                ? "تعذّر الحفظ حاليًا (خطأ في الخادم)، يرجى المحاولة لاحقًا"
+                : "Couldn't save right now (server error). Please try again later"
               : locationError}
           </p>
         )}

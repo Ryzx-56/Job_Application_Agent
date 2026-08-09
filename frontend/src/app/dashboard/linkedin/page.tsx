@@ -139,7 +139,14 @@ export default function LinkedInPage() {
       setOverview(null);
       setLoadError(copy.errors.load);
       setLoadErrorDetail(
-        [apiError?.status ? `HTTP ${apiError.status}` : null, apiError?.code, apiError?.message]
+        [
+          apiError?.status ? `HTTP ${apiError.status}` : null,
+          apiError?.code,
+          apiError?.message,
+          // Only ever present for admins, and only on a failure. See
+          // _unavailable in backend/core/linkedin.py.
+          typeof apiError?.detail?.debug === "string" ? apiError.detail.debug : null,
+        ]
           .filter(Boolean)
           .join(" · ")
       );
@@ -591,7 +598,7 @@ export default function LinkedInPage() {
               name={copy.explainer.normalTitle}
               subtitle={copy.explainer.normalSubtitle}
               bestFor={copy.explainer.normalBestFor}
-              price={canBuy ? normalPrice : "—"}
+              price={canBuy ? normalPrice : "n/a"}
               oneTimeLabel={copy.tiers.oneTime}
               includedLabel={copy.tiers.included}
               features={copy.explainer.normalItems}
@@ -610,7 +617,7 @@ export default function LinkedInPage() {
               name={copy.explainer.premiumTitle}
               subtitle={copy.explainer.premiumSubtitle}
               bestFor={copy.explainer.premiumBestFor}
-              price={canBuy ? premiumPrice : "—"}
+              price={canBuy ? premiumPrice : "n/a"}
               oneTimeLabel={copy.tiers.oneTime}
               includedLabel={copy.tiers.included}
               features={copy.explainer.premiumItems}

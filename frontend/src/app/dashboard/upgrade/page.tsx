@@ -310,7 +310,7 @@ export default function UpgradePage() {
                   </div>
                   <div className="text-end">
                     <div className={`text-2xl font-semibold ${isPremium ? "text-white" : "text-slate-900"}`}>
-                      {price !== undefined ? formatSar(price, lang) : "—"}
+                      {price !== undefined ? formatSar(price, lang) : "n/a"}
                     </div>
                     <div className={`text-xs ${isPremium ? "text-slate-400" : "text-slate-500"}`}>
                       {li.tiers.oneTime}

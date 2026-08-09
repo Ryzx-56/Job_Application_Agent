@@ -43,10 +43,10 @@ export default function CheckoutPage() {
         {isPack
           ? isAr
             ? `شراء باقة ${productLabel} قريبًا`
-            : `${productLabel} pack — coming soon`
+            : `${productLabel} pack: coming soon`
           : isAr
           ? `الترقية إلى ${productLabel} قريبًا`
-          : `Upgrading to ${productLabel} — coming soon`}
+          : `Upgrading to ${productLabel}: coming soon`}
       </h1>
       <p className="text-sm leading-relaxed text-slate-500">
         {isAr

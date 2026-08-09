@@ -295,6 +295,6 @@ export async function deleteResume(id: string): Promise<void> {
     // 0 rows affected almost always means there's no RLS DELETE policy on
     // `resumes` yet — Supabase returns success with nothing deleted rather
     // than an error in that case.
-    throw new Error("Delete did not remove any rows — check the RLS DELETE policy on `resumes`.");
+    throw new Error("Delete did not remove any rows. Check the RLS DELETE policy on `resumes`.");
   }
 }

@@ -346,8 +346,8 @@ def _language_matches_request(result_state: dict) -> bool:
 # dashboard/page.tsx), which is why the code travels alongside the message
 # instead of the message being the only thing returned.
 ERROR_MESSAGES = {
-    "cv_unreadable":         "We couldn't read your CV — please try again in a moment.",
-    "jd_unreadable":         "We couldn't analyze the job description — please try again in a moment.",
+    "cv_unreadable":         "We couldn't read your CV. Please try again in a moment.",
+    "jd_unreadable":         "We couldn't analyze the job description. Please try again in a moment.",
     "tailoring_failed":      "We couldn't finish tailoring your CV, so nothing was charged. Please try again.",
     "fact_check_failed":     "Fact check did not fully pass, please try again.",
     "fact_check_unavailable": "Our fact checker is temporarily unavailable, so nothing was charged. Please try again in a moment.",

@@ -31,7 +31,7 @@ from agents.linkedin_generator import (
     LinkedInGenerationError,
     run_linkedin_generator,
 )
-from core.auth import get_current_admin_user_id, get_current_user_id
+from core.auth import get_current_admin_user_id, get_current_user_id, read_admin_flag
 from core.credits import get_admin_client
 from core.linkedin_notify import lookup_buyers, send_premium_order_alert
 from core.payment_gateway import (
@@ -345,7 +345,7 @@ def _notify_premium_async(purchase: dict) -> None:
 # ─── ROUTES: BUYING ─────────────────────────────────────────────────────────
 
 
-def _unavailable(error: Exception) -> HTTPException:
+def _unavailable(error: Exception, user_id: str | None = None) -> HTTPException:
     """
     Turns a database failure into a real, CORS-carrying HTTP response.
 
@@ -377,14 +377,22 @@ def _unavailable(error: Exception) -> HTTPException:
             },
         )
 
-    logger.error(f"❌ LinkedIn overview query failed: {error}")
-    return HTTPException(
-        status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-        detail={
-            "code": "linkedin_unavailable",
-            "message": "We couldn't reach your LinkedIn add-on just now. Please try again.",
-        },
-    )
+    logger.error(f"❌ LinkedIn overview query failed: {type(error).__name__}: {error}")
+    detail = {
+        "code": "linkedin_unavailable",
+        "message": "We couldn't reach your LinkedIn add-on just now. Please try again.",
+    }
+
+    # ADMINS GET THE REAL REASON, nobody else does. Without this, the only
+    # copy of why a request failed is a line in the server log, which is a slow
+    # loop when the person debugging is also the person looking at the page.
+    # Gated on profiles.is_admin (the same server-side check every /admin route
+    # uses), truncated, and only ever attached on the failure path — a normal
+    # user still sees nothing but the sentence above.
+    if user_id and read_admin_flag(user_id):
+        detail["debug"] = f"{type(error).__name__}: {str(error)[:400]}"
+
+    return HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=detail)
 
 
 @router.get("/api/v1/linkedin/overview", tags=["LinkedIn"])
@@ -423,7 +431,7 @@ def linkedin_overview(user_id: str = Depends(get_current_user_id)) -> dict:
     except Exception as e:
         # See _unavailable: a raw 500 here would reach the browser stripped of
         # its CORS headers and show up as an untraceable "Failed to fetch".
-        raise _unavailable(e)
+        raise _unavailable(e, user_id)
 
     labels = _cv_labels(user_id, [p.get("source_cv_id") for p in purchases])
 
