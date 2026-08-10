@@ -24,7 +24,6 @@ import {
   Lock,
   ScanSearch,
   BadgeCheck,
-  Flame,
   User,
 } from "lucide-react";
 import { useLang } from "@/lib/language";
@@ -638,10 +637,23 @@ function LinkedInAddOn() {
                   <h4 className="text-xl font-semibold text-white">{data.name}</h4>
                   <p className={`mt-0.5 text-sm ${premium ? "text-[#E4CE86]" : "text-zinc-400"}`}>{data.tagline}</p>
                 </div>
+                {/* Essential has no price of its own: it comes with Pro and
+                    Elite, so it states that instead. Premium is still a
+                    one-time purchase and keeps its price and its checkout. */}
                 <div className="text-end">
-                  <div className="text-3xl font-semibold tracking-tight text-white">{formatSar(data.sar, lang)}</div>
-                  {usdApprox(data.sar) && <div className="text-xs text-zinc-500">{usdApprox(data.sar)}</div>}
-                  <div className="text-xs text-zinc-500">{copy.oneTime}</div>
+                  {"sar" in data ? (
+                    <>
+                      <div className="text-3xl font-semibold tracking-tight text-white">
+                        {formatSar(data.sar, lang)}
+                      </div>
+                      {usdApprox(data.sar) && <div className="text-xs text-zinc-500">{usdApprox(data.sar)}</div>}
+                      <div className="text-xs text-zinc-500">{copy.oneTime}</div>
+                    </>
+                  ) : (
+                    <div className="max-w-[11rem] text-sm font-semibold leading-snug text-[#4DA3E8]">
+                      {data.includedLabel}
+                    </div>
+                  )}
                 </div>
               </div>
 
@@ -658,7 +670,7 @@ function LinkedInAddOn() {
               </ul>
 
               <Link
-                href={buyHref}
+                href={premium ? buyHref : "#pricing"}
                 className={`mt-7 inline-flex items-center justify-center gap-2 rounded-lg px-4 py-3 text-sm font-semibold transition-colors ${
                   premium
                     ? "bg-[#D4AF37] text-[#0B1220] hover:bg-[#E0BF54]"
@@ -932,44 +944,32 @@ function Pricing({ onOpenAbout }: { onOpenAbout: () => void }) {
             <div
               key={plan.name}
               className={`relative flex flex-col rounded-2xl border bg-zinc-900/60 p-7 transition-all duration-300 ${
-                plan.offerBanner
-                  ? "overflow-hidden border-amber-400/60 shadow-2xl shadow-amber-500/10 ring-1 ring-amber-400/30 lg:-translate-y-3 lg:scale-[1.03]"
-                  : plan.featured
+                plan.featured
                   ? "border-blue-400/50 shadow-xl shadow-blue-950/20 lg:-translate-y-2"
                   : plan.premium
                   ? "border-white/20 bg-gradient-to-b from-zinc-900/80 to-zinc-900/40 shadow-lg shadow-black/30"
                   : "border-white/10 hover:border-blue-400/30"
               }`}
             >
-              {plan.offerBanner ? (
-                <div className="-mx-7 -mt-7 mb-5 flex items-center justify-center gap-1.5 bg-gradient-to-r from-amber-500 to-orange-500 px-4 py-2 text-center text-xs font-bold uppercase tracking-wide text-zinc-950">
-                  <Flame className="size-3.5 shrink-0" aria-hidden />
-                  {plan.offerBanner}
-                </div>
-              ) : (
-                <>
-                  {plan.badge && (
-                    <span className="absolute -top-3 start-7 rounded-full bg-blue-600 px-3 py-1 text-xs font-medium text-white">
-                      {plan.badge}
-                    </span>
-                  )}
-                  {plan.premium && (
-                    <span className="absolute -top-3 start-7 inline-flex items-center gap-1 rounded-full border border-white/20 bg-zinc-950 px-3 py-1 text-xs font-medium text-zinc-200">
-                      <Sparkles className="size-3 text-blue-400" aria-hidden />
-                      {t.pricing.premiumBadgeLabel}
-                    </span>
-                  )}
-                </>
+              {/* NO OFFER BANNER AND NO DISCOUNT FLASH. The founding offer is
+                  a badge and a 50-seat cap, not money off, so a plan card
+                  carries its plain price and nothing that implies a markdown.
+                  See the note on the plans data in src/lib/language.tsx. */}
+              {plan.badge && (
+                <span className="absolute -top-3 start-7 rounded-full bg-blue-600 px-3 py-1 text-xs font-medium text-white">
+                  {plan.badge}
+                </span>
+              )}
+              {plan.premium && (
+                <span className="absolute -top-3 start-7 inline-flex items-center gap-1 rounded-full border border-white/20 bg-zinc-950 px-3 py-1 text-xs font-medium text-zinc-200">
+                  <Sparkles className="size-3 text-blue-400" aria-hidden />
+                  {t.pricing.premiumBadgeLabel}
+                </span>
               )}
 
               <div className="flex items-center justify-between gap-2">
                 <div className="flex items-center gap-2">
                   <h3 className="text-sm font-medium text-white">{plan.name}</h3>
-                  {plan.offerBanner && plan.badge && (
-                    <span className="rounded-full bg-blue-600/90 px-2 py-0.5 text-[10px] font-medium text-white">
-                      {plan.badge}
-                    </span>
-                  )}
                 </div>
                 {isCurrent && planSlug !== "free" && !hasPendingChange && (
                   <span className="inline-flex items-center gap-1 rounded-full border border-blue-400/25 bg-blue-400/10 px-2.5 py-0.5 text-[11px] font-medium tracking-wide text-blue-300">
@@ -984,20 +984,10 @@ function Pricing({ onOpenAbout }: { onOpenAbout: () => void }) {
                   it is derived from the same number at the peg, so the two can
                   never disagree. See src/lib/pricing.ts. */}
               <div className="mt-3 flex flex-wrap items-baseline gap-1.5">
-                {plan.originalSar !== null && (
-                  <span className="text-lg font-medium text-zinc-600 line-through">
-                    {formatSar(plan.originalSar, lang)}
-                  </span>
-                )}
                 <span className="text-4xl font-semibold tracking-tight text-white">
                   {formatSar(plan.sar, lang)}
                 </span>
                 <span className="text-sm text-zinc-500">{plan.period}</span>
-                {plan.discountLabel && (
-                  <span className="ms-1 rounded-full bg-amber-400/15 px-2 py-0.5 text-xs font-bold text-amber-300">
-                    {plan.discountLabel}
-                  </span>
-                )}
               </div>
               {usdApprox(plan.sar) && <p className="mt-1 text-xs text-zinc-500">{usdApprox(plan.sar)}</p>}
               <p className="mt-3 text-sm leading-relaxed text-zinc-400">{plan.description}</p>

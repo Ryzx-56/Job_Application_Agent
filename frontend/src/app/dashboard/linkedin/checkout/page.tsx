@@ -6,7 +6,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { AlertCircle, ArrowLeft, ArrowRight, Clock, Loader2, Lock, ShieldCheck, Sparkles } from "lucide-react";
 import { useLang } from "@/lib/language";
 import { fetchResumes, ResumeRecord } from "@/lib/supabase/resumes";
-import { ApiError, fetchLinkedInOverview, LinkedInOverview, LinkedInTier, startLinkedInCheckout } from "@/lib/supabase/linkedin";
+import { ApiError, fetchLinkedInOverview, LinkedInOverview, LinkedInPurchasableTier, startLinkedInCheckout } from "@/lib/supabase/linkedin";
 import { formatSar, liOutlineButton, liPrimaryButton, usdApprox, LinkedInPageShell } from "@/components/linkedin-ui";
 
 /* ========================================================================
@@ -32,7 +32,12 @@ export default function LinkedInCheckoutPage() {
   const router = useRouter();
   const params = useSearchParams();
 
-  const tier = (params.get("tier") as LinkedInTier | null) ?? null;
+  // PREMIUM ONLY. A ?tier=normal link is a stale bookmark from when Essential
+  // was sold separately; it resolves to null here, so the page falls into its
+  // existing "this order is missing information" branch instead of trying to
+  // charge for something that is now included in the subscription.
+  const rawTier = params.get("tier");
+  const tier: LinkedInPurchasableTier | null = rawTier === "premium" ? "premium" : null;
   const cvId = params.get("cv");
   const isPremium = tier === "premium";
 

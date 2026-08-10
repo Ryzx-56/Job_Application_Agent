@@ -31,6 +31,11 @@ from core.badges import router as badges_router
 # nothing in the pipeline — it only READS the facts_json a CV generation
 # already saved. See core/linkedin.py.
 from core.linkedin import router as linkedin_router
+# Interview Prep (Pro/Elite). Like the LinkedIn add-on it sits outside the CV
+# graph and only READS what a CV generation already saved — here the stored
+# jd_analyzer/ats_scorer/match_scorer output on the resumes row. Stores
+# nothing of its own. See core/interview.py.
+from core.interview import router as interview_router
 from core.profile_names import (
     router as profile_names_router,
     get_profile_names,
@@ -87,6 +92,7 @@ app.include_router(profile_names_router)
 app.include_router(admin_stats_router)
 app.include_router(badges_router)
 app.include_router(linkedin_router)
+app.include_router(interview_router)
 
 OUTPUT_DIR = "outputs"
 

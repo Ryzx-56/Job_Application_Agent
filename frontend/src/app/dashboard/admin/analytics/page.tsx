@@ -97,10 +97,10 @@ export default function AdminAnalyticsPage() {
                 )}
               </Cell>
               <Cell mono className="whitespace-nowrap text-slate-500">
+                {/* One price per tier. The founding offer is a badge with no
+                    discount attached, so there is no second figure to show
+                    here any more. */}
                 {t.price_sar === 0 ? "free" : `${t.price_sar?.toFixed(2)} SAR`}
-                {t.founding_price_sar != null && (
-                  <div className="text-[10px] text-violet-500">{t.founding_price_sar.toFixed(2)} founding</div>
-                )}
               </Cell>
               <Cell mono>{t.current_count?.toLocaleString() ?? "n/a"}</Cell>
               <Cell mono>{t.active_count?.toLocaleString() ?? "n/a"}</Cell>
@@ -157,9 +157,10 @@ export default function AdminAnalyticsPage() {
         </div>
 
         <p className="mt-3 text-xs leading-relaxed text-slate-400">
-          Revenue per tier is a <strong className="text-slate-500">projection</strong>: current subscribers at the
-          price each actually pays, using{" "}
-          <code className={ADMIN_MONO}>locked_price</code> for founding members rather than list. It is not money
+          Revenue per tier is a <strong className="text-slate-500">projection</strong>: active subscribers &times; that
+          tier&rsquo;s price. Every subscriber on a tier pays the same price, so nothing reads{" "}
+          <code className={ADMIN_MONO}>locked_price</code> any more &mdash; it was a leftover of the withdrawn
+          founding discount and was pricing some rows at a figure the product no longer charges. It is not money
           received, which needs the payment ledger. Free is negative because those users cost{" "}
           <span className={ADMIN_MONO}>2.25 SAR</span> each per month at full credit usage and generate no income.
           &ldquo;Ever&rdquo; and per-month counts also need the ledger:{" "}

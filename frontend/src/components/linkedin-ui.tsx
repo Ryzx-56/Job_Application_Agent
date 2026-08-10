@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useCallback, useEffect, useRef, useState } from "react";
+import Link from "next/link";
 import { Check, Copy, Lock, Sparkles } from "lucide-react";
 
 /* ========================================================================
@@ -422,6 +423,111 @@ export function TierPanel({
         )}
         {disabled && disabledHint && (
           <p className={`mt-2 text-center text-xs ${premium ? "text-slate-400" : "text-slate-400"}`}>{disabledHint}</p>
+        )}
+      </div>
+    </section>
+  );
+}
+
+/* ========================================================================
+   INCLUDED ESSENTIAL PANEL
+
+   Replaces the Essential TierPanel. Essential is no longer sold, so this
+   panel carries no price, no "one-time" label and no buy button: it states
+   the entitlement, how much of the month is left, and offers the action.
+
+   Three states, and the difference matters:
+     · not unlocked  -> Free. The panel explains what a subscription adds and
+                        points at the plans.
+     · used up       -> the allowance is spent. Says so plainly with the
+                        numbers, rather than presenting a button that fails.
+     · available     -> the action, with the count next to it.
+======================================================================== */
+export function IncludedEssentialPanel({
+  copy,
+  quota,
+  onGenerate,
+}: {
+  copy: {
+    name: string;
+    subtitle: string;
+    bestFor: string;
+    includedLabel: string;
+    includedWith: string;
+    features: readonly string[];
+    cta: string;
+    remaining: (left: number, total: number) => string;
+    usedUp: (total: number) => string;
+    lockedTitle: string;
+    lockedBody: string;
+    lockedCta: string;
+  };
+  /** Null while the overview is still loading, or on an older backend. */
+  quota: { limit: number; used: number; remaining: number; unlocked: boolean } | null;
+  onGenerate: () => void;
+}) {
+  const unlocked = quota?.unlocked ?? false;
+  const remaining = quota?.remaining ?? 0;
+  const limit = quota?.limit ?? 0;
+  const usedUp = unlocked && remaining <= 0;
+
+  return (
+    <section className="relative overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+      <div className="p-5 sm:p-6">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div className="min-w-0">
+            <span className="inline-block rounded-full bg-[#EAF4FB] px-2.5 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-[#0A66C2]">
+              {copy.includedLabel}
+            </span>
+            <h3 className="mt-2.5 text-xl font-semibold tracking-tight text-slate-900 sm:text-2xl">
+              {copy.name}
+            </h3>
+            <p className="mt-1 text-sm text-slate-500">{copy.subtitle}</p>
+          </div>
+
+          {/* Where a price used to sit. It says what you get it with, which
+              is the honest replacement for a number. */}
+          <div className="text-end">
+            <div className="max-w-[10rem] text-sm font-semibold leading-snug text-[#0A66C2]">
+              {copy.includedWith}
+            </div>
+            {unlocked && limit > 0 && (
+              <div className="mt-1 text-xs text-slate-500">{copy.remaining(remaining, limit)}</div>
+            )}
+          </div>
+        </div>
+
+        <p className="mt-4 rounded-xl bg-slate-50 px-3.5 py-2.5 text-sm leading-relaxed text-slate-600">
+          {copy.bestFor}
+        </p>
+
+        <ul className="mt-5 space-y-2.5">
+          {copy.features.map((feature) => (
+            <li key={feature} className="flex gap-2.5 text-sm leading-relaxed text-slate-600">
+              <Check className="mt-0.5 size-4 shrink-0 text-emerald-500" aria-hidden />
+              <span>{feature}</span>
+            </li>
+          ))}
+        </ul>
+
+        {!unlocked ? (
+          <div className="mt-6 rounded-xl border border-[#0A66C2]/25 bg-[#EAF4FB]/60 p-4">
+            <p className="text-sm font-semibold text-slate-900">{copy.lockedTitle}</p>
+            <p className="mt-1 text-sm leading-relaxed text-slate-600">{copy.lockedBody}</p>
+            <Link href="/dashboard/upgrade" className={`mt-3 ${liPrimaryButton}`}>
+              <Sparkles className="size-4" aria-hidden />
+              {copy.lockedCta}
+            </Link>
+          </div>
+        ) : usedUp ? (
+          <p className="mt-6 rounded-xl border border-amber-200 bg-amber-50/70 px-4 py-3 text-sm leading-relaxed text-amber-800">
+            {copy.usedUp(limit)}
+          </p>
+        ) : (
+          <button type="button" onClick={onGenerate} className={`mt-6 w-full ${liPrimaryButton}`}>
+            <Sparkles className="size-4" aria-hidden />
+            {copy.cta}
+          </button>
         )}
       </div>
     </section>

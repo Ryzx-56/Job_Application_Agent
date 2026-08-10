@@ -226,7 +226,11 @@ class LinkedInContent(BaseModel):
 
 
 class LinkedInCheckoutRequest(BaseModel):
-    tier: Literal["normal", "premium"]
+    # PREMIUM ONLY. Essential used to be purchasable at 49 SAR; it is now
+    # bundled into Pro and Elite with a monthly cap (pricing reference v6 §4),
+    # so there is nothing to check out. Narrowing the Literal means a request
+    # for it is rejected by validation before it reaches any pricing code.
+    tier: Literal["premium"]
     # Which of the caller's existing resumes to base the generation on.
     # Ownership is verified server-side before a purchase row is created.
     source_cv_id: str
@@ -239,9 +243,17 @@ class LinkedInCheckoutRequest(BaseModel):
 
 
 class LinkedInGenerateRequest(BaseModel):
-    purchase_id: str
-    # Normally omitted, the CV is already recorded on the purchase. Only
-    # needed when the original CV was deleted after purchase (the purchase's
-    # source_cv_id goes null), in which case the buyer picks a replacement
-    # rather than losing what they paid for.
+    # WHICH ROUTE THIS IS, decided by whether purchase_id is present:
+    #   · set    -> a paid PREMIUM purchase.
+    #   · absent -> ESSENTIAL, included with Pro and Elite and metered
+    #               monthly. There is no purchase to reference, so the
+    #               subscription and the cap are the whole entitlement.
+    purchase_id: Optional[str] = None
+    # On the premium route this is normally omitted, since the CV is recorded
+    # on the purchase; it is only needed when the original CV was deleted
+    # (the purchase's source_cv_id goes null) so the buyer can pick a
+    # replacement rather than losing what they paid for.
+    #
+    # On the Essential route it is REQUIRED: nothing else says which CV to
+    # build from.
     source_cv_id: Optional[str] = None

@@ -191,6 +191,94 @@ def _require_admin(user_id: str) -> str:
     return user_id
 
 
+# ─── SUBSCRIPTION GATE (paid-tier features) ─────────────────────────────────
+#
+# Same shape as the admin gate above: a reader that never raises, and a
+# dependency that turns it into a 403. Used by Interview Prep
+# (core/interview.py) and available to any later Pro/Elite feature.
+#
+# THE GATE IS profiles.tier, AND ONLY profiles.tier. Two reasons, both
+# deliberate:
+#
+#   1. It is what the deferred-downgrade design already keeps authoritative.
+#      cancel_subscription() (core/subscription.py) does NOT drop the tier on
+#      cancellation, it sets pending_tier and lets reset_credits_if_due()
+#      switch tier over at credits_reset_at, so a user who cancels keeps the
+#      access they paid for until the cycle ends and then loses it without
+#      anything here having to reason about dates.
+#   2. subscription_status is NOT usable as a gate today. Nothing sets it to
+#      "active" (no payment provider is wired yet, see the TODO in
+#      core/subscription.py), so it is null for real paying users; requiring
+#      it would lock every Pro and Elite subscriber out of the feature.
+#      core/badges.py can require it because a missing badge is cosmetic.
+#
+# WHEN A PAYMENT PROVIDER IS WIRED: add the status check here, using
+# badges.ACTIVE_SUBSCRIPTION_STATES plus "canceling" (a canceling subscriber
+# is still paid up for the rest of the cycle, per the note above), so a
+# past_due subscription loses feature access. Do it here, in this one
+# function, and every gated feature picks it up.
+PAID_TIERS = ("pro", "elite")
+
+
+def read_subscription_tier(user_id: str | None) -> str:
+    """
+    This user's current tier, lowercased. Never raises: any failure returns
+    "free", which is the safe direction to fail for a gate.
+    """
+    if not user_id:
+        return "free"
+
+    # Local import for the same module-load-order reason as
+    # _read_bool_column above.
+    from core.credits import get_admin_client
+
+    try:
+        row = (
+            get_admin_client()
+            .table("profiles")
+            .select("tier")
+            .eq("id", user_id)
+            .maybe_single()
+            .execute()
+            .data
+        )
+    except Exception as e:
+        logger.error(f"Tier check could not reach Supabase for user {user_id}: {e}")
+        return "free"
+
+    return str((row or {}).get("tier") or "free").lower()
+
+
+def has_paid_tier(user_id: str | None) -> bool:
+    """True if this user may use a Pro/Elite-gated feature."""
+    return read_subscription_tier(user_id) in PAID_TIERS
+
+
+def get_current_paid_user_id(authorization: str = Header(None)) -> str:
+    """
+    Same JWT verification as get_current_user_id, plus a Pro/Elite
+    requirement. The frontend blurs a gated page for Free users, but that is
+    presentation: this is the check that actually decides, and it runs on
+    every request regardless of what the client believes.
+
+    The 403 carries a machine-readable code so the page can show localized
+    upgrade copy rather than an English sentence from the server, the same
+    convention core/linkedin.py's error details use.
+    """
+    user_id = get_current_user_id(authorization)
+    tier = read_subscription_tier(user_id)
+    if tier not in PAID_TIERS:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={
+                "code": "upgrade_required",
+                "tier": tier,
+                "message": "This feature is available on the Pro and Elite plans.",
+            },
+        )
+    return user_id
+
+
 def get_current_admin_user_id(authorization: str = Header(None)) -> str:
     """
     Same JWT verification as get_current_user_id, but additionally requires

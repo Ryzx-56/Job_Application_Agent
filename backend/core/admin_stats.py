@@ -15,6 +15,7 @@ from loguru import logger
 
 from core.auth import get_current_admin_user_id
 from core.credits import get_admin_client
+from core.entitlements import ADDON_CAPS
 
 router = APIRouter()
 
@@ -30,14 +31,16 @@ USD_TO_SAR = 3.75
 # page, and denominated in SAR because SAR is what customers are actually
 # charged. USD is derived for display only, at the peg above.
 #
-# Values are the locked prices from pricing reference v2 §2 and §3. They must
-# stay in step with the `sar` fields in frontend/src/lib/language.tsx, which is
-# what a customer sees.
+# Values are from pricing reference v6 §3 and §6. They must stay in step with
+# the `sar` fields in frontend/src/lib/language.tsx, which is what a customer
+# sees.
 #
-# NOTE: these are LIST prices. Founding members are grandfathered lower, so
-# estimated revenue uses profiles.locked_price where it's set (see
-# admin_tier_counts in 006_tier_revenue.sql) and only falls back to list price
-# for everyone else.
+# THERE IS ONE PRICE PER TIER. Nobody is grandfathered onto a lower one: the
+# founding offer is a badge and a 50-seat cap with no discount attached (§3a),
+# so every Pro subscriber pays the Pro price. profiles.locked_price is a
+# leftover of the old discounted offer; it should be null everywhere now, and
+# a non-null value on a live row means someone was priced under a scheme that
+# no longer exists.
 #
 # WORST-CASE COST is the cost of a user who burns their entire allotment on the
 # most expensive generations: credits × COST_PER_CREDIT_SAR. It's what makes
@@ -46,16 +49,38 @@ USD_TO_SAR = 3.75
 COST_PER_CREDIT_SAR = 0.75  # $0.20 per credit at the 3.75 peg (reference §1, §7)
 
 TIER_PRICING = {
-    "free":  {"label": "Free",  "price_sar": 0.00,   "credits": 3},
-    "pro":   {"label": "Pro",   "price_sar": 49.00,  "credits": 40,  "founding_price_sar": 41.00},
-    "elite": {"label": "Elite", "price_sar": 129.00, "credits": 120},
+    "free":  {"label": "Free",  "price_sar": 0.00,  "credits": 3},
+    # ONE PRO PRICE. There is no founding price any more: the founding offer
+    # is a badge and a 50-seat cap, with no discount attached, so there is no
+    # second figure to grandfather and no `founding_price_sar` here.
+    "pro":   {"label": "Pro",   "price_sar": 29.00, "credits": 24},
+    "elite": {"label": "Elite", "price_sar": 99.00, "credits": 80},
 }
 
 PACK_PRICING = {
-    "starter":    {"label": "Starter",    "price_sar": 19.00, "credits": 5},
-    "best-value": {"label": "Best Value", "price_sar": 45.00, "credits": 15},
-    "power":      {"label": "Power",      "price_sar": 75.00, "credits": 30},
+    "starter":    {"label": "Starter",    "price_sar": 9.00,  "credits": 5},
+    "best-value": {"label": "Best Value", "price_sar": 22.00, "credits": 15},
+    "power":      {"label": "Power",      "price_sar": 38.00, "credits": 30},
 }
+
+# ADD-ONS BUNDLED INTO A SUBSCRIPTION. Neither is sold separately, so neither
+# contributes revenue; they exist here only as a COST against the tier that
+# includes them, capped at the monthly allowance so the worst case stays a
+# real ceiling rather than an unbounded one.
+#
+# Interview Prep's per-generation figure is an ESTIMATE. It is one large
+# Sonnet call over a whole CV and posting, sized from development runs rather
+# than from production traffic, and every surface that shows it has to say so.
+BUNDLED_ADDON_COSTS_SAR = {
+    "linkedin_essential": {"label": "LinkedIn Essential", "cost_sar": 0.15, "estimated": False},
+    "interview_prep":     {"label": "Interview Prep",     "cost_sar": 0.85, "estimated": True},
+}
+
+# Monthly caps per tier. IMPORTED, not restated: core/entitlements.py is what
+# actually enforces them on every generation, and a second copy here is how a
+# dashboard ends up reporting a worst case the product no longer has. The
+# worst case is a subscriber who uses every one.
+BUNDLED_ADDON_CAPS = ADDON_CAPS
 
 # LinkedIn add-on (reference §4). Prices mirror PRICING in core/linkedin.py.
 #
@@ -247,8 +272,9 @@ def get_analytics(admin_user_id: str = Depends(get_current_admin_user_id)) -> di
         pricing = TIER_PRICING.get(slug, {})
         current = int(row.get("current_count") or 0)
         active = int(row.get("active_count") or 0)
-        locked_total = float(row.get("locked_price_total") or 0)
-        locked_count = int(row.get("locked_price_count") or 0)
+        # locked_price_total / locked_price_count are still returned by
+        # admin_tier_counts, but nothing prices off them any more. See the
+        # bug-fix note in the revenue branch below.
         credits = int(pricing.get("credits") or 0)
         unit_cost = worst_case_cost_sar(credits)
 
@@ -258,11 +284,20 @@ def get_analytics(admin_user_id: str = Depends(get_current_admin_user_id)) -> di
             cost = current * unit_cost
             revenue = 0.0
         else:
-            # Founding members pay their locked price; everyone else pays list.
-            # Counting them separately avoids overstating by the grandfathered
-            # discount. locked_price is stored in SAR alongside the tier price.
-            list_payers = max(active - locked_count, 0)
-            revenue = locked_total + list_payers * float(pricing.get("price_sar", 0))
+            # EVERY ACTIVE SUBSCRIBER PAYS THE TIER PRICE. There is no
+            # grandfathered rate any more (reference v6 §3a: the founding offer
+            # is a badge only), so revenue is simply headcount × list.
+            #
+            # BUG FIX, the stale price in this panel: this used to read
+            # `locked_total + list_payers × price`, summing profiles.locked_price
+            # for anyone who still had one. Those values are leftovers of the
+            # discounted founding offer that was removed, so the panel kept
+            # pricing those subscribers at a figure the product no longer
+            # charges (the 10.99 USD / ~41 SAR founding-era Pro price, which
+            # surfaced on whichever tier the affected rows sat on). Reading a
+            # dead column made the dashboard disagree with what customers are
+            # actually billed, which is the one thing this page must not do.
+            revenue = active * float(pricing.get("price_sar", 0))
             monthly = revenue
             # Cost follows ACTIVE subscribers, not everyone sitting on the
             # tier: a lapsed subscriber gets no allotment, so they cost nothing.
@@ -279,7 +314,6 @@ def get_analytics(admin_user_id: str = Depends(get_current_admin_user_id)) -> di
             "active_count": active,
             "founding_count": row.get("founding_count") or 0,
             "price_sar": pricing.get("price_sar"),
-            "founding_price_sar": pricing.get("founding_price_sar"),
             "credits": credits,
             "estimated_monthly": _money(monthly),
             # ── Worst case, per §7 of the pricing reference ──

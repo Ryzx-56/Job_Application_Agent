@@ -21,9 +21,18 @@ SUPABASE_SERVICE_ROLE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY", "")
 # toggle on the generate page.
 CREDIT_COST = {"en": 1, "ar": 2}
 
-# Monthly credit allotment per tier. Must stay in sync with
-# reset_credits_if_due() in the SQL migration (001_profiles_credits.sql).
-TIER_CREDITS = {"free": 3, "pro": 40, "elite": 120}
+# Monthly credit allotment per tier. Must stay in sync with THREE places:
+#   1. reset_credits_if_due() in the SQL migration (001_profiles_credits.sql),
+#      which is what actually grants them each cycle.
+#   2. The `features` copy on each plan in frontend/src/lib/language.tsx,
+#      which is what the customer was sold.
+#   3. TIER_PRICING in core/admin_stats.py, which prices the worst case.
+#
+# ⚠️ CHANGING A NUMBER HERE IS NOT ENOUGH. This dict is what the application
+# reasons about, but reset_credits_if_due() in Postgres is what tops accounts
+# up, so a change here without the matching migration means the page promises
+# one figure and the database grants another.
+TIER_CREDITS = {"free": 3, "pro": 24, "elite": 80}
 
 
 @lru_cache(maxsize=1)

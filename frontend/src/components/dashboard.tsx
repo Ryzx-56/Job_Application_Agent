@@ -17,6 +17,7 @@ import {
   Download,
   Loader2,
   Shield,
+  MessagesSquare,
 } from "lucide-react";
 // lucide-react v1 has no brand icons, so the LinkedIn mark is our own glyph.
 import { LinkedInGlyph } from "@/components/linkedin-ui";
@@ -409,6 +410,12 @@ function useNavItems(isAdmin = false) {
   return [
     { href: "/dashboard", label: t.dashboard.sidebar.dashboard, icon: LayoutDashboard },
     { href: "/dashboard/resumes", label: t.dashboard.sidebar.myResumes, icon: FileText },
+    // Interview Prep, directly under My Resumes: it's the next thing you do
+    // with a CV you already tailored. Listed for everyone, including Free —
+    // the page itself renders blurred behind an upgrade panel rather than
+    // 404ing, and hiding the entry would hide the upsell too. Access is
+    // enforced server-side on /api/v1/interview/generate regardless.
+    { href: "/dashboard/interview", label: t.dashboard.sidebar.interview, icon: MessagesSquare },
     // The LinkedIn add-on. Sits directly above Settings, under My Resumes,
     // because it's something you do with a CV you've already made.
     { href: "/dashboard/linkedin", label: t.dashboard.sidebar.linkedin, icon: LinkedInGlyph },

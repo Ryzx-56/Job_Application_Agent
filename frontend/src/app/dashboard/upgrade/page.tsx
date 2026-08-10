@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
-import { Check, Sparkles, Zap, Clock, Heart } from "lucide-react";
+import { Check, Sparkles, Zap, Heart } from "lucide-react";
 import { Badge } from "@/components/badges";
 import Link from "next/link";
 import { useLang } from "@/lib/language";
@@ -110,44 +110,22 @@ export default function UpgradePage() {
             <div
               key={plan.slug}
               className={`relative flex flex-col rounded-2xl border bg-white shadow-sm transition-shadow hover:shadow-md ${
-                plan.offerBanner
-                  ? "border-orange-300 ring-2 ring-orange-200"
-                  : plan.premium
-                  ? "border-slate-300 ring-1 ring-slate-200"
-                  : "border-slate-200"
+                plan.premium ? "border-slate-300 ring-1 ring-slate-200" : "border-slate-200"
               }`}
             >
-              {/* Offer banner, matching the landing page. Orange rather than
-                  the app's blue precisely because it should interrupt the
-                  page — a discount that blends in isn't doing its job. */}
-              {plan.offerBanner && (
-                <div className="flex items-center justify-center gap-1.5 rounded-t-2xl bg-gradient-to-r from-orange-500 to-amber-500 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-white">
-                  <Clock className="size-3.5 shrink-0" aria-hidden />
-                  {plan.offerBanner}
-                </div>
-              )}
-
+              {/* NO OFFER BANNER, NO DISCOUNT PILL, NO STRUCK-THROUGH PRICE.
+                  The founding offer gives a badge and nothing else, so there
+                  is no markdown to announce and no earlier price to strike
+                  through. See the plans data in src/lib/language.tsx. */}
               <div className="flex flex-1 flex-col p-5">
               {plan.badge && (
-                <span
-                  className={`absolute start-5 rounded-full px-2.5 py-0.5 text-[11px] font-semibold text-white ${
-                    plan.offerBanner ? "-top-2.5 bg-orange-600" : "-top-2.5 bg-blue-600"
-                  }`}
-                >
+                <span className="absolute -top-2.5 start-5 rounded-full bg-blue-600 px-2.5 py-0.5 text-[11px] font-semibold text-white">
                   {plan.badge}
-                </span>
-              )}
-              {plan.discountLabel && (
-                <span className="absolute -top-2.5 end-5 rounded-full bg-rose-600 px-2.5 py-0.5 text-[11px] font-bold text-white shadow-sm">
-                  {plan.discountLabel}
                 </span>
               )}
               <h3 className="text-lg font-semibold text-slate-900">{plan.name}</h3>
               <div className="mt-1 flex items-baseline gap-2">
                 <span className="text-2xl font-semibold text-slate-900">{formatSar(plan.sar, lang)}</span>
-                {plan.originalSar !== null && (
-                  <span className="text-sm text-slate-400 line-through">{formatSar(plan.originalSar, lang)}</span>
-                )}
                 <span className="text-sm text-slate-500">{plan.period}</span>
               </div>
               {usdApprox(plan.sar) && (
@@ -184,12 +162,12 @@ export default function UpgradePage() {
                   <Badge badge="founding_member" size="sm" lang={isAr ? "ar" : "en"} withTooltip={false} />
                 </div>
                 {plan.limitedOffer ? (
-                  <p className="mt-2 text-xs leading-relaxed text-orange-700">{plan.limitedOffer}</p>
+                  <p className="mt-2 text-xs leading-relaxed text-slate-500">{plan.limitedOffer}</p>
                 ) : (
                   <p className="mt-2 text-xs leading-relaxed text-slate-500">
                     {isAr
-                      ? "شارة عضو مؤسس دائمة لأول 50 مشتركًا يدفعون، في أي خطة."
-                      : "A permanent Founding Member badge goes to the first 50 people to pay, on any plan."}
+                      ? "شارة عضو مؤسس دائمة لأول 50 مشتركًا في برو."
+                      : "A permanent Founding Member badge goes to the first 50 Pro subscribers."}
                   </p>
                 )}
               </div>
@@ -197,9 +175,7 @@ export default function UpgradePage() {
               <Link
                 href={`/dashboard/checkout?plan=${plan.slug}`}
                 className={`mt-5 inline-flex items-center justify-center rounded-lg px-4 py-2.5 text-sm font-medium transition-colors ${
-                  plan.offerBanner
-                    ? "bg-orange-600 text-white hover:bg-orange-500"
-                    : plan.featured
+                  plan.featured
                     ? "bg-blue-600 text-white hover:bg-blue-500"
                     : "border border-slate-200 text-slate-700 hover:bg-slate-50"
                 }`}
@@ -272,7 +248,10 @@ export default function UpgradePage() {
         <div className="space-y-4">
           {(["normal", "premium"] as const).map((tier) => {
             const isPremium = tier === "premium";
-            const price = linkedinData?.pricing?.[tier]?.price;
+            // Only Premium has a price. Essential is included with Pro and
+            // Elite (pricing reference v6 section 4), so it renders the
+            // entitlement line instead of a figure.
+            const price = isPremium ? linkedinData?.pricing?.premium?.price : undefined;
             return (
               <div
                 key={tier}

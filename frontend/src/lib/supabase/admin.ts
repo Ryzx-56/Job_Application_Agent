@@ -67,7 +67,6 @@ export type AdminAnalytics = {
     active_count: number;
     founding_count: number;
     price_sar: number | null;
-    founding_price_sar?: number | null;
     credits: number;
     estimated_monthly: MoneyAmount;
     /** Free tier: the figure is a cost, shown negative. */

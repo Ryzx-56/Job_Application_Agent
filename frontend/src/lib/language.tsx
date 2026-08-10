@@ -175,12 +175,17 @@ export const content = {
         {
           name: "Free",
           slug: "free",
-          // Locked SAR pricing, pricing reference v2 §2. SAR is the amount
-          // actually charged; the dollar line shown under it is a reference
-          // only, derived at the 3.75 peg in src/lib/pricing.ts rather than
-          // stored a second time where it could drift.
+          // SAR is the amount actually charged; the dollar line shown under it
+          // is a reference only, derived at the 3.75 peg in src/lib/pricing.ts
+          // rather than stored a second time where it could drift.
+          //
+          // THERE IS NO ANCHOR PRICE FIELD ON ANY PLAN, deliberately. Every
+          // listed price is the only price that plan has ever had, so there is
+          // nothing to strike through. Do not reintroduce an `originalSar` or
+          // a `discountLabel`: a struck-through price the product never
+          // charged is a fabricated reference price, which is exactly what
+          // consumer-protection rules on "was/now" pricing exist to stop.
           sar: 0,
-          originalSar: null as number | null,
           period: "/ month",
           description: "Everything you need to try Tarshih on your next application.",
           features: [
@@ -191,8 +196,6 @@ export const content = {
           ],
           cta: "Get started free",
           badge: null as string | null,
-          offerBanner: null as string | null,
-          discountLabel: null as string | null,
           limitedOffer: null as string | null,
           featured: false,
           premium: false,
@@ -200,45 +203,49 @@ export const content = {
         {
           name: "Pro",
           slug: "pro",
-          // 41 SAR is the founding-member price for the first 50 payers,
-          // 49 SAR is list. Reference v2 §2 and §2a.
-          sar: 41,
-          originalSar: 49 as number | null,
+          // ONE PRICE FOR EVERY PRO SUBSCRIBER, founding or not. There is no
+          // founding discount and no prior price: 29 SAR has never been
+          // anything else, so nothing here may present it as reduced. See
+          // the note on `originalSar` in the Free plan above.
+          sar: 29,
           period: "/ month",
           description: "For active job seekers who want serious volume, every time.",
           features: [
-            "40 credits / month: 40 English CVs, or mix in Arabic",
+            "24 credits / month: 24 English CVs, or mix in Arabic",
             "Tailored CV + personalized cover letter",
             "Full ATS & job match scoring",
             "Shows exactly what you're missing",
             "5 similar jobs, ranked, per application",
             "Fact-check pass on every generation",
+            "LinkedIn Essential, 2 profiles / month",
+            "Interview Prep, 5 jobs / month",
             "Pro badge on your profile",
             "Resume history, last 100 kept",
             "Priority processing",
           ],
           cta: "Start Pro",
           badge: "Most Popular",
-          offerBanner: "Founding offer: 16% off, locked forever",
-          discountLabel: "16% OFF",
-          limitedOffer: "This price is locked in for as long as you stay subscribed. The first 50 people to pay, on any plan, also keep a permanent Founding Member badge on their profile.",
+          // The founding offer is a BADGE and a scarcity claim. It is not a
+          // discount, so it carries no banner price and no percentage.
+          limitedOffer: "The first 50 people to subscribe to Pro keep a permanent Founding Member badge on their profile. The badge is yours for good, and the price is the same 29 SAR either way.",
           featured: true,
           premium: false,
         },
         {
           name: "Elite",
           slug: "elite",
-          sar: 129,
-          originalSar: null as number | null,
+          sar: 99,
           period: "/ month",
           description: "The premium tier for candidates who want every advantage.",
           features: [
-            "120 credits / month: 120 English CVs, or mix in Arabic",
+            "80 credits / month: 80 English CVs, or mix in Arabic",
             "Tailored CV + personalized cover letter",
             "Full ATS & job match scoring",
             "Shows exactly what you're missing",
             "5 similar jobs, ranked, per application",
             "Fact-check pass on every generation",
+            "LinkedIn Essential, 5 profiles / month",
+            "Interview Prep, 15 jobs / month",
             "Unlimited resume history",
             "Highest AI processing priority",
             "Exclusive Elite badge on your profile",
@@ -246,8 +253,6 @@ export const content = {
           ],
           cta: "Go Elite",
           badge: null as string | null,
-          offerBanner: null as string | null,
-          discountLabel: null as string | null,
           limitedOffer: null as string | null,
           featured: false,
           premium: true,
@@ -261,9 +266,9 @@ export const content = {
       perApp: "per credit",
       cta: "Buy pack",
       packs: [
-        { name: "Starter", slug: "starter", sar: 19, creditCount: 5, credits: "5 credits", blurb: "A couple of applications to test the waters.", badge: null as string | null, featured: false },
-        { name: "Best Value", slug: "best-value", sar: 45, creditCount: 15, credits: "15 credits", blurb: "The sweet spot for an active search.", badge: "Best Value", featured: true },
-        { name: "Power", slug: "power", sar: 75, creditCount: 30, credits: "30 credits", blurb: "For a serious, high volume job hunt.", badge: "Max Savings", featured: false },
+        { name: "Starter", slug: "starter", sar: 9, creditCount: 5, credits: "5 credits", blurb: "A couple of applications to test the waters.", badge: null as string | null, featured: false },
+        { name: "Best Value", slug: "best-value", sar: 22, creditCount: 15, credits: "15 credits", blurb: "The sweet spot for an active search.", badge: "Best Value", featured: true },
+        { name: "Power", slug: "power", sar: 38, creditCount: 30, credits: "30 credits", blurb: "For a serious, high volume job hunt.", badge: "Max Savings", featured: false },
       ],
     },
     /* ── LinkedIn add-on, featured section on the landing page ──
@@ -297,9 +302,13 @@ export const content = {
       ],
       alwaysEnglish:
         "Always written in English, whatever language your CV is in, because that is how recruiters across Saudi Arabia and the region search.",
+      // ESSENTIAL IS NOT SOLD SEPARATELY. It comes with a Pro or Elite
+      // subscription, so this card carries no price and its CTA goes to the
+      // plans rather than to a checkout. `sar` is deliberately absent: a
+      // number here would get rendered as a price by the shared card layout.
       essential: {
         name: "Essential",
-        sar: 49,
+        includedLabel: "Included with Pro & Elite",
         badge: "Self-directed",
         tagline: "Written for you, placed by you",
         bullets: [
@@ -307,8 +316,9 @@ export const content = {
           "A paste-ready block for every role in your experience",
           "Three post ideas from your real projects",
           "A copy button on every field",
+          "2 profiles a month on Pro, 5 on Elite",
         ],
-        cta: "Get Essential",
+        cta: "See plans",
       },
       premium: {
         name: "Premium",
@@ -614,6 +624,9 @@ export const content = {
       sidebar: {
         dashboard: "Dashboard",
         myResumes: "My Resumes",
+        // Directly under My Resumes: it's the next thing you do with a CV
+        // you've already made, and it reads as part of that flow.
+        interview: "Interview Prep",
         // Sits between My Resumes and Settings — the LinkedIn add-on is
         // something you do AFTER making a CV, so it reads in that order.
         linkedin: "LinkedIn",
@@ -704,6 +717,123 @@ export const content = {
         factCheckPassed: "Fact-check passed",
         factCheckFlagged: "Fact-check flagged issues",
       },
+
+      /* ── INTERVIEW PREP (/dashboard/interview) ────────────────────────
+         Pro and Elite only. Free users get this page rendered and blurred
+         behind an upgrade panel rather than a redirect, so they can see
+         what they'd be buying.
+
+         The QUESTIONS themselves are generated in the CV's language, not
+         the site's — an Arabic CV means an Arabic interview. Everything
+         below is interface copy and follows the site toggle as usual. */
+      interview: {
+        eyebrow: "Pro and Elite",
+        title: "Interview Prep",
+        sub: "Pick a CV you've already tailored here and get the questions that job is likely to open with, each one answered from your own experience.",
+
+        locked: {
+          title: "Upgrade to Pro or Elite to unlock Interview Prep",
+          body: "Interview Prep turns a CV you've already tailored into the questions that role will actually ask, with an answer for each one built from your real projects and experience. It's included on both paid plans.",
+          cta: "See plans",
+          badge: "Locked",
+        },
+
+        picker: {
+          title: "Choose a CV to get started",
+          sub: "We prepare from the job description this CV was tailored against, so the questions are for that specific role.",
+          eligibleTag: "Ready",
+          selectCta: "Prepare questions",
+          loading: "Loading your CVs…",
+          emptyTitle: "No CVs yet",
+          emptyBody: "Tailor a CV against a job description first, and it'll show up here ready to prepare from.",
+          emptyCta: "Tailor a CV",
+          noneEligibleTitle: "None of your CVs can be used yet",
+          noneEligibleBody:
+            "Interview Prep needs a CV that was tailored against a full job description. Generate a new one and it'll appear here.",
+          // Why a specific card is disabled. Both are permanent for that CV,
+          // so the card is greyed out rather than allowed to fail on click.
+          reasons: {
+            no_jd: "No job description saved with this CV",
+            no_snapshot: "Saved before we stored the data this needs",
+          },
+          hiddenCount: (n: number) =>
+            n === 1
+              ? "1 CV can't be used for this, shown greyed out below."
+              : `${n} CVs can't be used for this, shown greyed out below.`,
+        },
+
+        generating: {
+          title: "Preparing your questions",
+          // Honest about the wait: a measured run is two to four minutes,
+          // because it's one pass over the whole posting and the whole CV.
+          body: "Reading the job description against your CV and writing an answer for each question. This takes a few minutes, so keep this page open.",
+          // THESE ARE THE PHASES THE BACKEND ACTUALLY REPORTS, keyed by the
+          // step names it emits (see on_step in agents/interview_prep.py).
+          // They are not a padded list on a timer: each one lights up when
+          // the server says it has genuinely started. "localize" only ever
+          // fires on an Arabic CV, so it is absent from an English run.
+          steps: {
+            prepare: "Re-reading this job against your CV",
+            generate: "Writing your questions and answers",
+            localize: "Putting it all into Arabic",
+          },
+        },
+
+        results: {
+          backToCvs: "Choose another CV",
+          regenerate: "Generate again",
+          // The "progress feel" line at the top of the results.
+          prepared: (n: number) => `${n} questions prepared`,
+          forRole: "For",
+          atCompany: "at",
+          overviewLabel: "What this interview turns on",
+          // Written in the CV's language, which may differ from the site's.
+          languageNote: {
+            ar: "These questions are in Arabic, matching the CV you picked.",
+            en: "These questions are in English, matching the CV you picked.",
+          },
+          filterAll: "All",
+          countLabel: (n: number) => `${n}`,
+          emptyFilter: "No questions in this category.",
+          expandAll: "Expand all",
+          collapseAll: "Collapse all",
+          // Inside a card.
+          whyAsked: "Why they'd ask this",
+          fromPosting: "From the posting",
+          answerAngle: "How to approach it",
+          starLabel: "Your answer, from your CV",
+          star: {
+            situation: "Situation",
+            task: "Task",
+            action: "Action",
+            result: "Result",
+          },
+          evidenceLabel: "Built from",
+          gapHonesty: "The honest way to answer this",
+          gapHonestyNote:
+            "This is a real gap in your CV for this role. Say so plainly and point at the closest thing you have actually done. Never claim the requirement is met.",
+          starEmpty:
+            "Your CV doesn't have a matching example for this one, so there's nothing to build a STAR answer from. Use the approach above.",
+        },
+
+        categories: {
+          behavioral: "Behavioral",
+          technical: "Technical",
+          role_specific: "Role-specific",
+          gap: "Gap",
+        },
+
+        errors: {
+          load: "We couldn't load your CVs. Please try again.",
+          upgradeRequired: "Interview Prep is available on the Pro and Elite plans.",
+          no_jd: "This CV has no job description saved with it, so there's nothing to prepare against.",
+          no_snapshot:
+            "This CV was saved before we started storing the data this needs. Generate a newer CV and prepare from that one.",
+          generationFailed:
+            "Something went wrong preparing your questions. Nothing was charged, so please try again.",
+          retry: "Try again",
+        },
+      },
       settings: {
         title: "Settings",
         sub: "Manage your account and preferences.",
@@ -785,6 +915,34 @@ export const content = {
             "Premium is refundable in full at any time before your specialist begins work. Once the build has started the fee is no longer refundable, as the content has been delivered and the service is already under way.",
           contact: "For anything at all, write to support@tarshih.com.",
           policyLink: "Read the full refund policy",
+        },
+
+        /* ESSENTIAL, AS AN ENTITLEMENT RATHER THAN A PRODUCT. It comes with
+           Pro and Elite and is capped monthly, so this block has no price
+           and no buy copy: it states what the subscription includes and how
+           much of this month is left. */
+        included: {
+          name: "Essential",
+          subtitle: "Written for you. Placed by you.",
+          includedLabel: "Included",
+          includedWith: "Included with Pro & Elite",
+          bestFor:
+            "Turn any CV you have tailored here into a complete, paste-ready LinkedIn profile. No extra charge, it is part of your plan.",
+          features: [
+            "A headline, an About section, and your five strongest skills",
+            "A ready to paste block for every role in your experience",
+            "Three post ideas drawn from your real projects",
+            "Five skills to tag on each of your projects",
+            "A copy button on every field",
+          ],
+          cta: "Generate a LinkedIn profile",
+          remaining: (left: number, total: number) => `${left} of ${total} left this month`,
+          usedUp: (total: number) =>
+            `You have used all ${total} of this month's LinkedIn profiles. Your allowance resets with your credits.`,
+          lockedTitle: "Included with Pro and Elite",
+          lockedBody:
+            "Subscribe to generate LinkedIn profiles from your CVs: 2 a month on Pro, 5 a month on Elite.",
+          lockedCta: "See plans",
         },
 
         tiers: {
@@ -1173,8 +1331,9 @@ export const content = {
         {
           name: "مجاني",
           slug: "free",
+          // لا يوجد حقل «سعر سابق» في أي خطة، وهذا مقصود: كل سعر معروض هو
+          // السعر الوحيد الذي حملته الخطة، فلا شيء يُشطب فوقه.
           sar: 0,
-          originalSar: null as number | null,
           period: "شهريًا",
           description: "كل ما تحتاجه لتجربة ترشيح في طلبك القادم.",
           features: [
@@ -1185,8 +1344,6 @@ export const content = {
           ],
           cta: "ابدأ مجانًا",
           badge: null as string | null,
-          offerBanner: null as string | null,
-          discountLabel: null as string | null,
           limitedOffer: null as string | null,
           featured: false,
           premium: false,
@@ -1194,43 +1351,46 @@ export const content = {
         {
           name: "برو",
           slug: "pro",
-          sar: 41,
-          originalSar: 49 as number | null,
+          // سعر واحد لكل مشتركي برو، مؤسسين أو غير مؤسسين. لا خصم تأسيس ولا
+          // سعر سابق: 29 ريالًا لم يكن يومًا رقمًا آخر.
+          sar: 29,
           period: "شهريًا",
           description: "لمن يبحث عن عمل بنشاط ويريد كمية أكبر من الطلبات، في كل مرة.",
           features: [
-            "40 نقطة شهريًا: 40 سيرة ذاتية إنجليزية، أو مزيج مع العربية",
+            "24 نقطة شهريًا: 24 سيرة ذاتية إنجليزية، أو مزيج مع العربية",
             "سيرة ذاتية مخصصة + خطاب تقديم شخصي",
             "نتيجة ATS وتوافق وظيفي كاملة",
             "يوضح بالضبط ما ينقصك",
             "5 وظائف مشابهة ومصنّفة مع كل طلب",
             "مراجعة تحقق من الحقائق",
+            "لينكدإن الأساسية، ملفان شهريًا",
+            "التحضير للمقابلة، 5 وظائف شهريًا",
             "شارة برو على ملفك الشخصي",
             "سجل يحفظ آخر 100 سيرة ذاتية",
             "معالجة ذات أولوية",
           ],
           cta: "ابدأ مع برو",
           badge: "الأكثر رواجًا",
-          offerBanner: "عرض التأسيس: خصم 16% ثابت إلى الأبد",
-          discountLabel: "خصم 16%",
-          limitedOffer: "سعر ثابت طوال فترة اشتراكك. وأول 50 شخصًا يدفعون، في أي خطة، يحصلون أيضًا على شارة عضو مؤسس دائمة على ملفهم الشخصي.",
+          // عرض التأسيس شارة وندرة، وليس خصمًا.
+          limitedOffer: "أول 50 مشتركًا في برو يحتفظون بشارة «عضو مؤسس» دائمة على ملفهم الشخصي. الشارة لك إلى الأبد، والسعر 29 ريالًا في الحالتين.",
           featured: true,
           premium: false,
         },
         {
           name: "النخبة",
           slug: "elite",
-          sar: 129,
-          originalSar: null as number | null,
+          sar: 99,
           period: "شهريًا",
           description: "الفئة المميزة لمن يريد كل ميزة ممكنة في طلباته.",
           features: [
-            "120 نقطة شهريًا: 120 سيرة ذاتية إنجليزية، أو مزيج مع العربية",
+            "80 نقطة شهريًا: 80 سيرة ذاتية إنجليزية، أو مزيج مع العربية",
             "سيرة ذاتية مخصصة + خطاب تقديم شخصي",
             "نتيجة ATS وتوافق وظيفي كاملة",
             "يوضح بالضبط ما ينقصك",
             "5 وظائف مشابهة ومصنّفة مع كل طلب",
             "مراجعة تحقق من الحقائق",
+            "لينكدإن الأساسية، 5 ملفات شهريًا",
+            "التحضير للمقابلة، 15 وظيفة شهريًا",
             "سجل غير محدود للسير الذاتية",
             "أعلى أولوية في معالجة الذكاء الاصطناعي",
             "شارة النخبة الحصرية على ملفك الشخصي",
@@ -1238,8 +1398,6 @@ export const content = {
           ],
           cta: "انضم إلى النخبة",
           badge: null as string | null,
-          offerBanner: null as string | null,
-          discountLabel: null as string | null,
           limitedOffer: null as string | null,
           featured: false,
           premium: true,
@@ -1256,7 +1414,7 @@ export const content = {
         {
           name: "البداية",
           slug: "starter",
-          sar: 19,
+          sar: 9,
           creditCount: 5,
           credits: "5 نقاط",
           blurb: "بضعة طلبات لتجربة الخدمة.",
@@ -1266,7 +1424,7 @@ export const content = {
         {
           name: "أفضل قيمة",
           slug: "best-value",
-          sar: 45,
+          sar: 22,
           creditCount: 15,
           credits: "15 نقطة",
           blurb: "الخيار الأمثل لبحث نشط عن عمل.",
@@ -1276,7 +1434,7 @@ export const content = {
         {
           name: "الأقوى",
           slug: "power",
-          sar: 75,
+          sar: 38,
           creditCount: 30,
           credits: "30 نقطة",
           blurb: "لبحث جاد وعالي الكثافة عن وظيفة.",
@@ -1314,9 +1472,11 @@ export const content = {
       ],
       alwaysEnglish:
         "يُكتب بالإنجليزية دائمًا أيًا كانت لغة سيرتك الذاتية، لأن هذه هي طريقة بحث جهات التوظيف في السعودية والمنطقة.",
+      // الأساسية لا تُباع منفصلة، بل تأتي مع اشتراك برو أو النخبة، فلا سعر
+      // على هذه البطاقة وزرها يقود إلى صفحة الخطط لا إلى الدفع.
       essential: {
         name: "الأساسية",
-        sar: 49,
+        includedLabel: "مشمولة مع برو والنخبة",
         badge: "تنفيذ ذاتي",
         tagline: "نكتبه لك وتضعه أنت",
         bullets: [
@@ -1324,8 +1484,9 @@ export const content = {
           "نص جاهز للّصق لكل وظيفة في خبراتك",
           "ثلاث أفكار منشورات من مشاريعك الحقيقية",
           "زر نسخ عند كل حقل",
+          "ملفان شهريًا في برو، و5 في النخبة",
         ],
-        cta: "احصل على الأساسية",
+        cta: "عرض الخطط",
       },
       premium: {
         name: "المميزة",
@@ -1619,6 +1780,7 @@ export const content = {
       sidebar: {
         dashboard: "لوحة التحكم",
         myResumes: "سيري الذاتية",
+        interview: "التحضير للمقابلة",
         linkedin: "لينكدإن",
         settings: "الإعدادات",
         admin: "الإدارة",
@@ -1703,6 +1865,109 @@ export const content = {
         factCheckPassed: "اجتاز التحقق من الحقائق",
         factCheckFlagged: "تم رصد ملاحظات في التحقق من الحقائق",
       },
+
+      /* ── التحضير للمقابلة (/dashboard/interview) ───────────────────────
+         للباقتين المدفوعتين فقط. مستخدم الخطة المجانية يرى الصفحة مموّهة
+         خلف لوحة ترقية بدل تحويله إلى صفحة أخرى.
+
+         الأسئلة نفسها تُولَّد بلغة السيرة الذاتية لا بلغة الموقع: السيرة
+         العربية تعني مقابلة عربية. أما نصوص الواجهة هنا فتتبع لغة الموقع. */
+      interview: {
+        eyebrow: "المميزة والنخبة",
+        title: "التحضير للمقابلة",
+        sub: "اختر سيرة ذاتية سبق أن خصّصتها هنا، واحصل على الأسئلة التي ستبدأ بها تلك الوظيفة غالبًا، مع إجابة لكل سؤال مبنية على خبرتك أنت.",
+
+        locked: {
+          title: "رقِّ اشتراكك إلى المميزة أو النخبة لفتح التحضير للمقابلة",
+          body: "يحوّل «التحضير للمقابلة» سيرة ذاتية خصّصتها بالفعل إلى الأسئلة التي ستطرحها تلك الوظيفة فعليًا، مع إجابة لكل سؤال مبنية على مشاريعك وخبراتك الحقيقية. وهو مشمول في الباقتين المدفوعتين.",
+          cta: "عرض الخطط",
+          badge: "مقفل",
+        },
+
+        picker: {
+          title: "اختر سيرة ذاتية للبدء",
+          sub: "نحضّر انطلاقًا من الوصف الوظيفي الذي خُصصت له هذه السيرة، فتكون الأسئلة لتلك الوظيفة تحديدًا.",
+          eligibleTag: "جاهزة",
+          selectCta: "تحضير الأسئلة",
+          loading: "جارٍ تحميل سيرك الذاتية…",
+          emptyTitle: "لا توجد سير ذاتية بعد",
+          emptyBody: "خصّص سيرة ذاتية لوصف وظيفي أولًا، وستظهر هنا جاهزة للتحضير منها.",
+          emptyCta: "تخصيص سيرة ذاتية",
+          noneEligibleTitle: "لا يمكن استخدام أي من سيرك الذاتية بعد",
+          noneEligibleBody:
+            "يحتاج «التحضير للمقابلة» إلى سيرة ذاتية خُصصت لوصف وظيفي كامل. أنشئ واحدة جديدة وستظهر هنا.",
+          reasons: {
+            no_jd: "لا يوجد وصف وظيفي محفوظ مع هذه السيرة",
+            no_snapshot: "حُفظت قبل تخزين البيانات التي يحتاجها هذا القسم",
+          },
+          hiddenCount: (n: number) =>
+            n === 1
+              ? "سيرة ذاتية واحدة لا يمكن استخدامها هنا، وتظهر بالأسفل بلون باهت."
+              : `${n} سير ذاتية لا يمكن استخدامها هنا، وتظهر بالأسفل بلون باهت.`,
+        },
+
+        generating: {
+          title: "جارٍ تحضير أسئلتك",
+          body: "نقرأ الوصف الوظيفي مقابل سيرتك الذاتية ونكتب إجابة لكل سؤال. يستغرق ذلك بضع دقائق، فأبقِ هذه الصفحة مفتوحة.",
+          steps: {
+            prepare: "إعادة قراءة هذه الوظيفة مقابل سيرتك الذاتية",
+            generate: "كتابة أسئلتك وإجاباتها",
+            localize: "تحويل كل شيء إلى العربية",
+          },
+        },
+
+        results: {
+          backToCvs: "اختيار سيرة أخرى",
+          regenerate: "إعادة التوليد",
+          prepared: (n: number) => `${n} سؤالًا جاهزًا`,
+          forRole: "لوظيفة",
+          atCompany: "في",
+          overviewLabel: "ما تتوقف عليه هذه المقابلة",
+          languageNote: {
+            ar: "هذه الأسئلة بالعربية، مطابقةً للسيرة الذاتية التي اخترتها.",
+            en: "هذه الأسئلة بالإنجليزية، مطابقةً للسيرة الذاتية التي اخترتها.",
+          },
+          filterAll: "الكل",
+          countLabel: (n: number) => `${n}`,
+          emptyFilter: "لا توجد أسئلة في هذه الفئة.",
+          expandAll: "توسيع الكل",
+          collapseAll: "طي الكل",
+          whyAsked: "لماذا قد يسألون هذا",
+          fromPosting: "من الإعلان الوظيفي",
+          answerAngle: "كيف تتعامل معه",
+          starLabel: "إجابتك، من سيرتك الذاتية",
+          star: {
+            situation: "الموقف",
+            task: "المهمة",
+            action: "الإجراء",
+            result: "النتيجة",
+          },
+          evidenceLabel: "مبنية على",
+          gapHonesty: "الطريقة الصادقة للإجابة",
+          gapHonestyNote:
+            "هذه ثغرة حقيقية في سيرتك الذاتية بالنسبة لهذه الوظيفة. قلها بوضوح، ثم أشر إلى أقرب شيء فعلته حقًا. ولا تدّعِ أبدًا أنك تستوفي المتطلب.",
+          starEmpty:
+            "لا تتضمن سيرتك الذاتية مثالًا مطابقًا لهذا السؤال، فلا يوجد ما نبني منه إجابة STAR. استخدم المنهج المذكور بالأعلى.",
+        },
+
+        categories: {
+          behavioral: "سلوكي",
+          technical: "تقني",
+          role_specific: "خاص بالوظيفة",
+          gap: "ثغرة",
+        },
+
+        errors: {
+          load: "تعذّر تحميل سيرك الذاتية. حاول مرة أخرى.",
+          upgradeRequired: "«التحضير للمقابلة» متاح في باقتي المميزة والنخبة.",
+          no_jd: "لا يوجد وصف وظيفي محفوظ مع هذه السيرة الذاتية، فلا يوجد ما نحضّر مقابله.",
+          no_snapshot:
+            "حُفظت هذه السيرة قبل أن نبدأ بتخزين البيانات التي يحتاجها هذا القسم. أنشئ سيرة أحدث وحضّر منها.",
+          generationFailed: "حدث خطأ أثناء تحضير أسئلتك. لم يُخصم منك شيء، فحاول مرة أخرى.",
+          retry: "حاول مرة أخرى",
+        },
+      },
+
       settings: {
         title: "الإعدادات",
         sub: "إدارة حسابك وتفضيلاتك.",
@@ -1774,6 +2039,31 @@ export const content = {
             "الباقة المميزة قابلة للاسترداد كاملًا في أي وقت قبل أن يبدأ المتخصص عمله. وبعد بدء التنفيذ لا تعود الرسوم قابلة للاسترداد، لأن المحتوى قد سُلِّم والخدمة جارية بالفعل.",
           contact: "لأي استفسار، راسلنا على support@tarshih.com.",
           policyLink: "اقرأ سياسة الاسترداد كاملة",
+        },
+
+        /* الأساسية بوصفها ميزة مشمولة لا منتجًا يُباع: بلا سعر وبلا زر شراء،
+           مع بيان ما تبقّى من رصيد هذا الشهر. */
+        included: {
+          name: "الأساسية",
+          subtitle: "نكتبه لك، وتضعه أنت.",
+          includedLabel: "مشمولة",
+          includedWith: "مشمولة مع برو والنخبة",
+          bestFor:
+            "حوّل أي سيرة ذاتية خصّصتها هنا إلى ملف لينكدإن كامل جاهز للّصق. بلا رسوم إضافية، فهي جزء من خطتك.",
+          features: [
+            "عنوان مهني، وقسم «نبذة»، وأقوى خمس مهارات لديك",
+            "نص جاهز للّصق لكل وظيفة في خبراتك",
+            "ثلاث أفكار منشورات من مشاريعك الحقيقية",
+            "خمس مهارات تُضاف إلى كل مشروع من مشاريعك",
+            "زر نسخ عند كل حقل",
+          ],
+          cta: "توليد ملف لينكدإن",
+          remaining: (left: number, total: number) => `بقي ${left} من ${total} هذا الشهر`,
+          usedUp: (total: number) =>
+            `استخدمت كل ملفات لينكدإن المتاحة هذا الشهر (${total}). ويتجدد رصيدك مع تجدد نقاطك.`,
+          lockedTitle: "مشمولة مع برو والنخبة",
+          lockedBody: "اشترك لتوليد ملفات لينكدإن من سيرك الذاتية: ملفان شهريًا في برو، و5 في النخبة.",
+          lockedCta: "عرض الخطط",
         },
 
         tiers: {

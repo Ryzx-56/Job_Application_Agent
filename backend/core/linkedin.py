@@ -33,6 +33,12 @@ from agents.linkedin_generator import (
 )
 from core.auth import get_current_admin_user_id, get_current_user_id, read_admin_flag
 from core.credits import get_admin_client
+from core.entitlements import (
+    LINKEDIN_ESSENTIAL,
+    consume_addon_quota,
+    get_addon_quota,
+    release_addon_quota,
+)
 from core.linkedin_notify import lookup_buyers, send_premium_order_alert
 from core.payment_gateway import (
     FAILED,
@@ -60,10 +66,18 @@ router = APIRouter()
 # premium (200 SAR): priced for a human's time building the profile, not for
 # compute. Being manual, the price also caps volume to what one person can
 # actually deliver.
+# ESSENTIAL IS NOT IN HERE ANY MORE, and that is the point: this dict is the
+# list of things that can be bought, and Essential can't be. It comes with a
+# Pro or Elite subscription, capped monthly (see core/entitlements.py), so it
+# has no price, no checkout and no purchase row. Premium is unchanged.
 PRICING = {
-    "normal": {"price": 49.00, "currency": "SAR"},
     "premium": {"price": 200.00, "currency": "SAR"},
 }
+
+# The tier value Essential generations still carry in the database. Existing
+# rows use it and the history view reads it, so the string stays even though
+# nothing can be sold under it.
+ESSENTIAL_TIER = "normal"
 
 # Where a hosted gateway sends the buyer back to after paying. The page they
 # land on shows their purchase and the Generate button, but landing there is
@@ -480,6 +494,10 @@ def linkedin_overview(user_id: str = Depends(get_current_user_id)) -> dict:
 
     return {
         "pricing": PRICING,
+        # This month's included Essential allowance (2 on Pro, 5 on Elite).
+        # Sent even to Free users, who get limit 0 and unlocked false, so the
+        # page has one shape to render rather than a special case.
+        "essential_quota": get_addon_quota(user_id, LINKEDIN_ESSENTIAL),
         "gateway": gateway_status(),
         "has_purchased": any(p["payment_status"] == PAID for p in purchases),
         "purchases": purchases,
@@ -502,6 +520,21 @@ def linkedin_checkout(
     this response and not by any client-side "success" redirect (§5).
     """
     tier = payload.tier
+    if tier not in PRICING:
+        # Defence in depth: the request schema already only accepts
+        # "premium", so reaching here means someone hand-rolled the call.
+        # Answered with the reason rather than a validation error, because
+        # the honest answer is "this isn't for sale, it's included".
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={
+                "code": "not_purchasable",
+                "message": (
+                    "LinkedIn Essential is included with Pro and Elite and can't be bought "
+                    "separately. Subscribe to generate it."
+                ),
+            },
+        )
     price = PRICING[tier]
 
     # The CV has to be the caller's, and has to be one we can actually
@@ -684,19 +717,94 @@ async def linkedin_payment_webhook(request: Request) -> dict:
 # ─── ROUTES: GENERATING ─────────────────────────────────────────────────────
 
 
+def _require_english_name(user_id: str) -> dict:
+    """
+    The generated profile carries the person's name, and a name is never
+    machine-transliterated here, same rule the CV pipeline enforces (see
+    apply_candidate_names in main.py). LinkedIn output is English, so the
+    English spelling is the one we need, and we ask rather than invent it.
+    """
+    names = get_profile_names(user_id)
+    has_name, field = required_name_for("en", names)
+    if not has_name:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "code": "missing_profile_name",
+                "field": field,
+                "message": "Add your name in English before generating your LinkedIn profile.",
+            },
+        )
+    return names
+
+
+def _run_and_store(generation_id: str, resume: dict, facts_json: dict, names: dict, on_failure=None) -> dict:
+    """
+    Runs the generator against an already-created 'generating' row, stores
+    the result, and marks the row failed on any error.
+
+    Shared by both entry paths below so the premium and the subscription
+    routes cannot drift in how a failure is recorded. `on_failure` is the
+    extra rollback the subscription path needs (returning its monthly slot);
+    the premium path passes nothing, because a failed generation already
+    leaves its purchase unspent.
+    """
+    try:
+        content = run_linkedin_generator(
+            facts_json=facts_json,
+            name_en=names.get("name_en") or "",
+            source_cv_language=resume.get("cv_language") or "en",
+        )
+    except LinkedInGenerationError as e:
+        _record_generation_failure(generation_id)
+        if on_failure:
+            on_failure()
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail={"code": "generation_failed", "message": str(e)})
+    except Exception as e:
+        logger.error(f"LinkedIn generation crashed for generation {generation_id}: {e}")
+        _record_generation_failure(generation_id)
+        if on_failure:
+            on_failure()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail={
+                "code": "generation_failed",
+                "message": "Something went wrong generating your profile. Nothing was used up, please try again.",
+            },
+        )
+
+    get_admin_client().table("linkedin_generations").update({
+        "status": "ready",
+        "generated_content": content,
+        "updated_at": _iso(_now()),
+    }).eq("id", generation_id).execute()
+
+    return content
+
+
 @router.post("/api/v1/linkedin/generate", tags=["LinkedIn"])
 def linkedin_generate(
     payload: LinkedInGenerateRequest,
     user_id: str = Depends(get_current_user_id),
 ) -> dict:
     """
-    Runs the generator for a paid purchase and stores the result.
+    Generates a LinkedIn profile, by whichever of the two routes applies.
+
+    TWO ROUTES, ONE ENDPOINT:
+      - purchase_id given: a paid PREMIUM purchase, unchanged behaviour, one
+        generation per purchase and enforced in the database.
+      - purchase_id absent: ESSENTIAL, included with Pro and Elite and
+        metered monthly (pricing reference v6 section 4). No purchase exists,
+        so the entitlement and the cap are the whole gate.
 
     Deliberately a plain `def`, not `async def`: the Claude call blocks for
     tens of seconds, and FastAPI runs sync endpoints in a threadpool, so this
     can't stall the event loop for everyone else the way an un-awaited
     blocking call inside an async endpoint would.
     """
+    if not (payload.purchase_id or "").strip():
+        return _generate_included(payload, user_id)
+
     purchase = _fetch_purchase(payload.purchase_id, user_id)
 
     if purchase.get("payment_status") != PAID:
@@ -739,21 +847,7 @@ def linkedin_generate(
     resume = _fetch_resume(source_cv_id, user_id)
     facts_json = _facts_from_resume(resume)
 
-    # The generated profile carries the person's name, and a name is never
-    # machine-transliterated here, same rule the CV pipeline enforces (see
-    # apply_candidate_names in main.py). LinkedIn output is English, so the
-    # English spelling is the one we need, and we ask rather than invent it.
-    names = get_profile_names(user_id)
-    has_name, field = required_name_for("en", names)
-    if not has_name:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail={
-                "code": "missing_profile_name",
-                "field": field,
-                "message": "Add your name in English before generating your LinkedIn profile.",
-            },
-        )
+    names = _require_english_name(user_id)
 
     admin = get_admin_client()
     existing = _existing_generation(purchase["id"])
@@ -805,31 +899,7 @@ def linkedin_generate(
             )
         generation_id = inserted[0]["id"]
 
-    try:
-        content = run_linkedin_generator(
-            facts_json=facts_json,
-            name_en=names.get("name_en") or "",
-            source_cv_language=resume.get("cv_language") or "en",
-        )
-    except LinkedInGenerationError as e:
-        _record_generation_failure(generation_id)
-        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail={"code": "generation_failed", "message": str(e)})
-    except Exception as e:
-        logger.error(f"❌ LinkedIn generation crashed for purchase {purchase['id']}: {e}")
-        _record_generation_failure(generation_id)
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail={
-                "code": "generation_failed",
-                "message": "Something went wrong generating your profile. Your purchase is still valid, please try again.",
-            },
-        )
-
-    admin.table("linkedin_generations").update({
-        "status": "ready",
-        "generated_content": content,
-        "updated_at": _iso(_now()),
-    }).eq("id", generation_id).execute()
+    content = _run_and_store(generation_id, resume, facts_json, names)
 
     return {
         "generation_id": generation_id,
@@ -837,6 +907,72 @@ def linkedin_generate(
         "tier": purchase["tier"],
         "status": "ready",
         "content": content,
+    }
+
+
+def _generate_included(payload: LinkedInGenerateRequest, user_id: str) -> dict:
+    """
+    ESSENTIAL, the version included with Pro and Elite.
+
+    No purchase exists to check, so the gate is entirely the subscription and
+    the monthly cap: 2 on Pro, 5 on Elite (pricing reference v6 section 4).
+    The slot is claimed BEFORE the model runs and handed back if it fails,
+    mirroring reserve_credits / refund_credits, so a failed generation never
+    costs the subscriber part of their month.
+    """
+    source_cv_id = (payload.source_cv_id or "").strip()
+    if not source_cv_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={"code": "cv_required", "message": "Choose which CV to build your profile from."},
+        )
+
+    resume = _fetch_resume(source_cv_id, user_id)
+    facts_json = _facts_from_resume(resume)
+    names = _require_english_name(user_id)
+
+    # Everything that can refuse the request has now refused it, so the slot
+    # is claimed as late as possible: a user turned away for a missing name
+    # must not lose one of their two profiles for the month.
+    consume_addon_quota(user_id, LINKEDIN_ESSENTIAL)
+
+    inserted = (
+        get_admin_client()
+        .table("linkedin_generations")
+        .insert({
+            # No purchase: 009_addon_quotas.sql drops the NOT NULL for exactly
+            # this row. Premium rows still carry theirs.
+            "purchase_id": None,
+            "user_id": user_id,
+            "status": "generating",
+        })
+        .execute()
+        .data
+        or []
+    )
+    if not inserted:
+        release_addon_quota(user_id, LINKEDIN_ESSENTIAL)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Couldn't start the generation. Please try again.",
+        )
+    generation_id = inserted[0]["id"]
+
+    content = _run_and_store(
+        generation_id,
+        resume,
+        facts_json,
+        names,
+        on_failure=lambda: release_addon_quota(user_id, LINKEDIN_ESSENTIAL),
+    )
+
+    return {
+        "generation_id": generation_id,
+        "purchase_id": None,
+        "tier": ESSENTIAL_TIER,
+        "status": "ready",
+        "content": content,
+        "quota": get_addon_quota(user_id, LINKEDIN_ESSENTIAL),
     }
 
 

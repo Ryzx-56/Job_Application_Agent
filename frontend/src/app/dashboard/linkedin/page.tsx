@@ -24,7 +24,7 @@ import {
   generateLinkedInProfile,
   LinkedInGeneration,
   LinkedInOverview,
-  LinkedInTier,
+  LinkedInPurchasableTier,
 } from "@/lib/supabase/linkedin";
 import {
   formatSar,
@@ -32,6 +32,7 @@ import {
   liPrimaryButton,
   usdApprox,
   LinkedInGlyph,
+  IncludedEssentialPanel,
   LinkedInPageShell,
   LinkedInPanel,
   LockedTeaser,
@@ -58,6 +59,11 @@ import { LinkedInResults } from "@/components/linkedin-results";
 /** How many saved CVs to offer in the picker. Deliberately more than the
  *  "My Resumes" page size, this is a one-screen choice, not a browsing list. */
 const CV_FETCH_LIMIT = 50;
+
+/** Stands in for a purchase id on the included Essential run, which has no
+ *  purchase. Only used to key the busy/name-prompt state that the paid flow
+ *  keys by purchase id, so both actions can share those. */
+const INCLUDED_ESSENTIAL_KEY = "included-essential";
 
 /**
  * A company name worth printing, or null.
@@ -106,10 +112,15 @@ export default function LinkedInPage() {
   // screenshot, which is exactly when someone sends you one.
   const [loadErrorDetail, setLoadErrorDetail] = useState<string | null>(null);
 
-  const [tier, setTier] = useState<LinkedInTier | null>(null);
+  // Only Premium is selectable, because only Premium is for sale. Essential
+  // is generated from the included-allowance panel instead.
+  const [tier, setTier] = useState<LinkedInPurchasableTier | null>(null);
   const [cvId, setCvId] = useState<string | null>(null);
   const [selectorError, setSelectorError] = useState<string | null>(null);
   const [showBuyAgain, setShowBuyAgain] = useState(false);
+  // Opens the CV picker for the INCLUDED Essential run, which is a different
+  // action from picking a tier to buy.
+  const [essentialPicker, setEssentialPicker] = useState(false);
 
   const [openGeneration, setOpenGeneration] = useState<LinkedInGeneration | null>(null);
   const [openingId, setOpeningId] = useState<string | null>(null);
@@ -192,7 +203,10 @@ export default function LinkedInPage() {
   // picker only lives here, so a preselected tier just opens the picker.
   const preselectedTier = params.get("tier");
   useEffect(() => {
-    if (preselectedTier === "normal" || preselectedTier === "premium") {
+    // A ?tier=normal deep link is a stale bookmark from when Essential was
+    // sold; it is ignored rather than opening a checkout that no longer
+    // exists for it.
+    if (preselectedTier === "premium") {
       setTier(preselectedTier);
     }
   }, [preselectedTier]);
@@ -212,9 +226,10 @@ export default function LinkedInPage() {
   const usableResumes = useMemo(() => resumes.filter((r) => Boolean(r.generation_snapshot)), [resumes]);
 
   const pricing = overview?.pricing;
-  const normalPrice = pricing ? formatSar(pricing.normal.price, lang) : "";
+  const essentialQuota = overview?.essential_quota ?? null;
+  // Essential has no price to format: it is included with Pro and Elite.
   const premiumPrice = pricing ? formatSar(pricing.premium.price, lang) : "";
-  const normalUsd = pricing ? usdApprox(pricing.normal.price) : null;
+
   const premiumUsd = pricing ? usdApprox(pricing.premium.price) : null;
 
   /** No CV at all means this feature has nothing to build from. Said once at
@@ -265,7 +280,9 @@ export default function LinkedInPage() {
       await loadOverview();
       setOpenGeneration({
         generation_id: result.generation_id,
-        purchase_id: result.purchase_id,
+        // Always set on this path (it came from a purchase), but the shared
+        // response type allows null for the included route.
+        purchase_id: result.purchase_id ?? "",
         status: "ready",
         created_at: new Date().toISOString(),
         tier: result.tier,
@@ -315,7 +332,48 @@ export default function LinkedInPage() {
     }
   }
 
-  function chooseTier(next: LinkedInTier) {
+  /**
+   * Generates the Essential profile that comes with the subscription.
+   *
+   * Deliberately shares handleGenerate's error handling by calling the same
+   * API function with no purchaseId: the backend decides the route from that
+   * absence, so there is one generation path on the client too.
+   */
+  async function handleGenerateIncluded() {
+    if (!cvId) {
+      setSelectorError(copy.cvSelector.selectFirst);
+      return;
+    }
+    setBusyPurchaseId(INCLUDED_ESSENTIAL_KEY);
+    setActionError(null);
+    try {
+      const result = await generateLinkedInProfile({ sourceCvId: cvId });
+      await loadOverview();
+      setOpenGeneration({
+        generation_id: result.generation_id,
+        purchase_id: result.purchase_id ?? "",
+        status: "ready",
+        created_at: new Date().toISOString(),
+        tier: result.tier,
+        source_cv: null,
+        content: result.content,
+      });
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    } catch (error) {
+      const err = error as ApiError;
+      console.error("generateLinkedInProfile (included) failed:", err);
+      if (err.code === "missing_profile_name") {
+        setNameNeededFor({ purchaseId: INCLUDED_ESSENTIAL_KEY, cvId });
+        return;
+      }
+      setActionError(messageForError(err));
+      await loadOverview().catch(() => undefined);
+    } finally {
+      setBusyPurchaseId(null);
+    }
+  }
+
+  function chooseTier(next: LinkedInPurchasableTier) {
     setTier(next);
     setSelectorError(null);
     // The picker only exists once a tier is chosen, so it needs bringing into
@@ -642,22 +700,21 @@ export default function LinkedInPage() {
               <p className="mt-1 text-sm leading-relaxed text-slate-600">{copy.explainer.body}</p>
             </div>
 
-            <TierPanel
-              variant="essential"
-              name={copy.explainer.normalTitle}
-              subtitle={copy.explainer.normalSubtitle}
-              bestFor={copy.explainer.normalBestFor}
-              price={canBuy ? normalPrice : "n/a"}
-              priceUsdNote={canBuy ? normalUsd : null}
-              oneTimeLabel={copy.tiers.oneTime}
-              includedLabel={copy.tiers.included}
-              features={copy.explainer.normalItems}
-              cta={copy.tiers.normalCta}
-              badge={copy.tiers.normalBadge}
-              selected={tier === "normal"}
-              onSelect={() => chooseTier("normal")}
-              disabled={!canBuy}
-              disabledHint={copy.errors.load}
+            {/* ESSENTIAL IS NOT A PRODUCT ON THIS PAGE ANY MORE. It comes
+                with Pro and Elite and is capped monthly, so it gets an
+                entitlement panel with a usage counter rather than a price
+                and a buy button. */}
+            <IncludedEssentialPanel
+              copy={copy.included}
+              quota={essentialQuota}
+              onGenerate={() => {
+                setEssentialPicker(true);
+                requestAnimationFrame(() => {
+                  document
+                    .getElementById("linkedin-cv-picker")
+                    ?.scrollIntoView({ behavior: "smooth", block: "start" });
+                });
+              }}
             />
 
             <OrDivider label={copy.tiers.or} />
@@ -706,8 +763,9 @@ export default function LinkedInPage() {
 
           <LockedTeaser heading={copy.teaser.heading} body={copy.teaser.body} lockedLabel={copy.teaser.locked} />
 
-          {/* CV picker: only after a tier is chosen, and before checkout. */}
-          {tier && (
+          {/* CV picker, shared by both actions: choosing a CV to buy Premium
+              for, and choosing one for the included Essential run. */}
+          {(tier || essentialPicker) && (
             <div id="linkedin-cv-picker">
               <LinkedInPanel title={copy.cvSelector.title} note={copy.cvSelector.sub}>
                 <CvPicker
@@ -724,12 +782,29 @@ export default function LinkedInPage() {
 
                 {selectorError && <p className="text-xs text-rose-600">{selectorError}</p>}
 
-                {usableResumes.length > 0 && (
-                  <button type="button" onClick={goToCheckout} className={liPrimaryButton}>
-                    {copy.cvSelector.continue}
-                    {dir === "rtl" ? <ArrowLeft className="size-4" aria-hidden /> : <ArrowRight className="size-4" aria-hidden />}
-                  </button>
-                )}
+                {usableResumes.length > 0 &&
+                  (essentialPicker && !tier ? (
+                    <button
+                      type="button"
+                      onClick={handleGenerateIncluded}
+                      disabled={busyPurchaseId === INCLUDED_ESSENTIAL_KEY}
+                      className={liPrimaryButton}
+                    >
+                      {busyPurchaseId === INCLUDED_ESSENTIAL_KEY ? (
+                        <Loader2 className="size-4 animate-spin" aria-hidden />
+                      ) : (
+                        <Sparkles className="size-4" aria-hidden />
+                      )}
+                      {busyPurchaseId === INCLUDED_ESSENTIAL_KEY
+                        ? copy.generateBox.running
+                        : copy.generateBox.cta}
+                    </button>
+                  ) : (
+                    <button type="button" onClick={goToCheckout} className={liPrimaryButton}>
+                      {copy.cvSelector.continue}
+                      {dir === "rtl" ? <ArrowLeft className="size-4" aria-hidden /> : <ArrowRight className="size-4" aria-hidden />}
+                    </button>
+                  ))}
               </LinkedInPanel>
             </div>
           )}

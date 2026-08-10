@@ -22,7 +22,24 @@ import { createClient } from "@/lib/supabase/client";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL;
 
+/** The tier a stored purchase or generation carries. "normal" is Essential,
+ *  which still labels historic rows and every new bundled generation. */
 export type LinkedInTier = "normal" | "premium";
+
+/** What can actually be BOUGHT. Essential is not on this list: it comes with
+ *  Pro and Elite and is metered monthly (pricing reference v6 section 4), so
+ *  there is no checkout for it and the type says so. */
+export type LinkedInPurchasableTier = "premium";
+
+/** How much of this month's bundled allowance is left. */
+export type LinkedInQuota = {
+  tier: string;
+  limit: number;
+  used: number;
+  remaining: number;
+  /** Pro or Elite with a non-zero cap. False on Free. */
+  unlocked: boolean;
+};
 
 export type LinkedInIntro = {
   first_name: string;
@@ -124,7 +141,11 @@ export type LinkedInPurchase = {
 };
 
 export type LinkedInOverview = {
-  pricing: Record<LinkedInTier, { price: number; currency: string }>;
+  /** Premium only. Essential has no price, so it is absent by construction
+   *  rather than present-and-zero. */
+  pricing: Record<LinkedInPurchasableTier, { price: number; currency: string }>;
+  /** This month's included Essential allowance. Absent on an older backend. */
+  essential_quota?: LinkedInQuota;
   /** available=false is the normal state until Moyasar is live: the UI shows
    *  "payment coming soon" rather than a broken buy button. */
   gateway: { available: boolean; provider: string | null; is_mock: boolean };
@@ -211,7 +232,8 @@ export type CheckoutResult = {
 };
 
 export async function startLinkedInCheckout(params: {
-  tier: LinkedInTier;
+  /** Premium only. Essential cannot be checked out. */
+  tier: LinkedInPurchasableTier;
   sourceCvId: string;
   contactPhone?: string;
   contactConsent?: boolean;
@@ -230,13 +252,23 @@ export async function startLinkedInCheckout(params: {
 /** Runs the generator. Slow by nature (one Claude call), so callers should
  *  show progress rather than a spinner with no explanation. */
 export async function generateLinkedInProfile(params: {
-  purchaseId: string;
+  /** Omit for the Essential included with a subscription; supply it for a
+   *  paid Premium purchase. The backend picks the route from its presence. */
+  purchaseId?: string;
   sourceCvId?: string;
-}): Promise<{ generation_id: string; purchase_id: string; tier: LinkedInTier; status: string; content: LinkedInContent }> {
+}): Promise<{
+  generation_id: string;
+  purchase_id: string | null;
+  tier: LinkedInTier;
+  status: string;
+  content: LinkedInContent;
+  /** Present on the included route: what's left after this run. */
+  quota?: LinkedInQuota;
+}> {
   return request("/api/v1/linkedin/generate", {
     method: "POST",
     body: JSON.stringify({
-      purchase_id: params.purchaseId,
+      purchase_id: params.purchaseId ?? null,
       source_cv_id: params.sourceCvId ?? null,
     }),
   });
