@@ -16,6 +16,12 @@ import { CopyButton, CopyChip, CopyField, LinkedInPanel } from "@/components/lin
 
    Every block of text meant for LinkedIn carries its own copy button, and
    copies only that field's plain English text (see CopyField / CopyChip).
+
+   LANGUAGE: everything with a copy button is English, always, because that's
+   what goes onto LinkedIn. The two blocks that are ADVICE rather than content,
+   the growth playbook and why a suggested certification is worth holding, are
+   generated in Arabic too and follow the site's language toggle instead. See
+   Advice below for the fallback when a generation predates those fields.
 ======================================================================== */
 
 type LinkedInCopy = (typeof content)["en"]["dashboard"]["linkedin"];
@@ -38,6 +44,35 @@ function Note({ children }: { children: React.ReactNode }) {
   );
 }
 
+/** A line of guidance that has an Arabic version, rendered in whichever
+ *  language the site is set to.
+ *
+ *  The direction is set from the language of the string actually being shown,
+ *  not from the page: an older generation has no Arabic to fall back on, and
+ *  English prose inside an RTL container puts its full stop at the wrong end
+ *  of the sentence.
+ */
+function Advice({
+  en,
+  ar,
+  lang,
+  className = "text-sm leading-relaxed text-slate-600",
+}: {
+  en: string;
+  ar?: string;
+  lang: "en" | "ar";
+  className?: string;
+}) {
+  const arabic = lang === "ar" && Boolean(ar?.trim());
+  const text = arabic ? ar! : en;
+  if (!text?.trim()) return null;
+  return (
+    <p dir={arabic ? "rtl" : "ltr"} className={`${arabic ? "text-right" : "text-left"} ${className}`}>
+      {text}
+    </p>
+  );
+}
+
 /** A read-only value that isn't for pasting (a URL to click, a suggestion to
  *  read). Still direction-locked to LTR because the text is English. */
 function PlainRow({ label, value }: { label: string; value: string }) {
@@ -51,7 +86,17 @@ function PlainRow({ label, value }: { label: string; value: string }) {
   );
 }
 
-export function LinkedInResults({ data, copy }: { data: LinkedInContent; copy: LinkedInCopy }) {
+export function LinkedInResults({
+  data,
+  copy,
+  lang,
+}: {
+  data: LinkedInContent;
+  copy: LinkedInCopy;
+  /** The site's language, for the advice blocks only. Passed in rather than
+   *  read from context so this stays a pure render of what it's handed. */
+  lang: "en" | "ar";
+}) {
   const c = copy.results;
   const { labels, notes, sections } = c;
   const copyProps = { copyLabel: c.copy, copiedLabel: c.copied };
@@ -285,13 +330,21 @@ export function LinkedInResults({ data, copy }: { data: LinkedInContent; copy: L
         {certs.recommended_certifications.length > 0 && (
           <div className="space-y-2">
             <Note>{notes.recommendedCerts}</Note>
+            {/* The certificate's name and its issuer stay English in both
+                languages: those are the real names to search for and to type
+                into LinkedIn. Only the reason to go after it is translated. */}
             {certs.recommended_certifications.map((cert, index) => (
               <div key={index} className="rounded-xl border border-dashed border-slate-300 bg-white p-3.5">
                 <p dir="ltr" className="text-left text-sm font-semibold text-slate-900">
                   {cert.name}
                 </p>
                 {cert.issuer && <PlainRow label={labels.issuer} value={cert.issuer} />}
-                {cert.why && <p className="mt-1 text-sm leading-relaxed text-slate-600">{cert.why}</p>}
+                <Advice
+                  en={cert.why}
+                  ar={cert.why_ar}
+                  lang={lang}
+                  className="mt-1 text-sm leading-relaxed text-slate-600"
+                />
               </div>
             ))}
           </div>
@@ -317,6 +370,20 @@ export function LinkedInResults({ data, copy }: { data: LinkedInContent; copy: L
             <div className="mt-2">
               <CopyField label={labels.description} value={project.description} multiline {...copyProps} />
             </div>
+
+            {/* The five skills LinkedIn's own "Add project" box takes. Absent
+                on profiles generated before this was produced, so the block
+                only appears when there's something in it. */}
+            {(project.skills?.length ?? 0) > 0 && (
+              <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50/60 p-3.5">
+                <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">{labels.projectSkills}</p>
+                <div className="mt-2 flex flex-wrap gap-2">
+                  {project.skills!.map((skill) => (
+                    <CopyChip key={skill} value={skill} {...copyProps} />
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         ))}
 
@@ -351,19 +418,30 @@ export function LinkedInResults({ data, copy }: { data: LinkedInContent; copy: L
     ),
   });
 
-  /* ── 8. The unlocked visibility playbook ── */
+  /* ── 8. The unlocked visibility playbook ──
+     Nothing here gets pasted into LinkedIn, it's guidance to act on, so it
+     follows the site's language rather than the English-only content rule.
+     The backend returns the Arabic either complete or not at all, so one
+     check covers the whole list. */
+  const playbook = data.growth_playbook;
+  const playbookInArabic = lang === "ar" && Boolean(playbook.steps_ar?.length);
+  const playbookSteps = playbookInArabic ? playbook.steps_ar! : playbook.steps;
+
   panels.push({
     key: "growth",
-    title: data.growth_playbook.title || sections.growth,
+    title: (playbookInArabic ? playbook.title_ar : playbook.title) || sections.growth,
     note: notes.growth,
     body: (
       <ol className="space-y-2.5">
-        {data.growth_playbook.steps.map((step, index) => (
+        {playbookSteps.map((step, index) => (
           <li key={index} className="flex gap-3 rounded-xl border border-slate-200 bg-white p-3.5">
             <span className="grid size-6 shrink-0 place-items-center rounded-full bg-[#EAF4FB] text-xs font-semibold text-[#0A66C2]">
               {index + 1}
             </span>
-            <span dir="ltr" className="text-left text-sm leading-relaxed text-slate-700">
+            <span
+              dir={playbookInArabic ? "rtl" : "ltr"}
+              className={`text-sm leading-relaxed text-slate-700 ${playbookInArabic ? "text-right" : "text-left"}`}
+            >
               {step}
             </span>
           </li>

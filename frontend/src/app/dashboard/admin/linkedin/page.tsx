@@ -16,6 +16,13 @@ import { fetchPremiumOrders, PremiumOrder, updatePremiumOrder } from "@/lib/supa
  * Deliberately not a ticketing system: three states and a table. Nothing more
  * until the volume actually asks for it.
  *
+ * COMPLETED ORDERS STAY ON SCREEN. The filter defaults to showing everything,
+ * including done, because an order vanishing the moment it's marked done reads
+ * as data loss, not as a filter: there's then no way to confirm what was
+ * delivered, to whom, or when, without knowing to tick a box first. "work
+ * owed" up top is what separates the open ones from the finished ones, and the
+ * filter is there for when the list gets long.
+ *
  * Only PAID orders appear, an abandoned checkout isn't work owed. Gated
  * server-side on profiles.is_admin like every other admin route, plus the
  * layout's server-side guard.
@@ -45,7 +52,7 @@ function formatDateTime(iso: string | null) {
 export default function AdminLinkedInOrdersPage() {
   const [orders, setOrders] = useState<PremiumOrder[]>([]);
   const [pendingCount, setPendingCount] = useState(0);
-  const [includeDone, setIncludeDone] = useState(false);
+  const [includeDone, setIncludeDone] = useState(true);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
@@ -69,6 +76,11 @@ export default function AdminLinkedInOrdersPage() {
     void load(includeDone);
   }, [includeDone, load]);
 
+  // Counted here rather than returned by the endpoint: it's only meaningful
+  // for the list actually on screen, and the endpoint's own pending_count is
+  // already the number that has to be right.
+  const doneCount = orders.filter((o) => o.fulfillment_status === "done").length;
+
   async function setStatus(order: PremiumOrder, status: PremiumOrder["fulfillment_status"]) {
     setBusyId(order.id);
     try {
@@ -85,22 +97,27 @@ export default function AdminLinkedInOrdersPage() {
   return (
     <AdminPage
       title="LinkedIn Orders"
-      subtitle="Paid premium LinkedIn purchases, which are fulfilled by hand. Contact the buyer, build their profile, then mark it done."
+      subtitle="Paid premium LinkedIn purchases, which are fulfilled by hand. Contact the buyer, build their profile, then mark it done. Completed orders stay on this list; tick 'open only' to see just the ones still owed."
       actions={
         <label className={`${ADMIN_MONO} flex items-center gap-2 text-xs text-slate-500`}>
           <input
             type="checkbox"
-            checked={includeDone}
-            onChange={(e) => setIncludeDone(e.target.checked)}
+            checked={!includeDone}
+            onChange={(e) => setIncludeDone(!e.target.checked)}
             className="size-3.5 rounded border-slate-300"
           />
-          include done
+          open only
         </label>
       }
     >
-      <StatGrid cols={2}>
+      <StatGrid cols={3}>
         <Stat label="work owed" value={pendingCount} accent={pendingCount > 0 ? "amber" : "emerald"} sub="pending + in progress" />
-        <Stat label="orders listed" value={orders.length} sub={includeDone ? "including done" : "open only"} />
+        <Stat
+          label="completed"
+          value={includeDone ? doneCount : undefined}
+          sub={includeDone ? "marked done" : "hidden by the filter"}
+        />
+        <Stat label="orders listed" value={orders.length} sub={includeDone ? "all paid premium orders" : "open only"} />
       </StatGrid>
 
       {error && <ErrorNote message={error} />}
@@ -110,7 +127,7 @@ export default function AdminLinkedInOrdersPage() {
         orders where someone is owed a hand-built profile.
       </Notice>
 
-      <Panel title="premium queue" hint="newest first">
+      <Panel title="premium queue" hint={includeDone ? "newest first, completed included" : "newest first, open only"}>
         {loading ? (
           <Loading label="loading orders" />
         ) : orders.length === 0 ? (

@@ -15,6 +15,14 @@
 # Saudi/MENA: profiles stay in English for reach. The Arabic facts get
 # translated as part of generation. The results PAGE still follows the
 # site's language toggle; only this output is fixed.
+#
+# ADVICE IS NOT PASTED, so advice is bilingual. Two parts of the output are
+# read rather than pasted, the growth playbook and the "why this certification
+# is worth holding" lines, and those are also returned in Arabic in the same
+# call (the "_ar" fields, see schemas/linkedin_schema.py). Doing it here rather
+# than at render time is what makes the site's language toggle work on content
+# that was generated months earlier, and it costs one shared call instead of a
+# second round trip.
 import json
 import re
 
@@ -30,6 +38,7 @@ from schemas.linkedin_schema import (
     CONTENT_LIMITS,
     NOT_AVAILABLE,
     POST_IDEAS_COUNT,
+    PROJECT_SKILLS_COUNT,
     LinkedInContent,
 )
 
@@ -118,18 +127,39 @@ LinkedIn, plus clear instructions for the sections LinkedIn makes them type in t
 Your audience is a professional in Saudi Arabia / the wider MENA region applying to roles
 where recruiters read LinkedIn in English.
 
-OUTPUT LANGUAGE: MANDATORY, NO EXCEPTIONS:
+OUTPUT LANGUAGE: MANDATORY:
 
-- EVERY value you return is in professional English. Every headline, every line of the About
-  text, every skill, every job title, every company name, every description, every post idea.
+- EVERY value you return is in professional English, EXCEPT the fields whose name ends in
+  "_ar", which are covered separately below. Every headline, every line of the About text,
+  every skill, every job title, every company name, every description, every post idea is
+  English.
 - The CV data may be written in Arabic. If it is, TRANSLATE it into English as part of your
-  work. Never pass Arabic text through into any field.
+  work. Never pass Arabic text through into an English field.
 - Arabic organization, university, city and job-title names must be rendered in English. Use
   the organization's own official English name when it has a well-known one (for example
   "جامعة الملك عبدالعزيز" is "King Abdulaziz University"), otherwise a faithful English
   rendering. Do not leave the Arabic, and do not put the Arabic in brackets next to it.
-- The only exception is a proper name that is genuinely written in Latin script already. Keep
-  it as-is.
+- A proper name that is genuinely written in Latin script already stays as-is.
+
+THE "_ar" FIELDS: ARABIC, AND ONLY THESE:
+
+The person reads this page in whichever language they use the site in, so the parts they READ
+rather than PASTE are returned in both languages. There are exactly two:
+
+  · growth_playbook.title_ar and growth_playbook.steps_ar
+  · education_and_certifications.recommended_certifications[].why_ar
+
+Rules for them:
+
+- Write natural, professional Modern Standard Arabic. Translate the MEANING of the English
+  version, do not transliterate it word by word, and do not produce something that reads as
+  machine-translated.
+- Keep them aligned with their English counterparts: steps_ar has the SAME NUMBER of steps as
+  steps, in the same order, saying the same things.
+- Leave technical terms, tool names, certification names, company names and job titles in
+  Latin script inside the Arabic text (write "LinkedIn" and "TensorFlow", not an Arabic
+  spelling of them). "LinkedIn" itself may be written as "لينكدإن".
+- Every OTHER field stays English. Never put Arabic anywhere except these "_ar" fields.
 
 FACTUAL RULES: THESE OVERRIDE EVERY STYLE INSTRUCTION:
 
@@ -225,14 +255,22 @@ SECTION-BY-SECTION INSTRUCTIONS:
    - If FACTS_JSON.certifications HAS entries: "certifications_note" tells them to add their
      existing certificates, naming them, and "recommended_certifications" is an empty list.
    - If FACTS_JSON.certifications is EMPTY: "recommended_certifications" gives 2-3 real,
-     genuinely relevant certifications for their actual field, each with "name", "issuer" and
-     a "why" of one sentence. These are recommendations, never presented as already held.
+     genuinely relevant certifications for their actual field, each with "name", "issuer",
+     a "why" of one sentence, and "why_ar", that same sentence in Arabic. "name" and "issuer"
+     stay in English in both cases, they are the real searchable names of the credential and
+     the awarding body. These are recommendations, never presented as already held.
 
 7. PROJECTS ("projects"):
    - If FACTS_JSON.projects has entries: one "entries" item per project, with a written
      LinkedIn-ready "description" (2-3 sentences, first person, grounded strictly in that
-     project's real data), and an "instruction" telling them to add these under Projects.
-     Leave "recommended" empty.
+     project's real data), a "skills" list, and an "instruction" telling them to add these
+     under Projects. Leave "recommended" empty.
+   - "skills": exactly <<PROJECT_SKILLS_COUNT>> skills per project, which is the number
+     LinkedIn's "Add project" box accepts. Each one must be demonstrated by THAT project's own
+     content under the skills-inference rule above, so a data project gets the tools and
+     methods it actually used, not a generic list. Name concrete, searchable skills
+     ("TensorFlow", "Time Series Forecasting"), not qualities ("Hard working"). If a project's
+     data genuinely will not support five, give the ones it does support rather than padding.
    - If it has NO projects AND their field normally expects them (software, data, design,
      engineering, product, marketing analytics): leave "entries" empty and give 2-3
      "recommended" project ideas that suit their specific specialization, each with "name",
@@ -246,6 +284,9 @@ SECTION-BY-SECTION INSTRUCTIONS:
    getting past 500 connections and who to connect with in THEIR field, a realistic posting
    cadence, engaging on other people's posts, keywords recruiters in their field actually
    search for, and turning on Open To Work / recruiter visibility. Name their field. No filler.
+   - This section is advice, not content to paste, so it is also returned in Arabic:
+     "title_ar" is the heading and "steps_ar" is the same steps, in the same order, same
+     count, in natural Modern Standard Arabic. See the "_ar" rules above.
 
 WRITING STYLE:
 
@@ -300,16 +341,18 @@ Return ONLY a valid JSON object, no markdown fences, in EXACTLY this shape:
     "instruction": "",
     "education_entries": [{ "school": "", "degree": "", "dates": "" }],
     "certifications_note": "",
-    "recommended_certifications": [{ "name": "", "issuer": "", "why": "" }]
+    "recommended_certifications": [{ "name": "", "issuer": "", "why": "", "why_ar": "" }]
   },
   "projects": {
     "instruction": "",
-    "entries": [{ "name": "", "description": "" }],
+    "entries": [{ "name": "", "description": "", "skills": ["", "", "", "", ""] }],
     "recommended": [{ "name": "", "why": "", "description": "" }]
   },
   "growth_playbook": {
     "title": "",
-    "steps": [""]
+    "steps": [""],
+    "title_ar": "",
+    "steps_ar": [""]
   }
 }
 """
@@ -335,6 +378,7 @@ LINKEDIN_SYSTEM_PROMPT = _render(
     SKILL_LIMIT=CONTENT_LIMITS["skill"],
     SKILLS_COUNT=ABOUT_SKILLS_COUNT,
     POST_IDEAS_COUNT=POST_IDEAS_COUNT,
+    PROJECT_SKILLS_COUNT=PROJECT_SKILLS_COUNT,
     SKILLS_RULE=_shared_skills_inference_rule(),
 )
 
@@ -359,18 +403,24 @@ CORRECTION: YOUR PREVIOUS ANSWER WAS REJECTED:
 
 It contained Arabic text in these fields: <<FIELDS>>
 
-Every value must be English. Translate the Arabic source data instead of copying it through.
-Organization, university, city and job-title names must be given in English. Regenerate the
-complete JSON object with no Arabic characters in any value.
+None of those is an "_ar" field, so every one of them must be English. Translate the Arabic
+source data instead of copying it through. Organization, university, city and job-title names
+must be given in English. Regenerate the complete JSON object with Arabic ONLY in the "_ar"
+fields (growth_playbook.title_ar, growth_playbook.steps_ar, and each
+recommended_certifications[].why_ar), which must still be filled in.
 """
 
 # Output budget. Sonnet 5 runs adaptive thinking by default and those tokens
 # count against max_tokens, so this needs headroom well above the size of the
 # JSON itself: a CV with several roles lands around 3-4k output tokens, and
 # the reasoning about headline/About framing is the part worth paying for.
-# Output is always English, so there is no Arabic multiplier here (unlike
-# CLAUDE_BUDGETS in core/llm_config.py), only the INPUT may be Arabic.
-_MAX_TOKENS = 9000
+# Nearly all the output is English, so there is no full Arabic multiplier here
+# (unlike CLAUDE_BUDGETS in core/llm_config.py). The bilingual advice fields do
+# cost real tokens though, Arabic runs 2-3x the tokens of the same text under
+# this tokenizer, so the budget carries roughly a playbook's worth of headroom
+# above the old 9000: enough that the usual run finishes in one call instead of
+# paying for a truncation escalation every time.
+_MAX_TOKENS = 11000
 _MAX_TOKENS_CEILING = 24000
 
 
@@ -427,19 +477,33 @@ def _or_na(value: str) -> str:
     return (value or "").strip() or NOT_AVAILABLE
 
 
-def _arabic_fields(node, path: str = "") -> list[str]:
-    """Paths of every string in the payload that still contains Arabic.
-    Reuses core/profile_names.has_arabic rather than defining a second
-    Arabic-detection regex in the codebase."""
+# Keys ending in this are the deliberately-Arabic advice fields (see the module
+# header and schemas/linkedin_schema.py). Matching by SUFFIX rather than by a
+# hard-coded list of paths means adding another bilingual field is a schema
+# change and a prompt change, not also a change here.
+_ARABIC_ALLOWED_SUFFIX = "_ar"
+
+
+def _arabic_fields(node, path: str = "", key: str = "") -> list[str]:
+    """Paths of every string in the payload that contains Arabic where it
+    shouldn't. Reuses core/profile_names.has_arabic rather than defining a
+    second Arabic-detection regex in the codebase.
+
+    `key` is the nearest enclosing object key, carried down through lists so a
+    string at growth_playbook.steps_ar[2] is still judged by "steps_ar".
+    """
     found: list[str] = []
     if isinstance(node, dict):
-        for key, value in node.items():
-            found.extend(_arabic_fields(value, f"{path}.{key}" if path else str(key)))
+        for child_key, value in node.items():
+            found.extend(
+                _arabic_fields(value, f"{path}.{child_key}" if path else str(child_key), child_key)
+            )
     elif isinstance(node, list):
         for index, value in enumerate(node):
-            found.extend(_arabic_fields(value, f"{path}[{index}]"))
+            found.extend(_arabic_fields(value, f"{path}[{index}]", key))
     elif isinstance(node, str) and has_arabic(node):
-        found.append(path or "(root)")
+        if not key.endswith(_ARABIC_ALLOWED_SUFFIX):
+            found.append(path or "(root)")
     return found
 
 
@@ -507,8 +571,27 @@ def _postprocess(data: dict, name_en: str, source_cv_language: str) -> dict:
     if not content.featured:
         content.featured = None
 
+    for project in content.projects.entries:
+        project.skills = _clean_list(
+            project.skills, CONTENT_LIMITS["skill"], "project skill", max_items=PROJECT_SKILLS_COUNT
+        )
+
     content.post_ideas = content.post_ideas[:POST_IDEAS_COUNT]
-    content.growth_playbook.steps = [s.strip() for s in content.growth_playbook.steps if (s or "").strip()][:8]
+
+    playbook = content.growth_playbook
+    playbook.steps = [s.strip() for s in playbook.steps if (s or "").strip()][:8]
+    playbook.steps_ar = [s.strip() for s in playbook.steps_ar if (s or "").strip()][:8]
+    # A short Arabic list next to a longer English one would silently drop
+    # advice for Arabic readers, which is worse than showing them the English
+    # the rest of the page already uses. All or nothing.
+    if len(playbook.steps_ar) != len(playbook.steps):
+        if playbook.steps_ar:
+            logger.warning(
+                f"⚠️ LinkedIn growth playbook came back with {len(playbook.steps_ar)} Arabic step(s) "
+                f"against {len(playbook.steps)} English, dropping the Arabic so the page falls back."
+            )
+        playbook.steps_ar = []
+        playbook.title_ar = ""
 
     content.source_cv_language = "ar" if str(source_cv_language).lower().startswith("ar") else "en"
     return content.model_dump()
@@ -633,6 +716,7 @@ def run_linkedin_generator(
     logger.info(
         f"✅ LinkedIn content ready, headline {len(content['intro']['headline'])} chars, "
         f"about {len(content['about']['text'])} chars, {len(content['experience'])} role(s), "
-        f"{len(content['post_ideas'])} post idea(s)."
+        f"{len(content['post_ideas'])} post idea(s), "
+        f"Arabic playbook: {'yes' if content['growth_playbook']['steps_ar'] else 'no'}."
     )
     return content

@@ -59,6 +59,24 @@ import { LinkedInResults } from "@/components/linkedin-results";
  *  "My Resumes" page size, this is a one-screen choice, not a browsing list. */
 const CV_FETCH_LIMIT = 50;
 
+/**
+ * A company name worth printing, or null.
+ *
+ * jd_analyzer.py writes the literal string "Unknown" into resumes.company
+ * whenever the job description never named an employer (see its prompt), so
+ * that value reaches us as real data rather than as an empty column. Printed
+ * as-is it turns every such CV into "IT Specialist · Unknown", which reads as
+ * a bug in the page rather than as an absent fact about the job ad. Nothing is
+ * gained by showing it, so it's treated as absent.
+ */
+const NO_COMPANY = new Set(["unknown", "n/a", "na", "not specified", "غير معروف", "غير محدد"]);
+
+function displayCompany(company: string | null | undefined): string | null {
+  const value = (company || "").trim();
+  if (!value || NO_COMPANY.has(value.toLowerCase())) return null;
+  return value;
+}
+
 function formatDate(iso: string | null | undefined, lang: "en" | "ar") {
   if (!iso) return "";
   try {
@@ -370,7 +388,7 @@ export default function LinkedInPage() {
           </div>
         )}
 
-        <LinkedInResults data={openGeneration.content} copy={copy} />
+        <LinkedInResults data={openGeneration.content} copy={copy} lang={lang} />
       </LinkedInPageShell>
     );
   }
@@ -454,6 +472,7 @@ export default function LinkedInPage() {
       {/* ── Paid and waiting to be generated ── */}
       {(overview?.pending_generations ?? []).map((pending) => {
         const cv = pending.source_cv;
+        const cvCompany = displayCompany(cv?.company);
         const needsReplacementCv = !pending.source_cv_id;
         const busy = busyPurchaseId === pending.purchase_id;
 
@@ -474,7 +493,7 @@ export default function LinkedInPage() {
             {cv && (
               <p className="text-xs text-slate-500">
                 {copy.generateBox.basedOn}: {cv.role || copy.cvSelector.untitled}
-                {cv.company ? ` · ${cv.company}` : ""}
+                {cvCompany ? ` · ${cvCompany}` : ""}
               </p>
             )}
 
@@ -561,13 +580,14 @@ export default function LinkedInPage() {
                     ? copy.history.status.generating
                     : copy.history.status.failed;
                 const cvLabel = item.source_cv?.role || copy.cvSelector.untitled;
+                const cvCompany = displayCompany(item.source_cv?.company);
 
                 return (
                   <li key={item.generation_id} className="flex flex-wrap items-center justify-between gap-3 py-3 first:pt-0 last:pb-0">
                     <div className="min-w-0">
                       <p className="truncate text-sm font-medium text-slate-900">
                         {cvLabel}
-                        {item.source_cv?.company ? <span className="text-slate-400"> · {item.source_cv.company}</span> : null}
+                        {cvCompany ? <span className="text-slate-400"> · {cvCompany}</span> : null}
                       </p>
                       <p className="mt-0.5 text-xs text-slate-500">
                         {formatDate(item.created_at, lang)} ·{" "}
@@ -802,7 +822,7 @@ function CvPicker({
                       near-identical job titles can actually tell them apart.
                       A single job title is not enough to choose by. */}
                   <span className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-slate-500">
-                    <span className="truncate">{resume.company || copy.cvSelector.unknownCompany}</span>
+                    <span className="truncate">{displayCompany(resume.company) ?? copy.cvSelector.unknownCompany}</span>
                     <span className="text-slate-300" aria-hidden>
                       ·
                     </span>

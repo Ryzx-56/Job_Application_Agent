@@ -11,6 +11,14 @@
 # the source CV was in, see the language rule in linkedin_generator.py. The
 # results page's own labels still follow the site's language toggle; only the
 # copy-paste output is fixed to English.
+#
+# THE ONE EXCEPTION: fields whose name ends in "_ar". Those hold the Arabic
+# rendering of ADVICE, never of anything that gets pasted into LinkedIn: the
+# growth playbook and the "why this certification is worth holding" lines are
+# things the person READS, so under an Arabic UI they should be Arabic. Both
+# languages are generated in the same call and stored together, because the
+# site's language toggle can be flipped long after the content was generated.
+# The English-only gate in linkedin_generator.py skips these keys by suffix.
 from typing import List, Literal, Optional
 
 from pydantic import BaseModel, Field
@@ -40,6 +48,11 @@ ABOUT_VISIBLE_BEFORE_SEE_MORE = 300
 # counts from the spec; experience entries follow the CV.
 ABOUT_SKILLS_COUNT = 5
 POST_IDEAS_COUNT = 3
+
+# Skills tagged on one project. 5 because that is exactly how many LinkedIn's
+# own "Add project" modal accepts, so the list maps one-to-one onto the boxes
+# the person is filling in.
+PROJECT_SKILLS_COUNT = 5
 
 # Placeholder for a field the CV genuinely has no data for. The generator is
 # instructed to emit this rather than inventing a company, date or title.
@@ -121,9 +134,14 @@ class LinkedInEducationEntry(BaseModel):
 
 
 class LinkedInCertificationSuggestion(BaseModel):
+    """A certification worth going after. `name` and `issuer` stay English
+    always, they are the real, searchable names of the credential and the body
+    that grants it. `why` is advice, so it carries an Arabic rendering too and
+    the results page shows whichever matches the site's language."""
     name: str = ""
     issuer: str = ""
     why: str = ""
+    why_ar: str = ""
 
 
 class LinkedInEducationSection(BaseModel):
@@ -139,8 +157,16 @@ class LinkedInEducationSection(BaseModel):
 
 
 class LinkedInProjectEntry(BaseModel):
+    """One real project from the CV. `skills` are the PROJECT_SKILLS_COUNT
+    skills to tag on it in LinkedIn's "Add project" modal, held to the same
+    evidence rule as every other skill list here: each one has to be
+    demonstrated by this project's own content.
+
+    Defaults to empty rather than being required, so a generation stored
+    before this field existed still validates and still renders."""
     name: str = ""
     description: str = ""
+    skills: List[str] = Field(default_factory=list)
 
 
 class LinkedInProjectIdea(BaseModel):
@@ -165,9 +191,15 @@ class LinkedInGrowthPlaybook(BaseModel):
     (heading only) before purchase and unlocked at the end of the results
     page. Generated rather than shipped as static frontend copy for two
     reasons: static copy in the JS bundle isn't actually locked, and the
-    advice is more useful when it names the person's own field."""
+    advice is more useful when it names the person's own field.
+
+    This section is the one part of the results page nobody pastes anywhere,
+    it's guidance to read and act on, so it's generated in both languages and
+    the page shows whichever the site is currently set to."""
     title: str = ""
     steps: List[str] = Field(default_factory=list)
+    title_ar: str = ""
+    steps_ar: List[str] = Field(default_factory=list)
 
 
 class LinkedInContent(BaseModel):

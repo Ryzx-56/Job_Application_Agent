@@ -12,6 +12,12 @@ import { createClient } from "@/lib/supabase/client";
    Shapes mirror backend/schemas/linkedin_schema.py. All CONTENT strings are
    English regardless of the UI language, that's the feature's language rule,
    not an oversight. Wrap them in dir="ltr" when rendering under an Arabic UI.
+
+   The exception is the "_ar" fields, which hold the Arabic rendering of the
+   parts that are ADVICE rather than paste-ready content (the growth playbook,
+   and why a suggested certification is worth holding). They're optional on
+   these types because generations created before they existed don't have
+   them, so every reader has to fall back to the English.
 ======================================================================== */
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL;
@@ -52,12 +58,16 @@ export type LinkedInEducationSection = {
   instruction: string;
   education_entries: { school: string; degree: string; dates: string }[];
   certifications_note: string;
-  recommended_certifications: { name: string; issuer: string; why: string }[];
+  /** name and issuer are always English (they're the credential's real,
+   *  searchable names); why_ar is the Arabic of `why`, for an Arabic UI. */
+  recommended_certifications: { name: string; issuer: string; why: string; why_ar?: string }[];
 };
 
 export type LinkedInProjectsSection = {
   instruction: string;
-  entries: { name: string; description: string }[];
+  /** `skills` are the five to tag on the project in LinkedIn's own box.
+   *  Absent on generations made before the field existed. */
+  entries: { name: string; description: string; skills?: string[] }[];
   recommended: { name: string; why: string; description: string }[];
 };
 
@@ -70,7 +80,9 @@ export type LinkedInContent = {
   post_ideas: LinkedInPostIdea[];
   education_and_certifications: LinkedInEducationSection;
   projects: LinkedInProjectsSection;
-  growth_playbook: { title: string; steps: string[] };
+  /** Advice, not paste-ready content, so it comes in both languages. The
+   *  Arabic pair is either complete or absent, never partial. */
+  growth_playbook: { title: string; steps: string[]; title_ar?: string; steps_ar?: string[] };
   content_language: "en";
   source_cv_language: string;
 };
