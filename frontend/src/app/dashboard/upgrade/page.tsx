@@ -280,7 +280,10 @@ export default function UpgradePage() {
                   </div>
                   <div className="text-end">
                     <div className={`text-2xl font-semibold ${isPremium ? "text-white" : "text-slate-900"}`}>
-                      {price !== undefined ? formatSar(price, lang) : "n/a"}
+                      {/* Premium has a price; Essential is included with a
+                          subscription, so it says that rather than "n/a",
+                          which read like the price had failed to load. */}
+                      {price !== undefined ? formatSar(price, lang) : li.tiers.normalIncluded}
                     </div>
                     {price !== undefined && usdApprox(price) && (
                       <div className={`text-xs ${isPremium ? "text-slate-500" : "text-slate-400"}`}>

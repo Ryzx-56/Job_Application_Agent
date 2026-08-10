@@ -38,6 +38,7 @@
 #
 # EXPLICITLY OUT OF SCOPE: no follow-up chat, no answer scoring, no voice, no
 # stored session. One request, one set of questions.
+import concurrent.futures
 import json
 import re
 
@@ -48,10 +49,8 @@ from core.llm_config import generate_claude_text, ClaudeTruncationError
 from schemas.interview_schema import (
     CATEGORIES,
     CONTENT_LIMITS,
-    GAP_QUESTIONS_MIN,
     QUESTION_COUNT_MAX,
     QUESTION_COUNT_MIN,
-    QUESTION_COUNT_TARGET,
     InterviewPrepContent,
 )
 from utils.arabic_localizer import (
@@ -112,8 +111,10 @@ FACTUAL RULES: THESE OVERRIDE EVERY OTHER INSTRUCTION:
 - Leave a STAR beat as an empty string rather than padding it with something you cannot
   support.
 
-HOW MANY QUESTIONS: produce <<TARGET>> questions. Never fewer than <<MIN>>, never more than
-<<MAX>>. Quality over count, but a short list is a failed answer.
+HOW MANY QUESTIONS, AND OF WHICH KIND: the user message assigns you a count and a set of
+categories for THIS request. Produce exactly that many, using only those categories. Do not
+produce questions in a category you were not assigned, and do not pad to reach the count with
+weaker questions than the CV can support.
 
 THE FOUR CATEGORIES ("category" must be exactly one of these strings):
 
@@ -126,13 +127,13 @@ THE FOUR CATEGORIES ("category" must be exactly one of these strings):
   scenario questions a hiring manager asks to see whether someone has actually done the job.
 - "gap": a requirement the CV does not clearly demonstrate. See below.
 
-Cover all four. Weight them the way this specific role would be interviewed: a senior
+Weight your assigned categories the way this specific role would be interviewed: a senior
 engineering role earns more technical depth, a coordination-heavy role more behavioral.
 
 "gap" QUESTIONS, THE MOST IMPORTANT PART:
 
-- Produce at least <<GAP_MIN>> of them whenever KNOWN_GAPS is non-empty. These are the
-  questions the candidate is least prepared for and the reason this page exists.
+- When gap is one of your assigned categories, these are the questions the candidate is least
+  prepared for and the reason this page exists. Give them the same care as the rest.
 - Each one names a REAL requirement from the job that their CV does not evidence. Take them
   from KNOWN_GAPS first, and from JOB_ANALYSIS.required_skills that FACTS_JSON does not cover
   second.
@@ -142,7 +143,9 @@ engineering role earns more technical depth, a coordination-heavy role more beha
   telling the truth well, never a way to sound qualified for something they are not.
 - On a gap question, "star" may draw on the closest genuinely adjacent experience the CV DOES
   contain, clearly framed as adjacent. If nothing in the CV is adjacent, leave the STAR beats
-  empty and let "gap_honesty" carry the whole answer.
+  empty and let "gap_honesty" carry the whole answer. "answer_paragraph" on a gap question is
+  how they would say the honest version out loud, in the same continuous prose as any other
+  answer.
 - "gap_honesty" must be empty ("") on every non-gap question.
 
 EACH QUESTION'S FIELDS:
@@ -152,12 +155,22 @@ EACH QUESTION'S FIELDS:
 - "why_asked": one or two sentences on why THIS employer would ask THIS, naming the specific
   requirement, duty, tool or culture signal it comes from. Never a generic "interviewers like
   to know how you work".
-- "jd_hook": the short phrase from the job description this comes from, under 15 words. Quote
-  the posting's own wording where you can. If it comes from the role's seniority or shape
-  rather than a quotable line, name that instead.
-- "answer_angle": one or two sentences on how to frame the answer before the STAR beats. The
-  strategy, not the content.
-- "star": the suggested answer in four beats, from the candidate's REAL record.
+- "jd_hook": the requirement from the job description this comes from, under 15 words. Follow
+  the posting's own wording closely when you are writing in the posting's language. If it
+  comes from the role's seniority or shape rather than a specific line, name that instead.
+- "answer_angle": one or two sentences on how to frame the answer. The strategy, not the
+  content. Written TO the candidate ("lead with the forecasting project, not the job title").
+- "answer_paragraph": THE ANSWER ITSELF, and the most important field on the card. Write what
+  this person could actually say in the room: 4 to 7 sentences, first person, in continuous
+  prose, built entirely from their real record. It has to read like a competent professional
+  talking, not like a form with the labels removed, so let it flow from the situation into
+  what they did and how it turned out. No bullet points, no "Situation:" labels, no headings.
+  Do not open with "In my role as" or any other stock interview opener. It should be
+  comfortable to read aloud in under a minute.
+- "star": the SAME answer compressed into four beats, shown under the paragraph as a summary
+  to glance at while preparing. It must not contain a single fact the paragraph does not
+  already state, and it must not be the paragraph's sentences copied whole. Keep each beat
+  short:
     · situation: the real context, naming the real project, employer or course.
     · task: what they were actually responsible for.
     · action: what they specifically did, with the real tools named.
@@ -181,7 +194,8 @@ WRITING STYLE:
   useless, because the candidate will deliver them out loud and it will show. Write the way a
   competent professional actually describes their own work in a room.
 
-Return ONLY a valid JSON object, no markdown fences, in EXACTLY this shape:
+Return ONLY a valid JSON object, no markdown fences, in EXACTLY this shape. Fill "overview"
+only when the user message asks you to; otherwise return it as an empty string:
 
 {
   "overview": "",
@@ -192,6 +206,7 @@ Return ONLY a valid JSON object, no markdown fences, in EXACTLY this shape:
       "why_asked": "",
       "jd_hook": "",
       "answer_angle": "",
+      "answer_paragraph": "",
       "star": { "situation": "", "task": "", "action": "", "result": "" },
       "cv_evidence": [""],
       "gap_honesty": ""
@@ -206,13 +221,24 @@ candidate against this job. Not a summary of the questions below it.
 
 _AR_LANGUAGE_INSTRUCTION = """OUTPUT LANGUAGE, MANDATORY ARABIC RULES:
 
-- The candidate's CV is in Arabic, so they are preparing for an Arabic interview. Write EVERY
-  value in fluent, professional Modern Standard Arabic.
-- No English or Latin script in any generated value. The job description and parts of the CV
-  data below may be in English; answer in Arabic regardless, translating as you go.
-- Translate everything: job titles, employer names, university names, project names, tools and
-  frameworks. Write "بايثون" rather than "Python", "واجهة برمجة التطبيقات" rather than "API".
-- "cv_evidence" is also Arabic. Name the project or employer as an Arabic reader would.
+- Write EVERY value in fluent, professional Modern Standard Arabic.
+- THE CV AND THE JOB DESCRIPTION MAY BE IN ENGLISH. That changes nothing: translate them as
+  you go and answer in Arabic. Never leave a phrase in English because the source was in
+  English.
+- Apart from those names, no English or Latin script in any generated value. Never leave a
+  sentence, a clause or a job requirement in English because the source was in English.
+- Translate the PROSE, and the things a reader expects in Arabic: job titles, employer names,
+  university names, degrees, project names.
+- KEEP TECHNOLOGY AND PRODUCT NAMES IN LATIN SCRIPT inside the Arabic sentence. Write
+  "خبرة في TensorFlow", not a transliteration of it. This is the opposite of the rule for a
+  printed CV, and it is deliberate: the candidate is going to say these names out loud in the
+  interview, and they will say "FastAPI", not an Arabic spelling of it. The same goes for
+  certification names and company products.
+- "jd_hook" is a PARAPHRASE of the requirement, not a legal quotation. The posting may be in
+  English; render the requirement in Arabic anyway rather than pasting the English line, apart
+  from any technology name inside it.
+- "cv_evidence" is also Arabic, apart from technology names. Name the project or employer as an
+  Arabic reader would.
 - Numbers, years and GPAs stay as ordinary digits ("2025", "4.27").
 - "category" must stay exactly one of "behavioral", "technical", "role_specific", "gap" in
   English. It is a machine-read enum, not display text. The JSON keys stay English too. Only
@@ -223,7 +249,7 @@ _AR_LANGUAGE_INSTRUCTION = """OUTPUT LANGUAGE, MANDATORY ARABIC RULES:
 _EN_LANGUAGE_INSTRUCTION = """OUTPUT LANGUAGE:
 
 - Write every value in professional English, regardless of what language the CV data or the
-  job description are written in."""
+  job description are written in. An Arabic CV is translated as you go, never passed through."""
 
 
 def _render(template: str, **tokens) -> str:
@@ -236,10 +262,6 @@ def _build_system_prompt(language_instruction: str) -> str:
     return _render(
         _INTERVIEW_SYSTEM_TEMPLATE,
         HUMANIZER_RULES=HUMANIZER_RULES,
-        TARGET=QUESTION_COUNT_TARGET,
-        MIN=QUESTION_COUNT_MIN,
-        MAX=QUESTION_COUNT_MAX,
-        GAP_MIN=GAP_QUESTIONS_MIN,
         LANGUAGE_INSTRUCTION=language_instruction,
     )
 
@@ -252,6 +274,12 @@ _SYSTEM_PROMPT_AR = _build_system_prompt(_AR_LANGUAGE_INSTRUCTION)
 
 
 _USER_TEMPLATE = """
+YOUR ASSIGNMENT FOR THIS REQUEST:
+
+- Produce EXACTLY <<COUNT>> questions.
+- Use ONLY these categories: <<CATEGORIES>>. Every question's "category" must be one of them.
+- <<OVERVIEW_RULE>>
+
 ROLE_APPLIED_FOR: <<ROLE>>
 COMPANY: <<COMPANY>>
 CV_LANGUAGE: <<CV_LANGUAGE>>
@@ -275,7 +303,36 @@ Prepare this person for this interview now, following the rules and the output f
 above. Return only the JSON object.
 """
 
-# Output budget. Sonnet 5 runs adaptive thinking by default and those tokens
+# HOW THE WORK IS SPLIT ACROSS TWO CONCURRENT CALLS.
+#
+# Latency here is essentially linear in output tokens: one call writing all 12
+# questions, each with a paragraph answer and a STAR summary, took about six
+# minutes end to end. Nothing in that is parallel, it is just a lot of text
+# generated in sequence.
+#
+# So the questions are split by CATEGORY across two calls that run at the same
+# time. Each writes half the text, so wall-clock roughly halves. The split is
+# by category rather than "first 6 / second 6" for two reasons: neither call
+# can duplicate the other's questions by construction, so no de-duplication
+# pass is needed, and each call gets a narrower brief than "cover all four
+# kinds", which it can spend its attention on.
+#
+# COST: output tokens, which dominate the bill, are unchanged, the same
+# questions are written either way. The system prompt is identical between the
+# two and is sent with cache_control, so the second call reads it from cache.
+# What genuinely doubles is the user turn (the CV, the JD and the gap list),
+# a few thousand input tokens at roughly a fifth the price of output. The
+# trade is a small single-digit percentage on cost for about half the wait.
+_QUESTION_SPLIT = (
+    # (categories, how many, whether this call writes the overview)
+    (("behavioral", "technical"), 6, True),
+    (("role_specific", "gap"), 6, False),
+)
+
+# Output budget, PER CALL. Halved from the single-call figures because each
+# call now writes half the questions; generate_claude_text still escalates on
+# its own if a particular CV runs long.
+# Sonnet 5 runs adaptive thinking by default and those tokens
 # count against max_tokens, so this needs real headroom above the JSON: 12-15
 # questions with four STAR beats each is a large answer before any reasoning.
 # Arabic gets roughly 1.7x for the same reason CLAUDE_BUDGETS does in
@@ -288,8 +345,8 @@ above. Return only the JSON object.
 # what a run actually uses costs nothing; setting it below costs a whole
 # discarded response. Both numbers are therefore set above the observed size
 # with room for a 15-question answer.
-_MAX_TOKENS = {"en": 24000, "ar": 40000}
-_MAX_TOKENS_CEILING = {"en": 40000, "ar": 64000}
+_MAX_TOKENS = {"en": 14000, "ar": 24000}
+_MAX_TOKENS_CEILING = {"en": 28000, "ar": 44000}
 
 # How much of the raw posting to send. The structured JOB_ANALYSIS already
 # carries the parts that matter; the raw text is included for exact phrasing
@@ -445,6 +502,7 @@ def _postprocess(data: dict, role: str, company: str, language: str, reused: boo
         question.why_asked = _clamp(question.why_asked, CONTENT_LIMITS["why_asked"])
         question.jd_hook = _clamp(question.jd_hook, CONTENT_LIMITS["jd_hook"])
         question.answer_angle = _clamp(question.answer_angle, CONTENT_LIMITS["answer_angle"])
+        question.answer_paragraph = _clamp(question.answer_paragraph, CONTENT_LIMITS["answer_paragraph"])
         question.star.situation = _clamp(question.star.situation, CONTENT_LIMITS["star_part"])
         question.star.task = _clamp(question.star.task, CONTENT_LIMITS["star_part"])
         question.star.action = _clamp(question.star.action, CONTENT_LIMITS["star_part"])
@@ -479,6 +537,24 @@ def _readable_strings(payload: dict) -> list[str]:
     return [text for text in iter_strings(payload) if text not in CATEGORIES]
 
 
+def _prose_leaks(terms: list[str]) -> list[str]:
+    """
+    The Latin terms worth spending a glossary call on.
+
+    A SINGLE Latin token in Arabic prose is almost always a technology or
+    product name, which the prompt now deliberately allows: "خبرة في FastAPI"
+    is what the candidate will actually say, and "فاست إيه بي آي" is worse to
+    rehearse from. A run of TWO OR MORE Latin words is different, that is an
+    untranslated clause, usually a requirement quoted straight off an English
+    posting, and it genuinely needs fixing.
+
+    Filtering here rather than in the prompt is what stops every Arabic run
+    paying for a second Claude call just to be told that "Next.js" is spelled
+    "Next.js".
+    """
+    return [term for term in terms if len(term.split()) > 1]
+
+
 def _enforce_arabic_purity(payload: dict, seed_glossary: dict | None) -> dict:
     """
     Localizes any leftover Latin text in an Arabic result, using the same
@@ -507,9 +583,12 @@ def _enforce_arabic_purity(payload: dict, seed_glossary: dict | None) -> dict:
         payload = localize_structure(payload, seeded, skip_keys=skip_keys)
         logger.info(f"🔤 Reused {len(seeded)} term(s) from this CV's own Arabic glossary.")
 
-    terms = find_latin_terms(_readable_strings(payload))
+    terms = _prose_leaks(find_latin_terms(_readable_strings(payload)))
     if not terms:
-        logger.info("✅ Interview prep output is already fully Arabic, no localization pass needed.")
+        logger.info(
+            "✅ Interview prep output is Arabic apart from technology names, which stay as they "
+            "are on purpose. No localization pass needed."
+        )
         return payload
 
     logger.warning(
@@ -523,9 +602,9 @@ def _enforce_arabic_purity(payload: dict, seed_glossary: dict | None) -> dict:
 
     payload = localize_structure(payload, fresh, skip_keys=skip_keys)
 
-    still_latin = find_latin_terms(_readable_strings(payload))
+    still_latin = _prose_leaks(find_latin_terms(_readable_strings(payload)))
     if still_latin:
-        logger.warning(f"🔤 Still Latin after localization: {still_latin[:6]}, proceeding best-effort.")
+        logger.warning(f"🔤 English prose still present after localization: {still_latin[:6]}, proceeding best-effort.")
     else:
         logger.info("✅ Interview prep Arabic localization complete.")
     return payload
@@ -549,6 +628,7 @@ def run_interview_prep(
     resume_row: dict,
     snapshot: dict | None = None,
     on_step=None,
+    output_language: str | None = None,
 ) -> dict:
     """
     Builds one interview prep set from a saved CV and the job description it
@@ -560,6 +640,11 @@ def run_interview_prep(
         generated.
     snapshot: generation_snapshot, passed separately only so the caller can
         avoid re-reading it. Defaults to the one on the row.
+    output_language: "ar" or "en", the language to WRITE IN. This is the
+        site language the caller is reading the page in, not a property of
+        the CV: someone reading in Arabic wants Arabic questions whichever
+        language their CV happens to be in, and the model translates. Falls
+        back to the CV's own language when not given.
     on_step: optional `fn(step: str)` called as each real phase begins, so a
         streaming caller can report honest progress. The steps are the ones
         this function actually has ("prepare", "generate", and "localize" on
@@ -583,9 +668,12 @@ def run_interview_prep(
     if not facts_json.get("personal"):
         raise InterviewPrepError("This CV has no parsed data to build interview answers from.")
 
-    language = str(
+    # The requested output language wins; the CV's own language is only the
+    # fallback for a caller that didn't say.
+    cv_language = str(
         snapshot.get("cv_language") or resume_row.get("cv_language") or "en"
     ).lower()
+    language = str(output_language or cv_language).lower()
     is_arabic = language.startswith("ar")
 
     analysis, reused = _job_analysis(snapshot, job_description)
@@ -601,39 +689,69 @@ def run_interview_prep(
     _step("prepare")
 
     logger.info(
-        f"🎤 Interview prep, {QUESTION_COUNT_TARGET} questions for '{role or 'this role'}' "
-        f"in {'Arabic' if is_arabic else 'English'} "
+        f"🎤 Interview prep, {sum(c for _, c, _ in _QUESTION_SPLIT)} questions across "
+        f"{len(_QUESTION_SPLIT)} parallel calls for '{role or 'this role'}' "
+        f"in {'Arabic' if is_arabic else 'English'} (CV is {cv_language}) "
         f"({len(gaps)} known gap(s), JD analysis {'reused' if reused else 'recomputed'})..."
     )
 
-    user_prompt = _render(
-        _USER_TEMPLATE,
-        ROLE=role or "Not stated",
+    def _user_prompt(categories: tuple[str, ...], count: int, wants_overview: bool) -> str:
+        return _render(
+            _USER_TEMPLATE,
+            COUNT=count,
+            CATEGORIES=", ".join(f'"{c}"' for c in categories),
+            OVERVIEW_RULE=(
+                'Write "overview": two sentences at most on what this interview will turn on.'
+                if wants_overview
+                else 'Return "overview" as an empty string. Another pass is writing it.'
+            ),
+            ROLE=role or "Not stated",
         COMPANY=company or "Not stated",
         CV_LANGUAGE="Arabic" if is_arabic else "English",
         JOB_ANALYSIS=json.dumps(analysis, ensure_ascii=False, indent=2),
         KNOWN_GAPS=json.dumps(gaps, ensure_ascii=False, indent=2),
-        FACTS_JSON=json.dumps(facts_json, ensure_ascii=False, indent=2),
-        TAILORED_CV=json.dumps(_tailored_cv_view(snapshot), ensure_ascii=False, indent=2),
-        JOB_DESCRIPTION=job_description[:_JD_CHARS_MAX],
-    )
+            FACTS_JSON=json.dumps(facts_json, ensure_ascii=False, indent=2),
+            TAILORED_CV=json.dumps(_tailored_cv_view(snapshot), ensure_ascii=False, indent=2),
+            JOB_DESCRIPTION=job_description[:_JD_CHARS_MAX],
+        )
 
     budget_key = "ar" if is_arabic else "en"
     system_prompt = _SYSTEM_PROMPT_AR if is_arabic else _SYSTEM_PROMPT_EN
 
-    def _call() -> dict:
-        raw = generate_claude_text(
-            user_prompt,
-            max_tokens=_MAX_TOKENS[budget_key],
-            max_tokens_ceiling=_MAX_TOKENS_CEILING[budget_key],
-            system=system_prompt,
-        )
-        return _parse_json(raw)
+    def _call(categories: tuple[str, ...], count: int, wants_overview: bool) -> dict:
+        prompt = _user_prompt(categories, count, wants_overview)
+
+        def _once() -> dict:
+            raw = generate_claude_text(
+                prompt,
+                max_tokens=_MAX_TOKENS[budget_key],
+                max_tokens_ceiling=_MAX_TOKENS_CEILING[budget_key],
+                system=system_prompt,
+            )
+            return _parse_json(raw)
+
+        try:
+            return _once()
+        except json.JSONDecodeError as e:
+            logger.warning(f"Interview prep half {categories} returned invalid JSON ({e}), retrying once.")
+            return _once()
 
     _step("generate")
 
+    # BOTH HALVES AT ONCE. A thread pool rather than asyncio because
+    # generate_claude_text is a blocking call and this whole module is
+    # already called from a sync endpoint running in FastAPI's threadpool.
     try:
-        data = _call()
+        with concurrent.futures.ThreadPoolExecutor(max_workers=len(_QUESTION_SPLIT)) as pool:
+            futures = [
+                pool.submit(_call, categories, count, wants_overview)
+                for categories, count, wants_overview in _QUESTION_SPLIT
+            ]
+            # .result() re-raises whatever the worker raised, so one failed
+            # half fails the run. Deliberate: half a question set is below
+            # the minimum this feature promises, and a retry costs the user
+            # nothing.
+            parts = [future.result() for future in futures]
     except ClaudeTruncationError as e:
         # Retrying the identical prompt that already overflowed the ceiling
         # just spends tokens to reach the same place. Same reasoning as
@@ -641,12 +759,16 @@ def run_interview_prep(
         logger.error(f"❌ Interview prep hit the token ceiling and was not retried: {e}")
         raise InterviewPrepError("The questions came back too long to finish. Please try again.") from e
     except json.JSONDecodeError as e:
-        logger.warning(f"Interview prep returned invalid JSON ({e}), retrying once.")
-        try:
-            data = _call()
-        except Exception as retry_error:
-            logger.error(f"❌ Interview prep JSON retry failed: {retry_error}")
-            raise InterviewPrepError("Could not read the generated questions. Please try again.") from retry_error
+        logger.error(f"❌ Interview prep JSON retry failed: {e}")
+        raise InterviewPrepError("Could not read the generated questions. Please try again.") from e
+
+    # Merged in split order, so the list reads behavioral, technical,
+    # role_specific, gap: general to specific, ending on the ones worth
+    # thinking hardest about.
+    data = {
+        "overview": next((p.get("overview") for p in parts if (p.get("overview") or "").strip()), ""),
+        "questions": [q for part in parts for q in (part.get("questions") or [])],
+    }
 
     if is_arabic:
         # Same purity pattern as tailoring_engine.py, seeded with the glossary

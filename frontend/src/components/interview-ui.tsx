@@ -228,9 +228,16 @@ export function CvPicker({
                 <span className="grid size-9 shrink-0 place-items-center rounded-lg bg-blue-50 text-blue-600">
                   <FileText className="size-4.5" aria-hidden />
                 </span>
-                <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-medium text-emerald-700">
+                {/* A CV that already has a prep opens it, free. The badge
+                    says so before the click, because the difference is one
+                    of this month's generations. */}
+                <span
+                  className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium ${
+                    cv.prepared_at ? "bg-blue-50 text-blue-700" : "bg-emerald-50 text-emerald-700"
+                  }`}
+                >
                   <Check className="size-3" aria-hidden />
-                  {copy.picker.eligibleTag}
+                  {cv.prepared_at ? copy.picker.preparedTag : copy.picker.eligibleTag}
                 </span>
               </div>
 
@@ -242,7 +249,9 @@ export function CvPicker({
               </p>
 
               <div className="mt-2.5 flex flex-wrap items-center gap-2 text-[11px] text-slate-400">
-                <span>{formatDate(cv.created_at)}</span>
+                <span>
+                  {cv.prepared_at ? copy.picker.preparedOn(formatDate(cv.prepared_at)) : formatDate(cv.created_at)}
+                </span>
                 <LanguagePill cvLanguage={cv.cv_language} copy={resumesCopy} />
               </div>
 
@@ -252,7 +261,13 @@ export function CvPicker({
                 ) : (
                   <Sparkles className="size-3.5" aria-hidden />
                 )}
-                {copy.picker.selectCta}
+                {busy
+                  ? cv.prepared_at
+                    ? copy.picker.openingCta
+                    : copy.picker.selectCta
+                  : cv.prepared_at
+                  ? copy.picker.openCta
+                  : copy.picker.selectCta}
               </span>
             </button>
           );
@@ -588,11 +603,31 @@ export function QuestionCard({
                   {copy.results.starLabel}
                 </p>
 
-                {starBeats.length === 0 ? (
+                {/* THE ANSWER, as continuous prose. Four labelled fragments
+                    are not something a person can say out loud, so the
+                    paragraph leads and the beats are the summary below it. */}
+                {question.answer_paragraph?.trim() ? (
+                  <p
+                    dir={contentDir}
+                    className={`mt-1.5 whitespace-pre-line text-sm leading-relaxed text-slate-700 ${
+                      contentDir === "rtl" ? "text-right" : "text-left"
+                    }`}
+                  >
+                    {question.answer_paragraph}
+                  </p>
+                ) : starBeats.length === 0 ? (
                   <p className="mt-1.5 text-xs leading-relaxed text-slate-400">
                     {copy.results.starEmpty}
                   </p>
-                ) : (
+                ) : null}
+
+                {starBeats.length > 0 && (
+                  <p className="mt-4 border-t border-slate-100 pt-3 text-[10px] font-semibold uppercase tracking-wide text-slate-400">
+                    {copy.results.starSummaryLabel}
+                  </p>
+                )}
+
+                {starBeats.length === 0 ? null : (
                   <ol className="mt-2.5 space-y-2.5">
                     {starBeats.map((beat) => (
                       <li key={beat.key} className="flex gap-2.5">
@@ -688,12 +723,16 @@ export function ResultsHeader({
   overview,
   copy,
   contentDir,
+  unknownCompanyLabel,
 }: {
   total: number;
   counts: Record<InterviewCategory, number>;
   role: string;
+  /** Already normalized by the caller: empty when the CV's company is a
+   *  placeholder rather than a real employer. */
   company: string;
   overview: string;
+  unknownCompanyLabel: string;
   copy: InterviewCopy;
   contentDir: "ltr" | "rtl";
 }) {
@@ -713,13 +752,13 @@ export function ResultsHeader({
           {(role || company) && (
             <p className="mt-1 truncate text-sm text-slate-500">
               {copy.results.forRole} <span className="font-medium text-slate-700">{role}</span>
-              {company ? (
-                <>
-                  {" "}
-                  {copy.results.atCompany}{" "}
-                  <span className="font-medium text-slate-700">{company}</span>
-                </>
-              ) : null}
+              {" "}
+              {copy.results.atCompany}{" "}
+              {/* jd_analyzer writes the literal "Unknown" when the posting
+                  never named an employer, so it arrives as data. Printed raw
+                  it reads as a bug; the localized label says the same thing
+                  honestly. */}
+              <span className="font-medium text-slate-700">{company || unknownCompanyLabel}</span>
             </p>
           )}
         </div>

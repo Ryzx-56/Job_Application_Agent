@@ -14,12 +14,14 @@
 #      never a 403 that would confirm the id exists. Same reasoning as
 #      core/linkedin.py's _fetch_purchase.
 #
-# NOTHING IS STORED. This is a one-shot generation: the questions go back in
-# the response and live in the page's React state until the user navigates
-# away. There is no interview_* table, no migration, and no session to
-# resume, which is exactly the scope this version was specified at. If
-# persistence is ever wanted, it belongs in a new table with its own RLS, not
-# bolted onto resumes.
+# RESULTS ARE SAVED, one row per CV, in interview_preps (see
+# supabase/migrations/010_interview_preps.sql). Coming back to the page opens
+# the saved questions rather than spending another monthly generation on work
+# that was already done, which is the whole reason it is stored at all.
+#
+# Still NOT a session: there is no conversation, no scoring, no per-question
+# state. A prep is one immutable document per CV, replaced wholesale when the
+# user chooses to regenerate.
 #
 # NO CREDITS ARE CONSUMED. Access is the subscription itself, so a failed
 # generation costs the user nothing and "try again" is always safe to offer.
@@ -112,6 +114,103 @@ def _eligibility(row: dict) -> dict:
     return {"eligible": True, "reason": None}
 
 
+def _fetch_prep(resume_id: str, user_id: str) -> dict | None:
+    """The saved prep for one CV, or None. Scoped to the caller."""
+    try:
+        return (
+            get_admin_client()
+            .table("interview_preps")
+            .select("id, resume_id, language, content, created_at, updated_at")
+            .eq("user_id", user_id)
+            .eq("resume_id", resume_id)
+            .maybe_single()
+            .execute()
+            .data
+        )
+    except Exception as e:
+        # Table missing (migration not applied) or a transient failure. Both
+        # mean "no saved prep", which degrades to the old behaviour of
+        # generating fresh rather than breaking the page.
+        logger.warning(f"Could not read the saved interview prep for {resume_id}: {e}")
+        return None
+
+
+def _prepared_map(user_id: str) -> dict[str, str]:
+    """resume_id -> when its prep was last written, for the picker."""
+    try:
+        rows = (
+            get_admin_client()
+            .table("interview_preps")
+            .select("resume_id, updated_at")
+            .eq("user_id", user_id)
+            .execute()
+            .data
+            or []
+        )
+    except Exception as e:
+        logger.warning(f"Could not list saved interview preps for {user_id}: {e}")
+        return {}
+    return {r["resume_id"]: r.get("updated_at") for r in rows}
+
+
+def _save_prep(user_id: str, resume_id: str, language: str, content: dict) -> None:
+    """
+    Stores the finished prep, replacing any previous one for this CV.
+
+    Upsert on the (user_id, resume_id) unique constraint, so a regenerate
+    overwrites rather than accumulating question sets the user would then
+    have to choose between.
+
+    Never raises: the questions are already generated and already on their
+    way to the browser, so a failed save must not turn a successful run into
+    an error. It only costs the user the ability to come back to it.
+    """
+    try:
+        get_admin_client().table("interview_preps").upsert(
+            {
+                "user_id": user_id,
+                "resume_id": resume_id,
+                "language": language,
+                "content": content,
+                "updated_at": _now_iso(),
+            },
+            on_conflict="user_id,resume_id",
+        ).execute()
+    except Exception as e:
+        logger.error(f"❌ Could not save the interview prep for {resume_id}: {e}")
+
+
+def _now_iso() -> str:
+    from datetime import datetime, timezone
+
+    return datetime.now(timezone.utc).isoformat()
+
+
+@router.get("/api/v1/interview/preps/{resume_id}", tags=["Interview"])
+def get_saved_prep(resume_id: str, user_id: str = Depends(get_current_user_id)) -> dict:
+    """
+    Opens a previously generated prep. Costs no monthly slot, which is the
+    entire point of saving them.
+
+    Not tier-gated: someone whose subscription lapsed keeps access to what
+    they already generated, the same way a downgraded user keeps their saved
+    CVs. The gate is on making a NEW one.
+    """
+    _fetch_resume(resume_id, user_id)  # ownership, and a clean 404 if not theirs
+    prep = _fetch_prep(resume_id, user_id)
+    if not prep:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"code": "no_saved_prep", "message": "There is no saved prep for this CV yet."},
+        )
+    return {
+        "resume_id": resume_id,
+        "content": prep.get("content"),
+        "created_at": prep.get("created_at"),
+        "updated_at": prep.get("updated_at"),
+    }
+
+
 @router.get("/api/v1/interview/overview", tags=["Interview"])
 def interview_overview(user_id: str = Depends(get_current_user_id)) -> dict:
     """
@@ -149,6 +248,8 @@ def interview_overview(user_id: str = Depends(get_current_user_id)) -> dict:
             },
         )
 
+    prepared = _prepared_map(user_id)
+
     cvs = []
     for row in rows:
         eligibility = _eligibility(row)
@@ -160,6 +261,9 @@ def interview_overview(user_id: str = Depends(get_current_user_id)) -> dict:
             "created_at": row.get("created_at"),
             "eligible": eligibility["eligible"],
             "ineligible_reason": eligibility["reason"],
+            # Already generated: the card opens it instead of spending
+            # another monthly slot.
+            "prepared_at": prepared.get(row["id"]),
         })
 
     return {
@@ -204,7 +308,7 @@ def _sse(event: str, data: dict) -> str:
     return f"event: {event}\ndata: {json.dumps(data, ensure_ascii=False)}\n\n"
 
 
-def _stream_interview_prep(row: dict, user_id: str):
+def _stream_interview_prep(row: dict, user_id: str, language: str | None):
     """
     Runs the generation on a worker thread and yields SSE frames from the main
     one.
@@ -225,7 +329,11 @@ def _stream_interview_prep(row: dict, user_id: str):
 
     def work():
         try:
-            result["content"] = run_interview_prep(row, on_step=lambda step: events.put(("step", {"step": step})))
+            result["content"] = run_interview_prep(
+                row,
+                on_step=lambda step: events.put(("step", {"step": step})),
+                output_language=language,
+            )
         except InterviewPrepError as e:
             logger.error(f"❌ Interview prep failed for resume {row['id']}: {e}")
             result["error"] = {"code": "generation_failed", "message": str(e)}
@@ -260,6 +368,9 @@ def _stream_interview_prep(row: dict, user_id: str):
     if "error" in result:
         yield _sse("error", result["error"])
     else:
+        # Saved before the payload goes out, so a user who reloads the moment
+        # it lands finds it there.
+        _save_prep(user_id, row["id"], (result["content"] or {}).get("language") or "en", result["content"])
         yield _sse("complete", {
             "resume_id": row["id"],
             "content": result["content"],
@@ -315,7 +426,7 @@ def generate_interview_prep(
     consume_addon_quota(user_id, INTERVIEW_PREP)
 
     return StreamingResponse(
-        _stream_interview_prep(row, user_id),
+        _stream_interview_prep(row, user_id, payload.language),
         media_type="text/event-stream",
         headers={
             "Cache-Control": "no-cache",

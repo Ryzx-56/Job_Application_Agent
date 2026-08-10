@@ -8,15 +8,16 @@ import { createClient } from "@/lib/supabase/client";
    the caller's subscription tier. See backend/core/interview.py.
 
    Shapes mirror backend/schemas/interview_schema.py. Unlike the LinkedIn
-   add-on, every string here follows the SOURCE CV's language: an Arabic CV
-   produces Arabic questions, because that's the interview the person is
-   actually preparing for. `content.language` says which, and the results
-   view sets its own direction from it rather than from the site toggle.
+   add-on, the questions are written in THE SITE'S language at generation
+   time, not the CV's: someone reading the page in Arabic wants Arabic
+   questions whichever language their CV happens to be in, and the model
+   translates. `content.language` records which was used, and the results
+   view sets its direction from that, so a prep generated in Arabic still
+   renders RTL after the reader switches the site to English.
 
-   NOTHING IS PERSISTED. A generated set lives in React state for as long as
-   the page is open. This is a one-shot feature by design, so there is no
-   fetch-a-previous-result call here to add later without also adding a
-   table for it.
+   RESULTS ARE SAVED, one per CV. fetchSavedInterviewPrep opens an existing
+   one for free; generateInterviewPrep is the only call that spends one of
+   the month's generations.
 ======================================================================== */
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL;
@@ -47,6 +48,10 @@ export type InterviewQuestion = {
   /** The short JD phrase it comes from. */
   jd_hook: string;
   answer_angle: string;
+  /** The answer itself: a first-person paragraph to read and rehearse from.
+   *  Absent on preps generated before this field existed. */
+  answer_paragraph?: string;
+  /** The same answer as four beats, shown underneath as a summary. */
   star: InterviewStarAnswer;
   /** Real CV items the answer draws on: project names, employers, roles. */
   cv_evidence: string[];
@@ -80,6 +85,9 @@ export type InterviewCv = {
   created_at: string;
   eligible: boolean;
   ineligible_reason: InterviewIneligibleReason;
+  /** When a prep was last generated for this CV, or null. Opening a prepared
+   *  CV costs no monthly generation. */
+  prepared_at?: string | null;
 };
 
 export type InterviewOverview = {
@@ -89,6 +97,17 @@ export type InterviewOverview = {
   unlocked: boolean;
   cvs: InterviewCv[];
   question_range: { min: number; max: number };
+  /** This month's allowance. Absent on an older backend. */
+  quota?: InterviewQuota;
+};
+
+/** How many generations are left this month. */
+export type InterviewQuota = {
+  tier: string;
+  limit: number;
+  used: number;
+  remaining: number;
+  unlocked: boolean;
 };
 
 /** Error carrying the backend's machine-readable code so the page can show
@@ -137,6 +156,14 @@ export async function fetchInterviewOverview(): Promise<InterviewOverview> {
   return request<InterviewOverview>("/api/v1/interview/overview");
 }
 
+/** Opens a previously generated prep. Costs no monthly generation, which is
+ *  why the page always tries this before offering to generate. */
+export async function fetchSavedInterviewPrep(
+  resumeId: string
+): Promise<{ resume_id: string; content: InterviewPrepContent; updated_at: string }> {
+  return request(`/api/v1/interview/preps/${resumeId}`);
+}
+
 /** The phases the backend actually reports, in order. `localize` only fires
  *  on an Arabic CV. Mirrors the `on_step` calls in
  *  backend/agents/interview_prep.py. */
@@ -162,8 +189,11 @@ export type InterviewStep = "prepare" | "generate" | "localize";
  */
 export async function generateInterviewPrep(
   resumeId: string,
+  /** The site's language. The questions are written in it, so an English CV
+   *  read on an Arabic page produces Arabic questions. */
+  language: "en" | "ar",
   onStep?: (step: InterviewStep) => void
-): Promise<{ resume_id: string; content: InterviewPrepContent }> {
+): Promise<{ resume_id: string; content: InterviewPrepContent; quota?: InterviewQuota }> {
   const supabase = createClient();
   const {
     data: { session },
@@ -176,7 +206,7 @@ export async function generateInterviewPrep(
       "Content-Type": "application/json",
       Authorization: `Bearer ${session.access_token}`,
     },
-    body: JSON.stringify({ resume_id: resumeId }),
+    body: JSON.stringify({ resume_id: resumeId, language }),
   });
 
   if (!res.ok || !res.body) {
@@ -196,7 +226,7 @@ export async function generateInterviewPrep(
   const reader = res.body.getReader();
   const decoder = new TextDecoder();
   let buffer = "";
-  let complete: { resume_id: string; content: InterviewPrepContent } | null = null;
+  let complete: { resume_id: string; content: InterviewPrepContent; quota?: InterviewQuota } | null = null;
   let streamError: ApiError | null = null;
 
   // SSE frames are separated by a blank line; a frame can arrive split across
@@ -220,7 +250,11 @@ export async function generateInterviewPrep(
     if (event === "step" && onStep) {
       onStep(payload.step as InterviewStep);
     } else if (event === "complete") {
-      complete = payload as unknown as { resume_id: string; content: InterviewPrepContent };
+      complete = payload as unknown as {
+        resume_id: string;
+        content: InterviewPrepContent;
+        quota?: InterviewQuota;
+      };
     } else if (event === "error") {
       const err: ApiError = new Error(
         (payload.message as string) || "Generation failed."

@@ -227,7 +227,7 @@ export const content = {
           badge: "Most Popular",
           // The founding offer is a BADGE and a scarcity claim. It is not a
           // discount, so it carries no banner price and no percentage.
-          limitedOffer: "The first 50 people to subscribe to Pro keep a permanent Founding Member badge on their profile. The badge is yours for good, and the price is the same 29 SAR either way.",
+          limitedOffer: "The first 50 people to subscribe to Pro keep a permanent Founding Member badge on their profile.",
           featured: true,
           premium: false,
         },
@@ -742,6 +742,10 @@ export const content = {
           title: "Choose a CV to get started",
           sub: "We prepare from the job description this CV was tailored against, so the questions are for that specific role.",
           eligibleTag: "Ready",
+          preparedTag: "Prepared",
+          openCta: "Open your questions",
+          openingCta: "Opening…",
+          preparedOn: (date: string) => `Prepared ${date}`,
           selectCta: "Prepare questions",
           loading: "Loading your CVs…",
           emptyTitle: "No CVs yet",
@@ -764,9 +768,10 @@ export const content = {
 
         generating: {
           title: "Preparing your questions",
-          // Honest about the wait: a measured run is two to four minutes,
-          // because it's one pass over the whole posting and the whole CV.
-          body: "Reading the job description against your CV and writing an answer for each question. This takes a few minutes, so keep this page open.",
+          // Honest about the wait, and measured rather than guessed: the two
+          // halves run concurrently, which puts a real run at roughly two
+          // minutes in English and three in Arabic.
+          body: "Reading the job description against your CV and writing an answer for each question. This takes a couple of minutes, so keep this page open.",
           // THESE ARE THE PHASES THE BACKEND ACTUALLY REPORTS, keyed by the
           // step names it emits (see on_step in agents/interview_prep.py).
           // They are not a padded list on a timer: each one lights up when
@@ -782,6 +787,11 @@ export const content = {
         results: {
           backToCvs: "Choose another CV",
           regenerate: "Generate again",
+          regenerateWithCount: (left: number, total: number) =>
+            `Generate again (${left} of ${total} left this month)`,
+          regenerateNoneLeft: (total: number) =>
+            `You have used all ${total} generations this month`,
+          savedNote: "Saved. You can leave this page and come back to it without generating again.",
           // The "progress feel" line at the top of the results.
           prepared: (n: number) => `${n} questions prepared`,
           forRole: "For",
@@ -802,6 +812,7 @@ export const content = {
           fromPosting: "From the posting",
           answerAngle: "How to approach it",
           starLabel: "Your answer, from your CV",
+          starSummaryLabel: "Quick summary",
           star: {
             situation: "Situation",
             task: "Task",
@@ -831,6 +842,7 @@ export const content = {
             "This CV was saved before we started storing the data this needs. Generate a newer CV and prepare from that one.",
           generationFailed:
             "Something went wrong preparing your questions. Nothing was charged, so please try again.",
+          monthlyLimit: "You have used all of this month's interview preps. Your allowance resets with your credits.",
           retry: "Try again",
         },
       },
@@ -953,6 +965,8 @@ export const content = {
           normalName: "Essential",
           normalTagline: "Written for you, placed by you",
           normalBadge: "Self-directed",
+          // Sits where Premium shows its price. Essential has none.
+          normalIncluded: "Free with Pro or Elite",
           normalCta: "Choose Essential",
           premiumName: "Premium",
           premiumTagline: "Created for you by a specialist",
@@ -1139,8 +1153,8 @@ export const content = {
           empty: "You have not generated anything yet.",
           buyAgainTitle: "Create another profile",
           buyAgainBody:
-            "Changed roles, or created a new CV? Purchase again and generate a fresh profile from a different CV.",
-          buyAgainCta: "Purchase another profile",
+            "Changed roles, or created a new CV? Generate a fresh profile from a different CV.",
+          buyAgainCta: "Create a new profile",
           hideBuyAgain: "Not now",
         },
 
@@ -1372,7 +1386,7 @@ export const content = {
           cta: "ابدأ مع برو",
           badge: "الأكثر رواجًا",
           // عرض التأسيس شارة وندرة، وليس خصمًا.
-          limitedOffer: "أول 50 مشتركًا في برو يحتفظون بشارة «عضو مؤسس» دائمة على ملفهم الشخصي. الشارة لك إلى الأبد، والسعر 29 ريالًا في الحالتين.",
+          limitedOffer: "أول 50 مشتركًا في برو يحتفظون بشارة «عضو مؤسس» دائمة على ملفهم الشخصي.",
           featured: true,
           premium: false,
         },
@@ -1888,6 +1902,10 @@ export const content = {
           title: "اختر سيرة ذاتية للبدء",
           sub: "نحضّر انطلاقًا من الوصف الوظيفي الذي خُصصت له هذه السيرة، فتكون الأسئلة لتلك الوظيفة تحديدًا.",
           eligibleTag: "جاهزة",
+          preparedTag: "محضّرة",
+          openCta: "افتح أسئلتك",
+          openingCta: "جارٍ الفتح…",
+          preparedOn: (date: string) => `حُضّرت في ${date}`,
           selectCta: "تحضير الأسئلة",
           loading: "جارٍ تحميل سيرك الذاتية…",
           emptyTitle: "لا توجد سير ذاتية بعد",
@@ -1908,7 +1926,7 @@ export const content = {
 
         generating: {
           title: "جارٍ تحضير أسئلتك",
-          body: "نقرأ الوصف الوظيفي مقابل سيرتك الذاتية ونكتب إجابة لكل سؤال. يستغرق ذلك بضع دقائق، فأبقِ هذه الصفحة مفتوحة.",
+          body: "نقرأ الوصف الوظيفي مقابل سيرتك الذاتية ونكتب إجابة لكل سؤال. يستغرق ذلك دقيقتين تقريبًا، فأبقِ هذه الصفحة مفتوحة.",
           steps: {
             prepare: "إعادة قراءة هذه الوظيفة مقابل سيرتك الذاتية",
             generate: "كتابة أسئلتك وإجاباتها",
@@ -1919,6 +1937,10 @@ export const content = {
         results: {
           backToCvs: "اختيار سيرة أخرى",
           regenerate: "إعادة التوليد",
+          regenerateWithCount: (left: number, total: number) =>
+            `إعادة التوليد (بقي ${left} من ${total} هذا الشهر)`,
+          regenerateNoneLeft: (total: number) => `استخدمت كل مرات التوليد هذا الشهر (${total})`,
+          savedNote: "تم الحفظ. يمكنك مغادرة الصفحة والعودة إليها دون إعادة التوليد.",
           prepared: (n: number) => `${n} سؤالًا جاهزًا`,
           forRole: "لوظيفة",
           atCompany: "في",
@@ -1936,6 +1958,7 @@ export const content = {
           fromPosting: "من الإعلان الوظيفي",
           answerAngle: "كيف تتعامل معه",
           starLabel: "إجابتك، من سيرتك الذاتية",
+          starSummaryLabel: "ملخّص سريع",
           star: {
             situation: "الموقف",
             task: "المهمة",
@@ -1964,6 +1987,7 @@ export const content = {
           no_snapshot:
             "حُفظت هذه السيرة قبل أن نبدأ بتخزين البيانات التي يحتاجها هذا القسم. أنشئ سيرة أحدث وحضّر منها.",
           generationFailed: "حدث خطأ أثناء تحضير أسئلتك. لم يُخصم منك شيء، فحاول مرة أخرى.",
+          monthlyLimit: "استخدمت كل مرات التحضير للمقابلة هذا الشهر. ويتجدد رصيدك مع تجدد نقاطك.",
           retry: "حاول مرة أخرى",
         },
       },
@@ -2074,6 +2098,7 @@ export const content = {
           normalName: "الأساسية",
           normalTagline: "نكتبه لك وتضعه أنت",
           normalBadge: "تنفيذ ذاتي",
+          normalIncluded: "مجانًا مع برو أو النخبة",
           normalCta: "اختيار الأساسية",
           premiumName: "المميزة",
           premiumTagline: "يُنشئه لك متخصص",
@@ -2253,8 +2278,8 @@ export const content = {
           status: { ready: "جاهز", generating: "جارٍ التوليد", failed: "فشل" },
           empty: "لم تولّد شيئًا بعد.",
           buyAgainTitle: "أنشئ ملفًا آخر",
-          buyAgainBody: "غيّرت وظيفتك أو أنشأت سيرة ذاتية جديدة؟ اشترِ مرة أخرى وولّد ملفًا جديدًا من سيرة مختلفة.",
-          buyAgainCta: "شراء ملف آخر",
+          buyAgainBody: "غيّرت وظيفتك أو أنشأت سيرة ذاتية جديدة؟ ولّد ملفًا جديدًا من سيرة مختلفة.",
+          buyAgainCta: "إنشاء ملف جديد",
           hideBuyAgain: "ليس الآن",
         },
 

@@ -7,6 +7,7 @@ import { DashboardButton } from "@/components/dashboard";
 import {
   ApiError,
   fetchInterviewOverview,
+  fetchSavedInterviewPrep,
   generateInterviewPrep,
   InterviewCategory,
   InterviewCv,
@@ -45,6 +46,21 @@ import {
    Navigating away and back means generating again, which is the scope this
    version was specified at: no chat, no scoring, no voice, no sessions.
 ======================================================================== */
+
+/**
+ * A company name worth printing, or null.
+ *
+ * jd_analyzer.py writes the literal "Unknown" into resumes.company when the
+ * posting never named an employer, so it reaches us as data. Same helper and
+ * same reasoning as the LinkedIn page.
+ */
+const NO_COMPANY = new Set(["unknown", "n/a", "na", "not specified", "غير معروف", "غير محدد"]);
+
+function displayCompany(company: string | null | undefined): string | null {
+  const value = (company || "").trim();
+  if (!value || NO_COMPANY.has(value.toLowerCase())) return null;
+  return value;
+}
 
 export default function InterviewPrepPage() {
   const { t, lang, dir } = useLang();
@@ -147,6 +163,8 @@ export default function InterviewPrepPage() {
         return copy.errors.no_jd;
       case "no_snapshot":
         return copy.errors.no_snapshot;
+      case "monthly_limit_reached":
+        return copy.errors.monthlyLimit;
       case "generation_failed":
       case "stream_interrupted":
         return copy.errors.generationFailed;
@@ -155,17 +173,53 @@ export default function InterviewPrepPage() {
     }
   }
 
+  /**
+   * Opens a CV's prep: the saved one if there is one, a fresh generation if
+   * not. Routed here rather than at the card so the picker stays a dumb
+   * list, and so a saved prep can never be skipped by accident, which would
+   * silently cost a monthly generation.
+   */
+  async function handleOpen(cv: InterviewCv) {
+    if (!cv.prepared_at) return handleGenerate(cv.id);
+
+    setBusyId(cv.id);
+    setActionError(null);
+    try {
+      const { content } = await fetchSavedInterviewPrep(cv.id);
+      showResult(content, cv.id);
+    } catch (error) {
+      const err = error as ApiError;
+      console.error("fetchSavedInterviewPrep failed:", err);
+      // The saved copy is gone (the CV was deleted and recreated, or the
+      // table was cleared). Falling through to a fresh generation is better
+      // than an error for something the user can still have.
+      if (err.status === 404) {
+        setBusyId(null);
+        return handleGenerate(cv.id);
+      }
+      setActionError(messageForError(err));
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  function showResult(content: InterviewPrepContent, cvId: string) {
+    setResult(content);
+    setResultCvId(cvId);
+    setFilter("all");
+    setOpenIds(new Set());
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+
   async function handleGenerate(cvId: string) {
     setBusyId(cvId);
     setStep(null);
     setActionError(null);
     try {
-      const { content } = await generateInterviewPrep(cvId, setStep);
-      setResult(content);
-      setResultCvId(cvId);
-      setFilter("all");
-      setOpenIds(new Set());
-      window.scrollTo({ top: 0, behavior: "smooth" });
+      const { content } = await generateInterviewPrep(cvId, lang, setStep);
+      showResult(content, cvId);
+      // Refreshes the remaining count and marks this CV as prepared.
+      await load().catch(() => undefined);
     } catch (error) {
       const err = error as ApiError;
       console.error("generateInterviewPrep failed:", err);
@@ -182,12 +236,10 @@ export default function InterviewPrepPage() {
 
   // Which phases this particular run will report. An English CV never emits
   // "localize", so listing it would leave a step that can never light up.
-  const phases = useMemo<InterviewStep[]>(() => {
-    const cv = overview?.cvs.find((c) => c.id === busyId);
-    return cv?.cv_language === "ar"
-      ? ["prepare", "generate", "localize"]
-      : ["prepare", "generate"];
-  }, [overview, busyId]);
+  const phases = useMemo<InterviewStep[]>(
+    () => (lang === "ar" ? ["prepare", "generate", "localize"] : ["prepare", "generate"]),
+    [lang]
+  );
 
   // Memoized so the empty-array fallback isn't a fresh reference on every
   // render, which would make both derived useMemos below recompute forever.
@@ -214,6 +266,7 @@ export default function InterviewPrepPage() {
   // The QUESTIONS follow the CV's language, which is not necessarily the
   // site's: an Arabic CV read on an English interface still has to render
   // its Arabic RTL, and vice versa.
+  const quota = overview?.quota ?? null;
   const contentLang = result?.language === "ar" ? "ar" : "en";
   const contentDir: "ltr" | "rtl" = contentLang === "ar" ? "rtl" : "ltr";
 
@@ -305,13 +358,21 @@ export default function InterviewPrepPage() {
               {copy.results.backToCvs}
             </button>
 
+            {/* The count sits ON the button because regenerating spends one
+                of a small monthly allowance, and finding that out afterwards
+                is the wrong time. */}
             <button
               type="button"
               onClick={() => resultCvId && handleGenerate(resultCvId)}
-              className="inline-flex items-center gap-1.5 text-xs font-medium text-slate-500 hover:text-slate-900"
+              disabled={quota ? quota.remaining <= 0 : false}
+              className="inline-flex items-center gap-1.5 text-xs font-medium text-slate-500 hover:text-slate-900 disabled:cursor-not-allowed disabled:opacity-50"
             >
               <RefreshCw className="size-3.5" aria-hidden />
-              {copy.results.regenerate}
+              {!quota
+                ? copy.results.regenerate
+                : quota.remaining <= 0
+                ? copy.results.regenerateNoneLeft(quota.limit)
+                : copy.results.regenerateWithCount(quota.remaining, quota.limit)}
             </button>
           </div>
 
@@ -319,7 +380,8 @@ export default function InterviewPrepPage() {
             total={questions.length}
             counts={counts}
             role={result.role}
-            company={result.company}
+            company={displayCompany(result.company) ?? ""}
+            unknownCompanyLabel={resumesCopy.unknownCompany}
             overview={result.overview}
             copy={copy}
             contentDir={contentDir}
@@ -327,6 +389,10 @@ export default function InterviewPrepPage() {
 
           {/* Only worth saying when the two languages differ — otherwise it
               states the obvious. */}
+          <p className="rounded-lg bg-emerald-50 px-3 py-2 text-xs leading-relaxed text-emerald-800">
+            {copy.results.savedNote}
+          </p>
+
           {contentLang !== lang && (
             <p className="rounded-lg bg-blue-50 px-3 py-2 text-xs leading-relaxed text-slate-600">
               {copy.results.languageNote[contentLang]}
@@ -390,7 +456,7 @@ export default function InterviewPrepPage() {
           ) : (
             <CvPicker
               cvs={overview?.cvs ?? []}
-              onSelect={(cv: InterviewCv) => handleGenerate(cv.id)}
+              onSelect={(cv: InterviewCv) => handleOpen(cv)}
               busyId={busyId}
               copy={copy}
               resumesCopy={resumesCopy}
