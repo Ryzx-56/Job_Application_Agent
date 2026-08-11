@@ -462,7 +462,7 @@ export const content = {
         {
           id: "linkedin-what-is-it",
           q: "What is the LinkedIn add-on?",
-          a: "A one-time purchase that turns a CV you've already generated here into ready-to-paste LinkedIn content: a headline, an About section, your five strongest skills, a block for every role in your experience, three post ideas drawn from your real projects, and clear instructions for the sections LinkedIn makes you type in directly. It's written in English whatever language your CV is in, because that's how recruiters across the region search.",
+          a: `It turns a CV you've already generated here into ready-to-paste LinkedIn content: a headline, an About section, your five strongest skills, a block for every role in your experience, three post ideas drawn from your real projects, and clear instructions for the sections LinkedIn makes you type in directly. Essential comes with the Pro and Elite plans, ${ADDON_CAPS.pro.linkedinEssential} profiles a month on Pro and ${ADDON_CAPS.elite.linkedinEssential} on Elite. It's written in English whatever language your CV is in, because that's how recruiters across the region search.`,
         },
         {
           id: "linkedin-tiers",
@@ -472,7 +472,7 @@ export const content = {
         {
           id: "linkedin-refunds",
           q: "Can I get a refund on the LinkedIn add-on?",
-          a: "Essential is delivered the instant you press Generate, so it can't be refunded once your content exists. If you've paid and haven't generated yet, email us and we'll refund it in full. Premium is refundable in full any time before your specialist begins work. Once the build has started it isn't, because the content has been delivered and the service is already under way.",
+          a: "Essential isn't bought separately, so there's nothing to refund on it: it comes with a Pro or Elite subscription, and those can be cancelled any time and stay active to the end of the cycle you've already paid for. Premium is a one-time purchase and is refundable in full any time before your specialist begins work. Once the build has started it isn't, because the content has been delivered and the service is already under way.",
         },
       ],
     },
@@ -1641,7 +1641,7 @@ export const content = {
         {
           id: "linkedin-what-is-it",
           q: "ما هي إضافة لينكدإن؟",
-          a: "عملية شراء لمرة واحدة تحوّل سيرة ذاتية أنشأتها هنا إلى محتوى لينكدإن جاهز للّصق: عنوان مهني، وقسم «نبذة»، وأقوى خمس مهارات لديك، ونص لكل وظيفة في خبراتك، وثلاث أفكار منشورات مستخرجة من مشاريعك الحقيقية، وإرشادات واضحة للأقسام التي يشترط لينكدإن إدخالها مباشرة. ويُكتب بالإنجليزية أيًا كانت لغة سيرتك الذاتية، لأن هذه هي طريقة بحث جهات التوظيف في المنطقة.",
+          a: `تحوّل سيرة ذاتية أنشأتها هنا إلى محتوى لينكدإن جاهز للّصق: عنوان مهني، وقسم «نبذة»، وأقوى خمس مهارات لديك، ونص لكل وظيفة في خبراتك، وثلاث أفكار منشورات مستخرجة من مشاريعك الحقيقية، وإرشادات واضحة للأقسام التي يشترط لينكدإن إدخالها مباشرة. والباقة الأساسية مشمولة في خطتَي برو والنخبة، ${arCount(ADDON_CAPS.pro.linkedinEssential, AR_PROFILES)} شهريًا في برو و${arCount(ADDON_CAPS.elite.linkedinEssential, AR_PROFILES)} في النخبة. ويُكتب بالإنجليزية أيًا كانت لغة سيرتك الذاتية، لأن هذه هي طريقة بحث جهات التوظيف في المنطقة.`,
         },
         {
           id: "linkedin-tiers",
@@ -1651,7 +1651,7 @@ export const content = {
         {
           id: "linkedin-refunds",
           q: "هل يمكنني استرداد مبلغ إضافة لينكدإن؟",
-          a: "الباقة الأساسية تُسلَّم لحظة ضغطك على «إنشاء»، لذا لا يمكن استردادها بعد أن يصبح المحتوى موجودًا. وإن كنت قد دفعت ولم تولّد بعد، فراسلنا ونعيد المبلغ كاملًا. والباقة المميزة قابلة للاسترداد كاملًا في أي وقت قبل أن يبدأ المتخصص عمله، وبعد بدء التنفيذ لا تعود قابلة للاسترداد لأن المحتوى قد سُلِّم والخدمة جارية.",
+          a: "الباقة الأساسية لا تُشترى على حدة، فلا شيء يُسترد فيها: هي مشمولة في اشتراك برو أو النخبة، ويمكن إلغاء الاشتراك في أي وقت مع بقائه فعّالًا حتى نهاية الدورة المدفوعة. أما الباقة المميزة فهي شراء لمرة واحدة وقابلة للاسترداد كاملًا في أي وقت قبل أن يبدأ المتخصص عمله، وبعد بدء التنفيذ لا تعود قابلة للاسترداد لأن المحتوى قد سُلِّم والخدمة جارية.",
         },
       ],
     },
