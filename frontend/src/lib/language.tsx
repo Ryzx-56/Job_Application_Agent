@@ -2,6 +2,9 @@
 
 import React, { createContext, useContext, useState, useEffect, ReactNode, useRef } from "react";
 import { createClient } from "@/lib/supabase/client";
+// Neutral module, not a client one — the server reads the same cookie name.
+// See the note in lib/lang-cookie.ts for why it cannot live in this file.
+import { LANG_COOKIE } from "@/lib/lang-cookie";
 import {
   ADDON_CAPS,
   CREDIT_COST,
@@ -46,15 +49,62 @@ export const content = {
       getStarted: "Get started",
       dashboard: "Dashboard",
     },
+    /* ── HERO (§3.1) ──────────────────────────────────────────────────────
+       ONE PROMISE, STATED ONCE. The old headline named an outcome nobody
+       can promise ("land more interviews") and the sub-line was a feature
+       list. This states what the product does and what you get.
+
+       The free line is the third messaging pillar and sits with the CTA
+       because it removes the last objection before signup. It has to be
+       exact: an Arabic CV costs two credits, so the free allowance yields
+       fewer Arabic CVs than English ones and the copy says so rather than
+       rounding in our favour. Numbers come from lib/pricing.ts. */
     hero: {
-      badge: "New",
-      badgeText: "6 AI agents tailoring every application",
-      headline: "Land more interviews with an AI tailored resume",
-      sub: "Upload your CV or build one from scratch, paste a job description, and Tarshih tailors your resume and cover letter to it, in English or Arabic, then shows you exactly what's missing and finds similar jobs to apply to.",
-      ctaPrimary: "Optimize my resume",
+      headline: "Every job gets its own CV",
+      sub: "We read the posting, rewrite your CV for it in Arabic or English, and show you how well it matches before you send it. Then we find other roles worth your time.",
+      ctaPrimary: "Start free",
       ctaSecondary: "See how it works",
-      noCard: "No credit card required",
-      freeForever: "Free plan forever",
+      freeLine: `${enCount(TIERS.free.credits, "credit")} free every month, no card. That is ${TIERS.free.credits} CVs in English, or one in Arabic and one in English.`,
+      // Alt text. The visuals carry real information, so they get described
+      // rather than labelled "product screenshot".
+      sheetAlt: "A tailored CV with an ATS score of 92 in the margin",
+      matchesAlt: "Five matched job openings, each labelled strong, partial or stretch",
+    },
+    heroSheet: {
+      docLabel: "Tailored CV",
+      role: "Frontend Engineer",
+      scoreLabel: "ATS score",
+      matchLabel: "Job match",
+      sections: ["Summary", "Experience", "Skills"],
+      // Shown as the CV settles: what changed, not what the software did.
+      settling: "Rewriting for this posting",
+      settled: "Ready",
+    },
+    heroMatches: {
+      title: "Openings matched to you",
+      // Roles and cities only. No employer names: a mockup that pairs real
+      // companies with "matched openings" implies those companies are hiring
+      // through us, which is a claim we cannot make.
+      items: [
+        { role: "Frontend Engineer", city: "Riyadh", rank: "strong" as const },
+        { role: "Product Engineer", city: "Jeddah", rank: "strong" as const },
+        { role: "Full-stack Developer", city: "Riyadh", rank: "partial" as const },
+        { role: "UI Engineer", city: "Remote", rank: "partial" as const },
+        { role: "Engineering Lead", city: "Riyadh", rank: "stretch" as const },
+      ],
+      ranks: { strong: "Strong match", partial: "Partial match", stretch: "Stretch role" },
+    },
+    /* ── COMPANY MARQUEE (§3.2) ───────────────────────────────────────────
+       THE LABEL IS NOT A HIRING CLAIM. "Land jobs at companies like" would
+       assert an outcome that has not happened and imply endorsement by every
+       company named. This says what is actually true: paste any posting from
+       any of them and the CV is written for it.
+
+       Names are set in type, not as logos. No official monochrome wordmark
+       assets are licensed for this repo, and an unofficial logo is worse
+       than type on both the legal and the design side. */
+    marquee: {
+      label: "Tailor your CV for roles at",
     },
     dashboardPreview: {
       urlLabel: "app.tarshih.ai / dashboard",
@@ -1217,15 +1267,47 @@ export const content = {
       getStarted: "ابدأ الآن",
       dashboard: "لوحة التحكم",
     },
+    /* ── HERO (§3.1) ──────────────────────────────────────────────────────
+       Written as Arabic, not as a translation of the English above. The
+       English headline is "Every job gets its own CV"; the Arabic carries
+       the same idea in a construction Arabic actually uses, which is why the
+       wording diverges rather than tracking the English word order. */
     hero: {
-      badge: "جديد",
-      badgeText: "6 وكلاء ذكاء اصطناعي يخصّصون كل طلب",
-      headline: "احصل على مقابلات أكثر بسيرة ذاتية مصمّمة بالذكاء الاصطناعي",
-      sub: "ارفع سيرتك الذاتية أو ابنِ واحدة من الصفر، الصق الوصف الوظيفي، ويقوم ترشيح بتخصيص سيرتك وخطاب تقديمك له، بالعربية أو الإنجليزية، ثم يوضح لك بالضبط ما ينقصك ويقترح عليك وظائف مشابهة للتقديم عليها.",
-      ctaPrimary: "حسّن سيرتي الذاتية",
+      headline: "لكل وظيفة سيرة ذاتية تخصّها",
+      sub: "نقرأ إعلان الوظيفة، ونعيد كتابة سيرتك له بالعربية أو بالإنجليزية، ونعرض درجة توافقها قبل أن ترسلها. ونبحث لك عن وظائف أخرى تناسبك، فلا تبقى تبحث وحدك.",
+      ctaPrimary: "ابدأ مجانًا",
       ctaSecondary: "شاهد كيف يعمل",
-      noCard: "لا حاجة لبطاقة ائتمان",
-      freeForever: "خطة مجانية للأبد",
+      freeLine: `${arCount(TIERS.free.credits, AR_POINTS)} مجانًا كل شهر، بلا بطاقة. تكفي ${arCount(TIERS.free.credits, AR_CVS)} بالإنجليزية، أو واحدة بالعربية وأخرى بالإنجليزية.`,
+      sheetAlt: "سيرة ذاتية مخصصة ودرجة توافقها مع نظام التتبع 92 في الهامش",
+      matchesAlt: "خمس وظائف مطابقة، كل واحدة موسومة بتطابق قوي أو جزئي أو فرصة طموحة",
+    },
+    heroSheet: {
+      docLabel: "سيرة ذاتية مخصصة",
+      role: "مهندس واجهات أمامية",
+      scoreLabel: "التوافق مع النظام",
+      matchLabel: "توافق الوظيفة",
+      sections: ["نبذة", "الخبرة", "المهارات"],
+      settling: "إعادة الكتابة لهذا الإعلان",
+      settled: "جاهزة",
+    },
+    heroMatches: {
+      title: "وظائف مطابقة لك",
+      // أسماء وظائف ومدن فقط، بلا أسماء جهات توظيف: ربط شركات حقيقية بوظائف
+      // «مطابقة» في نموذج توضيحي يوحي بأنها توظّف عبرنا، وهذا ادعاء لا نملكه.
+      items: [
+        { role: "مهندس واجهات أمامية", city: "الرياض", rank: "strong" as const },
+        { role: "مهندس منتجات", city: "جدة", rank: "strong" as const },
+        { role: "مطوّر متكامل", city: "الرياض", rank: "partial" as const },
+        { role: "مهندس واجهات", city: "عن بُعد", rank: "partial" as const },
+        { role: "قائد فريق هندسي", city: "الرياض", rank: "stretch" as const },
+      ],
+      ranks: { strong: "تطابق قوي", partial: "تطابق جزئي", stretch: "فرصة طموحة" },
+    },
+    /* ── COMPANY MARQUEE (§3.2) ───────────────────────────────────────────
+       الصيغة هنا ليست ادعاء توظيف: نقول ما هو صحيح فعلًا، وهو أنك تستطيع
+       لصق أي إعلان من هذه الجهات وتُكتب سيرتك له. */
+    marquee: {
+      label: "صمّم سيرتك لوظائف في",
     },
     dashboardPreview: {
       urlLabel: "app.tarshih.ai / لوحة التحكم",
@@ -2395,26 +2477,71 @@ async function persistLanguageToAccount(lang: Lang) {
   }
 }
 
-export function LangProvider({ children }: { children: ReactNode }) {
-  // Always start at "en" to match what the server renders (no localStorage
-  // on the server). Reading the saved language happens after mount, below —
-  // reading it during the initial render caused a client/server mismatch
-  // (hydration error) whenever the saved language wasn't "en".
-  const [lang, setLangState] = useState<Lang>("en");
+/** Same key as the cookie, in localStorage. Kept because that is where every
+ *  existing visitor's choice currently lives — see the migration in the
+ *  provider below. */
+const LANG_STORAGE_KEY = "tarshih_lang";
+
+function writeLangCookie(lang: Lang) {
+  // A year, readable by the server on the next request, and Lax so it still
+  // arrives on a normal top-level navigation from a search result or a link.
+  document.cookie = `${LANG_COOKIE}=${lang}; path=/; max-age=31536000; SameSite=Lax`;
+}
+
+export function LangProvider({
+  children,
+  initialLang,
+}: {
+  children: ReactNode;
+  /** Read from the cookie in app/layout.tsx, so the FIRST render on the
+   *  server is already in the reader's language. */
+  initialLang?: Lang;
+}) {
+  // WHY THIS IS A PROP AND NOT A useEffect ANY MORE.
+  //
+  // This used to hardcode "en" and then swap to the saved language after
+  // mount, to dodge a hydration mismatch. The cost was that every returning
+  // Arabic reader — most of them — was served an English LTR page and watched
+  // it flip to Arabic RTL a moment later. On an Arabic-first product that is
+  // the first impression.
+  //
+  // The language now travels in a cookie, so the server knows it before it
+  // renders and passes it down here. Server and client agree on the first
+  // paint, there is nothing to correct, and no flash. localStorage is still
+  // read below, but only to migrate visitors who chose a language before the
+  // cookie existed.
+  const [lang, setLangState] = useState<Lang>(initialLang ?? "en");
 
   useEffect(() => {
-    const saved = localStorage.getItem("tarshih_lang") as Lang;
+    // MIGRATION, and nothing else. If the cookie is already set, the server
+    // used it and this must not touch anything.
+    if (document.cookie.includes(`${LANG_COOKIE}=`)) return;
+    const saved = localStorage.getItem(LANG_STORAGE_KEY) as Lang;
     if (saved === "en" || saved === "ar") {
-      setLangState(saved);
+      writeLangCookie(saved);
+      // Sets state in an effect, which the lint rule rightly objects to in
+      // general. It is correct here and cannot be avoided: localStorage does
+      // not exist on the server, so a visitor who chose Arabic before the
+      // cookie existed cannot be known about until after mount. It fires at
+      // most once per such visitor — the cookie written on the line above is
+      // what stops it ever running again. Reading localStorage in the
+      // useState initializer instead would just move the same mismatch into
+      // hydration.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      if (saved !== lang) setLangState(saved);
     }
+    // Runs once, on mount.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Custom setter that persists the language pick to localStorage and,
-  // if the person is logged in, to their account too.
+  // Custom setter that persists the language pick to the cookie (so the
+  // server renders it next time), to localStorage, and, if the person is
+  // logged in, to their account too.
   const setLang = (newLang: Lang) => {
     setLangState(newLang);
     if (typeof window !== "undefined") {
-      localStorage.setItem("tarshih_lang", newLang);
+      localStorage.setItem(LANG_STORAGE_KEY, newLang);
+      writeLangCookie(newLang);
     }
     persistLanguageToAccount(newLang);
   };
