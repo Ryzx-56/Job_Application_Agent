@@ -2,6 +2,32 @@
 
 import React, { createContext, useContext, useState, useEffect, ReactNode, useRef } from "react";
 import { createClient } from "@/lib/supabase/client";
+import {
+  ADDON_CAPS,
+  CREDIT_COST,
+  LINKEDIN_PREMIUM_SAR,
+  PACKS,
+  SAR_PER_USD,
+  TIERS,
+  arCount,
+  enCount,
+} from "@/lib/pricing";
+
+/* ========================================================================
+   ARABIC COUNTED NOUNS
+
+   Every allowance the Arabic dictionary quotes is interpolated from
+   lib/pricing.ts, and Arabic changes the counted noun with the number — a
+   dual form at 2, a plural at 3-10, back to a singular at 11 and up. These
+   are the four forms of each noun the pricing copy counts, handed to
+   arCount() so a changed allowance can't produce "٢ نقاط". Defined once
+   here rather than at each call site, since the same nouns recur across the
+   plan cards, the packs, the FAQ and the dashboard.
+======================================================================== */
+const AR_POINTS = { one: "نقطة واحدة", two: "نقطتان", few: "نقاط", many: "نقطة" };
+const AR_CVS = { one: "سيرة ذاتية واحدة", two: "سيرتان ذاتيتان", few: "سير ذاتية", many: "سيرة ذاتية" };
+const AR_PROFILES = { one: "ملف واحد", two: "ملفان", few: "ملفات", many: "ملفًا" };
+const AR_JOBS = { one: "وظيفة واحدة", two: "وظيفتان", few: "وظائف", many: "وظيفة" };
 
 /* ========================================================================
    CONTENT — one dictionary per language, shared by every page. Add new
@@ -162,7 +188,7 @@ export const content = {
       eyebrow: "Pricing",
       title: "Simple pricing that grows with your search",
       description: "Start free and upgrade only when you need more credits. Cancel anytime.",
-      creditNote: "1 credit = 1 English CV + cover letter · 2 credits = 1 Arabic CV + cover letter.",
+      creditNote: `${enCount(CREDIT_COST.en, "credit")} = 1 English CV + cover letter · ${enCount(CREDIT_COST.ar, "credit")} = 1 Arabic CV + cover letter.`,
       founderNote: {
         title: "One person, paying for every plan you see",
         body: "Tarshih is built and run solo, and every generation, on every tier, costs real AI-processing money. Free isn't just unprofitable, it's a loss covered on purpose so you can try Tarshih before paying anything. Pro and Elite subscribers are what keep the whole thing running.",
@@ -170,7 +196,7 @@ export const content = {
       },
       mostPopular: "Most popular",
       premiumBadgeLabel: "Premium tier",
-      currencyNote: "All prices are charged in Saudi riyals. The dollar figure under each price is an approximate reference at 3.75 SAR to the dollar, not a payment option." as string | null,
+      currencyNote: `All prices are charged in Saudi riyals. The dollar figure under each price is an approximate reference at ${SAR_PER_USD} SAR to the dollar, not a payment option.` as string | null,
       plans: [
         {
           name: "Free",
@@ -185,11 +211,11 @@ export const content = {
           // a `discountLabel`: a struck-through price the product never
           // charged is a fabricated reference price, which is exactly what
           // consumer-protection rules on "was/now" pricing exist to stop.
-          sar: 0,
+          sar: TIERS.free.sar,
           period: "/ month",
           description: "Everything you need to try Tarshih on your next application.",
           features: [
-            "3 credits / month: 3 English CVs, or mix in Arabic",
+            `${enCount(TIERS.free.credits, "credit")} / month: ${TIERS.free.credits} English CVs, or mix in Arabic`,
             "Full ATS & job match scoring",
             "Tailored CV + matching cover letter",
             "Resume history, last 10 kept",
@@ -207,18 +233,18 @@ export const content = {
           // founding discount and no prior price: 29 SAR has never been
           // anything else, so nothing here may present it as reduced. See
           // the note on `originalSar` in the Free plan above.
-          sar: 29,
+          sar: TIERS.pro.sar,
           period: "/ month",
           description: "For active job seekers who want serious volume, every time.",
           features: [
-            "24 credits / month: 24 English CVs, or mix in Arabic",
+            `${enCount(TIERS.pro.credits, "credit")} / month: ${TIERS.pro.credits} English CVs, or mix in Arabic`,
             "Tailored CV + personalized cover letter",
             "Full ATS & job match scoring",
             "Shows exactly what you're missing",
             "5 similar jobs, ranked, per application",
             "Fact-check pass on every generation",
-            "LinkedIn Essential, 2 profiles / month",
-            "Interview Prep, 5 jobs / month",
+            `LinkedIn Essential, ${ADDON_CAPS.pro.linkedinEssential} profiles / month`,
+            `Interview Prep, ${ADDON_CAPS.pro.interviewPrep} jobs / month`,
             "Pro badge on your profile",
             "Resume history, last 100 kept",
             "Priority processing",
@@ -234,18 +260,18 @@ export const content = {
         {
           name: "Elite",
           slug: "elite",
-          sar: 99,
+          sar: TIERS.elite.sar,
           period: "/ month",
           description: "The premium tier for candidates who want every advantage.",
           features: [
-            "80 credits / month: 80 English CVs, or mix in Arabic",
+            `${enCount(TIERS.elite.credits, "credit")} / month: ${TIERS.elite.credits} English CVs, or mix in Arabic`,
             "Tailored CV + personalized cover letter",
             "Full ATS & job match scoring",
             "Shows exactly what you're missing",
             "5 similar jobs, ranked, per application",
             "Fact-check pass on every generation",
-            "LinkedIn Essential, 5 profiles / month",
-            "Interview Prep, 15 jobs / month",
+            `LinkedIn Essential, ${ADDON_CAPS.elite.linkedinEssential} profiles / month`,
+            `Interview Prep, ${ADDON_CAPS.elite.interviewPrep} jobs / month`,
             "Unlimited resume history",
             "Highest AI processing priority",
             "Exclusive Elite badge on your profile",
@@ -266,9 +292,9 @@ export const content = {
       perApp: "per credit",
       cta: "Buy pack",
       packs: [
-        { name: "Starter", slug: "starter", sar: 9, creditCount: 5, credits: "5 credits", blurb: "A couple of applications to test the waters.", badge: null as string | null, featured: false },
-        { name: "Best Value", slug: "best-value", sar: 22, creditCount: 15, credits: "15 credits", blurb: "The sweet spot for an active search.", badge: "Best Value", featured: true },
-        { name: "Power", slug: "power", sar: 38, creditCount: 30, credits: "30 credits", blurb: "For a serious, high volume job hunt.", badge: "Max Savings", featured: false },
+        { name: "Starter", slug: "starter", sar: PACKS.starter.sar, creditCount: PACKS.starter.credits, credits: enCount(PACKS.starter.credits, "credit"), blurb: "A couple of applications to test the waters.", badge: null as string | null, featured: false },
+        { name: "Best Value", slug: "best-value", sar: PACKS["best-value"].sar, creditCount: PACKS["best-value"].credits, credits: enCount(PACKS["best-value"].credits, "credit"), blurb: "The sweet spot for an active search.", badge: "Best Value", featured: true },
+        { name: "Power", slug: "power", sar: PACKS.power.sar, creditCount: PACKS.power.credits, credits: enCount(PACKS.power.credits, "credit"), blurb: "For a serious, high volume job hunt.", badge: "Max Savings", featured: false },
       ],
     },
     /* ── LinkedIn add-on, featured section on the landing page ──
@@ -316,13 +342,13 @@ export const content = {
           "A paste-ready block for every role in your experience",
           "Three post ideas from your real projects",
           "A copy button on every field",
-          "2 profiles a month on Pro, 5 on Elite",
+          `${ADDON_CAPS.pro.linkedinEssential} profiles a month on Pro, ${ADDON_CAPS.elite.linkedinEssential} on Elite`,
         ],
         cta: "See plans",
       },
       premium: {
         name: "Premium",
-        sar: 200,
+        sar: LINKEDIN_PREMIUM_SAR,
         badge: "Fully managed",
         tagline: "Created for you by a specialist",
         bullets: [
@@ -357,12 +383,11 @@ export const content = {
       contactBody: "Send us your question and a member of our support team will get back to you.",
       supportEmail: "support@tarshih.com",
       backToHome: "Back to home",
-      // NOTE: the LinkedIn answer below names the 200 SAR Premium price in
-      // prose. That's the one place a price is written by hand rather than read
-      // from PRICING in backend/core/linkedin.py, so if it changes, change this.
-      // Essential no longer has a price at all — it is bundled into Pro and
-      // Elite and capped monthly (ADDON_CAPS in backend/core/entitlements.py).
-      // It was listed here at 49 SAR long after it stopped being sold.
+      // Answers that quote a price, an allowance or a cap interpolate it from
+      // lib/pricing.ts rather than stating it. They used to state it, which is
+      // how this FAQ came to claim Pro included 40 credits (it includes 24)
+      // and that LinkedIn Essential cost 49 SAR a year after it stopped being
+      // sold separately. Do not re-type a number into an answer.
       items: [
         {
           id: "ats-what-is-it",
@@ -402,7 +427,7 @@ export const content = {
         {
           id: "credits",
           q: "What's a credit and how many do I get?",
-          a: "A credit is what you spend generating one tailored CV and cover letter. English applications cost 1 credit, Arabic applications cost 2, since they take more processing. Free includes 3 credits a month, Pro includes 24, and Elite includes 80.",
+          a: `A credit is what you spend generating one tailored CV and cover letter. English applications cost ${enCount(CREDIT_COST.en, "credit")}, Arabic applications cost ${CREDIT_COST.ar}, since they take more processing. Free includes ${enCount(TIERS.free.credits, "credit")} a month, Pro includes ${TIERS.pro.credits}, and Elite includes ${TIERS.elite.credits}.`,
         },
         {
           id: "sounds-like-me",
@@ -442,7 +467,7 @@ export const content = {
         {
           id: "linkedin-tiers",
           q: "What is the difference between LinkedIn Essential and Premium?",
-          a: "Essential is included with the Pro and Elite plans rather than sold separately. It gives you the finished content and you place it on your profile yourself, delivered the moment you generate it: 2 profiles a month on Pro, 5 on Elite. Premium, 200 SAR, is a separate one-time purchase that includes all of that and adds a specialist from our team who contacts you directly, builds and optimizes your whole profile with you, designs a custom cover photo, and reviews it once it's live.",
+          a: `Essential is included with the Pro and Elite plans rather than sold separately. It gives you the finished content and you place it on your profile yourself, delivered the moment you generate it: ${ADDON_CAPS.pro.linkedinEssential} profiles a month on Pro, ${ADDON_CAPS.elite.linkedinEssential} on Elite. Premium, ${LINKEDIN_PREMIUM_SAR} SAR, is a separate one-time purchase that includes all of that and adds a specialist from our team who contacts you directly, builds and optimizes your whole profile with you, designs a custom cover photo, and reviews it once it's live.`,
         },
         {
           id: "linkedin-refunds",
@@ -955,8 +980,7 @@ export const content = {
           usedUp: (total: number) =>
             `You have used all ${total} of this month's LinkedIn profiles. Your allowance resets with your credits.`,
           lockedTitle: "Included with Pro and Elite",
-          lockedBody:
-            "Subscribe to generate LinkedIn profiles from your CVs: 2 a month on Pro, 5 a month on Elite.",
+          lockedBody: `Subscribe to generate LinkedIn profiles from your CVs: ${ADDON_CAPS.pro.linkedinEssential} a month on Pro, ${ADDON_CAPS.elite.linkedinEssential} a month on Elite.`,
           lockedCta: "See plans",
         },
 
@@ -1335,7 +1359,10 @@ export const content = {
       title: "أسعار بسيطة تنمو مع بحثك عن عمل",
       description:
         "ابدأ مجانًا وطوّر خطتك فقط عند الحاجة لمزيد من النقاط. ألغِ الاشتراك في أي وقت.",
-      creditNote: "نقطة واحدة = سيرة ذاتية إنجليزية + خطاب تقديم · نقطتان = سيرة ذاتية عربية + خطاب تقديم.",
+      // AR_POINTS / AR_CVS carry the four Arabic forms of "نقطة" (credit) and
+      // "سيرة ذاتية" (CV) so a changed allowance keeps correct grammar rather
+      // than producing "٢ نقاط". See arCount in lib/pricing.ts.
+      creditNote: `${arCount(CREDIT_COST.en, AR_POINTS)} = سيرة ذاتية إنجليزية + خطاب تقديم · ${arCount(CREDIT_COST.ar, AR_POINTS)} = سيرة ذاتية عربية + خطاب تقديم.`,
       founderNote: {
         title: "شخص واحد يدفع تكلفة كل خطة تراها هنا",
         body: "ترشيح مبنية ومُدارة من شخص واحد، وكل توليد، في كل فئة، يكلّف مالًا حقيقيًا لمعالجة الذكاء الاصطناعي. الفئة المجانية ليست فقط غير مربحة، بل خسارة أتحملها عمدًا لتتمكن من تجربة ترشيح قبل أن تدفع أي شيء. مشتركو برو والنخبة هم من يبقون كل شيء قائمًا.",
@@ -1343,18 +1370,18 @@ export const content = {
       },
       mostPopular: "الأكثر رواجًا",
       premiumBadgeLabel: "الفئة المميزة",
-      currencyNote: "تُحصَّل جميع الأسعار بالريال السعودي. ورقم الدولار الظاهر تحت كل سعر للمرجعية فقط بسعر التعادل 3.75 ريال للدولار، وليس خيار دفع.",
+      currencyNote: `تُحصَّل جميع الأسعار بالريال السعودي. ورقم الدولار الظاهر تحت كل سعر للمرجعية فقط بسعر التعادل ${SAR_PER_USD} ريال للدولار، وليس خيار دفع.`,
       plans: [
         {
           name: "مجاني",
           slug: "free",
           // لا يوجد حقل «سعر سابق» في أي خطة، وهذا مقصود: كل سعر معروض هو
           // السعر الوحيد الذي حملته الخطة، فلا شيء يُشطب فوقه.
-          sar: 0,
+          sar: TIERS.free.sar,
           period: "شهريًا",
           description: "كل ما تحتاجه لتجربة ترشيح في طلبك القادم.",
           features: [
-            "3 نقاط شهريًا: 3 سير ذاتية إنجليزية، أو مزيج مع العربية",
+            `${arCount(TIERS.free.credits, AR_POINTS)} شهريًا: ${arCount(TIERS.free.credits, AR_CVS)} إنجليزية، أو مزيج مع العربية`,
             "نتيجة ATS وتوافق وظيفي كاملة",
             "سيرة ذاتية مخصصة + خطاب تقديم مطابق",
             "سجل يحفظ آخر 10 سير ذاتية",
@@ -1370,18 +1397,18 @@ export const content = {
           slug: "pro",
           // سعر واحد لكل مشتركي برو، مؤسسين أو غير مؤسسين. لا خصم تأسيس ولا
           // سعر سابق: 29 ريالًا لم يكن يومًا رقمًا آخر.
-          sar: 29,
+          sar: TIERS.pro.sar,
           period: "شهريًا",
           description: "لمن يبحث عن عمل بنشاط ويريد كمية أكبر من الطلبات، في كل مرة.",
           features: [
-            "24 نقطة شهريًا: 24 سيرة ذاتية إنجليزية، أو مزيج مع العربية",
+            `${arCount(TIERS.pro.credits, AR_POINTS)} شهريًا: ${arCount(TIERS.pro.credits, AR_CVS)} إنجليزية، أو مزيج مع العربية`,
             "سيرة ذاتية مخصصة + خطاب تقديم شخصي",
             "نتيجة ATS وتوافق وظيفي كاملة",
             "يوضح بالضبط ما ينقصك",
             "5 وظائف مشابهة ومصنّفة مع كل طلب",
             "مراجعة تحقق من الحقائق",
-            "لينكدإن الأساسية، ملفان شهريًا",
-            "التحضير للمقابلة، 5 وظائف شهريًا",
+            `لينكدإن الأساسية، ${arCount(ADDON_CAPS.pro.linkedinEssential, AR_PROFILES)} شهريًا`,
+            `التحضير للمقابلة، ${arCount(ADDON_CAPS.pro.interviewPrep, AR_JOBS)} شهريًا`,
             "شارة برو على ملفك الشخصي",
             "سجل يحفظ آخر 100 سيرة ذاتية",
             "معالجة ذات أولوية",
@@ -1396,18 +1423,18 @@ export const content = {
         {
           name: "النخبة",
           slug: "elite",
-          sar: 99,
+          sar: TIERS.elite.sar,
           period: "شهريًا",
           description: "الفئة المميزة لمن يريد كل ميزة ممكنة في طلباته.",
           features: [
-            "80 نقطة شهريًا: 80 سيرة ذاتية إنجليزية، أو مزيج مع العربية",
+            `${arCount(TIERS.elite.credits, AR_POINTS)} شهريًا: ${arCount(TIERS.elite.credits, AR_CVS)} إنجليزية، أو مزيج مع العربية`,
             "سيرة ذاتية مخصصة + خطاب تقديم شخصي",
             "نتيجة ATS وتوافق وظيفي كاملة",
             "يوضح بالضبط ما ينقصك",
             "5 وظائف مشابهة ومصنّفة مع كل طلب",
             "مراجعة تحقق من الحقائق",
-            "لينكدإن الأساسية، 5 ملفات شهريًا",
-            "التحضير للمقابلة، 15 وظيفة شهريًا",
+            `لينكدإن الأساسية، ${arCount(ADDON_CAPS.elite.linkedinEssential, AR_PROFILES)} شهريًا`,
+            `التحضير للمقابلة، ${arCount(ADDON_CAPS.elite.interviewPrep, AR_JOBS)} شهريًا`,
             "سجل غير محدود للسير الذاتية",
             "أعلى أولوية في معالجة الذكاء الاصطناعي",
             "شارة النخبة الحصرية على ملفك الشخصي",
@@ -1431,9 +1458,9 @@ export const content = {
         {
           name: "البداية",
           slug: "starter",
-          sar: 9,
-          creditCount: 5,
-          credits: "5 نقاط",
+          sar: PACKS.starter.sar,
+          creditCount: PACKS.starter.credits,
+          credits: arCount(PACKS.starter.credits, AR_POINTS),
           blurb: "بضعة طلبات لتجربة الخدمة.",
           badge: null as string | null,
           featured: false,
@@ -1441,9 +1468,9 @@ export const content = {
         {
           name: "أفضل قيمة",
           slug: "best-value",
-          sar: 22,
-          creditCount: 15,
-          credits: "15 نقطة",
+          sar: PACKS["best-value"].sar,
+          creditCount: PACKS["best-value"].credits,
+          credits: arCount(PACKS["best-value"].credits, AR_POINTS),
           blurb: "الخيار الأمثل لبحث نشط عن عمل.",
           badge: "أفضل قيمة",
           featured: true,
@@ -1451,9 +1478,9 @@ export const content = {
         {
           name: "الأقوى",
           slug: "power",
-          sar: 38,
-          creditCount: 30,
-          credits: "30 نقطة",
+          sar: PACKS.power.sar,
+          creditCount: PACKS.power.credits,
+          credits: arCount(PACKS.power.credits, AR_POINTS),
           blurb: "لبحث جاد وعالي الكثافة عن وظيفة.",
           badge: "أعلى توفير",
           featured: false,
@@ -1501,13 +1528,13 @@ export const content = {
           "نص جاهز للّصق لكل وظيفة في خبراتك",
           "ثلاث أفكار منشورات من مشاريعك الحقيقية",
           "زر نسخ عند كل حقل",
-          "ملفان شهريًا في برو، و5 في النخبة",
+          `${arCount(ADDON_CAPS.pro.linkedinEssential, AR_PROFILES)} شهريًا في برو، و${ADDON_CAPS.elite.linkedinEssential} في النخبة`,
         ],
         cta: "عرض الخطط",
       },
       premium: {
         name: "المميزة",
-        sar: 200,
+        sar: LINKEDIN_PREMIUM_SAR,
         badge: "تنفيذ كامل",
         tagline: "يُنشئه لك متخصص",
         bullets: [
@@ -1579,7 +1606,7 @@ export const content = {
         {
           id: "credits",
           q: "ما هي النقطة (Credit) وكم أحصل منها؟",
-          a: "النقطة هي ما تستهلكه لتوليد سيرة ذاتية وخطاب تقديم مخصصين. الطلبات بالإنجليزية تكلّف نقطة واحدة، والطلبات بالعربية تكلّف نقطتين لأنها تتطلب معالجة أكبر. تشمل الخطة المجانية 3 نقاط شهريًا، وبرو 24 نقطة، والنخبة 80 نقطة.",
+          a: `النقطة هي ما تستهلكه لتوليد سيرة ذاتية وخطاب تقديم مخصصين. الطلبات بالإنجليزية تكلّف ${arCount(CREDIT_COST.en, AR_POINTS)}، والطلبات بالعربية تكلّف ${arCount(CREDIT_COST.ar, AR_POINTS)} لأنها تتطلب معالجة أكبر. تشمل الخطة المجانية ${arCount(TIERS.free.credits, AR_POINTS)} شهريًا، وبرو ${arCount(TIERS.pro.credits, AR_POINTS)}، والنخبة ${arCount(TIERS.elite.credits, AR_POINTS)}.`,
         },
         {
           id: "sounds-like-me",
@@ -1619,7 +1646,7 @@ export const content = {
         {
           id: "linkedin-tiers",
           q: "ما الفرق بين الباقة الأساسية والمميزة في إضافة لينكدإن؟",
-          a: "الأساسية مشمولة في خطتَي برو والنخبة ولا تُباع على حدة. تمنحك المحتوى النهائي وتضعه أنت في ملفك، ويُسلَّم لحظة توليده: ملفان شهريًا في برو، وخمسة في النخبة. أما المميزة، 200 ريال، فهي شراء منفصل لمرة واحدة يشمل كل ذلك ويضيف متخصصًا من فريقنا يتواصل معك مباشرة، ويبني ملفك بالكامل ويحسّنه معك، ويصمم صورة غلاف مخصصة، ويراجعه بعد نشره.",
+          a: `الأساسية مشمولة في خطتَي برو والنخبة ولا تُباع على حدة. تمنحك المحتوى النهائي وتضعه أنت في ملفك، ويُسلَّم لحظة توليده: ${arCount(ADDON_CAPS.pro.linkedinEssential, AR_PROFILES)} شهريًا في برو، و${arCount(ADDON_CAPS.elite.linkedinEssential, AR_PROFILES)} في النخبة. أما المميزة، ${LINKEDIN_PREMIUM_SAR} ريال، فهي شراء منفصل لمرة واحدة يشمل كل ذلك ويضيف متخصصًا من فريقنا يتواصل معك مباشرة، ويبني ملفك بالكامل ويحسّنه معك، ويصمم صورة غلاف مخصصة، ويراجعه بعد نشره.`,
         },
         {
           id: "linkedin-refunds",
@@ -2089,7 +2116,7 @@ export const content = {
           usedUp: (total: number) =>
             `استخدمت كل ملفات لينكدإن المتاحة هذا الشهر (${total}). ويتجدد رصيدك مع تجدد نقاطك.`,
           lockedTitle: "مشمولة مع برو والنخبة",
-          lockedBody: "اشترك لتوليد ملفات لينكدإن من سيرك الذاتية: ملفان شهريًا في برو، و5 في النخبة.",
+          lockedBody: `اشترك لتوليد ملفات لينكدإن من سيرك الذاتية: ${arCount(ADDON_CAPS.pro.linkedinEssential, AR_PROFILES)} شهريًا في برو، و${arCount(ADDON_CAPS.elite.linkedinEssential, AR_PROFILES)} في النخبة.`,
           lockedCta: "عرض الخطط",
         },
 
