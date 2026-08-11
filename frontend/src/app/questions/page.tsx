@@ -89,7 +89,9 @@ function QuestionsContent() {
             backgroundSize: "56px 56px",
           }}
         />
-        <div className="pointer-events-none absolute -top-40 start-1/2 h-72 w-[36rem] -translate-x-1/2 rounded-full bg-blue-600/20 blur-[110px]" />
+        {/* left-1/2, not start-1/2: -translate-x-1/2 is physical and doesn't
+            mirror, so a logical inset here lands off-centre in Arabic. */}
+        <div className="pointer-events-none absolute -top-40 left-1/2 h-72 w-[36rem] -translate-x-1/2 rounded-full bg-blue-600/20 blur-[110px]" />
 
         <div className="relative mx-auto max-w-3xl px-4 py-16 sm:px-6 sm:py-20">
           <span className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1 text-[11px] font-medium uppercase tracking-wide text-zinc-400">
@@ -156,7 +158,7 @@ function QuestionsContent() {
 
         {/* ── Contact fallback ── */}
         <div className="relative mt-10 overflow-hidden rounded-2xl border border-white/10 bg-zinc-900/60 px-6 py-8 text-center">
-          <div className="pointer-events-none absolute -bottom-24 start-1/2 h-48 w-96 -translate-x-1/2 rounded-full bg-blue-600/15 blur-[90px]" />
+          <div className="pointer-events-none absolute -bottom-24 left-1/2 h-48 w-96 -translate-x-1/2 rounded-full bg-blue-600/15 blur-[90px]" />
           <div className="relative">
             <span className="mx-auto grid size-10 place-items-center rounded-xl border border-white/10 bg-white/5 text-blue-400">
               <Mail className="size-4.5" aria-hidden />

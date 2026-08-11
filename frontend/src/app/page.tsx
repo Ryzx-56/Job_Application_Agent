@@ -430,7 +430,12 @@ function Hero() {
           backgroundSize: "56px 56px",
         }}
       />
-      <div className="pointer-events-none absolute -top-40 start-1/2 h-96 w-[42rem] -translate-x-1/2 rounded-full bg-blue-600/20 blur-[120px]" />
+      {/* left-1/2, NOT start-1/2. This glow is meant to sit centred, and
+          -translate-x-1/2 is a physical transform that does not mirror in
+          RTL — pairing it with a logical inset put the blob half its own
+          width off-centre on every Arabic page view. Two physical
+          properties agree in both directions; one of each does not. */}
+      <div className="pointer-events-none absolute -top-40 left-1/2 h-96 w-[42rem] -translate-x-1/2 rounded-full bg-blue-600/20 blur-[120px]" />
 
       <div className="relative mx-auto max-w-6xl px-4 pt-32 pb-16 sm:px-6 sm:pt-40 lg:pt-44">
         <div className="grid items-center gap-12 lg:grid-cols-2 lg:gap-10">
@@ -1231,7 +1236,8 @@ function FinalCta() {
             backgroundSize: "56px 56px",
           }}
         />
-        <div className="pointer-events-none absolute -bottom-32 start-1/2 h-72 w-[36rem] -translate-x-1/2 rounded-full bg-blue-600/20 blur-[110px]" />
+        {/* left-1/2 for the same reason as the hero glow above. */}
+        <div className="pointer-events-none absolute -bottom-32 left-1/2 h-72 w-[36rem] -translate-x-1/2 rounded-full bg-blue-600/20 blur-[110px]" />
         <div className="relative">
           <h2 className="mx-auto max-w-xl text-3xl font-semibold tracking-tight text-white sm:text-4xl">{t.finalCta.title}</h2>
           <p className="mx-auto mt-4 max-w-md text-lg leading-relaxed text-zinc-400">{t.finalCta.description}</p>
