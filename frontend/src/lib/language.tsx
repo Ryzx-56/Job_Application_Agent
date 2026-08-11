@@ -357,9 +357,12 @@ export const content = {
       contactBody: "Send us your question and a member of our support team will get back to you.",
       supportEmail: "support@tarshih.com",
       backToHome: "Back to home",
-      // NOTE: the LinkedIn answers below name the 49 / 200 SAR prices in prose.
-      // That's the one place a price is written by hand rather than read from
-      // PRICING in backend/core/linkedin.py, so if those change, change these.
+      // NOTE: the LinkedIn answer below names the 200 SAR Premium price in
+      // prose. That's the one place a price is written by hand rather than read
+      // from PRICING in backend/core/linkedin.py, so if it changes, change this.
+      // Essential no longer has a price at all — it is bundled into Pro and
+      // Elite and capped monthly (ADDON_CAPS in backend/core/entitlements.py).
+      // It was listed here at 49 SAR long after it stopped being sold.
       items: [
         {
           id: "ats-what-is-it",
@@ -394,12 +397,12 @@ export const content = {
         {
           id: "how-many-agents",
           q: "How many AI agents are working on my application?",
-          a: "Six. Separate agents handle CV parsing, job description analysis, tailoring, fact-checking, ATS scoring, document generation, and job search, instead of one prompt trying to do everything at once.",
+          a: "Eight stages run on every application, each handled by its own step rather than one prompt trying to do everything at once: CV parsing, job description analysis, tailoring, fact-checking, ATS scoring, cover letter writing, match scoring, and job search. You can watch them run while your CV generates. ATS scoring itself is deterministic code rather than a model.",
         },
         {
           id: "credits",
           q: "What's a credit and how many do I get?",
-          a: "A credit is what you spend generating one tailored CV and cover letter. English applications cost 1 credit, Arabic applications cost 2, since they take more processing. Free includes 3 credits a month, Pro includes 40, and Elite includes 120.",
+          a: "A credit is what you spend generating one tailored CV and cover letter. English applications cost 1 credit, Arabic applications cost 2, since they take more processing. Free includes 3 credits a month, Pro includes 24, and Elite includes 80.",
         },
         {
           id: "sounds-like-me",
@@ -439,7 +442,7 @@ export const content = {
         {
           id: "linkedin-tiers",
           q: "What is the difference between LinkedIn Essential and Premium?",
-          a: "Essential, 49 SAR, gives you the finished content and you place it on your profile yourself, delivered the moment you generate it. Premium, 200 SAR, includes all of that and adds a specialist from our team who contacts you directly, builds and optimizes your whole profile with you, designs a custom cover photo, and reviews it once it's live. Both are one-time payments, not subscriptions.",
+          a: "Essential is included with the Pro and Elite plans rather than sold separately. It gives you the finished content and you place it on your profile yourself, delivered the moment you generate it: 2 profiles a month on Pro, 5 on Elite. Premium, 200 SAR, is a separate one-time purchase that includes all of that and adds a specialist from our team who contacts you directly, builds and optimizes your whole profile with you, designs a custom cover photo, and reviews it once it's live.",
         },
         {
           id: "linkedin-refunds",
@@ -1571,12 +1574,12 @@ export const content = {
         {
           id: "how-many-agents",
           q: "كم عدد وكلاء الذكاء الاصطناعي الذين يعملون على طلبي؟",
-          a: "ستة. وكلاء منفصلون يتولون تحليل السيرة الذاتية، وتحليل الوصف الوظيفي، والتخصيص، والتحقق من الحقائق، وتقييم التوافق مع ATS، وتوليد المستندات، والبحث عن وظائف، بدلًا من طلب واحد يحاول فعل كل شيء.",
+          a: "ثماني مراحل تعمل على كل طلب، كل مرحلة يتولاها وكيل مستقل بدلًا من طلب واحد يحاول فعل كل شيء: تحليل السيرة الذاتية، وتحليل الوصف الوظيفي، والتخصيص، والتحقق من الحقائق، وتقييم التوافق مع ATS، وكتابة خطاب التقديم، وحساب درجة التوافق، والبحث عن وظائف. ويمكنك متابعتها مرحلة بمرحلة أثناء إنشاء سيرتك. أما تقييم ATS نفسه فيجري بحساب ثابت لا بنموذج ذكاء اصطناعي.",
         },
         {
           id: "credits",
           q: "ما هي النقطة (Credit) وكم أحصل منها؟",
-          a: "النقطة هي ما تستهلكه لتوليد سيرة ذاتية وخطاب تقديم مخصصين. الطلبات بالإنجليزية تكلّف نقطة واحدة، والطلبات بالعربية تكلّف نقطتين لأنها تتطلب معالجة أكبر. تشمل الخطة المجانية 3 نقاط شهريًا، وبرو 40 نقطة، والنخبة 120 نقطة.",
+          a: "النقطة هي ما تستهلكه لتوليد سيرة ذاتية وخطاب تقديم مخصصين. الطلبات بالإنجليزية تكلّف نقطة واحدة، والطلبات بالعربية تكلّف نقطتين لأنها تتطلب معالجة أكبر. تشمل الخطة المجانية 3 نقاط شهريًا، وبرو 24 نقطة، والنخبة 80 نقطة.",
         },
         {
           id: "sounds-like-me",
@@ -1616,7 +1619,7 @@ export const content = {
         {
           id: "linkedin-tiers",
           q: "ما الفرق بين الباقة الأساسية والمميزة في إضافة لينكدإن؟",
-          a: "الأساسية، 49 ريالًا، تمنحك المحتوى النهائي وتضعه أنت في ملفك، ويُسلَّم لحظة توليده. والمميزة، 200 ريال، تشمل كل ذلك وتضيف متخصصًا من فريقنا يتواصل معك مباشرة، ويبني ملفك بالكامل ويحسّنه معك، ويصمم صورة غلاف مخصصة، ويراجعه بعد نشره. وكلتاهما دفعة واحدة لا اشتراك.",
+          a: "الأساسية مشمولة في خطتَي برو والنخبة ولا تُباع على حدة. تمنحك المحتوى النهائي وتضعه أنت في ملفك، ويُسلَّم لحظة توليده: ملفان شهريًا في برو، وخمسة في النخبة. أما المميزة، 200 ريال، فهي شراء منفصل لمرة واحدة يشمل كل ذلك ويضيف متخصصًا من فريقنا يتواصل معك مباشرة، ويبني ملفك بالكامل ويحسّنه معك، ويصمم صورة غلاف مخصصة، ويراجعه بعد نشره.",
         },
         {
           id: "linkedin-refunds",

@@ -90,7 +90,15 @@ BUNDLED_ADDON_CAPS = ADDON_CAPS
 # revenue is reported on its own with cost explicitly marked as not tracked,
 # and it is excluded from every automatic worst-case total (§7).
 LINKEDIN_PRICING = {
-    "normal":  {"label": "Essential", "price_sar": 49.00,  "worst_case_cost_sar": 0.15},
+    # ESSENTIAL HAS NO LIST PRICE ANY MORE. It is bundled into Pro and Elite
+    # and capped monthly (core/entitlements.py), matching PRICING in
+    # core/linkedin.py, which dropped it. The 49.00 that sat here was a
+    # leftover of the old sold-separately model and was never read by anything
+    # — essential revenue is summed from linkedin_purchases.price_paid in
+    # _linkedin_revenue(), which is a measurement of what buyers actually paid,
+    # so legacy rows keep reporting their real historical price. None is
+    # correct here and makes a future accidental read fail loudly.
+    "normal":  {"label": "Essential", "price_sar": None,   "worst_case_cost_sar": 0.15},
     "premium": {"label": "Premium",   "price_sar": 200.00, "worst_case_cost_sar": None},
 }
 
