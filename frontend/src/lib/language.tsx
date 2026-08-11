@@ -71,14 +71,11 @@ export const content = {
       matchesAlt: "Five matched job openings, each labelled strong, partial or stretch",
     },
     heroSheet: {
-      docLabel: "Tailored CV",
+      docLabel: "Tailored for this posting",
       role: "Frontend Engineer",
-      scoreLabel: "ATS score",
-      matchLabel: "Job match",
+      // The real components utils/ats_scorer.py weighs, not invented metrics.
+      scoreLabels: { ats: "ATS score", keywords: "Keyword match", formatting: "Formatting" },
       sections: ["Summary", "Experience", "Skills"],
-      // Shown as the CV settles: what changed, not what the software did.
-      settling: "Rewriting for this posting",
-      settled: "Ready",
     },
     heroMatches: {
       title: "Openings matched to you",
@@ -135,11 +132,18 @@ export const content = {
       coverLetterLabel: "Cover letter",
       ready: "Ready",
     },
+    /* Four short claims, each of which the code actually backs. The third and
+       fourth used to be "Never invents your experience" and "Reads like a
+       person wrote it" — both true, but neither told a non-technical reader
+       what was being promised. They now name the two things people are
+       actually wary of in an AI writing tool: made-up facts, and output that
+       reads like a machine wrote it. The full explanation is in trustSection
+       and the FAQ; these are the headlines. */
     trustBar: [
       "Encrypted uploads, always",
       "Transparent ATS scoring",
-      "Never invents your experience",
-      "Reads like a person wrote it",
+      "Every line checked back against your CV",
+      "Written not to read as AI",
     ],
     features: {
       eyebrow: "Everything you need",
@@ -230,7 +234,7 @@ export const content = {
         {
           title: "Nothing invented, ever",
           description:
-            "Tarshih rewrites and reframes your real experience. It will never fabricate a job, a skill, or a credential you didn't have, so what you download is always defensible in an interview.",
+            "AI models are known for stating things that sound right but aren't true. Tarshih is built so that can't reach your CV: every fact is read out of the document you upload, and every rewritten line is checked back against those facts before you ever see it. It reframes your real experience and never adds a job, a skill, or a credential you didn't have, so what you download holds up in an interview.",
         },
       ],
     },
@@ -467,7 +471,7 @@ export const content = {
         {
           id: "never-invents",
           q: "Will Tarshih invent experience I don't have?",
-          a: "No. Every fact is extracted from your real CV first, and every generated bullet is checked against it in a dedicated fact-check pass. Tarshih reframes and professionalizes what's true; it never fabricates.",
+          a: "No. AI models can state things that sound plausible but aren't true, and on a CV that is the risk that matters, because it is your name on the document and you are the one who has to answer for it in the interview. Every fact is extracted from your real CV first, and every generated bullet is then checked back against those facts in a dedicated fact-check pass before you see it. Tarshih reframes and professionalizes what's true; it never fabricates.",
         },
         {
           id: "how-many-agents",
@@ -1282,13 +1286,10 @@ export const content = {
       matchesAlt: "خمس وظائف مطابقة، كل واحدة موسومة بتطابق قوي أو جزئي أو فرصة طموحة",
     },
     heroSheet: {
-      docLabel: "سيرة ذاتية مخصصة",
+      docLabel: "مخصصة لهذا الإعلان",
       role: "مهندس واجهات أمامية",
-      scoreLabel: "التوافق مع النظام",
-      matchLabel: "توافق الوظيفة",
+      scoreLabels: { ats: "التوافق مع النظام", keywords: "الكلمات المفتاحية", formatting: "التنسيق" },
       sections: ["نبذة", "الخبرة", "المهارات"],
-      settling: "إعادة الكتابة لهذا الإعلان",
-      settled: "جاهزة",
     },
     heroMatches: {
       title: "وظائف مطابقة لك",
@@ -1341,8 +1342,8 @@ export const content = {
     trustBar: [
       "تشفير كامل لكل ما ترفعه",
       "نتائج توافق ATS واضحة وشفافة",
-      "لا يخترع خبرات لم تعشها أبدًا",
-      "يُقرأ كأن إنسانًا كتبه",
+      "كل سطر يُراجَع مقابل سيرتك",
+      "مكتوب بحيث لا يبدو صادرًا عن ذكاء اصطناعي",
     ],
     features: {
       eyebrow: "كل ما تحتاجه",
@@ -1432,7 +1433,7 @@ export const content = {
         {
           title: "لا شيء مُختلق، أبدًا",
           description:
-            "يعيد ترشيح صياغة خبرتك الحقيقية وتأطيرها. لن يختلق أبدًا وظيفة أو مهارة أو مؤهلًا لم تحصل عليه، فما تحصل عليه دائمًا قابل للدفاع عنه في أي مقابلة.",
+            "نماذج الذكاء الاصطناعي معروفة بأنها قد تذكر معلومات تبدو صحيحة وهي ليست كذلك. بُني ترشيح بحيث لا يصل ذلك إلى سيرتك: تُستخرج كل حقيقة من الملف الذي ترفعه، ويُراجَع كل سطر معاد صياغته مقابل تلك الحقائق قبل أن تراه. يعيد ترشيح تأطير خبرتك الحقيقية، ولا يضيف أبدًا وظيفة أو مهارة أو مؤهلًا لم تحصل عليه، فما تحصل عليه يصمد في أي مقابلة.",
         },
       ],
     },
@@ -1678,7 +1679,7 @@ export const content = {
         {
           id: "never-invents",
           q: "هل سيختلق ترشيح خبرات لا أملكها؟",
-          a: "لا. تُستخرج كل حقيقة من سيرتك الذاتية الحقيقية أولًا، وتُراجع كل نقطة يتم توليدها مقارنة بها في مرحلة تحقق مخصصة من الحقائق. يعيد ترشيح صياغة ما هو حقيقي فقط ولا يختلق شيئًا أبدًا.",
+          a: "لا. قد تذكر نماذج الذكاء الاصطناعي معلومات تبدو معقولة وهي غير صحيحة، وهذا هو الخطر الأهم في السيرة الذاتية تحديدًا، لأنها تحمل اسمك وأنت من سيُسأل عنها في المقابلة. تُستخرج كل حقيقة من سيرتك الحقيقية أولًا، ثم تُراجَع كل نقطة مولّدة مقابل تلك الحقائق في مرحلة تحقق مخصصة قبل أن تصل إليك. يعيد ترشيح صياغة ما هو حقيقي فقط ولا يختلق شيئًا أبدًا.",
         },
         {
           id: "how-many-agents",

@@ -426,34 +426,121 @@
   }
 }
 
+/* ── THE PROOF SHEET ──────────────────────────────────────────────────────
+   The hero visual runs on a LOOP, not a one-shot entrance.
+
+   The first version animated once on load. That is invisible to anyone who
+   arrives and looks two seconds later, which is most people, so the panel
+   read as a static card. Everything below shares one `--cycle` duration and
+   differs only by delay, so the sheet composes, holds, clears and composes
+   again — there is always something moving whenever you glance at it.
+
+   No ring, no donut, no arc. The previous score ring was an SVG
+   stroke-dashoffset circle, which is exactly the thing that fails to close
+   cleanly, and a donut chart is the visual language of a dashboard. Scores
+   are set as leader rules instead: a label, a rule that fills to its value,
+   and a figure. That is how a typeset table of contents works, which is the
+   language this page is already speaking. */
+[data-type="editorial"] {
+  --cycle: 9s;
+}
+
+/* THE SHEET'S CONTENT NEVER DISAPPEARS. An earlier draft cleared the whole
+   panel and recomposed it each cycle, which is the same "it vanishes" fault
+   the marquee had — content blinking out reads as a glitch, not as life. The
+   text sets once, on entry (.rise), and stays. What loops is the MEASURING:
+   the score rules empty and refill, the figures recount, and one pass sweeps
+   down the page. The document is finished; the scoring is being re-checked. */
+
+/* The score rules fill to their value and hold. transform-origin is the
+   LEADING edge, so a rule grows rightward in English and leftward in Arabic. */
+@keyframes editorial-leader {
+  0%   { transform: scaleX(0); }
+  22%  { transform: scaleX(var(--leader-to, 1)); }
+  86%  { transform: scaleX(var(--leader-to, 1)); }
+  100% { transform: scaleX(0); }
+}
+
+[data-type="editorial"] .leader-fill {
+  transform-origin: left center;
+  transform: scaleX(var(--leader-to, 1));
+  animation: editorial-leader var(--cycle) cubic-bezier(0.16, 1, 0.3, 1) infinite both;
+  /* Inherits the row's own entrance delay, so a rule starts filling exactly
+     when its line has finished setting. */
+  animation-delay: var(--rise-delay, 0s);
+}
+[dir="rtl"] [data-type="editorial"] .leader-fill {
+  transform-origin: right center;
+}
+
+/* One slow pass down the sheet per cycle: the thing that makes the panel read
+   as a single object being worked on rather than three stacked widgets. */
+@keyframes editorial-sweep {
+  0%   { opacity: 0; transform: translate3d(0, 0, 0); }
+  10%  { opacity: 0.5; }
+  55%  { opacity: 0; transform: translate3d(0, var(--sweep-distance, 320px), 0); }
+  100% { opacity: 0; transform: translate3d(0, var(--sweep-distance, 320px), 0); }
+}
+
+[data-type="editorial"] .sweep {
+  animation: editorial-sweep var(--cycle) linear infinite both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-type="editorial"] .leader-fill,
+  [data-type="editorial"] .sweep {
+    animation: none;
+  }
+  /* Resting state is the finished sheet: rules at their real value, no sweep. */
+  [data-type="editorial"] .leader-fill { transform: scaleX(var(--leader-to, 1)); }
+  [data-type="editorial"] .sweep { opacity: 0; }
+}
+
 /* ── MARQUEE ──────────────────────────────────────────────────────────────
    CSS keyframes rather than JS: it runs continuously, and a rAF loop that
    never stops is the one animation guaranteed to show up in a mobile
    performance trace. Transform only, so it stays on the compositor.
 
-   The track holds the same list twice; translating it by exactly -50% puts
-   the copy where the original started, so the loop is seamless. In RTL the
-   direction reverses, which is what `--marquee-from`/`--marquee-to` swap. */
+   ALWAYS 0% -> -50%, IN BOTH LANGUAGES. The track is dir="ltr" so its
+   geometry cannot change between scripts (an RTL max-content flex row grows
+   leftward out of its overflow box, which used to make the whole thing
+   disappear). RTL mirrors the DIRECTION OF TRAVEL with animation-direction,
+   which is the part that actually has to reverse.
+
+   The track holds the list twice and each item carries its own trailing
+   margin rather than the track carrying a flex gap, so the track is exactly
+   two copies wide and -50% is exactly one copy. Any mismatch here shows up
+   as a seam that walks across the screen every cycle. */
 @keyframes marquee-track {
-  from { transform: translate3d(var(--marquee-from), 0, 0); }
-  to   { transform: translate3d(var(--marquee-to), 0, 0); }
+  from { transform: translate3d(0, 0, 0); }
+  to   { transform: translate3d(-50%, 0, 0); }
 }
 
 [data-type="editorial"] .marquee-track {
-  --marquee-from: 0%;
-  --marquee-to: -50%;
   width: max-content;
-  animation: marquee-track var(--marquee-duration, 46s) linear infinite;
+  animation: marquee-track var(--marquee-duration, 60s) linear infinite;
+  /* Promotes the track to its own compositor layer. Without this the browser
+     re-rasterizes a very wide element every frame, which is what made it
+     stutter on desktop. */
+  will-change: transform;
+  backface-visibility: hidden;
 }
 
 [dir="rtl"] [data-type="editorial"] .marquee-track {
-  --marquee-from: -50%;
-  --marquee-to: 0%;
+  animation-direction: reverse;
+}
+
+/* The mask lives on the window, never on the moving track — masking an
+   animated element defeats the layer promotion above. */
+[data-type="editorial"] .marquee-window {
+  -webkit-mask-image: linear-gradient(to right, transparent, #000 6%, #000 94%, transparent);
+  mask-image: linear-gradient(to right, transparent, #000 6%, #000 94%, transparent);
 }
 
 @media (prefers-reduced-motion: reduce) {
   [data-type="editorial"] .marquee-track {
     animation: none;
     transform: none;
+    will-change: auto;
   }
 }

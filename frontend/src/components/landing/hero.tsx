@@ -3,8 +3,7 @@
 import Link from "next/link";
 import { ArrowLeft, ArrowRight } from "lucide-react";
 import { useLang } from "@/lib/language";
-import { CvSheet } from "./cv-sheet";
-import { JobMatches } from "./job-matches";
+import { ProofSheet } from "./proof-sheet";
 
 /* ========================================================================
    HERO (brief §3.1)
@@ -90,14 +89,9 @@ export function Hero() {
           </p>
         </div>
 
-        {/* ── the evidence ── */}
-        <div className="min-w-0 space-y-4">
-          <div className="rise" style={delay(0.1)}>
-            <CvSheet />
-          </div>
-          <div className="rise" style={delay(0.26)}>
-            <JobMatches />
-          </div>
+        {/* ── the evidence: ONE object, not a card with a table under it ── */}
+        <div className="rise min-w-0" style={delay(0.1)}>
+          <ProofSheet />
         </div>
       </div>
     </section>
