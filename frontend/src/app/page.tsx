@@ -27,7 +27,7 @@ import {
   User,
 } from "lucide-react";
 import { useLang } from "@/lib/language";
-import { formatSar, sarPerCredit, usdApprox } from "@/lib/pricing";
+import { formatSar, formatShortDate, sarPerCredit, usdApprox } from "@/lib/pricing";
 import { FaqRow } from "@/components/faq";
 import { LinkedInGlyph } from "@/components/linkedin-ui";
 import { Button, Logo, LangSwitcher } from "@/components/brand";
@@ -880,9 +880,7 @@ function Pricing({ onOpenAbout }: { onOpenAbout: () => void }) {
     }
   }
 
-  const resetDateLabel = resetAt
-    ? new Date(resetAt).toLocaleDateString(isAr ? "ar-SA" : "en-US", { month: "short", day: "numeric" })
-    : "";
+  const resetDateLabel = resetAt ? formatShortDate(resetAt, lang) : "";
 
   const PENDING_TIER_LABEL: Record<Tier, string> = {
     free: isAr ? "المجانية" : "Free",

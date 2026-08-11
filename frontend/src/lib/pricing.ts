@@ -100,9 +100,48 @@ export function enCount(n: number, singular: string, plural = `${singular}s`): s
   return `${n} ${n === 1 ? singular : plural}`;
 }
 
+/* ── NUMBER FORMATTING ───────────────────────────────────────────────────
+   ONE PLACE DECIDES WHAT A NUMBER LOOKS LIKE, in either language.
+
+   Arabic used to format through "ar-EG", which renders Eastern Arabic
+   numerals (٢٩). Those are Egyptian and Levantine convention; Saudi digital
+   usage is overwhelmingly Western digits, and the site was inconsistent with
+   itself anyway — prices came out ٢٩ while the FAQ and feature copy beside
+   them wrote 29. "ar-SA-u-nu-latn" is ar-SA with the Latin numbering system
+   pinned, which is the combination that gives Saudi conventions and Western
+   digits.
+
+   DATES ALSO PIN THE CALENDAR. `ar-SA` resolves to the Umm al-Qura calendar
+   in some engines, which would silently print a Hijri date on a billing line
+   next to a Gregorian one elsewhere. `-ca-gregory` makes that explicit
+   rather than engine-dependent.
+*/
+const AR_LOCALE = "ar-SA-u-nu-latn";
+const AR_DATE_LOCALE = "ar-SA-u-nu-latn-ca-gregory";
+
+/** The locale to format any number or date in, for a given UI language. */
+export function localeFor(lang: string): string {
+  return lang === "ar" ? AR_LOCALE : "en-US";
+}
+
+/** A bare number, formatted for the reader's language. */
+export function formatNumber(value: number, lang: string, options?: Intl.NumberFormatOptions): string {
+  return Number(value ?? 0).toLocaleString(localeFor(lang), options);
+}
+
+/** A short date ("14 سبتمبر" / "Sep 14"), Gregorian in both languages. */
+export function formatShortDate(value: string | Date, lang: string): string {
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  return date.toLocaleDateString(lang === "ar" ? AR_DATE_LOCALE : "en-US", {
+    month: "short",
+    day: "numeric",
+  });
+}
+
 /** The charged price, formatted for display. */
 export function formatSar(amount: number, lang: string): string {
-  const value = Number(amount ?? 0).toLocaleString(lang === "ar" ? "ar-EG" : "en-US", {
+  const value = formatNumber(amount, lang, {
     maximumFractionDigits: Number.isInteger(Number(amount)) ? 0 : 2,
   });
   return lang === "ar" ? `${value} ريال` : `${value} SAR`;
@@ -125,7 +164,7 @@ export function usdApprox(amountSar: number): string | null {
 export function sarPerCredit(amountSar: number, credits: number, lang: string): string | null {
   if (!credits) return null;
   const perCredit = Number(amountSar) / credits;
-  const value = perCredit.toLocaleString(lang === "ar" ? "ar-EG" : "en-US", {
+  const value = formatNumber(perCredit, lang, {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   });
