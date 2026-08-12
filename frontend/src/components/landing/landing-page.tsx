@@ -232,24 +232,29 @@ function TrustBar() {
   // every generation that produces prose.
   const icons = [Lock, ScanSearch, BadgeCheck, PenLine];
   return (
-    // max-w-4xl is ~78% of the max-w-6xl the rest of the page uses. The
-    // marquee directly above is full-bleed, and going straight from that to
-    // another edge-to-edge row made the two read as one undifferentiated band.
-    // Pulling this in gives the eye a step down out of the full-width strip.
-    <section className="mx-auto max-w-4xl px-4 py-14 sm:px-6 sm:py-16">
-      {/* ALL FOUR ON ONE LINE FROM lg UP. Wrapping turned a row of four claims
-          into a stack that read as a list of features, which is not what a
-          trust row is for. nowrap on each item plus flex-nowrap and
-          justify-between at lg holds the line; below that they stack, which is
-          correct on a phone. The copy in language.tsx is kept short enough for
-          this to fit in both scripts rather than relying on shrinking type.
+    <section className="mx-auto max-w-6xl px-4 py-14 sm:px-6 sm:py-16">
+      {/* THE RULES ARE SIZED BY THE CONTENT, NOT THE OTHER WAY AROUND.
 
-          SET AT READING SIZE, NOT CAPTION SIZE. At t-meta with tight padding
-          this was a hairline of small grey text that read as a footer stuck to
-          the bottom of the hero. These are four load-bearing claims about what
-          the product will and will not do, so they get body size, a full-size
-          icon and enough air on both sides to be a section of the page. */}
-      <div className="flex flex-col items-start gap-6 border-y border-white/10 py-9 sm:flex-row sm:flex-wrap sm:items-center sm:justify-center sm:gap-x-10 sm:gap-y-5 sm:py-10 lg:flex-nowrap lg:justify-between lg:gap-x-8">
+          Constraining this row to max-w-4xl overshot: the four English items
+          measure 893px and need 989px with gaps, so at 848px they ran 141px
+          past the end of their own hairlines — the rules stopped and the text
+          kept going. `w-fit` makes the bordered box exactly as wide as the
+          items plus its own padding, so the rules cannot be shorter than what
+          they contain no matter what the copy or the script does. It also
+          means the row is only as wide as it needs to be, which is what keeps
+          it from reading as a second full-bleed band under the marquee.
+
+          ONE LINE FROM xl. Between lg and xl the English items alone are
+          893px in a 976px box, which leaves 83px for three gaps and two
+          margins — one line there would either overflow or be cramped, so it
+          wraps to a centred block instead and goes to a single line at 1280
+          and up. Gaps are 48px, up from 32.
+
+          SET AT READING SIZE, NOT CAPTION SIZE. These are four load-bearing
+          claims about what the product will and will not do, so they get body
+          size and a full-size icon rather than being a hairline of small grey
+          text at the bottom of the hero. */}
+      <div className="mx-auto flex w-full max-w-full flex-col items-start gap-6 border-y border-white/10 py-9 sm:flex-row sm:flex-wrap sm:items-center sm:justify-center sm:gap-x-10 sm:gap-y-5 sm:py-10 xl:w-fit xl:flex-nowrap xl:gap-x-12 xl:px-5">
         {t.trustBar.map((label, i) => {
           const Icon = icons[i];
           return (

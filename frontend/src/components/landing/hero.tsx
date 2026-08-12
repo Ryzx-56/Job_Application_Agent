@@ -69,21 +69,33 @@ export function Hero() {
 
       <div className="relative mx-auto max-w-6xl px-5 pb-16 pt-28 sm:px-8 sm:pb-24 sm:pt-36">
         {/*
-          ONE GRID, TWO ROWS, DESKTOP ONLY.
+          TWO COLUMNS ON DESKTOP. The start column carries the headline and
+          its sub-line and nothing else. EVERYTHING ELSE — the score panel,
+          the second heading, its sub-line and the matched-jobs panel — is one
+          stack in the trailing column, in that order.
 
-          Both headings run down the start column and the score panel sits
-          beside them spanning both rows. The second heading used to sit
-          directly under the first block, which read as two unrelated slabs
-          stacked top to bottom, and left the space beside the panel empty.
+          The whole evidence column shares one edge, so the second heading
+          reads as a caption on the panel above it and an introduction to the
+          panel below it, which is what it is. An earlier pass put that
+          heading in the start column under the main headline; it lined up
+          with the wrong thing and read as a second argument rather than as
+          part of the demonstration.
 
-          The mobile order is the DOM order and is deliberately unchanged:
-          headline, sub, score panel, second heading, sub, matches panel. That
-          only works because the grid is `lg:` — below that these are plain
-          blocks in source order, so the desktop rearrangement costs mobile
-          nothing and needs no duplicated markup.
+          The mobile order is the DOM order and is unchanged: headline, sub,
+          score panel, second heading, sub, jobs panel. That falls out for
+          free because the grid is `lg:` — below it these are plain blocks in
+          source order. No duplicated markup, no reordering.
+
+          THE HEADLINE COLUMN STICKS. The evidence stack is roughly four times
+          its height, so the alternative is a sentence stranded at the top of
+          an empty half-page. Pinned, it stays with the evidence it makes
+          claims about. This is why the glow above lives in its own
+          overflow-hidden wrapper rather than the section carrying it: an
+          overflow-clipping ancestor becomes the sticky containing block and
+          would silently kill this.
         */}
-        <div className="lg:grid lg:grid-cols-[0.95fr_1.05fr] lg:items-start lg:gap-x-16 lg:gap-y-10">
-          <div className="min-w-0 lg:col-start-1 lg:row-start-1">
+        <div className="lg:grid lg:grid-cols-[0.86fr_1.14fr] lg:items-start lg:gap-x-14">
+          <div className="min-w-0 lg:sticky lg:top-32 lg:self-start">
             <h1 className="t-display-xl max-w-[15ch] font-semibold tracking-tight" style={{ color: "var(--ink-1)" }}>
               {t.hero.headline}
             </h1>
@@ -93,35 +105,30 @@ export function Hero() {
             </p>
           </div>
 
-          {/* Visual 1. Spans both text rows, so the column beside the headings
-              is one object rather than a panel with a hole under it. */}
-          <div
-            className="rise mt-12 min-w-0 lg:col-start-2 lg:row-start-1 lg:row-span-2 lg:mt-0 lg:self-start"
-            style={delay(0.1)}
-          >
-            <ScorePanel />
-          </div>
+          <div className="min-w-0">
+            {/* Visual 1 */}
+            <div className="rise mt-12 lg:mt-0" style={delay(0.1)}>
+              <ScorePanel />
+            </div>
 
-          {/* Visual 2's copy. Almost nobody arrives knowing we do this part,
-              so it gets a heading of its own rather than a caption. */}
-          <div className="mt-16 sm:mt-20 lg:col-start-1 lg:row-start-2 lg:mt-0 lg:self-end">
-            <h2
-              className="t-display-m rise max-w-[20ch] font-semibold tracking-tight"
-              style={{ ...delay(0.14), color: "var(--ink-1)" }}
-            >
-              {t.heroMatches.headline}
-            </h2>
-            <p className="t-body-l rise mt-4 max-w-[48ch]" style={{ ...delay(0.18), color: "var(--ink-2)" }}>
-              {t.heroMatches.sub}
-            </p>
-          </div>
-        </div>
+            {/* Visual 2's copy, directly under the picture it follows on from */}
+            <div className="mt-16 sm:mt-20 lg:mt-14">
+              <h2
+                className="t-display-m rise max-w-[20ch] font-semibold tracking-tight"
+                style={{ ...delay(0.14), color: "var(--ink-1)" }}
+              >
+                {t.heroMatches.headline}
+              </h2>
+              <p className="t-body-l rise mt-4 max-w-[46ch]" style={{ ...delay(0.18), color: "var(--ink-2)" }}>
+                {t.heroMatches.sub}
+              </p>
+            </div>
 
-        {/* Visual 2 itself, full width under both columns: five rows with a
-            role at one end and a match label at the other is a list, and a
-            list wants the width. */}
-        <div className="rise mt-10 sm:mt-12" style={delay(0.22)}>
-          <MatchesPanel />
+            {/* Visual 2 */}
+            <div className="rise mt-8" style={delay(0.22)}>
+              <MatchesPanel />
+            </div>
+          </div>
         </div>
 
         {/* ── the action, under both visuals ── */}
