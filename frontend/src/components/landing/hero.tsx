@@ -119,8 +119,8 @@ export function Hero() {
           overflow-clipping ancestor becomes the sticky containing block and
           would silently kill this.
         */}
-        <div dir="ltr" className="lg:grid lg:grid-cols-[minmax(0,20rem)_minmax(0,1fr)] lg:items-start lg:gap-x-14">
-          <div dir={boxDir} className="min-w-0 lg:sticky lg:top-32 lg:self-start">
+        <div dir="ltr" className="lg:grid lg:grid-cols-[minmax(0,20rem)_minmax(0,1fr)] lg:items-start lg:gap-x-14 lg:gap-y-20">
+          <div dir={boxDir} className="min-w-0 lg:sticky lg:top-32 lg:col-start-1 lg:row-start-1 lg:self-start">
             {/* The two headings are set at the SAME size on purpose. The
                 display-xl / display-m pairing made the second one read as a
                 subheading of the first rather than as the second half of the
@@ -135,41 +135,42 @@ export function Hero() {
             </p>
           </div>
 
-          <div dir="ltr" className="min-w-0">
-            {/* Visual 1. FILLS ITS COLUMN. No max-width: a cap here is what
-                left an empty strip down the trailing side of the column, and
-                a panel that floats smaller than the space allotted to it
-                reads as a mistake rather than as a choice.
+          {/* Visual 1, in the trailing cell of the first row. Capped at
+              44rem: filling a 968px column made it the loudest thing on the
+              page and left the headline beside it looking like a caption. The
+              cap is a judgement about proportion, not an attempt to match the
+              jobs panel — those two cannot be equal while both fill their own
+              cells, and that is fine. Height follows content; there is no
+              max-height, because clipping a panel is worse than a tall one. */}
+          <div
+            dir={boxDir}
+            className="rise mt-12 lg:col-start-2 lg:row-start-1 lg:mt-0 xl:max-w-[44rem]"
+            style={delay(0.1)}
+          >
+            <ScorePanel />
+          </div>
 
-                This does make it wider than the jobs panel below, because the
-                row below is split between a panel and its copy while this row
-                is one panel. Filling the cell and matching the panel widths
-                are mutually exclusive here; filling wins. */}
-            <div
-              dir={boxDir}
-              className="rise mt-12 lg:mt-0"
-              style={delay(0.1)}
-            >
-              <ScorePanel />
-            </div>
+          {/* Visual 2. SPANS BOTH COLUMNS.
 
-            {/* Visual 2. Same column, so the same start AND end edges as the
-                panel above — this row is not allowed to be wider than it.
+              WHY THE LAST FIX DID NOT LAND: items-stretch was correct and did
+              work — the panel filled its cell with zero leftover on all four
+              sides, measured. The cell was the problem. This row used to be
+              nested inside a wrapper around the trailing column, so its 57%
+              share was 57% of THAT column: 520px starting a third of the way
+              across the page. Stretching to fill a small box still leaves a
+              small box. The wrapper is gone and this row is now a grid item
+              spanning both columns, so its start edge is the headline's start
+              edge and it fills the full measure from there.
 
-                THE PANEL LEADS AND THE COPY FOLLOWS. In the DOM the copy comes
-                first, because on a phone a heading has to introduce the thing
-                it names. On desktop the two are placed by column, which swaps
-                them visually without reordering the markup — and mirrors for
-                free in Arabic, where the panel lands on the right.
+              THE PANEL LEADS AND THE COPY FOLLOWS. In the DOM the copy comes
+              first, because on a phone a heading has to introduce the thing it
+              names. On desktop the two are placed by column, which swaps them
+              visually without reordering the markup.
 
-                Stacked below xl deliberately: under about 1280 the column
-                cannot hold a display-size heading beside a five-column table
-                without one of them becoming unreadable. */}
-            {/* gap-x-14 (3.5rem), up from 3.5rem's half: the panel and the
-                copy beside it were reading as one cramped block. The same
-                3.5rem appears in the score panel's cap above, because the two
-                have to be the same arithmetic to come out the same width. */}
-            <div dir="ltr" className="mt-16 sm:mt-20 lg:mt-20 xl:grid xl:grid-cols-[minmax(0,57fr)_minmax(0,43fr)] xl:items-stretch xl:gap-x-14">
+              Stacked below xl deliberately: under about 1280 the row cannot
+              hold a display-size heading beside a five-column table without
+              one of them becoming unreadable. */}
+          <div dir="ltr" className="mt-16 sm:mt-20 lg:col-span-2 lg:col-start-1 lg:row-start-2 lg:mt-0 xl:grid xl:grid-cols-[minmax(0,57fr)_minmax(0,43fr)] xl:items-stretch xl:gap-x-14">
               <div dir={boxDir} className="xl:col-start-2 xl:row-start-1 xl:flex xl:flex-col xl:justify-center">
                 <h2
                   className="t-display-l rise max-w-[16ch] font-semibold tracking-tight"
@@ -187,7 +188,6 @@ export function Hero() {
                 <MatchesPanel />
               </div>
             </div>
-          </div>
         </div>
 
         {/* ── the action, under both visuals ── */}
