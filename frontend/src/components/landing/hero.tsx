@@ -51,6 +51,24 @@ export function Hero() {
   const { t, isRTL } = useLang();
   const ForwardIcon = isRTL ? ArrowLeft : ArrowRight;
 
+  /* ── THE ONE PLACE ON THIS SITE THAT DOES NOT MIRROR ──────────────────
+     CSS grid places columns along the INLINE axis, so in an RTL document
+     column 1 is on the right. Every box in this section therefore swapped
+     sides in Arabic: headline right, score panel left, jobs panel right.
+     That is correct default behaviour and it is not what this section wants.
+
+     The boxes here are pinned to physical positions in both languages —
+     headline left, panels right, jobs panel left of its copy — by forcing
+     `dir="ltr"` on the two grid CONTAINERS, which is what decides where
+     columns land. The direction is then handed straight back to every box
+     via `boxDir`, so Arabic inside each box still reads and aligns
+     right-to-left. Only the arrangement is frozen; nothing about the text is.
+
+     SCOPED TO THIS COMPONENT ON PURPOSE. The rest of the site mirrors
+     normally, and it should. Do not copy this pattern into another section
+     without the same explicit reason. */
+  const boxDir = isRTL ? "rtl" : "ltr";
+
   return (
     <section className="relative">
       {/* THE GLOW. Restored: the page reads as bare without it, and it is the
@@ -74,7 +92,7 @@ export function Hero() {
           measure. It reads as deliberate because the hero is the one section
           that should be the widest thing on the page, and it steps down into
           the full-bleed marquee below rather than jumping. */}
-      <div className="relative mx-auto max-w-6xl px-5 pb-16 pt-28 sm:px-8 sm:pb-24 sm:pt-36 lg:max-w-[84rem]">
+      <div className="relative mx-auto max-w-6xl px-5 pb-16 pt-28 sm:px-8 sm:pb-24 sm:pt-36 lg:max-w-[88rem]">
         {/*
           TWO COLUMNS ON DESKTOP. The start column carries the headline and
           its sub-line and nothing else. EVERYTHING ELSE — the score panel,
@@ -101,8 +119,8 @@ export function Hero() {
           overflow-clipping ancestor becomes the sticky containing block and
           would silently kill this.
         */}
-        <div className="lg:grid lg:grid-cols-[minmax(0,20rem)_minmax(0,1fr)] lg:items-start lg:gap-x-14">
-          <div className="min-w-0 lg:sticky lg:top-32 lg:self-start">
+        <div dir="ltr" className="lg:grid lg:grid-cols-[minmax(0,20rem)_minmax(0,1fr)] lg:items-start lg:gap-x-14">
+          <div dir={boxDir} className="min-w-0 lg:sticky lg:top-32 lg:self-start">
             {/* The two headings are set at the SAME size on purpose. The
                 display-xl / display-m pairing made the second one read as a
                 subheading of the first rather than as the second half of the
@@ -117,7 +135,7 @@ export function Hero() {
             </p>
           </div>
 
-          <div className="min-w-0">
+          <div dir="ltr" className="min-w-0">
             {/* Visual 1. SIZED TO THE JOBS PANEL BELOW IT, not to the column.
 
                 A fixed cap was tried first and was wrong: at 40rem it stopped
@@ -136,7 +154,8 @@ export function Hero() {
                 column's start edge — the left in English, the right in Arabic,
                 which is the same edge the jobs panel below anchors to. */}
             <div
-              className="rise mt-12 lg:mt-0 xl:max-w-[calc((100%-3.5rem)*0.53)]"
+              dir={boxDir}
+              className="rise mt-12 lg:mt-0 xl:max-w-[calc((100%-3.5rem)*0.57)]"
               style={delay(0.1)}
             >
               <ScorePanel />
@@ -158,8 +177,8 @@ export function Hero() {
                 copy beside it were reading as one cramped block. The same
                 3.5rem appears in the score panel's cap above, because the two
                 have to be the same arithmetic to come out the same width. */}
-            <div className="mt-16 sm:mt-20 lg:mt-20 xl:grid xl:grid-cols-[minmax(0,53fr)_minmax(0,47fr)] xl:items-center xl:gap-x-14">
-              <div className="xl:col-start-2 xl:row-start-1">
+            <div dir="ltr" className="mt-16 sm:mt-20 lg:mt-20 xl:grid xl:grid-cols-[minmax(0,57fr)_minmax(0,43fr)] xl:items-center xl:gap-x-14">
+              <div dir={boxDir} className="xl:col-start-2 xl:row-start-1">
                 <h2
                   className="t-display-l rise max-w-[16ch] font-semibold tracking-tight"
                   style={{ ...delay(0.14), color: "var(--ink-1)" }}
@@ -171,7 +190,8 @@ export function Hero() {
                 </p>
               </div>
 
-              <div className="rise mt-8 xl:col-start-1 xl:row-start-1 xl:mt-0" style={delay(0.22)}>
+              <div dir={boxDir}
+                className="rise mt-8 xl:col-start-1 xl:row-start-1 xl:mt-0" style={delay(0.22)}>
                 <MatchesPanel />
               </div>
             </div>

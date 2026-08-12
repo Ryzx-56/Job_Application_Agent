@@ -98,7 +98,7 @@ export function MatchesPanel() {
       {/* ── header band. Five is RESULT_CAP, not a number chosen for the page,
             and the line beside it is the feature this panel exists to sell ── */}
       <div
-        className="flex flex-wrap items-center justify-between gap-x-5 gap-y-2 px-5 py-4"
+        className="flex flex-wrap items-center justify-between gap-x-5 gap-y-2 px-6 py-5"
         style={{ backgroundColor: "var(--accent-wash)", borderBottom: `1px solid ${BAND_RULE}` }}
       >
         <div className="flex items-baseline gap-2.5">
@@ -126,7 +126,7 @@ export function MatchesPanel() {
             // finishes at roughly the same height as the score panel it sits
             // under and the two read as a matched pair rather than as a big
             // one and a small one.
-            className="scan-row flex items-center gap-3 px-5 py-[0.9rem] xl:py-[1.4rem]"
+            className="scan-row flex items-center gap-3.5 px-6 py-[1rem] xl:py-[1.5rem]"
             style={{
               borderTop: i === 0 ? undefined : `1px solid ${ROW_RULE}`,
               // Each row's turn in the scan, spread across the shared cycle.

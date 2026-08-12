@@ -76,7 +76,7 @@ export function ScorePanel() {
       }}
       aria-label={t.hero.scoreAlt}
     >
-      <div className="p-5 sm:p-7">
+      <div className="p-6 sm:p-8">
         {/* ── the headline number ── */}
         <div className="rise flex items-end justify-between gap-4" style={{ ["--rise-delay" as string]: "0.05s" }}>
           <div className="min-w-0">
@@ -96,8 +96,8 @@ export function ScorePanel() {
         </div>
 
         {/* ── the four factors ── */}
-        <div className="mt-6 border-t pt-5" style={{ borderColor: "#e2e2de" }}>
-          <div className="space-y-3.5">
+        <div className="mt-7 border-t pt-6" style={{ borderColor: "#e2e2de" }}>
+          <div className="space-y-4 sm:space-y-[1.15rem]">
             {FACTORS.map((factor, i) => {
               const delay = 0.35 + i * 0.12;
               return (
@@ -107,7 +107,7 @@ export function ScorePanel() {
                       wrapped, which made that one row taller than the other
                       three and broke the comparison the rules exist to make. */}
                   <span
-                    className="t-meta w-[7.25rem] shrink-0 truncate text-[0.8125rem] sm:w-[6.5rem]"
+                    className="t-meta w-[7.25rem] shrink-0 truncate text-[0.8125rem] sm:w-[7rem]"
                     style={{ color: "var(--ink-paper)" }}
                   >
                     {copy.factors[factor.key]}
@@ -153,7 +153,7 @@ export function ScorePanel() {
               response. Showing the gap is the point: a score that only ever
               flatters is not a score. ── */}
         <p
-          className="rise t-meta mt-5 border-t pt-4 text-[0.75rem]"
+          className="rise t-meta mt-6 border-t pt-5 text-[0.8125rem]"
           style={{ ["--rise-delay" as string]: "0.85s", borderColor: "#e2e2de", color: "var(--ink-paper-soft)" }}
         >
           {copy.missingLabel} {copy.missing.join(lang === "ar" ? "، " : ", ")}
