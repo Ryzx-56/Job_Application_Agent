@@ -7,14 +7,9 @@ import {
   ArrowRight,
   ArrowLeft,
   Sparkles,
-  FileCheck2,
   Gauge,
   PenLine,
-  Layers,
   Zap,
-  ShieldCheck,
-  FileUp,
-  Download,
   Check,
   Menu,
   X,
@@ -36,6 +31,8 @@ import { legalContent, LegalDocKey } from "@/lib/legal-content";
 import { Hero } from "./hero";
 import { CompanyMarquee } from "./marquee";
 import { HowItWorks } from "./how-it-works";
+import { TailoringCase } from "./tailoring-case";
+import { Features } from "./features";
 
 /* Smooth-scrolls to a section by id, respecting that section's scroll-mt-*
    class so the heading never ends up hidden behind the fixed navbar. */
@@ -274,32 +271,10 @@ function TrustBar() {
   );
 }
 
-/* ========================================================================
-   FEATURES
-======================================================================== */
-function Features() {
-  const { t } = useLang();
-  const icons = [FileCheck2, Gauge, PenLine, Layers, Zap, ShieldCheck];
-  return (
-    <section id="features" className="mx-auto max-w-6xl scroll-mt-24 px-4 py-20 sm:px-6 sm:py-28">
-      <SectionHeading eyebrow={t.features.eyebrow} title={t.features.title} description={t.features.description} />
-      <div className="mt-14 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        {t.features.items.map((feature, i) => {
-          const Icon = icons[i];
-          return (
-            <div key={feature.title} className="group rounded-2xl border border-white/10 bg-zinc-900/60 p-6 transition-all duration-300 hover:-translate-y-1 hover:border-blue-400/40 hover:shadow-xl hover:shadow-blue-950/20">
-              <div className="grid size-11 place-items-center rounded-xl border border-white/10 bg-white/5 text-blue-400 transition-colors group-hover:bg-blue-600 group-hover:text-white">
-                <Icon className="size-5" aria-hidden />
-              </div>
-              <h3 className="mt-5 text-base font-semibold text-white">{feature.title}</h3>
-              <p className="mt-2 text-sm leading-relaxed text-zinc-400">{feature.description}</p>
-            </div>
-          );
-        })}
-      </div>
-    </section>
-  );
-}
+/* FEATURES (§3.5) now lives in ./features.tsx. What used to be here was a
+   six-up grid of rounded cards, each with an icon in a coloured square —
+   §2.1's loudest banned pattern — and it has been replaced by three primary
+   features with their own visuals plus a compact secondary list. */
 
 /* ========================================================================
    LINKEDIN ADD-ON
@@ -1067,8 +1042,14 @@ export function LandingPage() {
         <TrustBar />
         {/* How it works comes BEFORE the feature detail (§3.3, §3.4): a
             visitor who does not yet know what the product does cannot judge a
-            feature list. The page had these the other way round. */}
+            feature list. The page had these the other way round.
+
+            Then the tailoring argument (§3.4), which the brief also places
+            ahead of the feature detail — someone who does not believe one CV
+            per job is a problem has no reason to read a feature list at all.
+            Only then the features themselves (§3.5). */}
         <HowItWorks />
+        <TailoringCase />
         <Features />
         <TrustSection />
         <Pricing onOpenAbout={() => router.push("/about")} />

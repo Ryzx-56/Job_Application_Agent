@@ -46,3 +46,9 @@ pytest.ini
 
 # Specific project documentation
 Job_Application_Agent_Roadmap.docxe
+
+# Claude Code — local instructions and task briefs
+CLAUDE.md
+CLAUDE.local.md
+.claude/
+prompts/

@@ -178,43 +178,156 @@ export const content = {
       "Every line checked against your CV",
       "Humanizer strips AI phrasing",
     ],
-    features: {
-      eyebrow: "Everything you need",
-      title: "A complete toolkit for every application",
+    /* ── THE TAILORING ARGUMENT (§3.4, messaging pillar 1) ────────────────
+       "One CV for every job is why applications fail" is the educational
+       argument, and the brief gives it its own section BEFORE the feature
+       detail: a reader who does not yet believe tailoring matters has no
+       reason to care what the features are.
+
+       Kept to three sentences on purpose. The panel carries the argument;
+       this only has to frame it.
+
+       WHAT IT CLAIMS IS WHAT tailoring_engine.py DOES. Its prompt says
+       "Reorder freely, both bullets within a section and which facts lead a
+       sentence, to put the strongest, most relevant material first", and
+       every bullet carries a relevance_score. So the claim is re-ordering
+       and re-weighting, not deletion, and not addition — the fact checker
+       exists precisely to stop the last one. */
+    tailoringCase: {
+      label: "One CV, sent everywhere",
+      title: "Two postings for the same job do not screen for the same thing",
       description:
-        "Tarshih handles the tedious parts of applying so you can focus on the roles you actually want.",
-      items: [
+        "Sent unchanged, a CV puts the same order in front of every employer, and the experience one of them is actually screening for ends up near the bottom of page two. Tarshih reads each posting and rebuilds the order around what that employer asked for. Nothing is added. It is the same record, read twice.",
+      panelTitle: "One CV, read against two postings",
+      // The key for the panel's two states, so neither column needs its own
+      // pair of labels.
+      keyLead: "brought forward",
+      keyRest: "moved down",
+      matchLabel: "Match",
+      // Same two roles the hero's matched-openings list uses, so the page
+      // reads as one continuous example rather than a set of unrelated ones.
+      roles: ["Frontend Engineer", "Full-stack Developer"],
+      footnote: "The same CV both times. Nothing added, nothing invented.",
+      alt: "One CV read against two postings, with the same six skills ordered differently for each and a different match score",
+    },
+    /* ── FEATURES (§3.5) ──────────────────────────────────────────────────
+       HIERARCHY, NOT A FLAT GRID. Three primary features, each with its own
+       visual, then a compact secondary list. The previous version of this
+       section was a six-up grid of rounded cards with an icon in a coloured
+       square — the single loudest template tell in §2.1 — and one of its six
+       cards advertised "6 AI agents working together", which is both an
+       internal implementation detail and the wrong number (the pipeline runs
+       eight).
+
+       EVERY LINE BELOW IS TRACED TO CODE. Interview prep in particular is
+       described as what agents/interview_prep.py returns — a set of likely
+       questions with an answer for each — and never as practice, simulation
+       or a mock interview, none of which the product does. LinkedIn and
+       interview prep both carry their plan requirement in `note`, because
+       core/entitlements.py caps both at zero on Free. */
+    features: {
+      label: "What you get",
+      title: "A tailored CV, the scores behind it, and the jobs to send it to",
+      description:
+        "One run produces all three: the documents, the scoring that explains them, and the openings they are aimed at.",
+      primary: [
         {
-          title: "Create or upgrade any CV",
-          description:
-            "Start from a blank slate or upload your current CV. Either way, Tarshih builds a resume tailored to the exact job you're applying for, plus a matching cover letter in the same language, every time.",
+          lead: "A CV rewritten for the posting, and a cover letter to match",
+          body: "Both are written against the job description you paste, in Arabic or English, and typeset properly in either. Every line traces back to something already in your CV.",
         },
         {
-          title: "ATS score you can act on",
-          description:
-            "See your ATS and job match score broken down by keywords, skills, education, and experience, so you know exactly what's strong and what's holding you back, not just a number.",
+          lead: "See what is missing before a recruiter does",
+          body: "An ATS score with the four factors behind it, a separate match score for the role, and the specific gaps that cost you the rest. Each gap comes with an honest way to close it, never a way to claim it.",
         },
         {
-          title: "Your words, leveled up",
-          description:
-            "Describe a project in one vague sentence and Tarshih turns it into a polished, professional bullet point, using only what's true in your CV. Nothing is ever invented.",
-        },
-        {
-          title: "Finds jobs for you",
-          description:
-            "Every job description you paste returns 5 similar openings, ranked Strong Match, Partial Match, or Stretch Role, so you're never applying blind.",
-        },
-        {
-          title: "6 AI agents working together",
-          description:
-            "Parsing, tailoring, fact-checking, scoring, writing, and job search each run through a specialized agent instead of one prompt guessing its way through everything.",
-        },
-        {
-          title: "Arabic and English, done properly",
-          description:
-            "Generate polished CVs and cover letters in English or Arabic, with correct RTL formatting, not the broken, jumbled Arabic output most tools produce.",
+          lead: "Five openings, ranked, each one a click from the posting",
+          body: "Once the CV is ready we search what is posted right now and return up to five roles, labelled by how much of what they ask for your CV already shows. Every row opens the original listing.",
         },
       ],
+      secondaryTitle: "The rest of it",
+      secondary: [
+        {
+          title: "Start without a CV",
+          body: "No file to upload? Fill in a form instead and the same pipeline runs on what you entered.",
+          note: "",
+        },
+        {
+          title: "Or upgrade the one you have",
+          body: "Upload a PDF or Word file. It is read as it stands, so nothing has to be retyped.",
+          note: "",
+        },
+        {
+          title: "PDF and Word",
+          body: "The CV downloads as a PDF or a .docx file. The cover letter comes as a PDF.",
+          note: "",
+        },
+        {
+          title: "Every version, kept",
+          body: "Each CV you generate stays in your account with its role, its scores and its files.",
+          note: "",
+        },
+        {
+          title: "LinkedIn profile content",
+          body: "A headline, an About section and a paste-ready block for every role, written from a CV you tailored here. In English, because that is how recruiters search.",
+          note: "Included with Pro and Elite",
+        },
+        {
+          title: "Interview questions, answered",
+          body: "The questions that specific role is likely to open with, each one with how to answer it from your own experience.",
+          note: "Included with Pro and Elite",
+        },
+      ],
+    },
+    /* Panel copy for the three primary features. The specimen documents
+       themselves live in the component, not here: the CV sheet is Arabic and
+       the letter sheet is English in BOTH site languages, on purpose, since
+       the claim being made is that the product typesets both. */
+    featureDocs: {
+      cvLabel: "Tailored CV",
+      letterLabel: "Cover letter",
+      caption: "One generation, both scripts, each set in its own direction.",
+      alt: "An Arabic CV page in joined script, with an English cover letter behind it",
+    },
+    /* The three fields are exactly GapItem in schemas/output_schema.py:
+       skill, importance ("required" | "preferred"), how_to_close. The
+       how-to-close lines follow match_scorer.py's own rule — if a gap cannot
+       honestly be closed, point at real experience or a truthful
+       alternative, never at a way to claim the requirement is met. */
+    featureGaps: {
+      atsLabel: "ATS score",
+      matchLabel: "Job match",
+      gapsLabel: "What is missing",
+      importance: { required: "Required", preferred: "Preferred" },
+      items: [
+        {
+          skill: "Terraform",
+          importance: "required" as const,
+          how: "You have provisioned infrastructure by hand. Say which parts you automated, and with what.",
+        },
+        {
+          skill: "GraphQL",
+          importance: "preferred" as const,
+          how: "The API layer in your second role is close enough to name. Say what it served.",
+        },
+        {
+          skill: "Team leadership",
+          importance: "required" as const,
+          how: "You mentored two engineers last year. That belongs inside the role, not in a list of skills.",
+        },
+      ],
+      alt: "An ATS score and a job match score, with three named gaps and how to close each one",
+    },
+    /* The labels come from t.heroMatches.ranks so they cannot drift from the
+       hero's panel. Only what each one MEANS is written here — which the hero
+       panel never says, so this adds to it rather than repeating it. */
+    featureRanks: {
+      title: "How each opening is labelled",
+      meanings: {
+        strong: "Your CV already shows most of what the posting asks for.",
+        partial: "Part of what it asks for is in your CV, and part of it is not.",
+        stretch: "Past what your CV currently shows. Listed rather than hidden from you.",
+      },
+      alt: "The three labels a matched opening can carry, and what each one means",
     },
     /* ── HOW IT WORKS (§3.3) ──────────────────────────────────────────────
        THREE steps, not four, and no agent count. The previous version opened
@@ -1396,43 +1509,141 @@ export const content = {
       "كل سطر يُراجَع مقابل سيرتك",
       "منقّح الأسلوب يزيل نبرة الآلة",
     ],
-    features: {
-      eyebrow: "كل ما تحتاجه",
-      title: "مجموعة أدوات متكاملة لكل طلب توظيف",
+    /* ── حجّة التخصيص (§3.4، الركيزة الأولى في الرسائل) ────────────────────
+       مكتوبة بالعربية ابتداءً لا مترجمة عن الإنجليزية: العنوان الإنجليزي
+       يقول إن إعلانين لوظيفة واحدة لا يفحصان الشيء نفسه، والعربي يحمل الفكرة
+       نفسها بتركيب تستعمله العربية فعلًا، ولذلك تختلف الصياغة.
+
+       ثلاث جمل فقط، لأن اللوحة هي التي تحمل الحجّة. */
+    tailoringCase: {
+      label: "سيرة واحدة تُرسل إلى الجميع",
+      title: "إعلانان لوظيفة واحدة لا يبحثان عن الشيء نفسه",
       description:
-        "يتولى ترشيح الجوانب المرهقة في التقديم على الوظائف لتتفرغ للأدوار التي تريدها فعلًا.",
-      items: [
+        "حين تُرسل السيرة كما هي، يقرأ كل صاحب عمل الترتيب نفسه، وتنتهي الخبرة التي يبحث عنها هو تحديدًا في أسفل الصفحة الثانية. يقرأ ترشيح كل إعلان ويعيد بناء الترتيب حول ما طلبه ذلك الإعلان. لا يُضاف شيء، بل هو السجل نفسه يُقرأ مرتين.",
+      panelTitle: "سيرة واحدة، مقروءة أمام إعلانين",
+      keyLead: "تتقدّم",
+      keyRest: "تتأخّر",
+      matchLabel: "التوافق",
+      roles: ["مهندس واجهات أمامية", "مطوّر متكامل"],
+      footnote: "السيرة نفسها في الحالتين. لا شيء مُضاف ولا شيء مُختلق.",
+      alt: "سيرة واحدة مقروءة أمام إعلانين، المهارات الست نفسها مرتّبة على نحو مختلف في كل منهما، ودرجة توافق مختلفة",
+    },
+    /* ── المميزات (§3.5) ──────────────────────────────────────────────────
+       تدرّج لا شبكة مسطّحة: ثلاث مزايا رئيسية لكل واحدة صورتها، ثم قائمة
+       مختصرة بالبقية. النسخة السابقة كانت ست بطاقات متطابقة برموز داخل
+       مربعات ملوّنة، وهي أوضح علامات القالب الجاهز في §2.1، وكانت إحداها
+       تعلن عن «ستة وكلاء ذكاء اصطناعي»: تفصيل داخلي، والرقم خطأ أصلًا.
+
+       كل سطر هنا مأخوذ من الشيفرة. التحضير للمقابلة تحديدًا موصوف بما
+       يُخرجه agents/interview_prep.py فعلًا — أسئلة متوقّعة مع إجابة لكل
+       سؤال — لا تدريبًا ولا محاكاة ولا مقابلة تجريبية، فلا شيء من ذلك موجود
+       في المنتج. ولينكدإن والتحضير للمقابلة يحملان شرط الخطة في note، لأن
+       core/entitlements.py يضع حدّهما عند صفر في الخطة المجانية. */
+    features: {
+      label: "ما الذي تحصل عليه",
+      title: "سيرة مخصّصة، والنتائج التي تفسّرها، والوظائف التي تُرسل إليها",
+      description:
+        "تشغيل واحد يُخرج الثلاثة: المستندات، والتقييم الذي يشرحها، والإعلانات التي وُجّهت إليها.",
+      primary: [
         {
-          title: "أنشئ سيرة جديدة أو طوّر الحالية",
-          description:
-            "ابدأ من صفحة فارغة أو ارفع سيرتك الحالية. في الحالتين، يبني ترشيح سيرة مخصصة تمامًا للوظيفة التي تتقدم لها، مع خطاب تقديم مطابق بنفس اللغة، في كل مرة.",
+          lead: "سيرة ذاتية تُكتب من جديد للإعلان، وخطاب تقديم يرافقها",
+          body: "يُكتب الاثنان أمام الوصف الوظيفي الذي لصقته، بالعربية أو بالإنجليزية، ويُنسَّقان تنسيقًا صحيحًا في كلتيهما. وكل سطر يعود إلى شيء موجود في سيرتك أصلًا.",
         },
         {
-          title: "نتيجة ATS يمكنك التصرف بناءً عليها",
-          description:
-            "شاهد نتيجة التوافق مقسّمة إلى الكلمات المفتاحية والمهارات والتعليم والخبرة، لتعرف بالضبط ما هو قوي وما يحتاج تحسينًا، لا مجرد رقم.",
+          lead: "اعرف ما ينقصك قبل أن يعرفه من يقرأ سيرتك",
+          body: "نتيجة ATS بعواملها الأربعة، ودرجة توافق مستقلة مع الوظيفة، ثم الفجوات المحدّدة التي كلّفتك ما تبقّى. ولكل فجوة طريقة صادقة لسدّها، لا طريقة لادّعائها.",
         },
         {
-          title: "كلماتك، بمستوى احترافي أعلى",
-          description:
-            "صف مشروعك بجملة بسيطة غير مصقولة، ويحوّلها ترشيح إلى نقطة احترافية جاهزة، معتمدًا فقط على ما هو حقيقي في سيرتك. لا شيء يُختلق أبدًا.",
-        },
-        {
-          title: "يبحث عن وظائف لك",
-          description:
-            "كل وصف وظيفي تلصقه يُرجع 5 وظائف مشابهة، مصنّفة كتطابق قوي أو تطابق جزئي أو فرصة طموحة، حتى لا تبحث عن عمل بشكل عشوائي.",
-        },
-        {
-          title: "6 وكلاء ذكاء اصطناعي يعملون معًا",
-          description:
-            "التحليل والتخصيص والتحقق من الحقائق وتقييم التوافق والكتابة والبحث عن وظائف، كل خطوة يتولاها وكيل متخصص بدلًا من طلب واحد يخمّن كل شيء.",
-        },
-        {
-          title: "عربي وإنجليزي، بشكل صحيح",
-          description:
-            "أنشئ سيرًا ذاتية وخطابات تقديم احترافية بالعربية أو الإنجليزية، بتنسيق صحيح من اليمين لليسار، لا النصوص العربية المكسورة والمشوّشة التي تنتجها معظم الأدوات الأخرى.",
+          lead: "خمس وظائف مرتّبة، كل واحدة على بعد نقرة من إعلانها",
+          body: "ما إن تجهز السيرة حتى نبحث فيما هو منشور الآن ونعيد ما يصل إلى خمس وظائف، موسومة بمقدار ما تُظهره سيرتك ممّا تطلبه. وكل سطر يفتح الإعلان الأصلي.",
         },
       ],
+      secondaryTitle: "وبقية الأدوات",
+      secondary: [
+        {
+          title: "ابدأ بلا سيرة ذاتية",
+          body: "لا يوجد ملف ترفعه؟ املأ النموذج بدلًا منه، ويعمل المسار نفسه على ما أدخلته.",
+          note: "",
+        },
+        {
+          title: "أو طوّر سيرتك الحالية",
+          body: "ارفع ملف PDF أو Word، فيُقرأ كما هو دون أن تعيد كتابة شيء.",
+          note: "",
+        },
+        {
+          title: "PDF و Word",
+          // "DOCX" and not ".docx": a Latin run that STARTS with a full stop
+          // is a neutral character at the edge of a bidi run, which is the
+          // exact shape that renders on the wrong side inside an Arabic
+          // sentence. Seen on a screenshot, not guessed. The extension is
+          // named without its dot instead of being patched with an LRM.
+          body: "تُنزَّل السيرة الذاتية بصيغة PDF أو DOCX، ويأتي خطاب التقديم بصيغة PDF.",
+          note: "",
+        },
+        {
+          title: "كل نسخة محفوظة",
+          body: "تبقى كل سيرة أنشأتها في حسابك، ومعها الوظيفة ونتائجها وملفاتها.",
+          note: "",
+        },
+        {
+          title: "محتوى ملفك في لينكدإن",
+          body: "عنوان مهني، وقسم «نبذة»، ونص جاهز للصق لكل وظيفة في خبرتك، مكتوب من سيرة خصّصتها هنا. بالإنجليزية، لأن بها يبحث المسؤولون عن التوظيف.",
+          note: "ضمن خطتَي Pro و Elite",
+        },
+        {
+          title: "أسئلة المقابلة، مع إجاباتها",
+          body: "الأسئلة التي يُرجَّح أن تبدأ بها تلك الوظيفة تحديدًا، ومع كل سؤال كيف تجيب عنه من خبرتك أنت.",
+          note: "ضمن خطتَي Pro و Elite",
+        },
+      ],
+    },
+    /* نصّا المستندين نفسيهما موجودان في المكوّن لا هنا: ورقة السيرة عربية
+       وورقة الخطاب إنجليزية في اللغتين معًا، عمدًا، لأن ما يُدَّعى هنا هو أن
+       المنتج ينسّق النصّين. */
+    featureDocs: {
+      cvLabel: "السيرة المخصّصة",
+      letterLabel: "خطاب التقديم",
+      caption: "إنشاء واحد، بالنصّين، كلٌّ منسّق باتجاهه.",
+      alt: "صفحة سيرة ذاتية بالعربية بحروف موصولة، وخلفها خطاب تقديم بالإنجليزية",
+    },
+    /* الحقول الثلاثة هي GapItem في schemas/output_schema.py حرفيًا: المهارة،
+       وأهميتها (مطلوبة أو مفضّلة)، وكيف تُسدّ. وأسطر السدّ تتبع قاعدة
+       match_scorer.py نفسها: إن تعذّر سدّ الفجوة بصدق، يُشار إلى خبرة حقيقية
+       أو بديل صادق، لا إلى طريقة لادّعاء أن الشرط مستوفى. */
+    featureGaps: {
+      atsLabel: "نتيجة ATS",
+      matchLabel: "توافق الوظيفة",
+      gapsLabel: "ما الذي ينقص",
+      importance: { required: "مطلوبة", preferred: "مفضّلة" },
+      items: [
+        {
+          skill: "Terraform",
+          importance: "required" as const,
+          how: "أنشأت بنية تحتية يدويًا. اذكر ما الذي أتمتّه منها، وبأي أداة.",
+        },
+        {
+          skill: "GraphQL",
+          importance: "preferred" as const,
+          how: "طبقة الواجهات في وظيفتك الثانية قريبة بما يكفي لذكرها. اذكر ما الذي كانت تخدمه.",
+        },
+        {
+          skill: "قيادة فريق",
+          importance: "required" as const,
+          how: "أشرفت على مهندسَين العام الماضي. مكان ذلك داخل الوظيفة نفسها، لا في قائمة المهارات.",
+        },
+      ],
+      alt: "نتيجة ATS ودرجة توافق مع الوظيفة، ومعهما ثلاث فجوات محدّدة وكيفية سدّ كل واحدة",
+    },
+    /* الأسماء تأتي من t.heroMatches.ranks حتى لا تختلف عن لوحة الواجهة. ما
+       يُكتب هنا هو معنى كل وسم فقط، وهو ما لا تقوله تلك اللوحة. */
+    featureRanks: {
+      title: "كيف تُوسَم كل وظيفة",
+      meanings: {
+        strong: "سيرتك تُظهر أصلًا معظم ما يطلبه الإعلان.",
+        partial: "جزء ممّا يطلبه موجود في سيرتك، وجزء غير موجود.",
+        stretch: "أبعد ممّا تُظهره سيرتك الآن. تُعرض عليك بدل أن تُخفى عنك.",
+      },
+      alt: "الأوسمة الثلاثة التي قد تحملها وظيفة مطابقة، ومعنى كل واحد",
     },
     /* ثلاث خطوات لا أربع، وبلا ذكر لعدد الوكلاء: النسخة السابقة كانت تفتح
        بـ«ستة وكلاء ذكاء اصطناعي»، والرقم خطأ (المسار يشغّل ثمانية)، والأهم
