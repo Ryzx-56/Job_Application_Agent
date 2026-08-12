@@ -87,7 +87,7 @@ export function MatchesPanel() {
 
   return (
     <figure
-      className="relative m-0 overflow-hidden rounded-[0.25rem]"
+      className="relative m-0 flex h-full flex-col overflow-hidden rounded-[0.25rem]"
       style={{
         backgroundColor: "var(--surface-paper)",
         boxShadow:
@@ -118,7 +118,7 @@ export function MatchesPanel() {
         </p>
       </div>
 
-      <ul className="m-0 list-none p-0">
+      <ul className="m-0 flex flex-1 list-none flex-col justify-between p-0">
         {items.map((item, i) => (
           <li
             key={item.role}

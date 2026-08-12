@@ -136,26 +136,18 @@ export function Hero() {
           </div>
 
           <div dir="ltr" className="min-w-0">
-            {/* Visual 1. SIZED TO THE JOBS PANEL BELOW IT, not to the column.
+            {/* Visual 1. FILLS ITS COLUMN. No max-width: a cap here is what
+                left an empty strip down the trailing side of the column, and
+                a panel that floats smaller than the space allotted to it
+                reads as a mistake rather than as a choice.
 
-                A fixed cap was tried first and was wrong: at 40rem it stopped
-                short of the row underneath and the two looked shifted. Filling
-                the column was wrong the other way — matching the ROW is not
-                matching the PANEL, because the row below is split between a
-                panel and its copy while this row is one panel.
-
-                So the cap is the same expression the grid below uses to size
-                its panel column: the row minus its gap, times the panel's
-                share of it (53 of 53+47). Both boxes therefore come out the
-                same width by construction and stay that way at any viewport,
-                instead of being two numbers that have to be kept in step.
-
-                No centring and no auto margins, so it stays anchored to the
-                column's start edge — the left in English, the right in Arabic,
-                which is the same edge the jobs panel below anchors to. */}
+                This does make it wider than the jobs panel below, because the
+                row below is split between a panel and its copy while this row
+                is one panel. Filling the cell and matching the panel widths
+                are mutually exclusive here; filling wins. */}
             <div
               dir={boxDir}
-              className="rise mt-12 lg:mt-0 xl:max-w-[calc((100%-3.5rem)*0.57)]"
+              className="rise mt-12 lg:mt-0"
               style={delay(0.1)}
             >
               <ScorePanel />
@@ -177,8 +169,8 @@ export function Hero() {
                 copy beside it were reading as one cramped block. The same
                 3.5rem appears in the score panel's cap above, because the two
                 have to be the same arithmetic to come out the same width. */}
-            <div dir="ltr" className="mt-16 sm:mt-20 lg:mt-20 xl:grid xl:grid-cols-[minmax(0,57fr)_minmax(0,43fr)] xl:items-center xl:gap-x-14">
-              <div dir={boxDir} className="xl:col-start-2 xl:row-start-1">
+            <div dir="ltr" className="mt-16 sm:mt-20 lg:mt-20 xl:grid xl:grid-cols-[minmax(0,57fr)_minmax(0,43fr)] xl:items-stretch xl:gap-x-14">
+              <div dir={boxDir} className="xl:col-start-2 xl:row-start-1 xl:flex xl:flex-col xl:justify-center">
                 <h2
                   className="t-display-l rise max-w-[16ch] font-semibold tracking-tight"
                   style={{ ...delay(0.14), color: "var(--ink-1)" }}
