@@ -118,11 +118,27 @@ export function Hero() {
           </div>
 
           <div className="min-w-0">
-            {/* Visual 1. Fills the column. It was capped at 40rem inside a
-                wider column, which is exactly what made the row below look
-                shifted: the score panel stopped at 1128 while the jobs row ran
-                to 1360, so the two never shared a trailing edge. */}
-            <div className="rise mt-12 lg:mt-0" style={delay(0.1)}>
+            {/* Visual 1. SIZED TO THE JOBS PANEL BELOW IT, not to the column.
+
+                A fixed cap was tried first and was wrong: at 40rem it stopped
+                short of the row underneath and the two looked shifted. Filling
+                the column was wrong the other way — matching the ROW is not
+                matching the PANEL, because the row below is split between a
+                panel and its copy while this row is one panel.
+
+                So the cap is the same expression the grid below uses to size
+                its panel column: the row minus its gap, times the panel's
+                share of it (53 of 53+47). Both boxes therefore come out the
+                same width by construction and stay that way at any viewport,
+                instead of being two numbers that have to be kept in step.
+
+                No centring and no auto margins, so it stays anchored to the
+                column's start edge — the left in English, the right in Arabic,
+                which is the same edge the jobs panel below anchors to. */}
+            <div
+              className="rise mt-12 lg:mt-0 xl:max-w-[calc((100%-3.5rem)*0.53)]"
+              style={delay(0.1)}
+            >
               <ScorePanel />
             </div>
 
@@ -138,7 +154,11 @@ export function Hero() {
                 Stacked below xl deliberately: under about 1280 the column
                 cannot hold a display-size heading beside a five-column table
                 without one of them becoming unreadable. */}
-            <div className="mt-16 sm:mt-20 lg:mt-20 xl:grid xl:grid-cols-[minmax(0,1.12fr)_minmax(0,1fr)] xl:items-center xl:gap-x-8">
+            {/* gap-x-14 (3.5rem), up from 3.5rem's half: the panel and the
+                copy beside it were reading as one cramped block. The same
+                3.5rem appears in the score panel's cap above, because the two
+                have to be the same arithmetic to come out the same width. */}
+            <div className="mt-16 sm:mt-20 lg:mt-20 xl:grid xl:grid-cols-[minmax(0,53fr)_minmax(0,47fr)] xl:items-center xl:gap-x-14">
               <div className="xl:col-start-2 xl:row-start-1">
                 <h2
                   className="t-display-l rise max-w-[16ch] font-semibold tracking-tight"
