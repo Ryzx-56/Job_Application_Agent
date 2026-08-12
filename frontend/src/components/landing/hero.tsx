@@ -101,7 +101,7 @@ export function Hero() {
           overflow-clipping ancestor becomes the sticky containing block and
           would silently kill this.
         */}
-        <div className="lg:grid lg:grid-cols-[minmax(0,22rem)_minmax(0,1fr)] lg:items-start lg:gap-x-14">
+        <div className="lg:grid lg:grid-cols-[minmax(0,20rem)_minmax(0,1fr)] lg:items-start lg:gap-x-14">
           <div className="min-w-0 lg:sticky lg:top-32 lg:self-start">
             {/* The two headings are set at the SAME size on purpose. The
                 display-xl / display-m pairing made the second one read as a
@@ -118,36 +118,40 @@ export function Hero() {
           </div>
 
           <div className="min-w-0">
-            {/* Visual 1. Capped so the widened hero does not stretch it: the
-                panel keeps the size and the start edge it already had, and the
-                extra width goes to the jobs block below, which needs it. */}
-            <div className="rise mt-12 lg:mt-0 lg:max-w-[40rem]" style={delay(0.1)}>
+            {/* Visual 1. Fills the column. It was capped at 40rem inside a
+                wider column, which is exactly what made the row below look
+                shifted: the score panel stopped at 1128 while the jobs row ran
+                to 1360, so the two never shared a trailing edge. */}
+            <div className="rise mt-12 lg:mt-0" style={delay(0.1)}>
               <ScorePanel />
             </div>
 
-            {/* Visual 2. The copy and the panel sit SIDE BY SIDE from xl, both
-                starting from the score panel's own start edge, so this block
-                is wider than the panel above it and fills the space that was
-                empty to its trailing side.
+            {/* Visual 2. Same column, so the same start AND end edges as the
+                panel above — this row is not allowed to be wider than it.
 
-                Stacked below xl and not by omission: under about 1280 the
-                column cannot hold a display-size heading beside a five-column
-                table without one of them becoming unreadable, so it stacks,
-                which is also exactly what mobile already does. */}
-            <div className="mt-16 sm:mt-20 lg:mt-24 xl:grid xl:grid-cols-[minmax(0,22rem)_minmax(0,1fr)] xl:items-center xl:gap-x-10">
-              <div>
+                THE PANEL LEADS AND THE COPY FOLLOWS. In the DOM the copy comes
+                first, because on a phone a heading has to introduce the thing
+                it names. On desktop the two are placed by column, which swaps
+                them visually without reordering the markup — and mirrors for
+                free in Arabic, where the panel lands on the right.
+
+                Stacked below xl deliberately: under about 1280 the column
+                cannot hold a display-size heading beside a five-column table
+                without one of them becoming unreadable. */}
+            <div className="mt-16 sm:mt-20 lg:mt-20 xl:grid xl:grid-cols-[minmax(0,1.12fr)_minmax(0,1fr)] xl:items-center xl:gap-x-8">
+              <div className="xl:col-start-2 xl:row-start-1">
                 <h2
-                  className="t-display-l rise max-w-[20ch] font-semibold tracking-tight"
+                  className="t-display-l rise max-w-[16ch] font-semibold tracking-tight"
                   style={{ ...delay(0.14), color: "var(--ink-1)" }}
                 >
                   {t.heroMatches.headline}
                 </h2>
-                <p className="t-body-l rise mt-4 max-w-[46ch]" style={{ ...delay(0.18), color: "var(--ink-2)" }}>
+                <p className="t-body rise mt-4 max-w-[40ch]" style={{ ...delay(0.18), color: "var(--ink-2)" }}>
                   {t.heroMatches.sub}
                 </p>
               </div>
 
-              <div className="rise mt-8 xl:mt-0" style={delay(0.22)}>
+              <div className="rise mt-8 xl:col-start-1 xl:row-start-1 xl:mt-0" style={delay(0.22)}>
                 <MatchesPanel />
               </div>
             </div>
