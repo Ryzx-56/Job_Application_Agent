@@ -68,9 +68,22 @@ export function Hero() {
       </div>
 
       <div className="relative mx-auto max-w-6xl px-5 pb-16 pt-28 sm:px-8 sm:pb-24 sm:pt-36">
-        {/* ── visual 1, beside the argument ── */}
-        <div className="grid items-center gap-10 lg:grid-cols-[0.95fr_1.05fr] lg:gap-16">
-          <div className="min-w-0">
+        {/*
+          ONE GRID, TWO ROWS, DESKTOP ONLY.
+
+          Both headings run down the start column and the score panel sits
+          beside them spanning both rows. The second heading used to sit
+          directly under the first block, which read as two unrelated slabs
+          stacked top to bottom, and left the space beside the panel empty.
+
+          The mobile order is the DOM order and is deliberately unchanged:
+          headline, sub, score panel, second heading, sub, matches panel. That
+          only works because the grid is `lg:` — below that these are plain
+          blocks in source order, so the desktop rearrangement costs mobile
+          nothing and needs no duplicated markup.
+        */}
+        <div className="lg:grid lg:grid-cols-[0.95fr_1.05fr] lg:items-start lg:gap-x-16 lg:gap-y-10">
+          <div className="min-w-0 lg:col-start-1 lg:row-start-1">
             <h1 className="t-display-xl max-w-[15ch] font-semibold tracking-tight" style={{ color: "var(--ink-1)" }}>
               {t.hero.headline}
             </h1>
@@ -80,26 +93,35 @@ export function Hero() {
             </p>
           </div>
 
-          <div className="rise min-w-0" style={delay(0.1)}>
+          {/* Visual 1. Spans both text rows, so the column beside the headings
+              is one object rather than a panel with a hole under it. */}
+          <div
+            className="rise mt-12 min-w-0 lg:col-start-2 lg:row-start-1 lg:row-span-2 lg:mt-0 lg:self-start"
+            style={delay(0.1)}
+          >
             <ScorePanel />
+          </div>
+
+          {/* Visual 2's copy. Almost nobody arrives knowing we do this part,
+              so it gets a heading of its own rather than a caption. */}
+          <div className="mt-16 sm:mt-20 lg:col-start-1 lg:row-start-2 lg:mt-0 lg:self-end">
+            <h2
+              className="t-display-m rise max-w-[20ch] font-semibold tracking-tight"
+              style={{ ...delay(0.14), color: "var(--ink-1)" }}
+            >
+              {t.heroMatches.headline}
+            </h2>
+            <p className="t-body-l rise mt-4 max-w-[48ch]" style={{ ...delay(0.18), color: "var(--ink-2)" }}>
+              {t.heroMatches.sub}
+            </p>
           </div>
         </div>
 
-        {/* ── visual 2, with its own heading, because almost nobody arrives
-              knowing we do this part ── */}
-        <div className="mt-20 sm:mt-24">
-          <h2
-            className="t-display-m rise max-w-[22ch] font-semibold tracking-tight"
-            style={{ ...delay(0.14), color: "var(--ink-1)" }}
-          >
-            {t.heroMatches.headline}
-          </h2>
-          <p className="t-body-l rise mt-4 max-w-[54ch]" style={{ ...delay(0.18), color: "var(--ink-2)" }}>
-            {t.heroMatches.sub}
-          </p>
-          <div className="rise mt-8" style={delay(0.22)}>
-            <MatchesPanel />
-          </div>
+        {/* Visual 2 itself, full width under both columns: five rows with a
+            role at one end and a match label at the other is a list, and a
+            list wants the width. */}
+        <div className="rise mt-10 sm:mt-12" style={delay(0.22)}>
+          <MatchesPanel />
         </div>
 
         {/* ── the action, under both visuals ── */}

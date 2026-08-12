@@ -95,9 +95,9 @@ export const content = {
          the page. The subtext says "up to" because the cap is a target the
          search fills from what is genuinely posted — on a narrow role it can
          come back with fewer, and the code logs exactly that. */
-      headline: "Five matched openings with every CV",
-      sub: "The moment your CV is ready we search what is actually posted, and return up to five roles ranked by how well you fit.",
-      countLabel: "openings matched",
+      headline: "Five real jobs you can apply to today",
+      sub: "As soon as your CV is ready we search what is actually posted right now, and return up to five roles ranked by how well you fit. Every one opens the real listing, so you can apply in the same sitting.",
+      countLabel: "live jobs matched",
       // Sits in the panel's header band and again on every row, not as a
       // closing caption. That each match opens the real posting is the feature
       // this visual exists to show.
@@ -1338,9 +1338,9 @@ export const content = {
       /* خمسة هو RESULT_CAP في agents/jobs_finder.py، وليس رقمًا اختير للصفحة.
          النص يقول «حتى خمس» لأن الحد هدف يُملأ مما هو منشور فعلًا، وقد تعود
          الوظائف الضيقة بعدد أقل. */
-      headline: "خمس وظائف مطابقة مع كل سيرة",
-      sub: "ما إن تجهز سيرتك حتى نبحث في الإعلانات المنشورة فعلًا، ونعيد لك ما يصل إلى خمس وظائف مرتبة بحسب مدى ملاءمتك لها.",
-      countLabel: "وظائف مطابقة",
+      headline: "خمس وظائف حقيقية تقدّم عليها اليوم",
+      sub: "ما إن تجهز سيرتك حتى نبحث في الإعلانات المفتوحة الآن، ونعيد لك ما يصل إلى خمس وظائف مرتبة بحسب مدى ملاءمتك لها. كل واحدة تفتح الإعلان الأصلي، فتقدّم عليها في الجلسة نفسها.",
+      countLabel: "وظائف مفتوحة الآن",
       // تظهر في رأس اللوحة وعلى كل سطر، لا كتعليق ختامي: أن كل نتيجة تفتح
       // إعلان الوظيفة الحقيقي هو ما تقوم عليه هذه الصورة.
       linkNote: "كل واحدة تفتح الإعلان الأصلي",

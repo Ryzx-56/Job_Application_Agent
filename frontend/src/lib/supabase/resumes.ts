@@ -17,6 +17,9 @@ export type SimilarJob = {
   url?: string;
   snippet?: string;
   source?: string;
+  // Machine-readable tier from jobs_finder.py. Rows written before this field
+  // existed carry only match_label; the dashboard falls back to reading it.
+  match_tier?: string;
   match_label?: string;
 };
 

@@ -232,7 +232,11 @@ function TrustBar() {
   // every generation that produces prose.
   const icons = [Lock, ScanSearch, BadgeCheck, PenLine];
   return (
-    <section className="mx-auto max-w-6xl px-4 py-14 sm:px-6 sm:py-16">
+    // max-w-4xl is ~78% of the max-w-6xl the rest of the page uses. The
+    // marquee directly above is full-bleed, and going straight from that to
+    // another edge-to-edge row made the two read as one undifferentiated band.
+    // Pulling this in gives the eye a step down out of the full-width strip.
+    <section className="mx-auto max-w-4xl px-4 py-14 sm:px-6 sm:py-16">
       {/* ALL FOUR ON ONE LINE FROM lg UP. Wrapping turned a row of four claims
           into a stack that read as a list of features, which is not what a
           trust row is for. nowrap on each item plus flex-nowrap and

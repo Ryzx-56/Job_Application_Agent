@@ -419,6 +419,53 @@ Respond ONLY with a JSON array, one object per result id, no markdown:
 _STRONG_MATCH = 0.6
 _PARTIAL_MATCH = 0.3
 
+# The heuristic fallback path (_normalize_result) scores on a plain skill
+# ratio rather than the screener's relevance, and has always been more
+# generous about what counts as a partial match. Named rather than inline so
+# the difference between the two paths is visible instead of accidental.
+_HEURISTIC_PARTIAL_MATCH = 0.2
+
+
+# ─── MATCH TIER ──────────────────────────────────────────────────────────────
+# THE TIER IS THE VALUE; THE LABEL IS A RENDERING OF IT.
+#
+# This used to emit only "Strong Match" / "Partial Match" / "Stretch Role" as
+# English prose, which the frontend then had to substring-match to pick a
+# colour and printed verbatim. On an Arabic generation the user got an
+# otherwise fully Arabic result with three English badges in it, on the
+# primary language of the product.
+#
+# match_tier is a stable machine-readable key, so the UI localizes it the same
+# way it localizes everything else and nothing downstream has to parse prose.
+#
+# match_label IS STILL SENT, and must stay. Every similar_jobs list ever
+# returned has been persisted into the user's resume history (see
+# lib/supabase/resumes.ts), so rows written before this change carry only the
+# English label and still have to render. The frontend prefers the tier and
+# falls back to deriving it from the label for those rows.
+MATCH_LABELS_EN = {
+    "strong":  "Strong Match",
+    "partial": "Partial Match",
+    "stretch": "Stretch Role",
+}
+
+
+def _match_tier(score: float, strong: float, partial: float) -> str:
+    """Score to tier key. Thresholds are passed in because the screened and
+    heuristic paths genuinely use different ones."""
+    if score >= strong:
+        return "strong"
+    if score >= partial:
+        return "partial"
+    return "stretch"
+
+
+def _set_match(job: dict, score: float, strong: float, partial: float) -> None:
+    """Writes both fields together, so they can never disagree."""
+    tier = _match_tier(score, strong, partial)
+    job["match_tier"] = tier
+    job["match_label"] = MATCH_LABELS_EN[tier]
+
 # How much of each result's crawled text the screener sees. Enough to judge
 # "posting vs article" and spot a location, without turning one screen into
 # a huge prompt.
@@ -513,11 +560,7 @@ def _llm_screen_listings(
         if role:
             job["title"] = f"{role} - {company}" if company else role
         job["company"] = company
-        job["match_label"] = (
-            "Strong Match" if relevance >= _STRONG_MATCH
-            else "Partial Match" if relevance >= _PARTIAL_MATCH
-            else "Stretch Role"
-        )
+        _set_match(job, relevance, _STRONG_MATCH, _PARTIAL_MATCH)
         # Strip every internal field — these get serialized straight into
         # the API response and persisted in the user's resume history.
         for internal in ("_content", "_skill_ratio"):
@@ -592,15 +635,16 @@ def _to_candidate(r: dict, required_skills_lower: list[str]) -> tuple[dict | Non
     matched = sum(1 for skill in required_skills_lower if skill in content.lower())
     ratio = (matched / len(required_skills_lower[:5])) if required_skills_lower else 0.5
 
-    return {
+    job = {
         'title': title,
         'url': url,
         'snippet': content[:200] + "...",
         'source': source,
-        'match_label': "Strong Match" if ratio >= 0.6 else "Partial Match" if ratio >= 0.2 else "Stretch Role",
         '_content': content,
         '_skill_ratio': ratio,
-    }, "ok"
+    }
+    _set_match(job, ratio, _STRONG_MATCH, _HEURISTIC_PARTIAL_MATCH)
+    return job, "ok"
 
 
 def _heuristic_filter(candidates: list[dict], location_terms: list[str]) -> list[dict]:
