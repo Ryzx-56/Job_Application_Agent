@@ -383,6 +383,14 @@
 [data-type="editorial"] .t-body       { font-size: var(--body);       line-height: var(--lh-body); }
 [data-type="editorial"] .t-meta       { font-size: var(--meta);       line-height: var(--lh-meta); }
 
+/* A step between meta and body, for navigation only. Nav links at meta sat
+   too far below the buttons beside them: measured at 1024, Arabic links were
+   14.56px against buttons at 20.25px, because the buttons were still reading
+   the app-wide RTL scale where text-sm is 20px. This lifts the links and the
+   header buttons drop to body, closing a 39% gap to about 6% — enough that
+   the buttons still read as the heavier things, which they should. */
+[data-type="editorial"] .t-nav        { font-size: calc(0.9375rem * var(--script-scale)); line-height: var(--lh-meta); }
+
 /* Scores and figures line up in columns and don't jitter while counting. */
 [data-type="editorial"] .t-figure { font-variant-numeric: tabular-nums; }
 

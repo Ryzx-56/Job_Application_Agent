@@ -113,18 +113,25 @@ function SiteHeader({ onOpenAbout }: { onOpenAbout: () => void }) {
             the right edge. Both languages, worst in Arabic, where the labels
             are longer and the app-wide RTL scale sets text-sm to 20px.
 
-            nowrap makes a label physically unable to break inside its box.
-            t-meta drops the nav off the app-wide scale onto the editorial one,
-            which is 14px in both scripts — the RTL bump exists for reading
-            body copy, not for a navigation bar. lg is then a width the row
-            genuinely fits in, Arabic included. */}
-        <nav className="hidden items-center gap-0.5 lg:flex">
+            nowrap makes a label physically unable to break inside its box, and
+            the editorial scale keeps the nav off the app-wide RTL bump, which
+            exists for reading body copy and not for a navigation bar.
+
+            flex-1 + justify-evenly, because the first fix overcorrected: the
+            links clustered in the middle with dead space against the logo on
+            one side and the language toggle on the other. The nav now takes
+            the whole gap between those two and distributes it, which is space
+            that was being paid for and not used. Measured at 1024 — the
+            tightest case, since the scrolled bar narrows to max-w-5xl and
+            lands on the same inner width — the row still has ~50px spare in
+            Arabic, so this cannot reintroduce the wrap it just fixed. */}
+        <nav className="hidden min-w-0 flex-1 items-center justify-evenly px-2 lg:flex">
           {NAV_LINKS.map((link) => (
             <a
               key={link.href}
               href={link.href}
               onClick={(e) => scrollToSection(e, link.href.replace("#", ""))}
-              className="t-meta whitespace-nowrap rounded-lg px-2.5 py-2 text-zinc-400 transition-colors hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400/60"
+              className="t-nav whitespace-nowrap rounded-lg px-2 py-2 text-zinc-400 transition-colors hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400/60"
             >
               {link.label}
             </a>
@@ -132,18 +139,23 @@ function SiteHeader({ onOpenAbout }: { onOpenAbout: () => void }) {
           <button
             type="button"
             onClick={onOpenAbout}
-            className="t-meta whitespace-nowrap rounded-lg px-2.5 py-2 text-zinc-400 transition-colors hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400/60"
+            className="t-nav whitespace-nowrap rounded-lg px-2 py-2 text-zinc-400 transition-colors hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400/60"
           >
             {t.nav.about}
           </button>
         </nav>
 
-        <div className="hidden items-center gap-2 lg:flex">
+        {/* t-body on the buttons is the other half of the size fix. Without it
+            they keep the app-wide scale, which puts Arabic button text at
+            20.25px next to a 15.6px link. */}
+        <div className="hidden shrink-0 items-center gap-2 lg:flex">
           <LangSwitcher compact />
           {!isLoggedIn && (
-            <Button variant="ghost" size="md" as={Link} href="/login">{t.nav.login}</Button>
+            <Button variant="ghost" size="md" className="t-body" as={Link} href="/login">
+              {t.nav.login}
+            </Button>
           )}
-          <Button size="md" as={Link} href={isLoggedIn ? "/dashboard" : "/signup"}>
+          <Button size="md" className="t-body" as={Link} href={isLoggedIn ? "/dashboard" : "/signup"}>
             {isLoggedIn ? t.nav.dashboard : t.nav.getStarted}
           </Button>
         </div>
