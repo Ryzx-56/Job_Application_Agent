@@ -491,6 +491,34 @@
   transform-origin: right center;
 }
 
+/* HOW IT WORKS: each bar draws to its width, holds, then clears. Same clock
+   as the hero panels, offset a second per step, so the three diagrams play in
+   the order the steps happen rather than all at once. Transform only. */
+@keyframes editorial-draw {
+  0%   { transform: scaleX(0); opacity: 0.4; }
+  16%  { transform: scaleX(1); opacity: 1; }
+  84%  { transform: scaleX(1); opacity: 1; }
+  100% { transform: scaleX(0); opacity: 0.4; }
+}
+
+[data-type="editorial"] .step-draw {
+  transform-origin: left center;
+  animation: editorial-draw var(--cycle) cubic-bezier(0.16, 1, 0.3, 1) infinite both;
+  animation-delay: var(--step-delay, 0s);
+}
+
+/* Draws from the leading edge, so a bar grows leftward in Arabic. */
+[dir="rtl"] [data-type="editorial"] .step-draw {
+  transform-origin: right center;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-type="editorial"] .step-draw {
+    animation: none;
+    transform: none;
+  }
+}
+
 /* The matched-openings list scans: each row takes its turn on the same cycle,
    so the two hero visuals breathe together instead of running independently.
    Background only — the row never moves, never clears, and stays fully legible

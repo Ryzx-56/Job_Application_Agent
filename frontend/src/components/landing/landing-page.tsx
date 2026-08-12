@@ -35,6 +35,7 @@ import { LegalModal } from "@/components/legal-modal";
 import { legalContent, LegalDocKey } from "@/lib/legal-content";
 import { Hero } from "./hero";
 import { CompanyMarquee } from "./marquee";
+import { HowItWorks } from "./how-it-works";
 
 /* Smooth-scrolls to a section by id, respecting that section's scroll-mt-*
    class so the heading never ends up hidden behind the fixed navbar. */
@@ -451,36 +452,6 @@ function LinkedInAddOn() {
 /* ========================================================================
    HOW IT WORKS
 ======================================================================== */
-function HowItWorks() {
-  const { t } = useLang();
-  const icons = [FileUp, PenLine, ScanSearch, Download];
-  return (
-    <section id="how-it-works" className="scroll-mt-24 border-y border-white/10 bg-zinc-900/30">
-      <div className="mx-auto max-w-6xl px-4 py-20 sm:px-6 sm:py-28">
-        <SectionHeading eyebrow={t.howItWorks.eyebrow} title={t.howItWorks.title} description={t.howItWorks.description} />
-        <div className="relative mt-16 grid gap-8 md:grid-cols-4">
-          <div className="pointer-events-none absolute top-6 start-0 end-0 hidden h-px bg-white/10 md:block" />
-          {t.howItWorks.steps.map((step, i) => {
-            const Icon = icons[i];
-            return (
-              <div key={step.step} className="relative">
-                <div className="flex items-center gap-4">
-                  <div className="grid size-12 shrink-0 place-items-center rounded-2xl border border-white/10 bg-zinc-950 text-blue-400 shadow-sm">
-                    <Icon className="size-5" aria-hidden />
-                  </div>
-                  <span className="font-mono text-sm text-zinc-500">{step.step}</span>
-                </div>
-                <h3 className="mt-5 text-lg font-semibold text-white">{step.title}</h3>
-                <p className="mt-2 text-sm leading-relaxed text-zinc-400">{step.description}</p>
-              </div>
-            );
-          })}
-        </div>
-      </div>
-    </section>
-  );
-}
-
 /* ========================================================================
    TRUST SECTION
 ======================================================================== */
@@ -1094,8 +1065,11 @@ export function LandingPage() {
         <Hero />
         <CompanyMarquee />
         <TrustBar />
-        <Features />
+        {/* How it works comes BEFORE the feature detail (§3.3, §3.4): a
+            visitor who does not yet know what the product does cannot judge a
+            feature list. The page had these the other way round. */}
         <HowItWorks />
+        <Features />
         <TrustSection />
         <Pricing onOpenAbout={() => router.push("/about")} />
         <PayAsYouGo />

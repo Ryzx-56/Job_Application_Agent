@@ -216,35 +216,32 @@ export const content = {
         },
       ],
     },
+    /* ── HOW IT WORKS (§3.3) ──────────────────────────────────────────────
+       THREE steps, not four, and no agent count. The previous version opened
+       with "Six AI agents work behind the scenes", which was wrong on the
+       number (the pipeline runs eight) and wrong on the substance: how many
+       agents there are is not something the reader gets.
+
+       The description carries messaging pillar 2, the time saving, as a plain
+       claim rather than a red-versus-green comparison block (§3.4). */
     howItWorks: {
-      eyebrow: "How it works",
-      title: "From job posting to submitted application",
+      label: "How it works",
+      title: "Three steps, and the work is done",
       description:
-        "Six AI agents work behind the scenes. All you do is upload or start fresh, paste, and download.",
+        "Tailoring a CV properly takes 30 to 45 minutes per application. Here it takes a couple of minutes, and you enter your information once rather than once per job.",
       steps: [
         {
-          step: "01",
-          title: "Start from scratch or upload your CV",
-          description:
-            "Upload an existing resume as a PDF or DOCX, or build one from nothing. Tarshih extracts every real fact about your experience, skills, and history.",
+          title: "Add your CV",
+          description: "Upload a PDF or Word file. If you do not have one yet, fill in a form instead.",
         },
         {
-          step: "02",
-          title: "Paste the job description",
-          description:
-            "Tarshih's agents analyze the requirements and tailor your resume and cover letter around them, in English or Arabic.",
+          title: "Paste the job posting",
+          description: "The whole advert. We read what the role actually asks for, in Arabic or English.",
         },
         {
-          step: "03",
-          title: "See your score and what's missing",
+          title: "Get everything you need",
           description:
-            "Get an ATS and job match score broken down by keyword, skills, education, and experience, plus a clear list of what to add or improve.",
-        },
-        {
-          step: "04",
-          title: "Download and discover similar jobs",
-          description:
-            "Get your polished, ATS ready resume and cover letter, plus 5 similar openings ranked by how strong a match they are.",
+            "A tailored CV and cover letter, your ATS score and what it is missing, and five live jobs to send it to.",
         },
       ],
     },
@@ -1437,34 +1434,26 @@ export const content = {
         },
       ],
     },
+    /* ثلاث خطوات لا أربع، وبلا ذكر لعدد الوكلاء: النسخة السابقة كانت تفتح
+       بـ«ستة وكلاء ذكاء اصطناعي»، والرقم خطأ (المسار يشغّل ثمانية)، والأهم
+       أن عدد الوكلاء ليس شيئًا يحصل عليه القارئ. */
     howItWorks: {
-      eyebrow: "كيف يعمل",
-      title: "من إعلان الوظيفة إلى طلب مُقدَّم",
-      description: "ستة وكلاء ذكاء اصطناعي يعملون خلف الكواليس. كل ما عليك فعله هو الرفع أو البدء من جديد، اللصق، والتنزيل.",
+      label: "كيف يعمل",
+      title: "ثلاث خطوات، وينتهي العمل",
+      description:
+        "تخصيص السيرة الذاتية كما ينبغي يستغرق من 30 إلى 45 دقيقة لكل طلب. هنا يستغرق دقيقتين، وتُدخل معلوماتك مرة واحدة لا مرة مع كل وظيفة.",
       steps: [
         {
-          step: "01",
-          title: "ابدأ من الصفر أو ارفع سيرتك الذاتية",
-          description:
-            "أرفق سيرتك الحالية بصيغة PDF أو DOCX، أو ابنِ واحدة من لا شيء. يستخرج ترشيح كل حقيقة فعلية عن خبراتك ومهاراتك وتاريخك المهني.",
+          title: "أضف سيرتك الذاتية",
+          description: "ارفع ملف PDF أو Word. وإن لم تكن لديك سيرة بعد، فاملأ النموذج بدلًا من ذلك.",
         },
         {
-          step: "02",
-          title: "الصق الوصف الوظيفي",
-          description:
-            "يحلّل وكلاء ترشيح المتطلبات ويخصّصون سيرتك وخطاب تقديمك بناءً عليها، بالعربية أو الإنجليزية.",
+          title: "الصق إعلان الوظيفة",
+          description: "الإعلان كاملًا. نقرأ ما تطلبه الوظيفة فعلًا، بالعربية أو بالإنجليزية.",
         },
         {
-          step: "03",
-          title: "شاهد نتيجتك وما ينقصك",
-          description:
-            "احصل على نتيجة توافق مقسّمة إلى الكلمات المفتاحية والمهارات والتعليم والخبرة، مع قائمة واضحة بما يجب إضافته أو تحسينه.",
-        },
-        {
-          step: "04",
-          title: "نزّل الملفات واكتشف وظائف مشابهة",
-          description:
-            "احصل على سيرة ذاتية وخطاب تقديم جاهزين لأنظمة ATS، إضافة إلى 5 وظائف مشابهة مصنّفة حسب قوة التطابق.",
+          title: "استلم كل ما يلزمك",
+          description: "سيرة ذاتية مخصصة وخطاب تقديم، ودرجة توافقك مع أنظمة التتبع وما ينقصها، وخمس وظائف مفتوحة ترسلها إليها.",
         },
       ],
     },
