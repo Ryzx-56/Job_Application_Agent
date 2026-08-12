@@ -122,7 +122,7 @@ export function Hero() {
         <div dir="ltr" className="lg:grid lg:grid-cols-[minmax(0,55fr)_minmax(0,45fr)] lg:items-stretch lg:gap-0">
           <div
             dir={boxDir}
-            className="min-w-0 lg:col-start-1 lg:row-start-1 lg:border-r lg:pb-14 lg:pr-14"
+            className="min-w-0 lg:col-start-1 lg:row-start-1 lg:border-r lg:pb-14 lg:pr-14 lg:pt-16"
             style={{ borderColor: "var(--line-hairline)" }}
           >
             {/* The two headings are set at the SAME size on purpose. The
@@ -146,11 +146,13 @@ export function Hero() {
               jobs panel — those two cannot be equal while both fill their own
               cells, and that is fine. Height follows content; there is no
               max-height, because clipping a panel is worse than a tall one. */}
-          <div className="lg:col-start-2 lg:row-start-1 lg:pb-14 lg:pl-14">
-            {/* Offset down rather than stretched. The panel keeps its own
-                height; the gap is what stops it sitting flush with the
-                headline's cap-line and gives the top row a step. */}
-            <div dir={boxDir} className="rise mt-12 lg:mt-16" style={delay(0.1)}>
+          <div className="lg:col-start-2 lg:row-start-1 lg:pb-14 lg:pl-14 lg:pt-16">
+            {/* The offset lives on both top-row cells as padding, not on this
+                panel as a margin. That is what keeps the headline beside it
+                starting on the same line: one value, applied to the row, so
+                the two cannot drift apart the way they did when only the
+                panel carried it. */}
+            <div dir={boxDir} className="rise mt-12 lg:mt-0" style={delay(0.1)}>
               <ScorePanel />
             </div>
           </div>
