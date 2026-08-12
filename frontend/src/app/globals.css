@@ -364,11 +364,21 @@
 }
 
 /* Type roles. Set here rather than as Tailwind utilities so the two scripts
-   stay a single decision per role instead of a pair of classes per element. */
-[data-type="editorial"] .t-display-xl { font-size: var(--display-xl); line-height: var(--lh-display-xl); }
-[data-type="editorial"] .t-display-l  { font-size: var(--display-l);  line-height: var(--lh-display-l); }
-[data-type="editorial"] .t-display-m  { font-size: var(--display-m);  line-height: var(--lh-display-m); }
-[data-type="editorial"] .t-title      { font-size: var(--title);      line-height: var(--lh-title); }
+   stay a single decision per role instead of a pair of classes per element.
+
+   LINE-HEIGHT IS !important HERE ON PURPOSE, and it is not paranoia. The
+   heading reset directly above uses !important to beat a global rule, and an
+   !important declaration beats a normal one regardless of specificity — so
+   `line-height: inherit !important` on h1..h4 was silently overriding every
+   display line-height in this file. The headline rendered at body leading
+   (1.65) instead of 1.05: two lines with a visible gutter between them, in
+   both languages. Marked !important too, these win on specificity — (0,2,0)
+   for the class against (0,1,1) for the element reset — and headings finally
+   get the leading the scale defines. */
+[data-type="editorial"] .t-display-xl { font-size: var(--display-xl); line-height: var(--lh-display-xl) !important; }
+[data-type="editorial"] .t-display-l  { font-size: var(--display-l);  line-height: var(--lh-display-l) !important; }
+[data-type="editorial"] .t-display-m  { font-size: var(--display-m);  line-height: var(--lh-display-m) !important; }
+[data-type="editorial"] .t-title      { font-size: var(--title);      line-height: var(--lh-title) !important; }
 [data-type="editorial"] .t-body-l     { font-size: var(--body-l);     line-height: var(--lh-body-l); }
 [data-type="editorial"] .t-body       { font-size: var(--body);       line-height: var(--lh-body); }
 [data-type="editorial"] .t-meta       { font-size: var(--meta);       line-height: var(--lh-meta); }
@@ -473,27 +483,29 @@
   transform-origin: right center;
 }
 
-/* One slow pass down the sheet per cycle: the thing that makes the panel read
-   as a single object being worked on rather than three stacked widgets. */
-@keyframes editorial-sweep {
-  0%   { opacity: 0; transform: translate3d(0, 0, 0); }
-  10%  { opacity: 0.5; }
-  55%  { opacity: 0; transform: translate3d(0, var(--sweep-distance, 320px), 0); }
-  100% { opacity: 0; transform: translate3d(0, var(--sweep-distance, 320px), 0); }
+/* The matched-openings list scans: each row takes its turn on the same cycle,
+   so the two hero visuals breathe together instead of running independently.
+   Background only — the row never moves, never clears, and stays fully legible
+   at every point in the cycle. */
+@keyframes editorial-scan {
+  0%,
+  100% { background-color: transparent; }
+  3%   { background-color: var(--accent-wash); }
+  9%   { background-color: transparent; }
 }
 
-[data-type="editorial"] .sweep {
-  animation: editorial-sweep var(--cycle) linear infinite both;
+[data-type="editorial"] .scan-row {
+  animation: editorial-scan var(--cycle) linear infinite both;
+  animation-delay: var(--scan-delay, 0s);
 }
 
 @media (prefers-reduced-motion: reduce) {
   [data-type="editorial"] .leader-fill,
-  [data-type="editorial"] .sweep {
+  [data-type="editorial"] .scan-row {
     animation: none;
   }
-  /* Resting state is the finished sheet: rules at their real value, no sweep. */
+  /* Resting state is the finished panel: rules at their real value. */
   [data-type="editorial"] .leader-fill { transform: scaleX(var(--leader-to, 1)); }
-  [data-type="editorial"] .sweep { opacity: 0; }
 }
 
 /* ── MARQUEE ──────────────────────────────────────────────────────────────
@@ -530,11 +542,44 @@
   animation-direction: reverse;
 }
 
-/* The mask lives on the window, never on the moving track — masking an
-   animated element defeats the layer promotion above. */
-[data-type="editorial"] .marquee-window {
-  -webkit-mask-image: linear-gradient(to right, transparent, #000 6%, #000 94%, transparent);
-  mask-image: linear-gradient(to right, transparent, #000 6%, #000 94%, transparent);
+/* ENTRY AND EXIT ARE STATIC OVERLAYS, NOT A MASK ON THE WINDOW.
+   A mask on the window clips the moving track, so the whole strip is
+   re-rasterized every frame and the layer promotion above buys nothing —
+   that was the desktop stutter. Two fixed strips paint once.
+
+   Each strip is the page ground faded along its own axis, so a name dissolves
+   into the background rather than being cut mid-letter. The blur is a
+   backdrop-filter and is deliberately NOT on mobile: it forces a readback of
+   the region behind it every frame, which is the last thing a phone needs
+   here. Phones get the fade, which carries the effect on its own. */
+[data-type="editorial"] .marquee-edge {
+  position: absolute;
+  inset-block: 0;
+  width: clamp(2.5rem, 8vw, 6rem);
+  pointer-events: none;
+  z-index: 1;
+  background: var(--surface-base);
+}
+
+/* The track is dir="ltr", so these are physical on purpose: "start" is the
+   left edge in both languages, which is where the strip has to be. */
+[data-type="editorial"] .marquee-edge-start {
+  left: 0;
+  -webkit-mask-image: linear-gradient(to right, #000 20%, transparent);
+  mask-image: linear-gradient(to right, #000 20%, transparent);
+}
+
+[data-type="editorial"] .marquee-edge-end {
+  right: 0;
+  -webkit-mask-image: linear-gradient(to left, #000 20%, transparent);
+  mask-image: linear-gradient(to left, #000 20%, transparent);
+}
+
+@media (min-width: 640px) {
+  [data-type="editorial"] .marquee-edge {
+    -webkit-backdrop-filter: blur(3px);
+    backdrop-filter: blur(3px);
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {

@@ -67,18 +67,42 @@ export const content = {
       freeLine: `${enCount(TIERS.free.credits, "credit")} free every month, no card. That is ${TIERS.free.credits} CVs in English, or one in Arabic and one in English.`,
       // Alt text. The visuals carry real information, so they get described
       // rather than labelled "product screenshot".
-      sheetAlt: "A tailored CV with an ATS score of 92 in the margin",
+      scoreAlt: "An ATS score of 91, broken into keywords, skills, education and experience",
       matchesAlt: "Five matched job openings, each labelled strong, partial or stretch",
     },
-    heroSheet: {
-      docLabel: "Tailored for this posting",
-      role: "Frontend Engineer",
-      // The real components utils/ats_scorer.py weighs, not invented metrics.
-      scoreLabels: { ats: "ATS score", keywords: "Keyword match", formatting: "Formatting" },
-      sections: ["Summary", "Experience", "Skills"],
+    /* ── HERO VISUAL 1 (§3.1) ─────────────────────────────────────────────
+       Labels are the same strings the dashboard's ATS card uses, because they
+       name the four factors utils/ats_scorer.py actually computes. There is no
+       "formatting" score anywhere in the product; an earlier version of this
+       panel showed one. */
+    heroScore: {
+      title: "ATS Score",
+      sub: "The same breakdown you get after every generation, and the weight each factor carries.",
+      factors: {
+        keywords: "Keywords",
+        skills: "Skills",
+        education: "Education",
+        experience: "Experience",
+      },
+      // atsBreakdown.missing_skills. A score that only ever flatters is not a
+      // score, so the panel shows what the CV did not cover.
+      missingLabel: "Still missing:",
+      missing: ["Terraform", "GraphQL"],
     },
     heroMatches: {
-      title: "Openings matched to you",
+      /* ── HERO VISUAL 2 (§3.1) ───────────────────────────────────────────
+         Five is RESULT_CAP in agents/jobs_finder.py, not a number picked for
+         the page. The subtext says "up to" because the cap is a target the
+         search fills from what is genuinely posted — on a narrow role it can
+         come back with fewer, and the code logs exactly that. */
+      headline: "Five matched openings with every CV",
+      sub: "The moment your CV is ready we search what is actually posted, and return up to five roles ranked by how well you fit.",
+      countLabel: "openings matched",
+      // Sits in the panel's header band and again on every row, not as a
+      // closing caption. That each match opens the real posting is the feature
+      // this visual exists to show.
+      linkNote: "Each one opens the real posting",
+      viewListing: "View listing",
       // Roles and cities only. No employer names: a mockup that pairs real
       // companies with "matched openings" implies those companies are hiring
       // through us, which is a claim we cannot make.
@@ -139,11 +163,20 @@ export const content = {
        actually wary of in an AI writing tool: made-up facts, and output that
        reads like a machine wrote it. The full explanation is in trustSection
        and the FAQ; these are the headlines. */
+    /* Four short claims, each of which the code actually backs. Kept SHORT on
+       purpose: they sit on one line at desktop width, and a phrase that wraps
+       turns a row of four into a block of eight.
+
+       The fourth names the humanizer, which is a real, specific thing:
+       core/humanizer.py is a block of "do not write like an LLM" rules spliced
+       into every prompt that produces prose a person will sign their name to —
+       the tailored CV, the cover letter and the LinkedIn profile. It is not a
+       separate rewriting pass, and the copy does not claim one. */
     trustBar: [
-      "Encrypted uploads, always",
+      "Encrypted uploads",
       "Transparent ATS scoring",
-      "Every line checked back against your CV",
-      "Written not to read as AI",
+      "Every line checked against your CV",
+      "Humanizer strips AI phrasing",
     ],
     features: {
       eyebrow: "Everything you need",
@@ -1282,17 +1315,36 @@ export const content = {
       ctaPrimary: "ابدأ مجانًا",
       ctaSecondary: "شاهد كيف يعمل",
       freeLine: `${arCount(TIERS.free.credits, AR_POINTS)} مجانًا كل شهر، بلا بطاقة. تكفي ${arCount(TIERS.free.credits, AR_CVS)} بالإنجليزية، أو واحدة بالعربية وأخرى بالإنجليزية.`,
-      sheetAlt: "سيرة ذاتية مخصصة ودرجة توافقها مع نظام التتبع 92 في الهامش",
+      scoreAlt: "درجة توافق مع أنظمة التتبع 91، موزّعة على الكلمات المفتاحية والمهارات والتعليم والخبرة",
       matchesAlt: "خمس وظائف مطابقة، كل واحدة موسومة بتطابق قوي أو جزئي أو فرصة طموحة",
     },
-    heroSheet: {
-      docLabel: "مخصصة لهذا الإعلان",
-      role: "مهندس واجهات أمامية",
-      scoreLabels: { ats: "التوافق مع النظام", keywords: "الكلمات المفتاحية", formatting: "التنسيق" },
-      sections: ["نبذة", "الخبرة", "المهارات"],
+    /* ── الصورة الأولى في الواجهة (§3.1) ────────────────────────────────
+       المسميات هنا هي نفسها المستخدمة في بطاقة ATS داخل لوحة التحكم، لأنها
+       العوامل الأربعة التي يحسبها utils/ats_scorer.py فعلًا. لا وجود لدرجة
+       «تنسيق» في المنتج، وقد كانت معروضة في نسخة سابقة من هذه اللوحة. */
+    heroScore: {
+      title: "نتيجة نظام ATS",
+      sub: "التفصيل نفسه الذي تراه بعد كل إنشاء، ووزن كل عامل في النتيجة.",
+      factors: {
+        keywords: "الكلمات المفتاحية",
+        skills: "المهارات",
+        education: "التعليم",
+        experience: "الخبرة",
+      },
+      missingLabel: "لم تُغطَّ بعد:",
+      missing: ["Terraform", "GraphQL"],
     },
     heroMatches: {
-      title: "وظائف مطابقة لك",
+      /* خمسة هو RESULT_CAP في agents/jobs_finder.py، وليس رقمًا اختير للصفحة.
+         النص يقول «حتى خمس» لأن الحد هدف يُملأ مما هو منشور فعلًا، وقد تعود
+         الوظائف الضيقة بعدد أقل. */
+      headline: "خمس وظائف مطابقة مع كل سيرة",
+      sub: "ما إن تجهز سيرتك حتى نبحث في الإعلانات المنشورة فعلًا، ونعيد لك ما يصل إلى خمس وظائف مرتبة بحسب مدى ملاءمتك لها.",
+      countLabel: "وظائف مطابقة",
+      // تظهر في رأس اللوحة وعلى كل سطر، لا كتعليق ختامي: أن كل نتيجة تفتح
+      // إعلان الوظيفة الحقيقي هو ما تقوم عليه هذه الصورة.
+      linkNote: "كل واحدة تفتح الإعلان الأصلي",
+      viewListing: "فتح الإعلان",
       // أسماء وظائف ومدن فقط، بلا أسماء جهات توظيف: ربط شركات حقيقية بوظائف
       // «مطابقة» في نموذج توضيحي يوحي بأنها توظّف عبرنا، وهذا ادعاء لا نملكه.
       items: [
@@ -1339,11 +1391,13 @@ export const content = {
       coverLetterLabel: "خطاب التقديم",
       ready: "جاهز",
     },
+    /* عبارات قصيرة عمدًا: تقف في سطر واحد على الشاشات الكبيرة، وأي عبارة
+       تلتفّ تحوّل صفًا من أربعة إلى كتلة من ثمانية. */
     trustBar: [
-      "تشفير كامل لكل ما ترفعه",
-      "نتائج توافق ATS واضحة وشفافة",
+      "تشفير كامل لما ترفعه",
+      "نتيجة ATS شفافة",
       "كل سطر يُراجَع مقابل سيرتك",
-      "مكتوب بحيث لا يبدو صادرًا عن ذكاء اصطناعي",
+      "منقّح الأسلوب يزيل نبرة الآلة",
     ],
     features: {
       eyebrow: "كل ما تحتاجه",

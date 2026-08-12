@@ -104,13 +104,27 @@ function SiteHeader({ onOpenAbout }: { onOpenAbout: () => void }) {
           <Logo />
         </a>
 
-        <nav className="hidden items-center gap-1 md:flex">
+        {/* WHY lg AND NOT md, AND WHY whitespace-nowrap.
+            The horizontal bar used to switch on at 768px, where its contents
+            need roughly 1,100. Two things broke at once: every label wrapped
+            inside its own px-3 py-2 box, so the text spilled out of its own
+            hover and focus highlight and collided with the row above and
+            below; and the Log in / Get started buttons were pushed clean off
+            the right edge. Both languages, worst in Arabic, where the labels
+            are longer and the app-wide RTL scale sets text-sm to 20px.
+
+            nowrap makes a label physically unable to break inside its box.
+            t-meta drops the nav off the app-wide scale onto the editorial one,
+            which is 14px in both scripts — the RTL bump exists for reading
+            body copy, not for a navigation bar. lg is then a width the row
+            genuinely fits in, Arabic included. */}
+        <nav className="hidden items-center gap-0.5 lg:flex">
           {NAV_LINKS.map((link) => (
             <a
               key={link.href}
               href={link.href}
               onClick={(e) => scrollToSection(e, link.href.replace("#", ""))}
-              className="rounded-lg px-3 py-2 text-sm text-zinc-400 transition-colors hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400/60"
+              className="t-meta whitespace-nowrap rounded-lg px-2.5 py-2 text-zinc-400 transition-colors hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400/60"
             >
               {link.label}
             </a>
@@ -118,18 +132,18 @@ function SiteHeader({ onOpenAbout }: { onOpenAbout: () => void }) {
           <button
             type="button"
             onClick={onOpenAbout}
-            className="rounded-lg px-3 py-2 text-sm text-zinc-400 transition-colors hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400/60"
+            className="t-meta whitespace-nowrap rounded-lg px-2.5 py-2 text-zinc-400 transition-colors hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400/60"
           >
             {t.nav.about}
           </button>
         </nav>
 
-        <div className="hidden items-center gap-2 md:flex">
-          <LangSwitcher />
+        <div className="hidden items-center gap-2 lg:flex">
+          <LangSwitcher compact />
           {!isLoggedIn && (
-            <Button variant="ghost" as={Link} href="/login">{t.nav.login}</Button>
+            <Button variant="ghost" size="md" as={Link} href="/login">{t.nav.login}</Button>
           )}
-          <Button as={Link} href={isLoggedIn ? "/dashboard" : "/signup"}>
+          <Button size="md" as={Link} href={isLoggedIn ? "/dashboard" : "/signup"}>
             {isLoggedIn ? t.nav.dashboard : t.nav.getStarted}
           </Button>
         </div>
@@ -137,7 +151,7 @@ function SiteHeader({ onOpenAbout }: { onOpenAbout: () => void }) {
         <button
           type="button"
           onClick={() => setOpen((v) => !v)}
-          className="grid size-11 place-items-center rounded-lg border border-white/10 text-white transition-colors hover:bg-white/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400/60 md:hidden"
+          className="grid size-11 place-items-center rounded-lg border border-white/10 text-white transition-colors hover:bg-white/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400/60 lg:hidden"
           aria-label={open ? "Close menu" : "Open menu"}
           aria-expanded={open}
           aria-controls="mobile-menu"
@@ -148,7 +162,7 @@ function SiteHeader({ onOpenAbout }: { onOpenAbout: () => void }) {
 
       <div
         id="mobile-menu"
-        className={`mx-4 grid transition-all duration-300 ease-out md:hidden ${
+        className={`mx-4 grid transition-all duration-300 ease-out lg:hidden ${
           open ? "mt-2 grid-rows-[1fr] opacity-100" : "grid-rows-[0fr] opacity-0"
         }`}
       >
@@ -202,16 +216,33 @@ function SiteHeader({ onOpenAbout }: { onOpenAbout: () => void }) {
 ======================================================================== */
 function TrustBar() {
   const { t } = useLang();
-  // Fourth icon covers the humanizer line: content written not to read as AI.
+  // Fourth icon covers the humanizer line: core/humanizer.py's rules run on
+  // every generation that produces prose.
   const icons = [Lock, ScanSearch, BadgeCheck, PenLine];
   return (
-    <section className="mx-auto max-w-6xl px-4 py-10 sm:px-6">
-      <div className="flex flex-col items-center gap-5 border-y border-white/10 py-6 sm:flex-row sm:flex-wrap sm:justify-center sm:gap-x-8 sm:gap-y-3 sm:py-5">
+    <section className="mx-auto max-w-6xl px-4 py-14 sm:px-6 sm:py-16">
+      {/* ALL FOUR ON ONE LINE FROM lg UP. Wrapping turned a row of four claims
+          into a stack that read as a list of features, which is not what a
+          trust row is for. nowrap on each item plus flex-nowrap and
+          justify-between at lg holds the line; below that they stack, which is
+          correct on a phone. The copy in language.tsx is kept short enough for
+          this to fit in both scripts rather than relying on shrinking type.
+
+          SET AT READING SIZE, NOT CAPTION SIZE. At t-meta with tight padding
+          this was a hairline of small grey text that read as a footer stuck to
+          the bottom of the hero. These are four load-bearing claims about what
+          the product will and will not do, so they get body size, a full-size
+          icon and enough air on both sides to be a section of the page. */}
+      <div className="flex flex-col items-start gap-6 border-y border-white/10 py-9 sm:flex-row sm:flex-wrap sm:items-center sm:justify-center sm:gap-x-10 sm:gap-y-5 sm:py-10 lg:flex-nowrap lg:justify-between lg:gap-x-8">
         {t.trustBar.map((label, i) => {
           const Icon = icons[i];
           return (
-            <div key={label} className="flex items-center gap-2.5 text-sm text-zinc-400">
-              <Icon className="size-4 text-blue-400" aria-hidden />
+            <div
+              key={label}
+              className="t-body flex items-center gap-3 lg:whitespace-nowrap"
+              style={{ color: "var(--ink-2)" }}
+            >
+              <Icon className="size-5 shrink-0" style={{ color: "var(--accent-quiet)" }} aria-hidden />
               {label}
             </div>
           );
