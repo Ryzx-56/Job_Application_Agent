@@ -67,7 +67,14 @@ export function Hero() {
         <div className="absolute -top-40 left-1/2 h-96 w-[42rem] -translate-x-1/2 rounded-full bg-blue-600/20 blur-[120px]" />
       </div>
 
-      <div className="relative mx-auto max-w-6xl px-5 pb-16 pt-28 sm:px-8 sm:pb-24 sm:pt-36">
+      {/* THE HERO IS WIDER THAN THE SECTIONS BELOW IT, from lg up. The jobs
+          block sets the requirement: a heading beside a five-row table needs
+          roughly 800px, and after a headline column there was not 800px left
+          inside max-w-6xl. Rather than squeeze both, the hero gets its own
+          measure. It reads as deliberate because the hero is the one section
+          that should be the widest thing on the page, and it steps down into
+          the full-bleed marquee below rather than jumping. */}
+      <div className="relative mx-auto max-w-6xl px-5 pb-16 pt-28 sm:px-8 sm:pb-24 sm:pt-36 lg:max-w-[84rem]">
         {/*
           TWO COLUMNS ON DESKTOP. The start column carries the headline and
           its sub-line and nothing else. EVERYTHING ELSE — the score panel,
@@ -94,9 +101,14 @@ export function Hero() {
           overflow-clipping ancestor becomes the sticky containing block and
           would silently kill this.
         */}
-        <div className="lg:grid lg:grid-cols-[0.86fr_1.14fr] lg:items-start lg:gap-x-14">
+        <div className="lg:grid lg:grid-cols-[minmax(0,22rem)_minmax(0,1fr)] lg:items-start lg:gap-x-14">
           <div className="min-w-0 lg:sticky lg:top-32 lg:self-start">
-            <h1 className="t-display-xl max-w-[15ch] font-semibold tracking-tight" style={{ color: "var(--ink-1)" }}>
+            {/* The two headings are set at the SAME size on purpose. The
+                display-xl / display-m pairing made the second one read as a
+                subheading of the first rather than as the second half of the
+                argument. They meet in the middle at display-l: the first comes
+                down, the second goes up. */}
+            <h1 className="t-display-l max-w-[15ch] font-semibold tracking-tight" style={{ color: "var(--ink-1)" }}>
               {t.hero.headline}
             </h1>
 
@@ -106,27 +118,38 @@ export function Hero() {
           </div>
 
           <div className="min-w-0">
-            {/* Visual 1 */}
-            <div className="rise mt-12 lg:mt-0" style={delay(0.1)}>
+            {/* Visual 1. Capped so the widened hero does not stretch it: the
+                panel keeps the size and the start edge it already had, and the
+                extra width goes to the jobs block below, which needs it. */}
+            <div className="rise mt-12 lg:mt-0 lg:max-w-[40rem]" style={delay(0.1)}>
               <ScorePanel />
             </div>
 
-            {/* Visual 2's copy, directly under the picture it follows on from */}
-            <div className="mt-16 sm:mt-20 lg:mt-14">
-              <h2
-                className="t-display-m rise max-w-[20ch] font-semibold tracking-tight"
-                style={{ ...delay(0.14), color: "var(--ink-1)" }}
-              >
-                {t.heroMatches.headline}
-              </h2>
-              <p className="t-body-l rise mt-4 max-w-[46ch]" style={{ ...delay(0.18), color: "var(--ink-2)" }}>
-                {t.heroMatches.sub}
-              </p>
-            </div>
+            {/* Visual 2. The copy and the panel sit SIDE BY SIDE from xl, both
+                starting from the score panel's own start edge, so this block
+                is wider than the panel above it and fills the space that was
+                empty to its trailing side.
 
-            {/* Visual 2 */}
-            <div className="rise mt-8" style={delay(0.22)}>
-              <MatchesPanel />
+                Stacked below xl and not by omission: under about 1280 the
+                column cannot hold a display-size heading beside a five-column
+                table without one of them becoming unreadable, so it stacks,
+                which is also exactly what mobile already does. */}
+            <div className="mt-16 sm:mt-20 lg:mt-24 xl:grid xl:grid-cols-[minmax(0,22rem)_minmax(0,1fr)] xl:items-center xl:gap-x-10">
+              <div>
+                <h2
+                  className="t-display-l rise max-w-[20ch] font-semibold tracking-tight"
+                  style={{ ...delay(0.14), color: "var(--ink-1)" }}
+                >
+                  {t.heroMatches.headline}
+                </h2>
+                <p className="t-body-l rise mt-4 max-w-[46ch]" style={{ ...delay(0.18), color: "var(--ink-2)" }}>
+                  {t.heroMatches.sub}
+                </p>
+              </div>
+
+              <div className="rise mt-8 xl:mt-0" style={delay(0.22)}>
+                <MatchesPanel />
+              </div>
             </div>
           </div>
         </div>
