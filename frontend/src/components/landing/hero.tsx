@@ -122,7 +122,7 @@ export function Hero() {
         <div dir="ltr" className="lg:grid lg:grid-cols-[minmax(0,55fr)_minmax(0,45fr)] lg:items-stretch lg:gap-0">
           <div
             dir={boxDir}
-            className="min-w-0 lg:col-start-1 lg:row-start-1 lg:border-r lg:pb-14 lg:pr-14 lg:pt-16"
+            className="min-w-0 lg:col-start-1 lg:row-start-1 lg:flex lg:flex-col lg:justify-center lg:border-r lg:pb-14 lg:pr-14 lg:pt-16"
             style={{ borderColor: "var(--line-hairline)" }}
           >
             {/* The two headings are set at the SAME size on purpose. The
