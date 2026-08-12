@@ -119,8 +119,12 @@ export function Hero() {
           overflow-clipping ancestor becomes the sticky containing block and
           would silently kill this.
         */}
-        <div dir="ltr" className="lg:grid lg:grid-cols-[minmax(0,20rem)_minmax(0,1fr)] lg:items-start lg:gap-x-14 lg:gap-y-20">
-          <div dir={boxDir} className="min-w-0 lg:sticky lg:top-32 lg:col-start-1 lg:row-start-1 lg:self-start">
+        <div dir="ltr" className="lg:grid lg:grid-cols-[minmax(0,55fr)_minmax(0,45fr)] lg:items-stretch lg:gap-0">
+          <div
+            dir={boxDir}
+            className="min-w-0 lg:col-start-1 lg:row-start-1 lg:border-r lg:pb-14 lg:pr-14"
+            style={{ borderColor: "var(--line-hairline)" }}
+          >
             {/* The two headings are set at the SAME size on purpose. The
                 display-xl / display-m pairing made the second one read as a
                 subheading of the first rather than as the second half of the
@@ -142,12 +146,13 @@ export function Hero() {
               jobs panel — those two cannot be equal while both fill their own
               cells, and that is fine. Height follows content; there is no
               max-height, because clipping a panel is worse than a tall one. */}
-          <div
-            dir={boxDir}
-            className="rise mt-12 lg:col-start-2 lg:row-start-1 lg:mt-0 xl:max-w-[44rem]"
-            style={delay(0.1)}
-          >
-            <ScorePanel />
+          <div className="lg:col-start-2 lg:row-start-1 lg:pb-14 lg:pl-14">
+            {/* Offset down rather than stretched. The panel keeps its own
+                height; the gap is what stops it sitting flush with the
+                headline's cap-line and gives the top row a step. */}
+            <div dir={boxDir} className="rise mt-12 lg:mt-16" style={delay(0.1)}>
+              <ScorePanel />
+            </div>
           </div>
 
           {/* Visual 2. SPANS BOTH COLUMNS.
@@ -170,8 +175,12 @@ export function Hero() {
               Stacked below xl deliberately: under about 1280 the row cannot
               hold a display-size heading beside a five-column table without
               one of them becoming unreadable. */}
-          <div dir="ltr" className="mt-16 sm:mt-20 lg:col-span-2 lg:col-start-1 lg:row-start-2 lg:mt-0 xl:grid xl:grid-cols-[minmax(0,57fr)_minmax(0,43fr)] xl:items-stretch xl:gap-x-14">
-              <div dir={boxDir} className="xl:col-start-2 xl:row-start-1 xl:flex xl:flex-col xl:justify-center">
+          <div
+            dir="ltr"
+            className="mt-16 sm:mt-20 lg:col-span-2 lg:col-start-1 lg:row-start-2 lg:mt-0 lg:grid lg:grid-cols-[minmax(0,55fr)_minmax(0,45fr)] lg:items-stretch lg:gap-0 lg:border-t lg:pt-14"
+            style={{ borderColor: "var(--line-hairline)" }}
+          >
+              <div dir={boxDir} className="lg:col-start-2 lg:row-start-1 lg:flex lg:flex-col lg:justify-center lg:pl-14">
                 <h2
                   className="t-display-l rise max-w-[16ch] font-semibold tracking-tight"
                   style={{ ...delay(0.14), color: "var(--ink-1)" }}
@@ -183,8 +192,11 @@ export function Hero() {
                 </p>
               </div>
 
-              <div dir={boxDir}
-                className="rise mt-8 xl:col-start-1 xl:row-start-1 xl:mt-0" style={delay(0.22)}>
+              <div
+                dir={boxDir}
+                className="rise mt-8 lg:col-start-1 lg:row-start-1 lg:mt-0 lg:border-r lg:pr-14"
+                style={{ ...delay(0.22), borderColor: "var(--line-hairline)" }}
+              >
                 <MatchesPanel />
               </div>
             </div>

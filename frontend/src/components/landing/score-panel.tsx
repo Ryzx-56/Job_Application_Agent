@@ -1,7 +1,6 @@
 "use client";
 
 import { useLang } from "@/lib/language";
-import { formatNumber } from "@/lib/pricing";
 import { Figure } from "./figure";
 
 /* ========================================================================
@@ -66,67 +65,53 @@ export function ScorePanel() {
 
   return (
     <figure
-      className="relative m-0 overflow-hidden rounded-[0.25rem]"
+      className="relative m-0 overflow-hidden rounded-[0.875rem]"
       style={{
         backgroundColor: "var(--surface-paper)",
         // A sheet of paper lit from above, not a card with a border. Two
         // stacked shadows read as thickness rather than as glow.
         boxShadow:
-          "0 1px 0 0 rgb(255 255 255 / 0.35) inset, 0 18px 40px -12px rgb(0 0 0 / 0.55), 0 2px 8px -2px rgb(0 0 0 / 0.4)",
+          "0 1px 0 0 rgb(255 255 255 / 0.5) inset, 0 1px 2px 0 rgb(0 0 0 / 0.28), 0 12px 24px -10px rgb(0 0 0 / 0.4), 0 32px 64px -24px rgb(0 0 0 / 0.55)",
       }}
       aria-label={t.hero.scoreAlt}
     >
       <div className="p-6 sm:p-8">
         {/* ── the headline number ── */}
-        <div className="rise flex items-end justify-between gap-4" style={{ ["--rise-delay" as string]: "0.05s" }}>
-          <div className="min-w-0">
-            <p className="t-title font-semibold" style={{ color: "var(--ink-paper)" }}>
-              {copy.title}
-            </p>
-            <p className="t-meta mt-1 max-w-[30ch]" style={{ color: "var(--ink-paper-soft)" }}>
-              {copy.sub}
-            </p>
-          </div>
+        <div className="rise flex items-center justify-between gap-4" style={{ ["--rise-delay" as string]: "0.05s" }}>
+          <p className="t-title font-semibold" style={{ color: "var(--ink-paper)" }}>
+            {copy.title}
+          </p>
           <Figure
             value={OVERALL}
             delay={0.15}
-            className="shrink-0 text-[2.75rem] font-semibold leading-none tracking-tight"
+            className="shrink-0 text-[3rem] font-semibold leading-none tracking-[-0.02em]"
             style={{ color: "var(--ink-paper)" }}
           />
         </div>
 
         {/* ── the four factors ── */}
         <div className="mt-7 border-t pt-6" style={{ borderColor: "#e2e2de" }}>
-          <div className="space-y-4 sm:space-y-[1.15rem]">
+          <div className="space-y-[1.15rem] sm:space-y-[1.35rem]">
             {FACTORS.map((factor, i) => {
               const delay = 0.35 + i * 0.12;
               return (
-                <div key={factor.key} className="rise flex items-center gap-2.5 sm:gap-3.5" style={{ ["--rise-delay" as string]: `${delay}s` }}>
+                <div key={factor.key} className="rise flex items-center gap-3 sm:gap-4" style={{ ["--rise-delay" as string]: `${delay}s` }}>
                   {/* Wide enough on a phone for the longest Arabic label,
                       "الكلمات المفتاحية", to stay on one line. Narrower and it
                       wrapped, which made that one row taller than the other
                       three and broke the comparison the rules exist to make. */}
                   <span
-                    className="t-meta w-[7.25rem] shrink-0 truncate text-[0.8125rem] sm:w-[7rem]"
+                    className="t-meta w-[7.25rem] shrink-0 truncate text-[0.875rem]"
                     style={{ color: "var(--ink-paper)" }}
                   >
                     {copy.factors[factor.key]}
-                  </span>
-                  {/* The weight each factor carries, which is the number the
-                      dashboard's explainer puts in a chip beside it. It is the
-                      whole of "transparent ATS scoring" in one glance. */}
-                  <span
-                    className="t-meta w-8 shrink-0 text-[0.6875rem] tabular-nums"
-                    style={{ color: "var(--ink-paper-soft)" }}
-                  >
-                    {formatNumber(Math.round(WEIGHTS[factor.key] * 100), lang)}%
                   </span>
                   {/* A track at full width and a fill scaled to the value, so
                       the geometry is a single transform and stays on the
                       compositor. */}
                   <span
-                    className="relative h-[3px] min-w-0 flex-1 overflow-hidden rounded-full"
-                    style={{ backgroundColor: "#e5e5e1" }}
+                    className="relative h-[5px] min-w-0 flex-1 overflow-hidden rounded-full"
+                    style={{ backgroundColor: "#e7e7e3" }}
                   >
                     <span
                       className="leader-fill absolute inset-0 rounded-full"
@@ -140,7 +125,7 @@ export function ScorePanel() {
                   <Figure
                     value={factor.value}
                     delay={delay}
-                    className="w-7 shrink-0 text-end text-[0.9375rem] font-semibold tabular-nums"
+                    className="w-8 shrink-0 text-end text-[1rem] font-semibold tabular-nums"
                     style={{ color: "var(--ink-paper)" }}
                   />
                 </div>

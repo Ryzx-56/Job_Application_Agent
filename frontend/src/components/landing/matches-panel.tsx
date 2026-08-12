@@ -61,7 +61,7 @@ const BAND_RULE = "#e2e2de";
  *  emerald/amber/rose, which is both the stock SaaS palette and unreadable to
  *  anyone with a red-green deficiency. */
 function RankMark({ rank }: { rank: "strong" | "partial" | "stretch" }) {
-  const base = "block size-2 shrink-0 rounded-[2px]";
+  const base = "block h-5 w-[3px] shrink-0 rounded-full";
   if (rank === "strong") {
     return <span className={base} style={{ backgroundColor: "var(--accent)" }} aria-hidden />;
   }
@@ -70,14 +70,14 @@ function RankMark({ rank }: { rank: "strong" | "partial" | "stretch" }) {
       <span
         className={base}
         style={{
-          background: "linear-gradient(to bottom, var(--accent) 50%, transparent 50%)",
+          background: "linear-gradient(to bottom, var(--accent) 50%, #d8d8d4 50%)",
           boxShadow: "inset 0 0 0 1px var(--accent)",
         }}
         aria-hidden
       />
     );
   }
-  return <span className={base} style={{ boxShadow: "inset 0 0 0 1px #c2c2c8" }} aria-hidden />;
+  return <span className={base} style={{ backgroundColor: "#d8d8d4" }} aria-hidden />;
 }
 
 export function MatchesPanel() {
@@ -87,38 +87,37 @@ export function MatchesPanel() {
 
   return (
     <figure
-      className="relative m-0 flex h-full flex-col overflow-hidden rounded-[0.25rem]"
+      className="relative m-0 flex h-full flex-col overflow-hidden rounded-[0.875rem]"
       style={{
         backgroundColor: "var(--surface-paper)",
         boxShadow:
-          "0 1px 0 0 rgb(255 255 255 / 0.35) inset, 0 18px 40px -12px rgb(0 0 0 / 0.55), 0 2px 8px -2px rgb(0 0 0 / 0.4)",
+          "0 1px 0 0 rgb(255 255 255 / 0.5) inset, 0 1px 2px 0 rgb(0 0 0 / 0.28), 0 12px 24px -10px rgb(0 0 0 / 0.4), 0 32px 64px -24px rgb(0 0 0 / 0.55)",
       }}
       aria-label={t.hero.matchesAlt}
     >
-      {/* ── header band. Five is RESULT_CAP, not a number chosen for the page,
-            and the line beside it is the feature this panel exists to sell ── */}
-      <div
-        className="flex flex-wrap items-center justify-between gap-x-5 gap-y-2 px-6 py-5"
-        style={{ backgroundColor: "var(--accent-wash)", borderBottom: `1px solid ${BAND_RULE}` }}
-      >
-        <div className="flex items-baseline gap-2.5">
+      {/* ── masthead. The count is the headline of this panel, so it is set
+            as one, and the promise that every row opens a real posting sits
+            directly under it in the accent rather than competing with it on
+            the same line. ── */}
+      <div className="px-6 pb-5 pt-6 sm:px-7">
+        <div className="flex items-baseline gap-3">
           <Figure
             value={MATCH_COUNT}
             delay={0.15}
-            className="text-[1.75rem] font-semibold leading-none tracking-tight"
+            className="text-[2.5rem] font-semibold leading-none tracking-[-0.02em]"
             style={{ color: "var(--ink-paper)" }}
           />
-          <p className="t-body font-medium" style={{ color: "var(--ink-paper)" }}>
+          <p className="t-title font-semibold" style={{ color: "var(--ink-paper)" }}>
             {copy.countLabel}
           </p>
         </div>
-        <p className="t-meta inline-flex items-center gap-1.5 font-medium" style={{ color: "var(--accent)" }}>
+        <p className="t-meta mt-2 inline-flex items-center gap-1.5 font-medium" style={{ color: "var(--accent)" }}>
           <ArrowUpRight className="size-4 shrink-0" aria-hidden />
           {copy.linkNote}
         </p>
       </div>
 
-      <ul className="m-0 flex flex-1 list-none flex-col justify-between p-0">
+      <ul className="m-0 flex flex-1 list-none flex-col justify-between p-0" style={{ borderTop: `1px solid ${BAND_RULE}` }}>
         {items.map((item, i) => (
           <li
             key={item.role}
@@ -126,7 +125,7 @@ export function MatchesPanel() {
             // finishes at roughly the same height as the score panel it sits
             // under and the two read as a matched pair rather than as a big
             // one and a small one.
-            className="scan-row flex items-center gap-3.5 px-6 py-[1rem] xl:py-[1.5rem]"
+            className="scan-row flex flex-1 items-center gap-3.5 px-6 py-[1rem] sm:px-7 xl:py-[1.35rem]"
             style={{
               borderTop: i === 0 ? undefined : `1px solid ${ROW_RULE}`,
               // Each row's turn in the scan, spread across the shared cycle.
@@ -134,7 +133,7 @@ export function MatchesPanel() {
             }}
           >
             <RankMark rank={item.rank} />
-            <span className="t-meta min-w-0 flex-1 truncate font-medium" style={{ color: "var(--ink-paper)" }}>
+            <span className="t-body min-w-0 flex-1 truncate font-medium" style={{ color: "var(--ink-paper)" }}>
               {item.role}
               <span className="font-normal" style={{ color: "var(--ink-paper-soft)" }}>
                 {" · "}
