@@ -1,11 +1,13 @@
 import type { Metadata } from "next";
-import { cookies } from "next/headers";
+import { cookies, headers } from "next/headers";
 import { Plus_Jakarta_Sans, Cairo } from "next/font/google";
 import "./globals.css";
 import { LangProvider } from "@/lib/language";
-import { LANG_COOKIE, readLang } from "@/lib/lang-cookie";
+import { LANG_COOKIE, LANG_HEADER, readLang, isLocale, type Lang } from "@/lib/lang-cookie";
 import Analytics from "@/components/analytics";
 import GlobalChrome from "@/components/global-chrome";
+import { SITE_URL } from "@/lib/site";
+import { SoftwareApplicationJsonLd } from "@/components/software-jsonld";
 
 /**
  * Font loading — THE APPLICATION FACES.
@@ -34,9 +36,21 @@ const arabicFont = Cairo({
   weight: ["400", "500", "600", "700", "800"],
 });
 
+/* metadataBase is what turns every per-route `canonical: "/pricing"` and the
+   generated /opengraph-image into absolute URLs. Without it Next emits a
+   relative og:image, which most scrapers refuse to resolve — which is why
+   the cards were rendering as bare links. */
 export const metadata: Metadata = {
+  metadataBase: new URL(SITE_URL),
   title: "Tarshih | ترشيح",
   description: "AI resume and cover letter tailoring for every job application.",
+  alternates: { canonical: "/" },
+  // Inherited by every route that does not set its own. Routes that do set
+  // openGraph still inherit the image from here, so the card is declared once.
+  openGraph: {
+    siteName: "Tarshih",
+    type: "website",
+  },
 };
 
 export default async function RootLayout({
@@ -55,18 +69,30 @@ export default async function RootLayout({
    * and watched it flip once React hydrated — on a product whose primary
    * audience reads Arabic, that flip was the first thing they saw.
    *
-   * Reading the cookie here opts the app out of static generation. That is a
-   * real cost and it is the intended trade: correct language on first paint
-   * beats a prerendered page in the wrong one. Splitting the marketing pages
-   * into /ar and /en routes would win the static rendering back AND give the
-   * hreflang tags the SEO pass needs, which is the right long-term shape.
+   * THE LANGUAGE NOW COMES FROM THE URL, via a header.
+   *
+   * The marketing pages live under /[lang], but a ROOT layout cannot read a
+   * child segment's params — so middleware resolves the language once (URL
+   * inside /[lang], cookie everywhere else) and sets it on the request as
+   * x-tarshih-lang. Reading it here is what lets <html lang dir> be correct
+   * per URL without moving the dashboard and auth routes into a second root
+   * layout, which is the change that would have put /auth/callback at risk.
+   *
+   * The cookie is still the fallback: it covers the dashboard, the auth
+   * pages, and any request that somehow arrives without the header.
    */
-  const lang = readLang((await cookies()).get(LANG_COOKIE)?.value);
+  const headerLang = (await headers()).get(LANG_HEADER);
+  const lang = isLocale(headerLang ?? undefined)
+    ? (headerLang as Lang)
+    : readLang((await cookies()).get(LANG_COOKIE)?.value);
   const dir = lang === "ar" ? "rtl" : "ltr";
 
   return (
     <html lang={lang} dir={dir} className={`${latinFont.variable} ${arabicFont.variable}`}>
       <body>
+        {/* One statement of what this product is, on every page. Server
+            component, so it is in the initial HTML with no JS involved. */}
+        <SoftwareApplicationJsonLd />
         <Analytics />
         <LangProvider initialLang={lang}>
           {children}

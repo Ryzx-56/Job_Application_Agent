@@ -4,7 +4,8 @@ import React, { createContext, useContext, useState, useEffect, ReactNode, useRe
 import { createClient } from "@/lib/supabase/client";
 // Neutral module, not a client one — the server reads the same cookie name.
 // See the note in lib/lang-cookie.ts for why it cannot live in this file.
-import { LANG_COOKIE } from "@/lib/lang-cookie";
+import { LANG_COOKIE, localePath, splitLocale } from "@/lib/lang-cookie";
+import { useRouter } from "next/navigation";
 import {
   ADDON_CAPS,
   CREDIT_COST,
@@ -358,11 +359,46 @@ export const content = {
         },
       ],
     },
+    /* ── TRUST ────────────────────────────────────────────────────────────
+       REBUILT AROUND A DEMONSTRATION rather than three claims in three
+       cards. "Nothing invented" is the single most load-bearing promise on
+       this site — it is the objection every candidate has about an AI writing
+       tool — and asserting it in a paragraph is the weakest possible way to
+       make it. The panel shows the check running instead.
+
+       EVERY DETAIL BELOW IS READ OUT OF core/fact_checker.py:
+         · The check runs against facts_json, extracted from the uploaded CV.
+         · Its own prompt draws exactly this line: renaming and reframing are
+           ALLOWED ("reception work" -> "front-of-house operations" is one of
+           the examples in the prompt itself); a new number, name, tool, date,
+           scope, headcount or outcome is NOT.
+         · MAX_RETRIES = 2, and a failed bullet is regenerated and re-checked,
+           which is where "rewritten and checked again, up to twice" comes
+           from. Not "reviewed" and not "flagged" — regenerated.
+
+       The three pillars beneath it keep the data promise verbatim (it was
+       already reviewed copy), replace the vague scoring sentence with the
+       real weights from utils/ats_scorer.py, and name the humanizer, which
+       core/humanizer.py describes as prompt-level rules rather than a second
+       rewriting pass — so the copy says that rather than implying a pass. */
     trustSection: {
-      eyebrow: "Built on trust",
-      title: "How Tarshih actually handles your career",
+      label: "What it will not do",
+      title: "The rewrite is checked against your own CV before you see it",
       description:
-        "No borrowed logos, no invented reviews, just what the product does and why it's safe to use.",
+        "A model that writes well will also, given the chance, write something that is not true. That chance is taken away here: every rewritten line is read back against the facts extracted from your document, and a line that adds anything is sent back.",
+      proof: {
+        caption: "One line, checked",
+        sourceLabel: "In your CV",
+        source: "Managed the reception desk at a dental clinic.",
+        allowedLabel: "Allowed",
+        allowed: "Ran front-of-house operations for a dental practice.",
+        allowedNote: "A better name for the same work. Nothing new is claimed.",
+        rejectedLabel: "Sent back",
+        rejected: "Ran front-of-house operations for a 12-chair dental practice.",
+        rejectedNote: "Twelve chairs is not in your CV, so this line never reaches your document.",
+        outcome: "A rejected line is rewritten and checked again, up to twice, before the CV is built.",
+        alt: "A CV line, the reworded version the fact checker allows, and an invented version it sends back",
+      },
       pillars: [
         {
           title: "Your documents stay yours",
@@ -370,14 +406,14 @@ export const content = {
             "Uploads are encrypted in transit and at rest. Tarshih never trains models on your resume or shares it with third parties, and you can delete everything permanently at any time.",
         },
         {
-          title: "Scoring you can inspect, and gaps you can fix",
+          title: "The score shows its working",
           description:
-            "Every score breaks down into keyword match, skills, education, and experience, so you can see exactly why a resume scored the way it did. Then Tarshih tells you precisely what's missing, a certificate, a skill, a keyword, so you know what to add.",
+            "One number, and the four weighted factors behind it: keywords at 40 percent, skills at 35, education at 15, experience at 10. Then the gaps that cost you the rest, each with an honest way to close it rather than a way to claim it.",
         },
         {
-          title: "Nothing invented, ever",
+          title: "It has to read like you wrote it",
           description:
-            "AI models are known for stating things that sound right but aren't true. Tarshih is built so that can't reach your CV: every fact is read out of the document you upload, and every rewritten line is checked back against those facts before you ever see it. It reframes your real experience and never adds a job, a skill, or a credential you didn't have, so what you download holds up in an interview.",
+            "The same rules run on every CV, cover letter and LinkedIn profile: no dash punctuation, no \"moreover\" or \"furthermore\", no inflated significance. They are part of how the text is written rather than a second pass over it afterwards.",
         },
       ],
     },
@@ -494,6 +530,58 @@ export const content = {
         { name: "Power", slug: "power", sar: PACKS.power.sar, creditCount: PACKS.power.credits, credits: enCount(PACKS.power.credits, "credit"), blurb: "For a serious, high volume job hunt.", badge: "Max Savings", featured: false },
       ],
     },
+    /* ── /pricing (§4) ────────────────────────────────────────────────────
+       PAGE FRAMING ONLY. Every plan, pack and add-on on that route reuses the
+       entries that already exist above (t.pricing, t.payg, t.linkedinPromo),
+       so the pricing page, the landing page and the dashboard's upgrade
+       screen cannot end up quoting three different numbers. Nothing in this
+       block states a figure; the ones that appear are interpolated from
+       lib/pricing.ts at the point of use.
+
+       NO PAYMENT-METHODS SECTION. The brief asks for one "once the gateway is
+       live". Moyasar is not integrated, so there is nothing true to put there
+       and an empty promise on a pricing page is worse than a missing one.
+
+       FOUNDING MEMBER IS A BADGE. There is no founding price, no discount and
+       no "was X SAR" anchor anywhere — see TIER_PRICING in
+       backend/core/admin_stats.py, which carries the same note and is what
+       the admin revenue panel prices from. */
+    pricingPage: {
+      label: "Pricing",
+      title: "What it costs, and what a credit buys",
+      description:
+        "Three plans, or credits bought on their own. The free plan needs no card, and nothing renews unless you subscribe.",
+      plansTitle: "Plans",
+      plansBody: "Every plan runs the same pipeline. What changes is how much of it you get each month.",
+
+      creditsTitle: "One credit, one application",
+      creditsBody:
+        "A credit covers one CV rewritten for a posting and the cover letter that goes with it. Arabic spends two, because an Arabic generation runs a localisation and script pass that an English one does not.",
+      // Values interpolated from CREDIT_COST, never typed. The last two are
+      // "included" because scoring and the job search run inside the SAME
+      // generation — see core/orchestrator.py, where document_generator,
+      // scoring and jobs_finder all hang off one graph — so they cost nothing
+      // beyond the credit already spent.
+      creditsRows: [
+        { label: "CV and cover letter, in English", value: enCount(CREDIT_COST.en, "credit") },
+        { label: "CV and cover letter, in Arabic", value: enCount(CREDIT_COST.ar, "credit") },
+        { label: "ATS score, match score and the gap list", value: "Included" },
+        { label: "Five matched openings, each linking to its posting", value: "Included" },
+      ],
+
+      packsTitle: "Or buy credits on their own",
+      packsBody: "A one-off purchase rather than a subscription, for a search that comes in bursts.",
+
+      foundingTitle: "Founding members",
+      foundingBody:
+        "The first 50 people to subscribe to Pro keep a Founding Member badge on their profile permanently. It is a badge and nothing else: the price is the ordinary Pro price, there is no founding discount, and no rate is being locked in.",
+
+      linkedinTitle: "The LinkedIn add-on",
+
+      faqTitle: "Questions about billing",
+      // Shown under the plan a signed-in reader is already on.
+      backToProduct: "See what the product does",
+    },
     /* ── LinkedIn add-on, featured section on the landing page ──
        PRICES ARE REPEATED HERE as numbers because this section renders for
        signed-out visitors, and /api/v1/linkedin/overview (the normal source)
@@ -568,7 +656,14 @@ export const content = {
       // the rest. Chosen for impact rather than order: money, refunds, trust,
       // privacy, and what the LinkedIn add-on is. Ids are language-neutral, so
       // this list is identical in both dictionaries.
-      landing: ["credits", "refunds", "need-existing-cv", "never-invents", "ai-sounding", "data-safe", "linkedin-what-is-it"],
+      // FIVE, which is the top of the brief's 4-5 range (§3.7). It was seven.
+      // "refunds" and "linkedin-what-is-it" left for /pricing, where the rest
+      // of the commerce questions now live; nothing was rewritten to make the
+      // cut, these are the same entries shown verbatim.
+      landing: ["credits", "need-existing-cv", "never-invents", "ai-sounding", "data-safe"],
+      // The billing set, shown on /pricing under the plans. Same mechanism:
+      // ids, not a slice, so reordering the master list is safe.
+      pricingPage: ["credits", "no-card", "refunds", "linkedin-what-is-it", "linkedin-tiers", "linkedin-refunds"],
       seeAll: "See all questions",
       allTitle: "All questions",
       allDescription: "Everything about how Tarshih works, what it costs, and what happens to your data.",
@@ -679,6 +774,10 @@ export const content = {
         "Try Tarshih on your next role in under five minutes. Free to start, no credit card, no commitment.",
       ctaPrimary: "Get started free",
       ctaSecondary: "See how it works",
+      // The one price on the landing page now that pricing has its own route
+      // (§4). The figure is passed in already formatted, from lib/pricing.ts,
+      // so this string can never carry a stale number.
+      priceLine: (proPrice: string) => `Free to start · Pro from ${proPrice} a month`,
     },
     footer: {
       description:
@@ -687,22 +786,22 @@ export const content = {
         {
           title: "Product",
           links: [
-            { label: "Features", href: "#features", doc: null as string | null },
-            { label: "Pricing", href: "#pricing", doc: null as string | null },
-            { label: "How it works", href: "#how-it-works", doc: null as string | null },
+            { label: "Features", href: "/#features", doc: null as string | null },
+            { label: "Pricing", href: "/pricing", doc: null as string | null },
+            { label: "How it works", href: "/#how-it-works", doc: null as string | null },
           ],
         },
         {
           title: "Resources",
           links: [
-            { label: "Resume guide", href: "#", doc: "resumeGuide" },
-            { label: "ATS tips", href: "#", doc: "atsTips" },
+            { label: "Resume guide", href: "/guides#resume-guide", doc: null as string | null },
+            { label: "ATS tips", href: "/guides#ats-tips", doc: null as string | null },
           ],
         },
         {
           title: "Company",
           links: [
-            { label: "About", href: "#", doc: "about" },
+            { label: "About", href: "/about", doc: null as string | null },
             { label: "Contact", href: "#", doc: "contact" },
           ],
         },
@@ -1668,11 +1767,36 @@ export const content = {
         },
       ],
     },
+    /* ── الثقة ────────────────────────────────────────────────────────────
+       أُعيد بناء القسم حول عرض عملي بدل ثلاث دعاوى في ثلاث بطاقات. «لا شيء
+       مُختلق» هو أثقل وعد في هذا الموقع، وهو الاعتراض الأول لدى كل مرشّح على
+       أدوات الكتابة بالذكاء الاصطناعي، وسرده في فقرة أضعف طريقة لإثباته.
+
+       كل تفصيلة هنا مقروءة من core/fact_checker.py: الفحص يجري مقابل
+       facts_json المستخرج من السيرة المرفوعة، وإعادة التسمية والصياغة
+       مسموحة بينما أي رقم أو أداة أو نطاق جديد ممنوع، و MAX_RETRIES = 2،
+       والسطر الراسب يُعاد إنشاؤه ويُفحص من جديد لا أن يُعلَّم فحسب.
+
+       المثال مكتوب بالعربية ابتداءً: ترجمة المثال الإنجليزي كانت ستنتج جملة
+       لا يكتبها أحد في سيرته. */
     trustSection: {
-      eyebrow: "مبني على الثقة",
-      title: "كيف يتعامل ترشيح فعليًا مع مسيرتك المهنية",
+      label: "ما الذي لن يفعله",
+      title: "تُراجَع الصياغة الجديدة مقابل سيرتك قبل أن تصل إليك",
       description:
-        "بلا شعارات مستعارة وبلا مراجعات ملفّقة، فقط ما يقوم به المنتج فعلًا ولماذا هو آمن للاستخدام.",
+        "النموذج الذي يكتب جيدًا قادر أيضًا، إن تُرك، على كتابة ما ليس صحيحًا. هنا لا يُترك: كل سطر معاد صياغته يُقرأ مقابل الحقائق المستخرجة من ملفك، وأي سطر يضيف شيئًا يُعاد.",
+      proof: {
+        caption: "سطر واحد، تحت الفحص",
+        sourceLabel: "في سيرتك",
+        source: "أدرت مكتب الاستقبال في عيادة أسنان.",
+        allowedLabel: "مقبول",
+        allowed: "أدرت عمليات الاستقبال والتنسيق اليومي في عيادة أسنان.",
+        allowedNote: "تسمية أدقّ للعمل نفسه، دون ادّعاء جديد.",
+        rejectedLabel: "مُعاد",
+        rejected: "أدرت عمليات الاستقبال في عيادة أسنان من 12 كرسيًا.",
+        rejectedNote: "«12 كرسيًا» غير موجود في سيرتك، فلا يصل هذا السطر إلى مستندك.",
+        outcome: "السطر المُعاد تُعاد كتابته ويُفحص مرة أخرى، حتى مرتين، قبل أن تُبنى السيرة.",
+        alt: "سطر من سيرة ذاتية، والصياغة التي يقبلها المدقّق، وصياغة مختلقة يعيدها",
+      },
       pillars: [
         {
           title: "مستنداتك تبقى ملكك",
@@ -1680,14 +1804,14 @@ export const content = {
             "يتم تشفير كل ما ترفعه أثناء النقل والتخزين. لا يقوم ترشيح أبدًا بتدريب نماذجه على سيرتك الذاتية أو مشاركتها مع أي طرف ثالث، ويمكنك حذف كل شيء نهائيًا في أي وقت.",
         },
         {
-          title: "نتائج يمكنك فهمها بالتفصيل، وفجوات يمكنك سدّها",
+          title: "النتيجة تعرض حسابها",
           description:
-            "تنقسم كل نتيجة إلى تطابق الكلمات المفتاحية والمهارات والتعليم والخبرة، لتعرف بالضبط سبب النتيجة. ثم يخبرك ترشيح بدقة بما ينقصك، شهادة أو مهارة أو كلمة مفتاحية، لتعرف ما يجب إضافته.",
+            "رقم واحد، ووراءه أربعة عوامل بأوزانها: الكلمات المفتاحية 40 بالمئة، والمهارات 35، والتعليم 15، والخبرة 10. ثم الفجوات التي كلّفتك ما تبقّى، ولكل واحدة طريقة صادقة لسدّها لا طريقة لادّعائها.",
         },
         {
-          title: "لا شيء مُختلق، أبدًا",
+          title: "يجب أن يُقرأ وكأنك كتبته",
           description:
-            "نماذج الذكاء الاصطناعي معروفة بأنها قد تذكر معلومات تبدو صحيحة وهي ليست كذلك. بُني ترشيح بحيث لا يصل ذلك إلى سيرتك: تُستخرج كل حقيقة من الملف الذي ترفعه، ويُراجَع كل سطر معاد صياغته مقابل تلك الحقائق قبل أن تراه. يعيد ترشيح تأطير خبرتك الحقيقية، ولا يضيف أبدًا وظيفة أو مهارة أو مؤهلًا لم تحصل عليه، فما تحصل عليه يصمد في أي مقابلة.",
+            "القواعد نفسها تسري على كل سيرة وخطاب تقديم وملف لينكدإن: بلا شرطات، وبلا «علاوة على ذلك» و«إضافة إلى ما سبق»، وبلا تضخيم للأهمية. وهي جزء من طريقة كتابة النص أصلًا، لا مراجعة ثانية تجري عليه بعد كتابته.",
         },
       ],
     },
@@ -1824,6 +1948,49 @@ export const content = {
         },
       ],
     },
+    /* ── صفحة الأسعار (§4) ────────────────────────────────────────────────
+       إطار الصفحة فقط. كل خطة وحزمة وإضافة تُعرض هناك تعيد استخدام المدخلات
+       الموجودة أعلاه، فلا تختلف صفحة الأسعار عن الصفحة الرئيسية عن شاشة
+       الترقية في لوحة التحكم. ولا يُكتب رقم هنا إطلاقًا.
+
+       لا قسم لطرق الدفع: البوابة (Moyasar) غير مربوطة بعد، ووعد فارغ في
+       صفحة أسعار أسوأ من غيابه.
+
+       «العضوية المؤسِّسة» شارة فقط: لا سعر مؤسِّس ولا خصم ولا سعر سابق
+       مشطوب في أي موضع. */
+    pricingPage: {
+      label: "الأسعار",
+      title: "كم يكلّف، وما الذي تشتريه النقطة",
+      description:
+        "ثلاث خطط، أو نقاط تُشترى وحدها. الخطة المجانية لا تحتاج بطاقة، ولا يتجدّد شيء ما لم تشترك.",
+      plansTitle: "الخطط",
+      plansBody: "كل الخطط تشغّل المسار نفسه. ما يختلف هو مقدار ما تحصل عليه منه كل شهر.",
+
+      creditsTitle: "نقطة واحدة، طلب واحد",
+      creditsBody:
+        "تغطي النقطة سيرة ذاتية واحدة تُعاد كتابتها لإعلان وظيفة، وخطاب التقديم المرافق لها. والعربية تستهلك نقطتين، لأن الإنشاء بالعربية يمرّ بمرحلة توطين ومعالجة للنص لا تمرّ بها الإنجليزية.",
+      // القيم تأتي من CREDIT_COST ولا تُكتب. والسطران الأخيران «مشمول» لأن
+      // التقييم والبحث عن الوظائف يجريان داخل الإنشاء نفسه (انظر
+      // core/orchestrator.py)، فلا يكلّفان شيئًا فوق النقطة المدفوعة أصلًا.
+      creditsRows: [
+        { label: "سيرة ذاتية وخطاب تقديم بالإنجليزية", value: arCount(CREDIT_COST.en, AR_POINTS) },
+        { label: "سيرة ذاتية وخطاب تقديم بالعربية", value: arCount(CREDIT_COST.ar, AR_POINTS) },
+        { label: "نتيجة ATS ودرجة التوافق وقائمة الفجوات", value: "مشمول" },
+        { label: "خمس وظائف مطابقة، كل واحدة تفتح إعلانها", value: "مشمول" },
+      ],
+
+      packsTitle: "أو اشترِ النقاط وحدها",
+      packsBody: "شراء لمرة واحدة لا اشتراك، لبحث يأتي على فترات متباعدة.",
+
+      foundingTitle: "الأعضاء المؤسِّسون",
+      foundingBody:
+        "أول خمسين مشتركًا في خطة Pro تبقى في ملفاتهم شارة «عضو مؤسِّس» بشكل دائم. وهي شارة فحسب: السعر هو سعر Pro المعتاد، ولا يوجد خصم تأسيسي ولا سعر يُثبَّت.",
+
+      linkedinTitle: "إضافة لينكدإن",
+
+      faqTitle: "أسئلة عن الاشتراك والدفع",
+      backToProduct: "شاهد ما الذي يقدّمه المنتج",
+    },
     /* ── إضافة لينكدإن، قسم مميز في الصفحة الرئيسية ──
        الأسعار مكرّرة هنا كأرقام لأن هذا القسم يُعرض للزوار غير المسجّلين،
        ويجب أن تطابق PRICING في backend/core/linkedin.py. */
@@ -1892,7 +2059,14 @@ export const content = {
       description: "كل ما تحتاج معرفته قبل أن تبدأ طلب توظيفك القادم.",
       // نفس المعرّفات في اللغتين: الصفحة الرئيسية تعرض هذه فقط وتربط ببقية
       // الأسئلة في /questions.
-      landing: ["credits", "refunds", "need-existing-cv", "never-invents", "ai-sounding", "data-safe", "linkedin-what-is-it"],
+      // FIVE, which is the top of the brief's 4-5 range (§3.7). It was seven.
+      // "refunds" and "linkedin-what-is-it" left for /pricing, where the rest
+      // of the commerce questions now live; nothing was rewritten to make the
+      // cut, these are the same entries shown verbatim.
+      landing: ["credits", "need-existing-cv", "never-invents", "ai-sounding", "data-safe"],
+      // The billing set, shown on /pricing under the plans. Same mechanism:
+      // ids, not a slice, so reordering the master list is safe.
+      pricingPage: ["credits", "no-card", "refunds", "linkedin-what-is-it", "linkedin-tiers", "linkedin-refunds"],
       seeAll: "عرض كل الأسئلة",
       allTitle: "كل الأسئلة",
       allDescription: "كل ما يتعلق بطريقة عمل ترشيح وتكلفته وما يحدث لبياناتك.",
@@ -1998,6 +2172,8 @@ export const content = {
         "جرّب ترشيح على وظيفتك القادمة في أقل من خمس دقائق. مجاني للبدء، بلا بطاقة ائتمان، وبلا التزام.",
       ctaPrimary: "ابدأ مجانًا",
       ctaSecondary: "شاهد كيف يعمل",
+      // السعر يصل مُنسّقًا من lib/pricing.ts، فلا يُكتب رقم داخل هذه العبارة.
+      priceLine: (proPrice: string) => `البداية مجانية · Pro من ${proPrice} شهريًا`,
     },
     footer: {
       description:
@@ -2006,22 +2182,22 @@ export const content = {
         {
           title: "المنتج",
           links: [
-            { label: "المميزات", href: "#features", doc: null as string | null },
-            { label: "الأسعار", href: "#pricing", doc: null as string | null },
-            { label: "كيف يعمل", href: "#how-it-works", doc: null as string | null },
+            { label: "المميزات", href: "/#features", doc: null as string | null },
+            { label: "الأسعار", href: "/pricing", doc: null as string | null },
+            { label: "كيف يعمل", href: "/#how-it-works", doc: null as string | null },
           ],
         },
         {
           title: "مصادر",
           links: [
-            { label: "دليل السيرة الذاتية", href: "#", doc: "resumeGuide" },
-            { label: "نصائح ATS", href: "#", doc: "atsTips" },
+            { label: "دليل السيرة الذاتية", href: "/guides#resume-guide", doc: null as string | null },
+            { label: "نصائح ATS", href: "/guides#ats-tips", doc: null as string | null },
           ],
         },
         {
           title: "الشركة",
           links: [
-            { label: "من نحن", href: "#", doc: "about" },
+            { label: "من نحن", href: "/about", doc: null as string | null },
             { label: "تواصل معنا", href: "#", doc: "contact" },
           ],
         },
@@ -2766,6 +2942,7 @@ export function LangProvider({
   // read below, but only to migrate visitors who chose a language before the
   // cookie existed.
   const [lang, setLangState] = useState<Lang>(initialLang ?? "en");
+  const router = useRouter();
 
   useEffect(() => {
     // MIGRATION, and nothing else. If the cookie is already set, the server
@@ -2792,11 +2969,30 @@ export function LangProvider({
   // Custom setter that persists the language pick to the cookie (so the
   // server renders it next time), to localStorage, and, if the person is
   // logged in, to their account too.
+  /* THE TOGGLE IS A NAVIGATION NOW, on the marketing pages.
+   *
+   * Those pages live at /ar/... and /en/..., so switching language has to
+   * change the URL or the reader ends up on an Arabic page whose address
+   * still says /en — which is the thing hreflang exists to stop. Off
+   * /[lang] (the dashboard, the auth pages) there is no locale in the URL
+   * and this stays exactly what it was: state plus a cookie.
+   *
+   * Changing it HERE rather than in LangSwitcher means every caller gets the
+   * right behaviour, including the dashboard's own copy of the control. */
   const setLang = (newLang: Lang) => {
     setLangState(newLang);
     if (typeof window !== "undefined") {
       localStorage.setItem(LANG_STORAGE_KEY, newLang);
       writeLangCookie(newLang);
+
+      // On a /[lang] route, mirror the current path into the new locale and
+      // navigate. The cookie is written first so the server renders the new
+      // language even on the very first request of the new URL.
+      const { lang: urlLang, rest } = splitLocale(window.location.pathname);
+      if (urlLang) {
+        const target = rest === "/" ? `/${newLang}` : `/${newLang}${rest}`;
+        router.push(target + window.location.search + window.location.hash);
+      }
     }
     persistLanguageToAccount(newLang);
   };
@@ -2817,4 +3013,20 @@ export function LangProvider({
       </div>
     </LangContext.Provider>
   );
+}
+/**
+ * Locale-aware href builder for marketing links.
+ *
+ * `const href = useLocaleHref(); <Link href={href("/pricing")} />` produces
+ * /ar/pricing for an Arabic reader. Non-marketing paths (/signup, /dashboard)
+ * and external hrefs pass through unchanged — see localePath().
+ *
+ * Without this every in-page link would land on a bare path and bounce
+ * through the middleware redirect: an extra round trip and a visible URL
+ * flash on each navigation. The redirect still exists, but as a safety net
+ * for old bookmarks and inbound links rather than as the normal path.
+ */
+export function useLocaleHref() {
+  const { lang } = useLang();
+  return (href: string) => localePath(href, lang);
 }

@@ -244,8 +244,27 @@
     line-height: 1.7 !important;
   }
 
-  /* Keeps heading elements well-proportioned so they don't visually overlap */
-  [dir="rtl"] h1, [dir="rtl"] h2, [dir="rtl"] h3, [dir="rtl"] h4 {
+  /* Keeps heading elements well-proportioned so they don't visually overlap.
+   *
+   * THE :not() IS LOAD-BEARING, NOT TIDINESS. This rule sits in @layer base;
+   * the marketing type scale further down this file sits in no layer at all.
+   * For !important declarations the cascade runs the layer order in REVERSE,
+   * and unlayered !important ranks LOWEST of every important declaration — so
+   * this rule was silently beating
+   *
+   *     [data-type="editorial"] .t-display-l { line-height: ... !important }
+   *
+   * no matter how specific that selector was. Every heading on the marketing
+   * pages therefore rendered at 1.45 in Arabic instead of the 1.05-1.30 the
+   * scale defines: the hero h1, how it works, all of it. Measured in headless
+   * Chrome — 45.76px type on 66.35px leading, which is 1.45 exactly, in every
+   * section and at every width. English was correct throughout, because no
+   * equivalent rule exists for LTR, so the bug only ever showed in the
+   * language most of these readers use.
+   *
+   * The dashboard still wants this, so it keeps it. Only the marketing
+   * subtree, which sets leading per type role, opts out. */
+  [dir="rtl"] :is(h1, h2, h3, h4):not([data-type="editorial"] *) {
     line-height: 1.45 !important;
     margin-bottom: 0.75rem;
   }
@@ -348,33 +367,55 @@
 }
 
 /*
- * Beats the app-wide `[dir="rtl"] h1..h4 { line-height: 1.45 !important }`
- * above WITHOUT deleting it, because that rule is global and deleting it
- * would restyle every Arabic dashboard heading. Same specificity (0,1,1),
- * later in the file, so this wins on source order — for the marketing
- * subtree only. The margin reset goes with it: headings here are spaced by
- * layout, not by a global bottom margin.
+ * The marketing subtree spaces headings by layout, not by a global bottom
+ * margin, and takes its leading from the type role below.
+ *
+ * NO !important ON line-height ANY MORE. It was there to fight the app-wide
+ * `[dir="rtl"] h1..h4` rule, and it never could — see the note on that rule,
+ * which now exempts this subtree instead. Left in place it would beat the
+ * Arabic fallback directly below, which is the thing that keeps the older
+ * sections exactly where they were.
  */
 [data-type="editorial"] h1,
 [data-type="editorial"] h2,
 [data-type="editorial"] h3,
 [data-type="editorial"] h4 {
-  line-height: inherit !important;
+  line-height: inherit;
   margin-bottom: 0;
+}
+
+/*
+ * ARABIC FALLBACK, for a marketing heading with no type-role class — the
+ * older sections' `text-3xl sm:text-4xl` headings, and every heading on
+ * /about, /questions and the legal pages.
+ *
+ * Without this they would inherit BODY leading (1.9 in Arabic), which is far
+ * looser than what they render at today. --lh-title is 1.45 in Arabic, which
+ * is exactly what the rule above used to force on them, so nothing that has
+ * already been reviewed moves. A normal declaration on purpose: the
+ * `.t-display-*` roles below are !important and still win over it.
+ */
+[dir="rtl"] [data-type="editorial"] h1,
+[dir="rtl"] [data-type="editorial"] h2,
+[dir="rtl"] [data-type="editorial"] h3,
+[dir="rtl"] [data-type="editorial"] h4 {
+  line-height: var(--lh-title);
 }
 
 /* Type roles. Set here rather than as Tailwind utilities so the two scripts
    stay a single decision per role instead of a pair of classes per element.
 
-   LINE-HEIGHT IS !important HERE ON PURPOSE, and it is not paranoia. The
-   heading reset directly above uses !important to beat a global rule, and an
-   !important declaration beats a normal one regardless of specificity — so
-   `line-height: inherit !important` on h1..h4 was silently overriding every
-   display line-height in this file. The headline rendered at body leading
-   (1.65) instead of 1.05: two lines with a visible gutter between them, in
-   both languages. Marked !important too, these win on specificity — (0,2,0)
-   for the class against (0,1,1) for the element reset — and headings finally
-   get the leading the scale defines. */
+   LINE-HEIGHT IS !important HERE ON PURPOSE, and it is not paranoia. It has
+   to beat two element-level rules that would otherwise reach these headings:
+   the `line-height: inherit` reset above, which would give a display heading
+   BODY leading (1.65, so two headline lines with a visible gutter between
+   them), and the Arabic fallback beside it. Both are normal declarations, so
+   one !important settles both.
+
+   It does NOT beat a rule in @layer base, whatever its specificity, because
+   unlayered !important is the lowest-priority important there is. That is
+   why the app-wide RTL heading rule had to exempt this subtree rather than
+   be out-specified — the note up there has the measurements. */
 [data-type="editorial"] .t-display-xl { font-size: var(--display-xl); line-height: var(--lh-display-xl) !important; }
 [data-type="editorial"] .t-display-l  { font-size: var(--display-l);  line-height: var(--lh-display-l) !important; }
 [data-type="editorial"] .t-display-m  { font-size: var(--display-m);  line-height: var(--lh-display-m) !important; }

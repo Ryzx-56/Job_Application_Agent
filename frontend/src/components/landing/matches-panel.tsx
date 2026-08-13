@@ -92,6 +92,12 @@ export function MatchesPanel() {
         backgroundColor: "var(--surface-paper)",
         boxShadow:
           "0 1px 0 0 rgb(255 255 255 / 0.5) inset, 0 1px 2px 0 rgb(0 0 0 / 0.28), 0 12px 24px -10px rgb(0 0 0 / 0.4), 0 32px 64px -24px rgb(0 0 0 / 0.55)",
+        // .scan-row's wash is tuned for the dark page ground, where 12% blue
+        // is a whisper. On white paper it resolves to #e0e7f4, and
+        // --ink-paper-soft on that measures 4.25:1 — under the 4.5:1 floor,
+        // for the moment a row is being scanned. Lighthouse caught it mid
+        // cycle. Same override the trust sheet already carries.
+        ["--accent-wash" as string]: "rgb(37 99 235 / 0.055)",
       }}
       aria-label={t.hero.matchesAlt}
     >

@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { ArrowLeft, ArrowRight } from "lucide-react";
 import { useLang } from "@/lib/language";
+import { trackCta } from "@/lib/track";
 import { ScorePanel } from "./score-panel";
 import { MatchesPanel } from "./matches-panel";
 
@@ -209,6 +210,7 @@ export function Hero() {
           <div className="flex flex-wrap items-center gap-x-7 gap-y-4">
             <Link
               href="/signup?plan=free"
+              onClick={() => trackCta("hero_signup", "landing")}
               className="inline-flex h-12 items-center justify-center gap-2 rounded-[0.3rem] px-6 text-[0.9375rem] font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2"
               style={{
                 backgroundColor: "var(--accent)",
@@ -226,6 +228,7 @@ export function Hero() {
             {/* The quiet second action: a link, not a second button. */}
             <a
               href="#how-it-works"
+              onClick={() => trackCta("hero_how_it_works", "landing")}
               className="t-meta inline-flex items-center gap-1.5 rounded-[0.2rem] underline-offset-[6px] transition-colors hover:underline focus-visible:outline-none focus-visible:ring-2"
               style={{
                 color: "var(--ink-2)",

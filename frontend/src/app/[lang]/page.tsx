@@ -1,7 +1,9 @@
 import type { Metadata } from "next";
 import { cookies } from "next/headers";
 import { IBM_Plex_Sans, IBM_Plex_Sans_Arabic } from "next/font/google";
-import { LANG_COOKIE, readLang } from "@/lib/lang-cookie";
+import { readLang } from "@/lib/lang-cookie";
+import { localeAlternates } from "@/lib/hreflang";
+import { OG_IMAGE } from "@/lib/site";
 import { LandingPage } from "@/components/landing/landing-page";
 
 /* ========================================================================
@@ -52,22 +54,33 @@ const COPY = {
   },
 };
 
-export async function generateMetadata(): Promise<Metadata> {
-  // Same cookie the root layout reads, so the title and description are in
-  // the language the page will actually render in.
-  const lang = readLang((await cookies()).get(LANG_COOKIE)?.value);
+export async function generateMetadata({
+  params,
+}: {
+  params: Promise<{ lang: string }>;
+}): Promise<Metadata> {
+  // The URL is the source of truth now, not the cookie. readLang() still
+  // narrows it, so a junk segment that somehow reached here falls back to
+  // English rather than throwing.
+  const lang = readLang((await params).lang);
   const copy = COPY[lang];
 
   return {
     title: copy.title,
     description: copy.description,
+    alternates: localeAlternates("/", lang),
     openGraph: {
       title: copy.title,
       description: copy.description,
       locale: lang === "ar" ? "ar_SA" : "en_US",
       type: "website",
     },
-    twitter: { card: "summary_large_image", title: copy.title, description: copy.description },
+    twitter: {
+      card: "summary_large_image",
+      title: copy.title,
+      description: copy.description,
+      images: [OG_IMAGE],
+    },
   };
 }
 

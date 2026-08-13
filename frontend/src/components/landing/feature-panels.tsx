@@ -137,7 +137,12 @@ export function DocumentsPanel() {
         style={{
           ...SHEET,
           fontFamily: "var(--font-plex-arabic), ui-sans-serif, system-ui, sans-serif",
-          lineHeight: 1.9,
+          // NO line-height here. This element carries dir="rtl" lang="ar", so
+          // it matches the app-wide `[dir="rtl"], [lang="ar"] { line-height:
+          // 1.7 !important }` in globals.css — and an author !important beats
+          // an inline declaration that isn't. Anything set here is discarded.
+          // It goes on the content block below, which carries neither
+          // attribute and therefore keeps what it is given.
         }}
       >
         <div className="flex items-center justify-between gap-4">
@@ -149,7 +154,11 @@ export function DocumentsPanel() {
           </p>
         </div>
 
-        <div className="mt-3 border-t pt-4" style={{ borderColor: PAPER_RULE }}>
+        {/* 1.7, which is a document's leading rather than a web page's — and
+            the value this specimen already rendered at while the rule above
+            was overriding it, so it is stated rather than inherited by
+            accident. */}
+        <div className="mt-3 border-t pt-4" style={{ borderColor: PAPER_RULE, lineHeight: 1.7 }}>
           <p className="text-[0.75rem] font-semibold" style={{ color: "var(--ink-paper-soft)" }}>
             {AR_CV.section}
           </p>
