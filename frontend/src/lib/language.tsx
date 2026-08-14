@@ -2,6 +2,36 @@
 
 import React, { createContext, useContext, useState, useEffect, ReactNode, useRef } from "react";
 import { createClient } from "@/lib/supabase/client";
+// Neutral module, not a client one — the server reads the same cookie name.
+// See the note in lib/lang-cookie.ts for why it cannot live in this file.
+import { LANG_COOKIE, localePath, splitLocale } from "@/lib/lang-cookie";
+import { useRouter } from "next/navigation";
+import {
+  ADDON_CAPS,
+  CREDIT_COST,
+  LINKEDIN_PREMIUM_SAR,
+  PACKS,
+  SAR_PER_USD,
+  TIERS,
+  arCount,
+  enCount,
+} from "@/lib/pricing";
+
+/* ========================================================================
+   ARABIC COUNTED NOUNS
+
+   Every allowance the Arabic dictionary quotes is interpolated from
+   lib/pricing.ts, and Arabic changes the counted noun with the number — a
+   dual form at 2, a plural at 3-10, back to a singular at 11 and up. These
+   are the four forms of each noun the pricing copy counts, handed to
+   arCount() so a changed allowance can't produce "٢ نقاط". Defined once
+   here rather than at each call site, since the same nouns recur across the
+   plan cards, the packs, the FAQ and the dashboard.
+======================================================================== */
+const AR_POINTS = { one: "نقطة واحدة", two: "نقطتان", few: "نقاط", many: "نقطة" };
+const AR_CVS = { one: "سيرة ذاتية واحدة", two: "سيرتان ذاتيتان", few: "سير ذاتية", many: "سيرة ذاتية" };
+const AR_PROFILES = { one: "ملف واحد", two: "ملفان", few: "ملفات", many: "ملفًا" };
+const AR_JOBS = { one: "وظيفة واحدة", two: "وظيفتان", few: "وظائف", many: "وظيفة" };
 
 /* ========================================================================
    CONTENT — one dictionary per language, shared by every page. Add new
@@ -20,15 +50,83 @@ export const content = {
       getStarted: "Get started",
       dashboard: "Dashboard",
     },
+    /* ── HERO (§3.1) ──────────────────────────────────────────────────────
+       ONE PROMISE, STATED ONCE. The old headline named an outcome nobody
+       can promise ("land more interviews") and the sub-line was a feature
+       list. This states what the product does and what you get.
+
+       The free line is the third messaging pillar and sits with the CTA
+       because it removes the last objection before signup. It has to be
+       exact: an Arabic CV costs two credits, so the free allowance yields
+       fewer Arabic CVs than English ones and the copy says so rather than
+       rounding in our favour. Numbers come from lib/pricing.ts. */
     hero: {
-      badge: "New",
-      badgeText: "6 AI agents tailoring every application",
-      headline: "Land more interviews with an AI tailored resume",
-      sub: "Upload your CV or build one from scratch, paste a job description, and Tarshih tailors your resume and cover letter to it, in English or Arabic, then shows you exactly what's missing and finds similar jobs to apply to.",
-      ctaPrimary: "Optimize my resume",
+      headline: "Every job gets its own CV",
+      sub: "We read the posting, rewrite your CV for it in Arabic or English, and show you how well it matches before you send it. Then we find other roles worth your time.",
+      ctaPrimary: "Start free",
       ctaSecondary: "See how it works",
-      noCard: "No credit card required",
-      freeForever: "Free plan forever",
+      freeLine: `${enCount(TIERS.free.credits, "credit")} free every month, no card. That is ${TIERS.free.credits} CVs in English, or one in Arabic and one in English.`,
+      // Alt text. The visuals carry real information, so they get described
+      // rather than labelled "product screenshot".
+      scoreAlt: "An ATS score of 91, broken into keywords, skills, education and experience",
+      matchesAlt: "Five matched job openings, each labelled strong, partial or stretch",
+    },
+    /* ── HERO VISUAL 1 (§3.1) ─────────────────────────────────────────────
+       Labels are the same strings the dashboard's ATS card uses, because they
+       name the four factors utils/ats_scorer.py actually computes. There is no
+       "formatting" score anywhere in the product; an earlier version of this
+       panel showed one. */
+    heroScore: {
+      title: "ATS Score",
+      sub: "The same breakdown you get after every generation, and the weight each factor carries.",
+      factors: {
+        keywords: "Keywords",
+        skills: "Skills",
+        education: "Education",
+        experience: "Experience",
+      },
+      // atsBreakdown.missing_skills. A score that only ever flatters is not a
+      // score, so the panel shows what the CV did not cover.
+      missingLabel: "Still missing:",
+      missing: ["Terraform", "GraphQL"],
+    },
+    heroMatches: {
+      /* ── HERO VISUAL 2 (§3.1) ───────────────────────────────────────────
+         Five is RESULT_CAP in agents/jobs_finder.py, not a number picked for
+         the page. The subtext says "up to" because the cap is a target the
+         search fills from what is genuinely posted — on a narrow role it can
+         come back with fewer, and the code logs exactly that. */
+      headline: "Five real jobs you can apply to today",
+      sub: "As soon as your CV is ready we search what is actually posted right now, and return up to five roles ranked by how well you fit. Every one opens the real listing, so you can apply in the same sitting.",
+      countLabel: "live jobs matched",
+      // Sits in the panel's header band and again on every row, not as a
+      // closing caption. That each match opens the real posting is the feature
+      // this visual exists to show.
+      linkNote: "Each one opens the real posting",
+      viewListing: "View listing",
+      // Roles and cities only. No employer names: a mockup that pairs real
+      // companies with "matched openings" implies those companies are hiring
+      // through us, which is a claim we cannot make.
+      items: [
+        { role: "Frontend Engineer", city: "Riyadh", rank: "strong" as const },
+        { role: "Product Engineer", city: "Jeddah", rank: "strong" as const },
+        { role: "Full-stack Developer", city: "Riyadh", rank: "partial" as const },
+        { role: "UI Engineer", city: "Remote", rank: "partial" as const },
+        { role: "Engineering Lead", city: "Riyadh", rank: "stretch" as const },
+      ],
+      ranks: { strong: "Strong match", partial: "Partial match", stretch: "Stretch role" },
+    },
+    /* ── COMPANY MARQUEE (§3.2) ───────────────────────────────────────────
+       THE LABEL IS NOT A HIRING CLAIM. "Land jobs at companies like" would
+       assert an outcome that has not happened and imply endorsement by every
+       company named. This says what is actually true: paste any posting from
+       any of them and the CV is written for it.
+
+       Names are set in type, not as logos. No official monochrome wordmark
+       assets are licensed for this repo, and an unofficial logo is worse
+       than type on both the legal and the design side. */
+    marquee: {
+      label: "Tailor your CV for roles at",
     },
     dashboardPreview: {
       urlLabel: "app.tarshih.ai / dashboard",
@@ -59,87 +157,248 @@ export const content = {
       coverLetterLabel: "Cover letter",
       ready: "Ready",
     },
+    /* Four short claims, each of which the code actually backs. The third and
+       fourth used to be "Never invents your experience" and "Reads like a
+       person wrote it" — both true, but neither told a non-technical reader
+       what was being promised. They now name the two things people are
+       actually wary of in an AI writing tool: made-up facts, and output that
+       reads like a machine wrote it. The full explanation is in trustSection
+       and the FAQ; these are the headlines. */
+    /* Four short claims, each of which the code actually backs. Kept SHORT on
+       purpose: they sit on one line at desktop width, and a phrase that wraps
+       turns a row of four into a block of eight.
+
+       The fourth names the humanizer, which is a real, specific thing:
+       core/humanizer.py is a block of "do not write like an LLM" rules spliced
+       into every prompt that produces prose a person will sign their name to —
+       the tailored CV, the cover letter and the LinkedIn profile. It is not a
+       separate rewriting pass, and the copy does not claim one. */
     trustBar: [
-      "Encrypted uploads, always",
+      "Encrypted uploads",
       "Transparent ATS scoring",
-      "Never invents your experience",
-      "Reads like a person wrote it",
+      "Every line checked against your CV",
+      "Humanizer strips AI phrasing",
     ],
-    features: {
-      eyebrow: "Everything you need",
-      title: "A complete toolkit for every application",
+    /* ── THE TAILORING ARGUMENT (§3.4, messaging pillar 1) ────────────────
+       "One CV for every job is why applications fail" is the educational
+       argument, and the brief gives it its own section BEFORE the feature
+       detail: a reader who does not yet believe tailoring matters has no
+       reason to care what the features are.
+
+       Kept to three sentences on purpose. The panel carries the argument;
+       this only has to frame it.
+
+       WHAT IT CLAIMS IS WHAT tailoring_engine.py DOES. Its prompt says
+       "Reorder freely, both bullets within a section and which facts lead a
+       sentence, to put the strongest, most relevant material first", and
+       every bullet carries a relevance_score. So the claim is re-ordering
+       and re-weighting, not deletion, and not addition — the fact checker
+       exists precisely to stop the last one. */
+    tailoringCase: {
+      label: "One CV, sent everywhere",
+      title: "Two postings for the same job do not screen for the same thing",
       description:
-        "Tarshih handles the tedious parts of applying so you can focus on the roles you actually want.",
+        "Sent unchanged, a CV puts the same order in front of every employer, and the experience one of them is actually screening for ends up near the bottom of page two. Tarshih reads each posting and rebuilds the order around what that employer asked for. Nothing is added. It is the same record, read twice.",
+      panelTitle: "One CV, read against two postings",
+      // The key for the panel's two states, so neither column needs its own
+      // pair of labels.
+      keyLead: "brought forward",
+      keyRest: "moved down",
+      matchLabel: "Match",
+      // Same two roles the hero's matched-openings list uses, so the page
+      // reads as one continuous example rather than a set of unrelated ones.
+      roles: ["Frontend Engineer", "Full-stack Developer"],
+      footnote: "The same CV both times. Nothing added, nothing invented.",
+      alt: "One CV read against two postings, with the same six skills ordered differently for each and a different match score",
+    },
+    /* ── FEATURES (§3.5) ──────────────────────────────────────────────────
+       HIERARCHY, NOT A FLAT GRID. Three primary features, each with its own
+       visual, then a compact secondary list. The previous version of this
+       section was a six-up grid of rounded cards with an icon in a coloured
+       square — the single loudest template tell in §2.1 — and one of its six
+       cards advertised "6 AI agents working together", which is both an
+       internal implementation detail and the wrong number (the pipeline runs
+       eight).
+
+       EVERY LINE BELOW IS TRACED TO CODE. Interview prep in particular is
+       described as what agents/interview_prep.py returns — a set of likely
+       questions with an answer for each — and never as practice, simulation
+       or a mock interview, none of which the product does. LinkedIn and
+       interview prep both carry their plan requirement in `note`, because
+       core/entitlements.py caps both at zero on Free. */
+    features: {
+      label: "What you get",
+      title: "A tailored CV, the scores behind it, and the jobs to send it to",
+      description:
+        "One run produces all three: the documents, the scoring that explains them, and the openings they are aimed at.",
+      primary: [
+        {
+          lead: "A CV rewritten for the posting, and a cover letter to match",
+          body: "Both are written against the job description you paste, in Arabic or English, and typeset properly in either. Every line traces back to something already in your CV.",
+        },
+        {
+          lead: "See what is missing before a recruiter does",
+          body: "An ATS score with the four factors behind it, a separate match score for the role, and the specific gaps that cost you the rest. Each gap comes with an honest way to close it, never a way to claim it.",
+        },
+        {
+          lead: "Five openings, ranked, each one a click from the posting",
+          body: "Once the CV is ready we search what is posted right now and return up to five roles, labelled by how much of what they ask for your CV already shows. Every row opens the original listing.",
+        },
+      ],
+      secondaryTitle: "The rest of it",
+      secondary: [
+        {
+          title: "Start without a CV",
+          body: "No file to upload? Fill in a form instead and the same pipeline runs on what you entered.",
+          note: "",
+        },
+        {
+          title: "Or upgrade the one you have",
+          body: "Upload a PDF or Word file. It is read as it stands, so nothing has to be retyped.",
+          note: "",
+        },
+        {
+          title: "PDF and Word",
+          body: "The CV downloads as a PDF or a .docx file. The cover letter comes as a PDF.",
+          note: "",
+        },
+        {
+          title: "Every version, kept",
+          body: "Each CV you generate stays in your account with its role, its scores and its files.",
+          note: "",
+        },
+        {
+          title: "LinkedIn profile content",
+          body: "A headline, an About section and a paste-ready block for every role, written from a CV you tailored here. In English, because that is how recruiters search.",
+          note: "Included with Pro and Elite",
+        },
+        {
+          title: "Interview questions, answered",
+          body: "The questions that specific role is likely to open with, each one with how to answer it from your own experience.",
+          note: "Included with Pro and Elite",
+        },
+      ],
+    },
+    /* Panel copy for the three primary features. The specimen documents
+       themselves live in the component, not here: the CV sheet is Arabic and
+       the letter sheet is English in BOTH site languages, on purpose, since
+       the claim being made is that the product typesets both. */
+    featureDocs: {
+      cvLabel: "Tailored CV",
+      letterLabel: "Cover letter",
+      caption: "One generation, both scripts, each set in its own direction.",
+      alt: "An Arabic CV page in joined script, with an English cover letter behind it",
+    },
+    /* The three fields are exactly GapItem in schemas/output_schema.py:
+       skill, importance ("required" | "preferred"), how_to_close. The
+       how-to-close lines follow match_scorer.py's own rule — if a gap cannot
+       honestly be closed, point at real experience or a truthful
+       alternative, never at a way to claim the requirement is met. */
+    featureGaps: {
+      atsLabel: "ATS score",
+      matchLabel: "Job match",
+      gapsLabel: "What is missing",
+      importance: { required: "Required", preferred: "Preferred" },
       items: [
         {
-          title: "Create or upgrade any CV",
-          description:
-            "Start from a blank slate or upload your current CV. Either way, Tarshih builds a resume tailored to the exact job you're applying for, plus a matching cover letter in the same language, every time.",
+          skill: "Terraform",
+          importance: "required" as const,
+          how: "You have provisioned infrastructure by hand. Say which parts you automated, and with what.",
         },
         {
-          title: "ATS score you can act on",
-          description:
-            "See your ATS and job match score broken down by keywords, skills, education, and experience, so you know exactly what's strong and what's holding you back, not just a number.",
+          skill: "GraphQL",
+          importance: "preferred" as const,
+          how: "The API layer in your second role is close enough to name. Say what it served.",
         },
         {
-          title: "Your words, leveled up",
-          description:
-            "Describe a project in one vague sentence and Tarshih turns it into a polished, professional bullet point, using only what's true in your CV. Nothing is ever invented.",
-        },
-        {
-          title: "Finds jobs for you",
-          description:
-            "Every job description you paste returns 5 similar openings, ranked Strong Match, Partial Match, or Stretch Role, so you're never applying blind.",
-        },
-        {
-          title: "6 AI agents working together",
-          description:
-            "Parsing, tailoring, fact-checking, scoring, writing, and job search each run through a specialized agent instead of one prompt guessing its way through everything.",
-        },
-        {
-          title: "Arabic and English, done properly",
-          description:
-            "Generate polished CVs and cover letters in English or Arabic, with correct RTL formatting, not the broken, jumbled Arabic output most tools produce.",
+          skill: "Team leadership",
+          importance: "required" as const,
+          how: "You mentored two engineers last year. That belongs inside the role, not in a list of skills.",
         },
       ],
+      alt: "An ATS score and a job match score, with three named gaps and how to close each one",
     },
+    /* The labels come from t.heroMatches.ranks so they cannot drift from the
+       hero's panel. Only what each one MEANS is written here — which the hero
+       panel never says, so this adds to it rather than repeating it. */
+    featureRanks: {
+      title: "How each opening is labelled",
+      meanings: {
+        strong: "Your CV already shows most of what the posting asks for.",
+        partial: "Part of what it asks for is in your CV, and part of it is not.",
+        stretch: "Past what your CV currently shows. Listed rather than hidden from you.",
+      },
+      alt: "The three labels a matched opening can carry, and what each one means",
+    },
+    /* ── HOW IT WORKS (§3.3) ──────────────────────────────────────────────
+       THREE steps, not four, and no agent count. The previous version opened
+       with "Six AI agents work behind the scenes", which was wrong on the
+       number (the pipeline runs eight) and wrong on the substance: how many
+       agents there are is not something the reader gets.
+
+       The description carries messaging pillar 2, the time saving, as a plain
+       claim rather than a red-versus-green comparison block (§3.4). */
     howItWorks: {
-      eyebrow: "How it works",
-      title: "From job posting to submitted application",
+      label: "How it works",
+      title: "Three steps, and the work is done",
       description:
-        "Six AI agents work behind the scenes. All you do is upload or start fresh, paste, and download.",
+        "Tailoring a CV properly takes 30 to 45 minutes per application. Here it takes a couple of minutes, and you enter your information once rather than once per job.",
       steps: [
         {
-          step: "01",
-          title: "Start from scratch or upload your CV",
-          description:
-            "Upload an existing resume as a PDF or DOCX, or build one from nothing. Tarshih extracts every real fact about your experience, skills, and history.",
+          title: "Add your CV",
+          description: "Upload a PDF or Word file. If you do not have one yet, fill in a form instead.",
         },
         {
-          step: "02",
-          title: "Paste the job description",
-          description:
-            "Tarshih's agents analyze the requirements and tailor your resume and cover letter around them, in English or Arabic.",
+          title: "Paste the job posting",
+          description: "The whole advert. We read what the role actually asks for, in Arabic or English.",
         },
         {
-          step: "03",
-          title: "See your score and what's missing",
+          title: "Get everything you need",
           description:
-            "Get an ATS and job match score broken down by keyword, skills, education, and experience, plus a clear list of what to add or improve.",
-        },
-        {
-          step: "04",
-          title: "Download and discover similar jobs",
-          description:
-            "Get your polished, ATS ready resume and cover letter, plus 5 similar openings ranked by how strong a match they are.",
+            "A tailored CV and cover letter, your ATS score and what it is missing, and five live jobs to send it to.",
         },
       ],
     },
+    /* ── TRUST ────────────────────────────────────────────────────────────
+       REBUILT AROUND A DEMONSTRATION rather than three claims in three
+       cards. "Nothing invented" is the single most load-bearing promise on
+       this site — it is the objection every candidate has about an AI writing
+       tool — and asserting it in a paragraph is the weakest possible way to
+       make it. The panel shows the check running instead.
+
+       EVERY DETAIL BELOW IS READ OUT OF core/fact_checker.py:
+         · The check runs against facts_json, extracted from the uploaded CV.
+         · Its own prompt draws exactly this line: renaming and reframing are
+           ALLOWED ("reception work" -> "front-of-house operations" is one of
+           the examples in the prompt itself); a new number, name, tool, date,
+           scope, headcount or outcome is NOT.
+         · MAX_RETRIES = 2, and a failed bullet is regenerated and re-checked,
+           which is where "rewritten and checked again, up to twice" comes
+           from. Not "reviewed" and not "flagged" — regenerated.
+
+       The three pillars beneath it keep the data promise verbatim (it was
+       already reviewed copy), replace the vague scoring sentence with the
+       real weights from utils/ats_scorer.py, and name the humanizer, which
+       core/humanizer.py describes as prompt-level rules rather than a second
+       rewriting pass — so the copy says that rather than implying a pass. */
     trustSection: {
-      eyebrow: "Built on trust",
-      title: "How Tarshih actually handles your career",
+      label: "What it will not do",
+      title: "The rewrite is checked against your own CV before you see it",
       description:
-        "No borrowed logos, no invented reviews, just what the product does and why it's safe to use.",
+        "A model that writes well will also, given the chance, write something that is not true. That chance is taken away here: every rewritten line is read back against the facts extracted from your document, and a line that adds anything is sent back.",
+      proof: {
+        caption: "One line, checked",
+        sourceLabel: "In your CV",
+        source: "Managed the reception desk at a dental clinic.",
+        allowedLabel: "Allowed",
+        allowed: "Ran front-of-house operations for a dental practice.",
+        allowedNote: "A better name for the same work. Nothing new is claimed.",
+        rejectedLabel: "Sent back",
+        rejected: "Ran front-of-house operations for a 12-chair dental practice.",
+        rejectedNote: "Twelve chairs is not in your CV, so this line never reaches your document.",
+        outcome: "A rejected line is rewritten and checked again, up to twice, before the CV is built.",
+        alt: "A CV line, the reworded version the fact checker allows, and an invented version it sends back",
+      },
       pillars: [
         {
           title: "Your documents stay yours",
@@ -147,14 +406,14 @@ export const content = {
             "Uploads are encrypted in transit and at rest. Tarshih never trains models on your resume or shares it with third parties, and you can delete everything permanently at any time.",
         },
         {
-          title: "Scoring you can inspect, and gaps you can fix",
+          title: "The score shows its working",
           description:
-            "Every score breaks down into keyword match, skills, education, and experience, so you can see exactly why a resume scored the way it did. Then Tarshih tells you precisely what's missing, a certificate, a skill, a keyword, so you know what to add.",
+            "One number, and the four weighted factors behind it: keywords at 40 percent, skills at 35, education at 15, experience at 10. Then the gaps that cost you the rest, each with an honest way to close it rather than a way to claim it.",
         },
         {
-          title: "Nothing invented, ever",
+          title: "It has to read like you wrote it",
           description:
-            "Tarshih rewrites and reframes your real experience. It will never fabricate a job, a skill, or a credential you didn't have, so what you download is always defensible in an interview.",
+            "The same rules run on every CV, cover letter and LinkedIn profile: no dash punctuation, no \"moreover\" or \"furthermore\", no inflated significance. They are part of how the text is written rather than a second pass over it afterwards.",
         },
       ],
     },
@@ -162,7 +421,7 @@ export const content = {
       eyebrow: "Pricing",
       title: "Simple pricing that grows with your search",
       description: "Start free and upgrade only when you need more credits. Cancel anytime.",
-      creditNote: "1 credit = 1 English CV + cover letter · 2 credits = 1 Arabic CV + cover letter.",
+      creditNote: `${enCount(CREDIT_COST.en, "credit")} = 1 English CV + cover letter · ${enCount(CREDIT_COST.ar, "credit")} = 1 Arabic CV + cover letter.`,
       founderNote: {
         title: "One person, paying for every plan you see",
         body: "Tarshih is built and run solo, and every generation, on every tier, costs real AI-processing money. Free isn't just unprofitable, it's a loss covered on purpose so you can try Tarshih before paying anything. Pro and Elite subscribers are what keep the whole thing running.",
@@ -170,7 +429,7 @@ export const content = {
       },
       mostPopular: "Most popular",
       premiumBadgeLabel: "Premium tier",
-      currencyNote: "All prices are charged in Saudi riyals. The dollar figure under each price is an approximate reference at 3.75 SAR to the dollar, not a payment option." as string | null,
+      currencyNote: `All prices are charged in Saudi riyals. The dollar figure under each price is an approximate reference at ${SAR_PER_USD} SAR to the dollar, not a payment option.` as string | null,
       plans: [
         {
           name: "Free",
@@ -185,11 +444,11 @@ export const content = {
           // a `discountLabel`: a struck-through price the product never
           // charged is a fabricated reference price, which is exactly what
           // consumer-protection rules on "was/now" pricing exist to stop.
-          sar: 0,
+          sar: TIERS.free.sar,
           period: "/ month",
           description: "Everything you need to try Tarshih on your next application.",
           features: [
-            "3 credits / month: 3 English CVs, or mix in Arabic",
+            `${enCount(TIERS.free.credits, "credit")} / month: ${TIERS.free.credits} English CVs, or mix in Arabic`,
             "Full ATS & job match scoring",
             "Tailored CV + matching cover letter",
             "Resume history, last 10 kept",
@@ -207,18 +466,18 @@ export const content = {
           // founding discount and no prior price: 29 SAR has never been
           // anything else, so nothing here may present it as reduced. See
           // the note on `originalSar` in the Free plan above.
-          sar: 29,
+          sar: TIERS.pro.sar,
           period: "/ month",
           description: "For active job seekers who want serious volume, every time.",
           features: [
-            "24 credits / month: 24 English CVs, or mix in Arabic",
+            `${enCount(TIERS.pro.credits, "credit")} / month: ${TIERS.pro.credits} English CVs, or mix in Arabic`,
             "Tailored CV + personalized cover letter",
             "Full ATS & job match scoring",
             "Shows exactly what you're missing",
             "5 similar jobs, ranked, per application",
             "Fact-check pass on every generation",
-            "LinkedIn Essential, 2 profiles / month",
-            "Interview Prep, 5 jobs / month",
+            `LinkedIn Essential, ${ADDON_CAPS.pro.linkedinEssential} profiles / month`,
+            `Interview Prep, ${ADDON_CAPS.pro.interviewPrep} jobs / month`,
             "Pro badge on your profile",
             "Resume history, last 100 kept",
             "Priority processing",
@@ -234,18 +493,18 @@ export const content = {
         {
           name: "Elite",
           slug: "elite",
-          sar: 99,
+          sar: TIERS.elite.sar,
           period: "/ month",
           description: "The premium tier for candidates who want every advantage.",
           features: [
-            "80 credits / month: 80 English CVs, or mix in Arabic",
+            `${enCount(TIERS.elite.credits, "credit")} / month: ${TIERS.elite.credits} English CVs, or mix in Arabic`,
             "Tailored CV + personalized cover letter",
             "Full ATS & job match scoring",
             "Shows exactly what you're missing",
             "5 similar jobs, ranked, per application",
             "Fact-check pass on every generation",
-            "LinkedIn Essential, 5 profiles / month",
-            "Interview Prep, 15 jobs / month",
+            `LinkedIn Essential, ${ADDON_CAPS.elite.linkedinEssential} profiles / month`,
+            `Interview Prep, ${ADDON_CAPS.elite.interviewPrep} jobs / month`,
             "Unlimited resume history",
             "Highest AI processing priority",
             "Exclusive Elite badge on your profile",
@@ -266,10 +525,62 @@ export const content = {
       perApp: "per credit",
       cta: "Buy pack",
       packs: [
-        { name: "Starter", slug: "starter", sar: 9, creditCount: 5, credits: "5 credits", blurb: "A couple of applications to test the waters.", badge: null as string | null, featured: false },
-        { name: "Best Value", slug: "best-value", sar: 22, creditCount: 15, credits: "15 credits", blurb: "The sweet spot for an active search.", badge: "Best Value", featured: true },
-        { name: "Power", slug: "power", sar: 38, creditCount: 30, credits: "30 credits", blurb: "For a serious, high volume job hunt.", badge: "Max Savings", featured: false },
+        { name: "Starter", slug: "starter", sar: PACKS.starter.sar, creditCount: PACKS.starter.credits, credits: enCount(PACKS.starter.credits, "credit"), blurb: "A couple of applications to test the waters.", badge: null as string | null, featured: false },
+        { name: "Best Value", slug: "best-value", sar: PACKS["best-value"].sar, creditCount: PACKS["best-value"].credits, credits: enCount(PACKS["best-value"].credits, "credit"), blurb: "The sweet spot for an active search.", badge: "Best Value", featured: true },
+        { name: "Power", slug: "power", sar: PACKS.power.sar, creditCount: PACKS.power.credits, credits: enCount(PACKS.power.credits, "credit"), blurb: "For a serious, high volume job hunt.", badge: "Max Savings", featured: false },
       ],
+    },
+    /* ── /pricing (§4) ────────────────────────────────────────────────────
+       PAGE FRAMING ONLY. Every plan, pack and add-on on that route reuses the
+       entries that already exist above (t.pricing, t.payg, t.linkedinPromo),
+       so the pricing page, the landing page and the dashboard's upgrade
+       screen cannot end up quoting three different numbers. Nothing in this
+       block states a figure; the ones that appear are interpolated from
+       lib/pricing.ts at the point of use.
+
+       NO PAYMENT-METHODS SECTION. The brief asks for one "once the gateway is
+       live". Moyasar is not integrated, so there is nothing true to put there
+       and an empty promise on a pricing page is worse than a missing one.
+
+       FOUNDING MEMBER IS A BADGE. There is no founding price, no discount and
+       no "was X SAR" anchor anywhere — see TIER_PRICING in
+       backend/core/admin_stats.py, which carries the same note and is what
+       the admin revenue panel prices from. */
+    pricingPage: {
+      label: "Pricing",
+      title: "What it costs, and what a credit buys",
+      description:
+        "Three plans, or credits bought on their own. The free plan needs no card, and nothing renews unless you subscribe.",
+      plansTitle: "Plans",
+      plansBody: "Every plan runs the same pipeline. What changes is how much of it you get each month.",
+
+      creditsTitle: "One credit, one application",
+      creditsBody:
+        "A credit covers one CV rewritten for a posting and the cover letter that goes with it. Arabic spends two, because an Arabic generation runs a localisation and script pass that an English one does not.",
+      // Values interpolated from CREDIT_COST, never typed. The last two are
+      // "included" because scoring and the job search run inside the SAME
+      // generation — see core/orchestrator.py, where document_generator,
+      // scoring and jobs_finder all hang off one graph — so they cost nothing
+      // beyond the credit already spent.
+      creditsRows: [
+        { label: "CV and cover letter, in English", value: enCount(CREDIT_COST.en, "credit") },
+        { label: "CV and cover letter, in Arabic", value: enCount(CREDIT_COST.ar, "credit") },
+        { label: "ATS score, match score and the gap list", value: "Included" },
+        { label: "Five matched openings, each linking to its posting", value: "Included" },
+      ],
+
+      packsTitle: "Or buy credits on their own",
+      packsBody: "A one-off purchase rather than a subscription, for a search that comes in bursts.",
+
+      foundingTitle: "Founding members",
+      foundingBody:
+        "The first 50 people to subscribe to Pro keep a Founding Member badge on their profile permanently. It is a badge and nothing else: the price is the ordinary Pro price, there is no founding discount, and no rate is being locked in.",
+
+      linkedinTitle: "The LinkedIn add-on",
+
+      faqTitle: "Questions about billing",
+      // Shown under the plan a signed-in reader is already on.
+      backToProduct: "See what the product does",
     },
     /* ── LinkedIn add-on, featured section on the landing page ──
        PRICES ARE REPEATED HERE as numbers because this section renders for
@@ -316,13 +627,13 @@ export const content = {
           "A paste-ready block for every role in your experience",
           "Three post ideas from your real projects",
           "A copy button on every field",
-          "2 profiles a month on Pro, 5 on Elite",
+          `${ADDON_CAPS.pro.linkedinEssential} profiles a month on Pro, ${ADDON_CAPS.elite.linkedinEssential} on Elite`,
         ],
         cta: "See plans",
       },
       premium: {
         name: "Premium",
-        sar: 200,
+        sar: LINKEDIN_PREMIUM_SAR,
         badge: "Fully managed",
         tagline: "Created for you by a specialist",
         bullets: [
@@ -345,7 +656,14 @@ export const content = {
       // the rest. Chosen for impact rather than order: money, refunds, trust,
       // privacy, and what the LinkedIn add-on is. Ids are language-neutral, so
       // this list is identical in both dictionaries.
-      landing: ["credits", "refunds", "need-existing-cv", "never-invents", "ai-sounding", "data-safe", "linkedin-what-is-it"],
+      // FIVE, which is the top of the brief's 4-5 range (§3.7). It was seven.
+      // "refunds" and "linkedin-what-is-it" left for /pricing, where the rest
+      // of the commerce questions now live; nothing was rewritten to make the
+      // cut, these are the same entries shown verbatim.
+      landing: ["credits", "need-existing-cv", "never-invents", "ai-sounding", "data-safe"],
+      // The billing set, shown on /pricing under the plans. Same mechanism:
+      // ids, not a slice, so reordering the master list is safe.
+      pricingPage: ["credits", "no-card", "refunds", "linkedin-what-is-it", "linkedin-tiers", "linkedin-refunds"],
       seeAll: "See all questions",
       allTitle: "All questions",
       allDescription: "Everything about how Tarshih works, what it costs, and what happens to your data.",
@@ -357,9 +675,11 @@ export const content = {
       contactBody: "Send us your question and a member of our support team will get back to you.",
       supportEmail: "support@tarshih.com",
       backToHome: "Back to home",
-      // NOTE: the LinkedIn answers below name the 49 / 200 SAR prices in prose.
-      // That's the one place a price is written by hand rather than read from
-      // PRICING in backend/core/linkedin.py, so if those change, change these.
+      // Answers that quote a price, an allowance or a cap interpolate it from
+      // lib/pricing.ts rather than stating it. They used to state it, which is
+      // how this FAQ came to claim Pro included 40 credits (it includes 24)
+      // and that LinkedIn Essential cost 49 SAR a year after it stopped being
+      // sold separately. Do not re-type a number into an answer.
       items: [
         {
           id: "ats-what-is-it",
@@ -389,17 +709,17 @@ export const content = {
         {
           id: "never-invents",
           q: "Will Tarshih invent experience I don't have?",
-          a: "No. Every fact is extracted from your real CV first, and every generated bullet is checked against it in a dedicated fact-check pass. Tarshih reframes and professionalizes what's true; it never fabricates.",
+          a: "No. AI models can state things that sound plausible but aren't true, and on a CV that is the risk that matters, because it is your name on the document and you are the one who has to answer for it in the interview. Every fact is extracted from your real CV first, and every generated bullet is then checked back against those facts in a dedicated fact-check pass before you see it. Tarshih reframes and professionalizes what's true; it never fabricates.",
         },
         {
           id: "how-many-agents",
           q: "How many AI agents are working on my application?",
-          a: "Six. Separate agents handle CV parsing, job description analysis, tailoring, fact-checking, ATS scoring, document generation, and job search, instead of one prompt trying to do everything at once.",
+          a: "Eight stages run on every application, each handled by its own step rather than one prompt trying to do everything at once: CV parsing, job description analysis, tailoring, fact-checking, ATS scoring, cover letter writing, match scoring, and job search. You can watch them run while your CV generates. ATS scoring itself is deterministic code rather than a model.",
         },
         {
           id: "credits",
           q: "What's a credit and how many do I get?",
-          a: "A credit is what you spend generating one tailored CV and cover letter. English applications cost 1 credit, Arabic applications cost 2, since they take more processing. Free includes 3 credits a month, Pro includes 40, and Elite includes 120.",
+          a: `A credit is what you spend generating one tailored CV and cover letter. English applications cost ${enCount(CREDIT_COST.en, "credit")}, Arabic applications cost ${CREDIT_COST.ar}, since they take more processing. Free includes ${enCount(TIERS.free.credits, "credit")} a month, Pro includes ${TIERS.pro.credits}, and Elite includes ${TIERS.elite.credits}.`,
         },
         {
           id: "sounds-like-me",
@@ -434,17 +754,17 @@ export const content = {
         {
           id: "linkedin-what-is-it",
           q: "What is the LinkedIn add-on?",
-          a: "A one-time purchase that turns a CV you've already generated here into ready-to-paste LinkedIn content: a headline, an About section, your five strongest skills, a block for every role in your experience, three post ideas drawn from your real projects, and clear instructions for the sections LinkedIn makes you type in directly. It's written in English whatever language your CV is in, because that's how recruiters across the region search.",
+          a: `It turns a CV you've already generated here into ready-to-paste LinkedIn content: a headline, an About section, your five strongest skills, a block for every role in your experience, three post ideas drawn from your real projects, and clear instructions for the sections LinkedIn makes you type in directly. Essential comes with the Pro and Elite plans, ${ADDON_CAPS.pro.linkedinEssential} profiles a month on Pro and ${ADDON_CAPS.elite.linkedinEssential} on Elite. It's written in English whatever language your CV is in, because that's how recruiters across the region search.`,
         },
         {
           id: "linkedin-tiers",
           q: "What is the difference between LinkedIn Essential and Premium?",
-          a: "Essential, 49 SAR, gives you the finished content and you place it on your profile yourself, delivered the moment you generate it. Premium, 200 SAR, includes all of that and adds a specialist from our team who contacts you directly, builds and optimizes your whole profile with you, designs a custom cover photo, and reviews it once it's live. Both are one-time payments, not subscriptions.",
+          a: `Essential is included with the Pro and Elite plans rather than sold separately. It gives you the finished content and you place it on your profile yourself, delivered the moment you generate it: ${ADDON_CAPS.pro.linkedinEssential} profiles a month on Pro, ${ADDON_CAPS.elite.linkedinEssential} on Elite. Premium, ${LINKEDIN_PREMIUM_SAR} SAR, is a separate one-time purchase that includes all of that and adds a specialist from our team who contacts you directly, builds and optimizes your whole profile with you, designs a custom cover photo, and reviews it once it's live.`,
         },
         {
           id: "linkedin-refunds",
           q: "Can I get a refund on the LinkedIn add-on?",
-          a: "Essential is delivered the instant you press Generate, so it can't be refunded once your content exists. If you've paid and haven't generated yet, email us and we'll refund it in full. Premium is refundable in full any time before your specialist begins work. Once the build has started it isn't, because the content has been delivered and the service is already under way.",
+          a: "Essential isn't bought separately, so there's nothing to refund on it: it comes with a Pro or Elite subscription, and those can be cancelled any time and stay active to the end of the cycle you've already paid for. Premium is a one-time purchase and is refundable in full any time before your specialist begins work. Once the build has started it isn't, because the content has been delivered and the service is already under way.",
         },
       ],
     },
@@ -454,6 +774,10 @@ export const content = {
         "Try Tarshih on your next role in under five minutes. Free to start, no credit card, no commitment.",
       ctaPrimary: "Get started free",
       ctaSecondary: "See how it works",
+      // The one price on the landing page now that pricing has its own route
+      // (§4). The figure is passed in already formatted, from lib/pricing.ts,
+      // so this string can never carry a stale number.
+      priceLine: (proPrice: string) => `Free to start · Pro from ${proPrice} a month`,
     },
     footer: {
       description:
@@ -462,22 +786,22 @@ export const content = {
         {
           title: "Product",
           links: [
-            { label: "Features", href: "#features", doc: null as string | null },
-            { label: "Pricing", href: "#pricing", doc: null as string | null },
-            { label: "How it works", href: "#how-it-works", doc: null as string | null },
+            { label: "Features", href: "/#features", doc: null as string | null },
+            { label: "Pricing", href: "/pricing", doc: null as string | null },
+            { label: "How it works", href: "/#how-it-works", doc: null as string | null },
           ],
         },
         {
           title: "Resources",
           links: [
-            { label: "Resume guide", href: "#", doc: "resumeGuide" },
-            { label: "ATS tips", href: "#", doc: "atsTips" },
+            { label: "Resume guide", href: "/guides#resume-guide", doc: null as string | null },
+            { label: "ATS tips", href: "/guides#ats-tips", doc: null as string | null },
           ],
         },
         {
           title: "Company",
           links: [
-            { label: "About", href: "#", doc: "about" },
+            { label: "About", href: "/about", doc: null as string | null },
             { label: "Contact", href: "#", doc: "contact" },
           ],
         },
@@ -952,8 +1276,7 @@ export const content = {
           usedUp: (total: number) =>
             `You have used all ${total} of this month's LinkedIn profiles. Your allowance resets with your credits.`,
           lockedTitle: "Included with Pro and Elite",
-          lockedBody:
-            "Subscribe to generate LinkedIn profiles from your CVs: 2 a month on Pro, 5 a month on Elite.",
+          lockedBody: `Subscribe to generate LinkedIn profiles from your CVs: ${ADDON_CAPS.pro.linkedinEssential} a month on Pro, ${ADDON_CAPS.elite.linkedinEssential} a month on Elite.`,
           lockedCta: "See plans",
         },
 
@@ -1190,15 +1513,63 @@ export const content = {
       getStarted: "ابدأ الآن",
       dashboard: "لوحة التحكم",
     },
+    /* ── HERO (§3.1) ──────────────────────────────────────────────────────
+       Written as Arabic, not as a translation of the English above. The
+       English headline is "Every job gets its own CV"; the Arabic carries
+       the same idea in a construction Arabic actually uses, which is why the
+       wording diverges rather than tracking the English word order. */
     hero: {
-      badge: "جديد",
-      badgeText: "6 وكلاء ذكاء اصطناعي يخصّصون كل طلب",
-      headline: "احصل على مقابلات أكثر بسيرة ذاتية مصمّمة بالذكاء الاصطناعي",
-      sub: "ارفع سيرتك الذاتية أو ابنِ واحدة من الصفر، الصق الوصف الوظيفي، ويقوم ترشيح بتخصيص سيرتك وخطاب تقديمك له، بالعربية أو الإنجليزية، ثم يوضح لك بالضبط ما ينقصك ويقترح عليك وظائف مشابهة للتقديم عليها.",
-      ctaPrimary: "حسّن سيرتي الذاتية",
+      headline: "لكل وظيفة سيرة ذاتية تخصّها",
+      sub: "نقرأ إعلان الوظيفة، ونعيد كتابة سيرتك له بالعربية أو بالإنجليزية، ونعرض درجة توافقها قبل أن ترسلها. ونبحث لك عن وظائف أخرى تناسبك، فلا تبقى تبحث وحدك.",
+      ctaPrimary: "ابدأ مجانًا",
       ctaSecondary: "شاهد كيف يعمل",
-      noCard: "لا حاجة لبطاقة ائتمان",
-      freeForever: "خطة مجانية للأبد",
+      freeLine: `${arCount(TIERS.free.credits, AR_POINTS)} مجانًا كل شهر، بلا بطاقة. تكفي ${arCount(TIERS.free.credits, AR_CVS)} بالإنجليزية، أو واحدة بالعربية وأخرى بالإنجليزية.`,
+      scoreAlt: "درجة توافق مع أنظمة التتبع 91، موزّعة على الكلمات المفتاحية والمهارات والتعليم والخبرة",
+      matchesAlt: "خمس وظائف مطابقة، كل واحدة موسومة بتطابق قوي أو جزئي أو فرصة طموحة",
+    },
+    /* ── الصورة الأولى في الواجهة (§3.1) ────────────────────────────────
+       المسميات هنا هي نفسها المستخدمة في بطاقة ATS داخل لوحة التحكم، لأنها
+       العوامل الأربعة التي يحسبها utils/ats_scorer.py فعلًا. لا وجود لدرجة
+       «تنسيق» في المنتج، وقد كانت معروضة في نسخة سابقة من هذه اللوحة. */
+    heroScore: {
+      title: "نتيجة نظام ATS",
+      sub: "التفصيل نفسه الذي تراه بعد كل إنشاء، ووزن كل عامل في النتيجة.",
+      factors: {
+        keywords: "الكلمات المفتاحية",
+        skills: "المهارات",
+        education: "التعليم",
+        experience: "الخبرة",
+      },
+      missingLabel: "لم تُغطَّ بعد:",
+      missing: ["Terraform", "GraphQL"],
+    },
+    heroMatches: {
+      /* خمسة هو RESULT_CAP في agents/jobs_finder.py، وليس رقمًا اختير للصفحة.
+         النص يقول «حتى خمس» لأن الحد هدف يُملأ مما هو منشور فعلًا، وقد تعود
+         الوظائف الضيقة بعدد أقل. */
+      headline: "خمس وظائف حقيقية تقدّم عليها اليوم",
+      sub: "ما إن تجهز سيرتك حتى نبحث في الإعلانات المفتوحة الآن، ونعيد لك ما يصل إلى خمس وظائف مرتبة بحسب مدى ملاءمتك لها. كل واحدة تفتح الإعلان الأصلي، فتقدّم عليها في الجلسة نفسها.",
+      countLabel: "وظائف مفتوحة الآن",
+      // تظهر في رأس اللوحة وعلى كل سطر، لا كتعليق ختامي: أن كل نتيجة تفتح
+      // إعلان الوظيفة الحقيقي هو ما تقوم عليه هذه الصورة.
+      linkNote: "كل واحدة تفتح الإعلان الأصلي",
+      viewListing: "فتح الإعلان",
+      // أسماء وظائف ومدن فقط، بلا أسماء جهات توظيف: ربط شركات حقيقية بوظائف
+      // «مطابقة» في نموذج توضيحي يوحي بأنها توظّف عبرنا، وهذا ادعاء لا نملكه.
+      items: [
+        { role: "مهندس واجهات أمامية", city: "الرياض", rank: "strong" as const },
+        { role: "مهندس منتجات", city: "جدة", rank: "strong" as const },
+        { role: "مطوّر متكامل", city: "الرياض", rank: "partial" as const },
+        { role: "مهندس واجهات", city: "عن بُعد", rank: "partial" as const },
+        { role: "قائد فريق هندسي", city: "الرياض", rank: "stretch" as const },
+      ],
+      ranks: { strong: "تطابق قوي", partial: "تطابق جزئي", stretch: "فرصة طموحة" },
+    },
+    /* ── COMPANY MARQUEE (§3.2) ───────────────────────────────────────────
+       الصيغة هنا ليست ادعاء توظيف: نقول ما هو صحيح فعلًا، وهو أنك تستطيع
+       لصق أي إعلان من هذه الجهات وتُكتب سيرتك له. */
+    marquee: {
+      label: "صمّم سيرتك لوظائف في",
     },
     dashboardPreview: {
       urlLabel: "app.tarshih.ai / لوحة التحكم",
@@ -1229,86 +1600,203 @@ export const content = {
       coverLetterLabel: "خطاب التقديم",
       ready: "جاهز",
     },
+    /* عبارات قصيرة عمدًا: تقف في سطر واحد على الشاشات الكبيرة، وأي عبارة
+       تلتفّ تحوّل صفًا من أربعة إلى كتلة من ثمانية. */
     trustBar: [
-      "تشفير كامل لكل ما ترفعه",
-      "نتائج توافق ATS واضحة وشفافة",
-      "لا يخترع خبرات لم تعشها أبدًا",
-      "يُقرأ كأن إنسانًا كتبه",
+      "تشفير كامل لما ترفعه",
+      "نتيجة ATS شفافة",
+      "كل سطر يُراجَع مقابل سيرتك",
+      "منقّح الأسلوب يزيل نبرة الآلة",
     ],
-    features: {
-      eyebrow: "كل ما تحتاجه",
-      title: "مجموعة أدوات متكاملة لكل طلب توظيف",
+    /* ── حجّة التخصيص (§3.4، الركيزة الأولى في الرسائل) ────────────────────
+       مكتوبة بالعربية ابتداءً لا مترجمة عن الإنجليزية: العنوان الإنجليزي
+       يقول إن إعلانين لوظيفة واحدة لا يفحصان الشيء نفسه، والعربي يحمل الفكرة
+       نفسها بتركيب تستعمله العربية فعلًا، ولذلك تختلف الصياغة.
+
+       ثلاث جمل فقط، لأن اللوحة هي التي تحمل الحجّة. */
+    tailoringCase: {
+      label: "سيرة واحدة تُرسل إلى الجميع",
+      title: "إعلانان لوظيفة واحدة لا يبحثان عن الشيء نفسه",
       description:
-        "يتولى ترشيح الجوانب المرهقة في التقديم على الوظائف لتتفرغ للأدوار التي تريدها فعلًا.",
+        "حين تُرسل السيرة كما هي، يقرأ كل صاحب عمل الترتيب نفسه، وتنتهي الخبرة التي يبحث عنها هو تحديدًا في أسفل الصفحة الثانية. يقرأ ترشيح كل إعلان ويعيد بناء الترتيب حول ما طلبه ذلك الإعلان. لا يُضاف شيء، بل هو السجل نفسه يُقرأ مرتين.",
+      panelTitle: "سيرة واحدة، مقروءة أمام إعلانين",
+      keyLead: "تتقدّم",
+      keyRest: "تتأخّر",
+      matchLabel: "التوافق",
+      roles: ["مهندس واجهات أمامية", "مطوّر متكامل"],
+      footnote: "السيرة نفسها في الحالتين. لا شيء مُضاف ولا شيء مُختلق.",
+      alt: "سيرة واحدة مقروءة أمام إعلانين، المهارات الست نفسها مرتّبة على نحو مختلف في كل منهما، ودرجة توافق مختلفة",
+    },
+    /* ── المميزات (§3.5) ──────────────────────────────────────────────────
+       تدرّج لا شبكة مسطّحة: ثلاث مزايا رئيسية لكل واحدة صورتها، ثم قائمة
+       مختصرة بالبقية. النسخة السابقة كانت ست بطاقات متطابقة برموز داخل
+       مربعات ملوّنة، وهي أوضح علامات القالب الجاهز في §2.1، وكانت إحداها
+       تعلن عن «ستة وكلاء ذكاء اصطناعي»: تفصيل داخلي، والرقم خطأ أصلًا.
+
+       كل سطر هنا مأخوذ من الشيفرة. التحضير للمقابلة تحديدًا موصوف بما
+       يُخرجه agents/interview_prep.py فعلًا — أسئلة متوقّعة مع إجابة لكل
+       سؤال — لا تدريبًا ولا محاكاة ولا مقابلة تجريبية، فلا شيء من ذلك موجود
+       في المنتج. ولينكدإن والتحضير للمقابلة يحملان شرط الخطة في note، لأن
+       core/entitlements.py يضع حدّهما عند صفر في الخطة المجانية. */
+    features: {
+      label: "ما الذي تحصل عليه",
+      title: "سيرة مخصّصة، والنتائج التي تفسّرها، والوظائف التي تُرسل إليها",
+      description:
+        "تشغيل واحد يُخرج الثلاثة: المستندات، والتقييم الذي يشرحها، والإعلانات التي وُجّهت إليها.",
+      primary: [
+        {
+          lead: "سيرة ذاتية تُكتب من جديد للإعلان، وخطاب تقديم يرافقها",
+          body: "يُكتب الاثنان أمام الوصف الوظيفي الذي لصقته، بالعربية أو بالإنجليزية، ويُنسَّقان تنسيقًا صحيحًا في كلتيهما. وكل سطر يعود إلى شيء موجود في سيرتك أصلًا.",
+        },
+        {
+          lead: "اعرف ما ينقصك قبل أن يعرفه من يقرأ سيرتك",
+          body: "نتيجة ATS بعواملها الأربعة، ودرجة توافق مستقلة مع الوظيفة، ثم الفجوات المحدّدة التي كلّفتك ما تبقّى. ولكل فجوة طريقة صادقة لسدّها، لا طريقة لادّعائها.",
+        },
+        {
+          lead: "خمس وظائف مرتّبة، كل واحدة على بعد نقرة من إعلانها",
+          body: "ما إن تجهز السيرة حتى نبحث فيما هو منشور الآن ونعيد ما يصل إلى خمس وظائف، موسومة بمقدار ما تُظهره سيرتك ممّا تطلبه. وكل سطر يفتح الإعلان الأصلي.",
+        },
+      ],
+      secondaryTitle: "وبقية الأدوات",
+      secondary: [
+        {
+          title: "ابدأ بلا سيرة ذاتية",
+          body: "لا يوجد ملف ترفعه؟ املأ النموذج بدلًا منه، ويعمل المسار نفسه على ما أدخلته.",
+          note: "",
+        },
+        {
+          title: "أو طوّر سيرتك الحالية",
+          body: "ارفع ملف PDF أو Word، فيُقرأ كما هو دون أن تعيد كتابة شيء.",
+          note: "",
+        },
+        {
+          title: "PDF و Word",
+          // "DOCX" and not ".docx": a Latin run that STARTS with a full stop
+          // is a neutral character at the edge of a bidi run, which is the
+          // exact shape that renders on the wrong side inside an Arabic
+          // sentence. Seen on a screenshot, not guessed. The extension is
+          // named without its dot instead of being patched with an LRM.
+          body: "تُنزَّل السيرة الذاتية بصيغة PDF أو DOCX، ويأتي خطاب التقديم بصيغة PDF.",
+          note: "",
+        },
+        {
+          title: "كل نسخة محفوظة",
+          body: "تبقى كل سيرة أنشأتها في حسابك، ومعها الوظيفة ونتائجها وملفاتها.",
+          note: "",
+        },
+        {
+          title: "محتوى ملفك في لينكدإن",
+          body: "عنوان مهني، وقسم «نبذة»، ونص جاهز للصق لكل وظيفة في خبرتك، مكتوب من سيرة خصّصتها هنا. بالإنجليزية، لأن بها يبحث المسؤولون عن التوظيف.",
+          note: "ضمن خطتَي Pro و Elite",
+        },
+        {
+          title: "أسئلة المقابلة، مع إجاباتها",
+          body: "الأسئلة التي يُرجَّح أن تبدأ بها تلك الوظيفة تحديدًا، ومع كل سؤال كيف تجيب عنه من خبرتك أنت.",
+          note: "ضمن خطتَي Pro و Elite",
+        },
+      ],
+    },
+    /* نصّا المستندين نفسيهما موجودان في المكوّن لا هنا: ورقة السيرة عربية
+       وورقة الخطاب إنجليزية في اللغتين معًا، عمدًا، لأن ما يُدَّعى هنا هو أن
+       المنتج ينسّق النصّين. */
+    featureDocs: {
+      cvLabel: "السيرة المخصّصة",
+      letterLabel: "خطاب التقديم",
+      caption: "إنشاء واحد، بالنصّين، كلٌّ منسّق باتجاهه.",
+      alt: "صفحة سيرة ذاتية بالعربية بحروف موصولة، وخلفها خطاب تقديم بالإنجليزية",
+    },
+    /* الحقول الثلاثة هي GapItem في schemas/output_schema.py حرفيًا: المهارة،
+       وأهميتها (مطلوبة أو مفضّلة)، وكيف تُسدّ. وأسطر السدّ تتبع قاعدة
+       match_scorer.py نفسها: إن تعذّر سدّ الفجوة بصدق، يُشار إلى خبرة حقيقية
+       أو بديل صادق، لا إلى طريقة لادّعاء أن الشرط مستوفى. */
+    featureGaps: {
+      atsLabel: "نتيجة ATS",
+      matchLabel: "توافق الوظيفة",
+      gapsLabel: "ما الذي ينقص",
+      importance: { required: "مطلوبة", preferred: "مفضّلة" },
       items: [
         {
-          title: "أنشئ سيرة جديدة أو طوّر الحالية",
-          description:
-            "ابدأ من صفحة فارغة أو ارفع سيرتك الحالية. في الحالتين، يبني ترشيح سيرة مخصصة تمامًا للوظيفة التي تتقدم لها، مع خطاب تقديم مطابق بنفس اللغة، في كل مرة.",
+          skill: "Terraform",
+          importance: "required" as const,
+          how: "أنشأت بنية تحتية يدويًا. اذكر ما الذي أتمتّه منها، وبأي أداة.",
         },
         {
-          title: "نتيجة ATS يمكنك التصرف بناءً عليها",
-          description:
-            "شاهد نتيجة التوافق مقسّمة إلى الكلمات المفتاحية والمهارات والتعليم والخبرة، لتعرف بالضبط ما هو قوي وما يحتاج تحسينًا، لا مجرد رقم.",
+          skill: "GraphQL",
+          importance: "preferred" as const,
+          how: "طبقة الواجهات في وظيفتك الثانية قريبة بما يكفي لذكرها. اذكر ما الذي كانت تخدمه.",
         },
         {
-          title: "كلماتك، بمستوى احترافي أعلى",
-          description:
-            "صف مشروعك بجملة بسيطة غير مصقولة، ويحوّلها ترشيح إلى نقطة احترافية جاهزة، معتمدًا فقط على ما هو حقيقي في سيرتك. لا شيء يُختلق أبدًا.",
-        },
-        {
-          title: "يبحث عن وظائف لك",
-          description:
-            "كل وصف وظيفي تلصقه يُرجع 5 وظائف مشابهة، مصنّفة كتطابق قوي أو تطابق جزئي أو فرصة طموحة، حتى لا تبحث عن عمل بشكل عشوائي.",
-        },
-        {
-          title: "6 وكلاء ذكاء اصطناعي يعملون معًا",
-          description:
-            "التحليل والتخصيص والتحقق من الحقائق وتقييم التوافق والكتابة والبحث عن وظائف، كل خطوة يتولاها وكيل متخصص بدلًا من طلب واحد يخمّن كل شيء.",
-        },
-        {
-          title: "عربي وإنجليزي، بشكل صحيح",
-          description:
-            "أنشئ سيرًا ذاتية وخطابات تقديم احترافية بالعربية أو الإنجليزية، بتنسيق صحيح من اليمين لليسار، لا النصوص العربية المكسورة والمشوّشة التي تنتجها معظم الأدوات الأخرى.",
+          skill: "قيادة فريق",
+          importance: "required" as const,
+          how: "أشرفت على مهندسَين العام الماضي. مكان ذلك داخل الوظيفة نفسها، لا في قائمة المهارات.",
         },
       ],
+      alt: "نتيجة ATS ودرجة توافق مع الوظيفة، ومعهما ثلاث فجوات محدّدة وكيفية سدّ كل واحدة",
     },
+    /* الأسماء تأتي من t.heroMatches.ranks حتى لا تختلف عن لوحة الواجهة. ما
+       يُكتب هنا هو معنى كل وسم فقط، وهو ما لا تقوله تلك اللوحة. */
+    featureRanks: {
+      title: "كيف تُوسَم كل وظيفة",
+      meanings: {
+        strong: "سيرتك تُظهر أصلًا معظم ما يطلبه الإعلان.",
+        partial: "جزء ممّا يطلبه موجود في سيرتك، وجزء غير موجود.",
+        stretch: "أبعد ممّا تُظهره سيرتك الآن. تُعرض عليك بدل أن تُخفى عنك.",
+      },
+      alt: "الأوسمة الثلاثة التي قد تحملها وظيفة مطابقة، ومعنى كل واحد",
+    },
+    /* ثلاث خطوات لا أربع، وبلا ذكر لعدد الوكلاء: النسخة السابقة كانت تفتح
+       بـ«ستة وكلاء ذكاء اصطناعي»، والرقم خطأ (المسار يشغّل ثمانية)، والأهم
+       أن عدد الوكلاء ليس شيئًا يحصل عليه القارئ. */
     howItWorks: {
-      eyebrow: "كيف يعمل",
-      title: "من إعلان الوظيفة إلى طلب مُقدَّم",
-      description: "ستة وكلاء ذكاء اصطناعي يعملون خلف الكواليس. كل ما عليك فعله هو الرفع أو البدء من جديد، اللصق، والتنزيل.",
+      label: "كيف يعمل",
+      title: "ثلاث خطوات، وينتهي العمل",
+      description:
+        "تخصيص السيرة الذاتية كما ينبغي يستغرق من 30 إلى 45 دقيقة لكل طلب. هنا يستغرق دقيقتين، وتُدخل معلوماتك مرة واحدة لا مرة مع كل وظيفة.",
       steps: [
         {
-          step: "01",
-          title: "ابدأ من الصفر أو ارفع سيرتك الذاتية",
-          description:
-            "أرفق سيرتك الحالية بصيغة PDF أو DOCX، أو ابنِ واحدة من لا شيء. يستخرج ترشيح كل حقيقة فعلية عن خبراتك ومهاراتك وتاريخك المهني.",
+          title: "أضف سيرتك الذاتية",
+          description: "ارفع ملف PDF أو Word. وإن لم تكن لديك سيرة بعد، فاملأ النموذج بدلًا من ذلك.",
         },
         {
-          step: "02",
-          title: "الصق الوصف الوظيفي",
-          description:
-            "يحلّل وكلاء ترشيح المتطلبات ويخصّصون سيرتك وخطاب تقديمك بناءً عليها، بالعربية أو الإنجليزية.",
+          title: "الصق إعلان الوظيفة",
+          description: "الإعلان كاملًا. نقرأ ما تطلبه الوظيفة فعلًا، بالعربية أو بالإنجليزية.",
         },
         {
-          step: "03",
-          title: "شاهد نتيجتك وما ينقصك",
-          description:
-            "احصل على نتيجة توافق مقسّمة إلى الكلمات المفتاحية والمهارات والتعليم والخبرة، مع قائمة واضحة بما يجب إضافته أو تحسينه.",
-        },
-        {
-          step: "04",
-          title: "نزّل الملفات واكتشف وظائف مشابهة",
-          description:
-            "احصل على سيرة ذاتية وخطاب تقديم جاهزين لأنظمة ATS، إضافة إلى 5 وظائف مشابهة مصنّفة حسب قوة التطابق.",
+          title: "استلم كل ما يلزمك",
+          description: "سيرة ذاتية مخصصة وخطاب تقديم، ودرجة توافقك مع أنظمة التتبع وما ينقصها، وخمس وظائف مفتوحة ترسلها إليها.",
         },
       ],
     },
+    /* ── الثقة ────────────────────────────────────────────────────────────
+       أُعيد بناء القسم حول عرض عملي بدل ثلاث دعاوى في ثلاث بطاقات. «لا شيء
+       مُختلق» هو أثقل وعد في هذا الموقع، وهو الاعتراض الأول لدى كل مرشّح على
+       أدوات الكتابة بالذكاء الاصطناعي، وسرده في فقرة أضعف طريقة لإثباته.
+
+       كل تفصيلة هنا مقروءة من core/fact_checker.py: الفحص يجري مقابل
+       facts_json المستخرج من السيرة المرفوعة، وإعادة التسمية والصياغة
+       مسموحة بينما أي رقم أو أداة أو نطاق جديد ممنوع، و MAX_RETRIES = 2،
+       والسطر الراسب يُعاد إنشاؤه ويُفحص من جديد لا أن يُعلَّم فحسب.
+
+       المثال مكتوب بالعربية ابتداءً: ترجمة المثال الإنجليزي كانت ستنتج جملة
+       لا يكتبها أحد في سيرته. */
     trustSection: {
-      eyebrow: "مبني على الثقة",
-      title: "كيف يتعامل ترشيح فعليًا مع مسيرتك المهنية",
+      label: "ما الذي لن يفعله",
+      title: "تُراجَع الصياغة الجديدة مقابل سيرتك قبل أن تصل إليك",
       description:
-        "بلا شعارات مستعارة وبلا مراجعات ملفّقة، فقط ما يقوم به المنتج فعلًا ولماذا هو آمن للاستخدام.",
+        "النموذج الذي يكتب جيدًا قادر أيضًا، إن تُرك، على كتابة ما ليس صحيحًا. هنا لا يُترك: كل سطر معاد صياغته يُقرأ مقابل الحقائق المستخرجة من ملفك، وأي سطر يضيف شيئًا يُعاد.",
+      proof: {
+        caption: "سطر واحد، تحت الفحص",
+        sourceLabel: "في سيرتك",
+        source: "أدرت مكتب الاستقبال في عيادة أسنان.",
+        allowedLabel: "مقبول",
+        allowed: "أدرت عمليات الاستقبال والتنسيق اليومي في عيادة أسنان.",
+        allowedNote: "تسمية أدقّ للعمل نفسه، دون ادّعاء جديد.",
+        rejectedLabel: "مُعاد",
+        rejected: "أدرت عمليات الاستقبال في عيادة أسنان من 12 كرسيًا.",
+        rejectedNote: "«12 كرسيًا» غير موجود في سيرتك، فلا يصل هذا السطر إلى مستندك.",
+        outcome: "السطر المُعاد تُعاد كتابته ويُفحص مرة أخرى، حتى مرتين، قبل أن تُبنى السيرة.",
+        alt: "سطر من سيرة ذاتية، والصياغة التي يقبلها المدقّق، وصياغة مختلقة يعيدها",
+      },
       pillars: [
         {
           title: "مستنداتك تبقى ملكك",
@@ -1316,14 +1804,14 @@ export const content = {
             "يتم تشفير كل ما ترفعه أثناء النقل والتخزين. لا يقوم ترشيح أبدًا بتدريب نماذجه على سيرتك الذاتية أو مشاركتها مع أي طرف ثالث، ويمكنك حذف كل شيء نهائيًا في أي وقت.",
         },
         {
-          title: "نتائج يمكنك فهمها بالتفصيل، وفجوات يمكنك سدّها",
+          title: "النتيجة تعرض حسابها",
           description:
-            "تنقسم كل نتيجة إلى تطابق الكلمات المفتاحية والمهارات والتعليم والخبرة، لتعرف بالضبط سبب النتيجة. ثم يخبرك ترشيح بدقة بما ينقصك، شهادة أو مهارة أو كلمة مفتاحية، لتعرف ما يجب إضافته.",
+            "رقم واحد، ووراءه أربعة عوامل بأوزانها: الكلمات المفتاحية 40 بالمئة، والمهارات 35، والتعليم 15، والخبرة 10. ثم الفجوات التي كلّفتك ما تبقّى، ولكل واحدة طريقة صادقة لسدّها لا طريقة لادّعائها.",
         },
         {
-          title: "لا شيء مُختلق، أبدًا",
+          title: "يجب أن يُقرأ وكأنك كتبته",
           description:
-            "يعيد ترشيح صياغة خبرتك الحقيقية وتأطيرها. لن يختلق أبدًا وظيفة أو مهارة أو مؤهلًا لم تحصل عليه، فما تحصل عليه دائمًا قابل للدفاع عنه في أي مقابلة.",
+            "القواعد نفسها تسري على كل سيرة وخطاب تقديم وملف لينكدإن: بلا شرطات، وبلا «علاوة على ذلك» و«إضافة إلى ما سبق»، وبلا تضخيم للأهمية. وهي جزء من طريقة كتابة النص أصلًا، لا مراجعة ثانية تجري عليه بعد كتابته.",
         },
       ],
     },
@@ -1332,7 +1820,10 @@ export const content = {
       title: "أسعار بسيطة تنمو مع بحثك عن عمل",
       description:
         "ابدأ مجانًا وطوّر خطتك فقط عند الحاجة لمزيد من النقاط. ألغِ الاشتراك في أي وقت.",
-      creditNote: "نقطة واحدة = سيرة ذاتية إنجليزية + خطاب تقديم · نقطتان = سيرة ذاتية عربية + خطاب تقديم.",
+      // AR_POINTS / AR_CVS carry the four Arabic forms of "نقطة" (credit) and
+      // "سيرة ذاتية" (CV) so a changed allowance keeps correct grammar rather
+      // than producing "٢ نقاط". See arCount in lib/pricing.ts.
+      creditNote: `${arCount(CREDIT_COST.en, AR_POINTS)} = سيرة ذاتية إنجليزية + خطاب تقديم · ${arCount(CREDIT_COST.ar, AR_POINTS)} = سيرة ذاتية عربية + خطاب تقديم.`,
       founderNote: {
         title: "شخص واحد يدفع تكلفة كل خطة تراها هنا",
         body: "ترشيح مبنية ومُدارة من شخص واحد، وكل توليد، في كل فئة، يكلّف مالًا حقيقيًا لمعالجة الذكاء الاصطناعي. الفئة المجانية ليست فقط غير مربحة، بل خسارة أتحملها عمدًا لتتمكن من تجربة ترشيح قبل أن تدفع أي شيء. مشتركو برو والنخبة هم من يبقون كل شيء قائمًا.",
@@ -1340,18 +1831,18 @@ export const content = {
       },
       mostPopular: "الأكثر رواجًا",
       premiumBadgeLabel: "الفئة المميزة",
-      currencyNote: "تُحصَّل جميع الأسعار بالريال السعودي. ورقم الدولار الظاهر تحت كل سعر للمرجعية فقط بسعر التعادل 3.75 ريال للدولار، وليس خيار دفع.",
+      currencyNote: `تُحصَّل جميع الأسعار بالريال السعودي. ورقم الدولار الظاهر تحت كل سعر للمرجعية فقط بسعر التعادل ${SAR_PER_USD} ريال للدولار، وليس خيار دفع.`,
       plans: [
         {
           name: "مجاني",
           slug: "free",
           // لا يوجد حقل «سعر سابق» في أي خطة، وهذا مقصود: كل سعر معروض هو
           // السعر الوحيد الذي حملته الخطة، فلا شيء يُشطب فوقه.
-          sar: 0,
+          sar: TIERS.free.sar,
           period: "شهريًا",
           description: "كل ما تحتاجه لتجربة ترشيح في طلبك القادم.",
           features: [
-            "3 نقاط شهريًا: 3 سير ذاتية إنجليزية، أو مزيج مع العربية",
+            `${arCount(TIERS.free.credits, AR_POINTS)} شهريًا: ${arCount(TIERS.free.credits, AR_CVS)} إنجليزية، أو مزيج مع العربية`,
             "نتيجة ATS وتوافق وظيفي كاملة",
             "سيرة ذاتية مخصصة + خطاب تقديم مطابق",
             "سجل يحفظ آخر 10 سير ذاتية",
@@ -1367,18 +1858,18 @@ export const content = {
           slug: "pro",
           // سعر واحد لكل مشتركي برو، مؤسسين أو غير مؤسسين. لا خصم تأسيس ولا
           // سعر سابق: 29 ريالًا لم يكن يومًا رقمًا آخر.
-          sar: 29,
+          sar: TIERS.pro.sar,
           period: "شهريًا",
           description: "لمن يبحث عن عمل بنشاط ويريد كمية أكبر من الطلبات، في كل مرة.",
           features: [
-            "24 نقطة شهريًا: 24 سيرة ذاتية إنجليزية، أو مزيج مع العربية",
+            `${arCount(TIERS.pro.credits, AR_POINTS)} شهريًا: ${arCount(TIERS.pro.credits, AR_CVS)} إنجليزية، أو مزيج مع العربية`,
             "سيرة ذاتية مخصصة + خطاب تقديم شخصي",
             "نتيجة ATS وتوافق وظيفي كاملة",
             "يوضح بالضبط ما ينقصك",
             "5 وظائف مشابهة ومصنّفة مع كل طلب",
             "مراجعة تحقق من الحقائق",
-            "لينكدإن الأساسية، ملفان شهريًا",
-            "التحضير للمقابلة، 5 وظائف شهريًا",
+            `لينكدإن الأساسية، ${arCount(ADDON_CAPS.pro.linkedinEssential, AR_PROFILES)} شهريًا`,
+            `التحضير للمقابلة، ${arCount(ADDON_CAPS.pro.interviewPrep, AR_JOBS)} شهريًا`,
             "شارة برو على ملفك الشخصي",
             "سجل يحفظ آخر 100 سيرة ذاتية",
             "معالجة ذات أولوية",
@@ -1393,18 +1884,18 @@ export const content = {
         {
           name: "النخبة",
           slug: "elite",
-          sar: 99,
+          sar: TIERS.elite.sar,
           period: "شهريًا",
           description: "الفئة المميزة لمن يريد كل ميزة ممكنة في طلباته.",
           features: [
-            "80 نقطة شهريًا: 80 سيرة ذاتية إنجليزية، أو مزيج مع العربية",
+            `${arCount(TIERS.elite.credits, AR_POINTS)} شهريًا: ${arCount(TIERS.elite.credits, AR_CVS)} إنجليزية، أو مزيج مع العربية`,
             "سيرة ذاتية مخصصة + خطاب تقديم شخصي",
             "نتيجة ATS وتوافق وظيفي كاملة",
             "يوضح بالضبط ما ينقصك",
             "5 وظائف مشابهة ومصنّفة مع كل طلب",
             "مراجعة تحقق من الحقائق",
-            "لينكدإن الأساسية، 5 ملفات شهريًا",
-            "التحضير للمقابلة، 15 وظيفة شهريًا",
+            `لينكدإن الأساسية، ${arCount(ADDON_CAPS.elite.linkedinEssential, AR_PROFILES)} شهريًا`,
+            `التحضير للمقابلة، ${arCount(ADDON_CAPS.elite.interviewPrep, AR_JOBS)} شهريًا`,
             "سجل غير محدود للسير الذاتية",
             "أعلى أولوية في معالجة الذكاء الاصطناعي",
             "شارة النخبة الحصرية على ملفك الشخصي",
@@ -1428,9 +1919,9 @@ export const content = {
         {
           name: "البداية",
           slug: "starter",
-          sar: 9,
-          creditCount: 5,
-          credits: "5 نقاط",
+          sar: PACKS.starter.sar,
+          creditCount: PACKS.starter.credits,
+          credits: arCount(PACKS.starter.credits, AR_POINTS),
           blurb: "بضعة طلبات لتجربة الخدمة.",
           badge: null as string | null,
           featured: false,
@@ -1438,9 +1929,9 @@ export const content = {
         {
           name: "أفضل قيمة",
           slug: "best-value",
-          sar: 22,
-          creditCount: 15,
-          credits: "15 نقطة",
+          sar: PACKS["best-value"].sar,
+          creditCount: PACKS["best-value"].credits,
+          credits: arCount(PACKS["best-value"].credits, AR_POINTS),
           blurb: "الخيار الأمثل لبحث نشط عن عمل.",
           badge: "أفضل قيمة",
           featured: true,
@@ -1448,14 +1939,57 @@ export const content = {
         {
           name: "الأقوى",
           slug: "power",
-          sar: 38,
-          creditCount: 30,
-          credits: "30 نقطة",
+          sar: PACKS.power.sar,
+          creditCount: PACKS.power.credits,
+          credits: arCount(PACKS.power.credits, AR_POINTS),
           blurb: "لبحث جاد وعالي الكثافة عن وظيفة.",
           badge: "أعلى توفير",
           featured: false,
         },
       ],
+    },
+    /* ── صفحة الأسعار (§4) ────────────────────────────────────────────────
+       إطار الصفحة فقط. كل خطة وحزمة وإضافة تُعرض هناك تعيد استخدام المدخلات
+       الموجودة أعلاه، فلا تختلف صفحة الأسعار عن الصفحة الرئيسية عن شاشة
+       الترقية في لوحة التحكم. ولا يُكتب رقم هنا إطلاقًا.
+
+       لا قسم لطرق الدفع: البوابة (Moyasar) غير مربوطة بعد، ووعد فارغ في
+       صفحة أسعار أسوأ من غيابه.
+
+       «العضوية المؤسِّسة» شارة فقط: لا سعر مؤسِّس ولا خصم ولا سعر سابق
+       مشطوب في أي موضع. */
+    pricingPage: {
+      label: "الأسعار",
+      title: "كم يكلّف، وما الذي تشتريه النقطة",
+      description:
+        "ثلاث خطط، أو نقاط تُشترى وحدها. الخطة المجانية لا تحتاج بطاقة، ولا يتجدّد شيء ما لم تشترك.",
+      plansTitle: "الخطط",
+      plansBody: "كل الخطط تشغّل المسار نفسه. ما يختلف هو مقدار ما تحصل عليه منه كل شهر.",
+
+      creditsTitle: "نقطة واحدة، طلب واحد",
+      creditsBody:
+        "تغطي النقطة سيرة ذاتية واحدة تُعاد كتابتها لإعلان وظيفة، وخطاب التقديم المرافق لها. والعربية تستهلك نقطتين، لأن الإنشاء بالعربية يمرّ بمرحلة توطين ومعالجة للنص لا تمرّ بها الإنجليزية.",
+      // القيم تأتي من CREDIT_COST ولا تُكتب. والسطران الأخيران «مشمول» لأن
+      // التقييم والبحث عن الوظائف يجريان داخل الإنشاء نفسه (انظر
+      // core/orchestrator.py)، فلا يكلّفان شيئًا فوق النقطة المدفوعة أصلًا.
+      creditsRows: [
+        { label: "سيرة ذاتية وخطاب تقديم بالإنجليزية", value: arCount(CREDIT_COST.en, AR_POINTS) },
+        { label: "سيرة ذاتية وخطاب تقديم بالعربية", value: arCount(CREDIT_COST.ar, AR_POINTS) },
+        { label: "نتيجة ATS ودرجة التوافق وقائمة الفجوات", value: "مشمول" },
+        { label: "خمس وظائف مطابقة، كل واحدة تفتح إعلانها", value: "مشمول" },
+      ],
+
+      packsTitle: "أو اشترِ النقاط وحدها",
+      packsBody: "شراء لمرة واحدة لا اشتراك، لبحث يأتي على فترات متباعدة.",
+
+      foundingTitle: "الأعضاء المؤسِّسون",
+      foundingBody:
+        "أول خمسين مشتركًا في خطة Pro تبقى في ملفاتهم شارة «عضو مؤسِّس» بشكل دائم. وهي شارة فحسب: السعر هو سعر Pro المعتاد، ولا يوجد خصم تأسيسي ولا سعر يُثبَّت.",
+
+      linkedinTitle: "إضافة لينكدإن",
+
+      faqTitle: "أسئلة عن الاشتراك والدفع",
+      backToProduct: "شاهد ما الذي يقدّمه المنتج",
     },
     /* ── إضافة لينكدإن، قسم مميز في الصفحة الرئيسية ──
        الأسعار مكرّرة هنا كأرقام لأن هذا القسم يُعرض للزوار غير المسجّلين،
@@ -1498,13 +2032,13 @@ export const content = {
           "نص جاهز للّصق لكل وظيفة في خبراتك",
           "ثلاث أفكار منشورات من مشاريعك الحقيقية",
           "زر نسخ عند كل حقل",
-          "ملفان شهريًا في برو، و5 في النخبة",
+          `${arCount(ADDON_CAPS.pro.linkedinEssential, AR_PROFILES)} شهريًا في برو، و${ADDON_CAPS.elite.linkedinEssential} في النخبة`,
         ],
         cta: "عرض الخطط",
       },
       premium: {
         name: "المميزة",
-        sar: 200,
+        sar: LINKEDIN_PREMIUM_SAR,
         badge: "تنفيذ كامل",
         tagline: "يُنشئه لك متخصص",
         bullets: [
@@ -1525,7 +2059,14 @@ export const content = {
       description: "كل ما تحتاج معرفته قبل أن تبدأ طلب توظيفك القادم.",
       // نفس المعرّفات في اللغتين: الصفحة الرئيسية تعرض هذه فقط وتربط ببقية
       // الأسئلة في /questions.
-      landing: ["credits", "refunds", "need-existing-cv", "never-invents", "ai-sounding", "data-safe", "linkedin-what-is-it"],
+      // FIVE, which is the top of the brief's 4-5 range (§3.7). It was seven.
+      // "refunds" and "linkedin-what-is-it" left for /pricing, where the rest
+      // of the commerce questions now live; nothing was rewritten to make the
+      // cut, these are the same entries shown verbatim.
+      landing: ["credits", "need-existing-cv", "never-invents", "ai-sounding", "data-safe"],
+      // The billing set, shown on /pricing under the plans. Same mechanism:
+      // ids, not a slice, so reordering the master list is safe.
+      pricingPage: ["credits", "no-card", "refunds", "linkedin-what-is-it", "linkedin-tiers", "linkedin-refunds"],
       seeAll: "عرض كل الأسئلة",
       allTitle: "كل الأسئلة",
       allDescription: "كل ما يتعلق بطريقة عمل ترشيح وتكلفته وما يحدث لبياناتك.",
@@ -1566,17 +2107,17 @@ export const content = {
         {
           id: "never-invents",
           q: "هل سيختلق ترشيح خبرات لا أملكها؟",
-          a: "لا. تُستخرج كل حقيقة من سيرتك الذاتية الحقيقية أولًا، وتُراجع كل نقطة يتم توليدها مقارنة بها في مرحلة تحقق مخصصة من الحقائق. يعيد ترشيح صياغة ما هو حقيقي فقط ولا يختلق شيئًا أبدًا.",
+          a: "لا. قد تذكر نماذج الذكاء الاصطناعي معلومات تبدو معقولة وهي غير صحيحة، وهذا هو الخطر الأهم في السيرة الذاتية تحديدًا، لأنها تحمل اسمك وأنت من سيُسأل عنها في المقابلة. تُستخرج كل حقيقة من سيرتك الحقيقية أولًا، ثم تُراجَع كل نقطة مولّدة مقابل تلك الحقائق في مرحلة تحقق مخصصة قبل أن تصل إليك. يعيد ترشيح صياغة ما هو حقيقي فقط ولا يختلق شيئًا أبدًا.",
         },
         {
           id: "how-many-agents",
           q: "كم عدد وكلاء الذكاء الاصطناعي الذين يعملون على طلبي؟",
-          a: "ستة. وكلاء منفصلون يتولون تحليل السيرة الذاتية، وتحليل الوصف الوظيفي، والتخصيص، والتحقق من الحقائق، وتقييم التوافق مع ATS، وتوليد المستندات، والبحث عن وظائف، بدلًا من طلب واحد يحاول فعل كل شيء.",
+          a: "ثماني مراحل تعمل على كل طلب، كل مرحلة يتولاها وكيل مستقل بدلًا من طلب واحد يحاول فعل كل شيء: تحليل السيرة الذاتية، وتحليل الوصف الوظيفي، والتخصيص، والتحقق من الحقائق، وتقييم التوافق مع ATS، وكتابة خطاب التقديم، وحساب درجة التوافق، والبحث عن وظائف. ويمكنك متابعتها مرحلة بمرحلة أثناء إنشاء سيرتك. أما تقييم ATS نفسه فيجري بحساب ثابت لا بنموذج ذكاء اصطناعي.",
         },
         {
           id: "credits",
           q: "ما هي النقطة (Credit) وكم أحصل منها؟",
-          a: "النقطة هي ما تستهلكه لتوليد سيرة ذاتية وخطاب تقديم مخصصين. الطلبات بالإنجليزية تكلّف نقطة واحدة، والطلبات بالعربية تكلّف نقطتين لأنها تتطلب معالجة أكبر. تشمل الخطة المجانية 3 نقاط شهريًا، وبرو 40 نقطة، والنخبة 120 نقطة.",
+          a: `النقطة هي ما تستهلكه لتوليد سيرة ذاتية وخطاب تقديم مخصصين. الطلبات بالإنجليزية تكلّف ${arCount(CREDIT_COST.en, AR_POINTS)}، والطلبات بالعربية تكلّف ${arCount(CREDIT_COST.ar, AR_POINTS)} لأنها تتطلب معالجة أكبر. تشمل الخطة المجانية ${arCount(TIERS.free.credits, AR_POINTS)} شهريًا، وبرو ${arCount(TIERS.pro.credits, AR_POINTS)}، والنخبة ${arCount(TIERS.elite.credits, AR_POINTS)}.`,
         },
         {
           id: "sounds-like-me",
@@ -1611,17 +2152,17 @@ export const content = {
         {
           id: "linkedin-what-is-it",
           q: "ما هي إضافة لينكدإن؟",
-          a: "عملية شراء لمرة واحدة تحوّل سيرة ذاتية أنشأتها هنا إلى محتوى لينكدإن جاهز للّصق: عنوان مهني، وقسم «نبذة»، وأقوى خمس مهارات لديك، ونص لكل وظيفة في خبراتك، وثلاث أفكار منشورات مستخرجة من مشاريعك الحقيقية، وإرشادات واضحة للأقسام التي يشترط لينكدإن إدخالها مباشرة. ويُكتب بالإنجليزية أيًا كانت لغة سيرتك الذاتية، لأن هذه هي طريقة بحث جهات التوظيف في المنطقة.",
+          a: `تحوّل سيرة ذاتية أنشأتها هنا إلى محتوى لينكدإن جاهز للّصق: عنوان مهني، وقسم «نبذة»، وأقوى خمس مهارات لديك، ونص لكل وظيفة في خبراتك، وثلاث أفكار منشورات مستخرجة من مشاريعك الحقيقية، وإرشادات واضحة للأقسام التي يشترط لينكدإن إدخالها مباشرة. والباقة الأساسية مشمولة في خطتَي برو والنخبة، ${arCount(ADDON_CAPS.pro.linkedinEssential, AR_PROFILES)} شهريًا في برو و${arCount(ADDON_CAPS.elite.linkedinEssential, AR_PROFILES)} في النخبة. ويُكتب بالإنجليزية أيًا كانت لغة سيرتك الذاتية، لأن هذه هي طريقة بحث جهات التوظيف في المنطقة.`,
         },
         {
           id: "linkedin-tiers",
           q: "ما الفرق بين الباقة الأساسية والمميزة في إضافة لينكدإن؟",
-          a: "الأساسية، 49 ريالًا، تمنحك المحتوى النهائي وتضعه أنت في ملفك، ويُسلَّم لحظة توليده. والمميزة، 200 ريال، تشمل كل ذلك وتضيف متخصصًا من فريقنا يتواصل معك مباشرة، ويبني ملفك بالكامل ويحسّنه معك، ويصمم صورة غلاف مخصصة، ويراجعه بعد نشره. وكلتاهما دفعة واحدة لا اشتراك.",
+          a: `الأساسية مشمولة في خطتَي برو والنخبة ولا تُباع على حدة. تمنحك المحتوى النهائي وتضعه أنت في ملفك، ويُسلَّم لحظة توليده: ${arCount(ADDON_CAPS.pro.linkedinEssential, AR_PROFILES)} شهريًا في برو، و${arCount(ADDON_CAPS.elite.linkedinEssential, AR_PROFILES)} في النخبة. أما المميزة، ${LINKEDIN_PREMIUM_SAR} ريال، فهي شراء منفصل لمرة واحدة يشمل كل ذلك ويضيف متخصصًا من فريقنا يتواصل معك مباشرة، ويبني ملفك بالكامل ويحسّنه معك، ويصمم صورة غلاف مخصصة، ويراجعه بعد نشره.`,
         },
         {
           id: "linkedin-refunds",
           q: "هل يمكنني استرداد مبلغ إضافة لينكدإن؟",
-          a: "الباقة الأساسية تُسلَّم لحظة ضغطك على «إنشاء»، لذا لا يمكن استردادها بعد أن يصبح المحتوى موجودًا. وإن كنت قد دفعت ولم تولّد بعد، فراسلنا ونعيد المبلغ كاملًا. والباقة المميزة قابلة للاسترداد كاملًا في أي وقت قبل أن يبدأ المتخصص عمله، وبعد بدء التنفيذ لا تعود قابلة للاسترداد لأن المحتوى قد سُلِّم والخدمة جارية.",
+          a: "الباقة الأساسية لا تُشترى على حدة، فلا شيء يُسترد فيها: هي مشمولة في اشتراك برو أو النخبة، ويمكن إلغاء الاشتراك في أي وقت مع بقائه فعّالًا حتى نهاية الدورة المدفوعة. أما الباقة المميزة فهي شراء لمرة واحدة وقابلة للاسترداد كاملًا في أي وقت قبل أن يبدأ المتخصص عمله، وبعد بدء التنفيذ لا تعود قابلة للاسترداد لأن المحتوى قد سُلِّم والخدمة جارية.",
         },
       ],
     },
@@ -1631,6 +2172,8 @@ export const content = {
         "جرّب ترشيح على وظيفتك القادمة في أقل من خمس دقائق. مجاني للبدء، بلا بطاقة ائتمان، وبلا التزام.",
       ctaPrimary: "ابدأ مجانًا",
       ctaSecondary: "شاهد كيف يعمل",
+      // السعر يصل مُنسّقًا من lib/pricing.ts، فلا يُكتب رقم داخل هذه العبارة.
+      priceLine: (proPrice: string) => `البداية مجانية · Pro من ${proPrice} شهريًا`,
     },
     footer: {
       description:
@@ -1639,22 +2182,22 @@ export const content = {
         {
           title: "المنتج",
           links: [
-            { label: "المميزات", href: "#features", doc: null as string | null },
-            { label: "الأسعار", href: "#pricing", doc: null as string | null },
-            { label: "كيف يعمل", href: "#how-it-works", doc: null as string | null },
+            { label: "المميزات", href: "/#features", doc: null as string | null },
+            { label: "الأسعار", href: "/pricing", doc: null as string | null },
+            { label: "كيف يعمل", href: "/#how-it-works", doc: null as string | null },
           ],
         },
         {
           title: "مصادر",
           links: [
-            { label: "دليل السيرة الذاتية", href: "#", doc: "resumeGuide" },
-            { label: "نصائح ATS", href: "#", doc: "atsTips" },
+            { label: "دليل السيرة الذاتية", href: "/guides#resume-guide", doc: null as string | null },
+            { label: "نصائح ATS", href: "/guides#ats-tips", doc: null as string | null },
           ],
         },
         {
           title: "الشركة",
           links: [
-            { label: "من نحن", href: "#", doc: "about" },
+            { label: "من نحن", href: "/about", doc: null as string | null },
             { label: "تواصل معنا", href: "#", doc: "contact" },
           ],
         },
@@ -2086,7 +2629,7 @@ export const content = {
           usedUp: (total: number) =>
             `استخدمت كل ملفات لينكدإن المتاحة هذا الشهر (${total}). ويتجدد رصيدك مع تجدد نقاطك.`,
           lockedTitle: "مشمولة مع برو والنخبة",
-          lockedBody: "اشترك لتوليد ملفات لينكدإن من سيرك الذاتية: ملفان شهريًا في برو، و5 في النخبة.",
+          lockedBody: `اشترك لتوليد ملفات لينكدإن من سيرك الذاتية: ${arCount(ADDON_CAPS.pro.linkedinEssential, AR_PROFILES)} شهريًا في برو، و${arCount(ADDON_CAPS.elite.linkedinEssential, AR_PROFILES)} في النخبة.`,
           lockedCta: "عرض الخطط",
         },
 
@@ -2365,26 +2908,91 @@ async function persistLanguageToAccount(lang: Lang) {
   }
 }
 
-export function LangProvider({ children }: { children: ReactNode }) {
-  // Always start at "en" to match what the server renders (no localStorage
-  // on the server). Reading the saved language happens after mount, below —
-  // reading it during the initial render caused a client/server mismatch
-  // (hydration error) whenever the saved language wasn't "en".
-  const [lang, setLangState] = useState<Lang>("en");
+/** Same key as the cookie, in localStorage. Kept because that is where every
+ *  existing visitor's choice currently lives — see the migration in the
+ *  provider below. */
+const LANG_STORAGE_KEY = "tarshih_lang";
+
+function writeLangCookie(lang: Lang) {
+  // A year, readable by the server on the next request, and Lax so it still
+  // arrives on a normal top-level navigation from a search result or a link.
+  document.cookie = `${LANG_COOKIE}=${lang}; path=/; max-age=31536000; SameSite=Lax`;
+}
+
+export function LangProvider({
+  children,
+  initialLang,
+}: {
+  children: ReactNode;
+  /** Read from the cookie in app/layout.tsx, so the FIRST render on the
+   *  server is already in the reader's language. */
+  initialLang?: Lang;
+}) {
+  // WHY THIS IS A PROP AND NOT A useEffect ANY MORE.
+  //
+  // This used to hardcode "en" and then swap to the saved language after
+  // mount, to dodge a hydration mismatch. The cost was that every returning
+  // Arabic reader — most of them — was served an English LTR page and watched
+  // it flip to Arabic RTL a moment later. On an Arabic-first product that is
+  // the first impression.
+  //
+  // The language now travels in a cookie, so the server knows it before it
+  // renders and passes it down here. Server and client agree on the first
+  // paint, there is nothing to correct, and no flash. localStorage is still
+  // read below, but only to migrate visitors who chose a language before the
+  // cookie existed.
+  const [lang, setLangState] = useState<Lang>(initialLang ?? "en");
+  const router = useRouter();
 
   useEffect(() => {
-    const saved = localStorage.getItem("tarshih_lang") as Lang;
+    // MIGRATION, and nothing else. If the cookie is already set, the server
+    // used it and this must not touch anything.
+    if (document.cookie.includes(`${LANG_COOKIE}=`)) return;
+    const saved = localStorage.getItem(LANG_STORAGE_KEY) as Lang;
     if (saved === "en" || saved === "ar") {
-      setLangState(saved);
+      writeLangCookie(saved);
+      // Sets state in an effect, which the lint rule rightly objects to in
+      // general. It is correct here and cannot be avoided: localStorage does
+      // not exist on the server, so a visitor who chose Arabic before the
+      // cookie existed cannot be known about until after mount. It fires at
+      // most once per such visitor — the cookie written on the line above is
+      // what stops it ever running again. Reading localStorage in the
+      // useState initializer instead would just move the same mismatch into
+      // hydration.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      if (saved !== lang) setLangState(saved);
     }
+    // Runs once, on mount.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Custom setter that persists the language pick to localStorage and,
-  // if the person is logged in, to their account too.
+  // Custom setter that persists the language pick to the cookie (so the
+  // server renders it next time), to localStorage, and, if the person is
+  // logged in, to their account too.
+  /* THE TOGGLE IS A NAVIGATION NOW, on the marketing pages.
+   *
+   * Those pages live at /ar/... and /en/..., so switching language has to
+   * change the URL or the reader ends up on an Arabic page whose address
+   * still says /en — which is the thing hreflang exists to stop. Off
+   * /[lang] (the dashboard, the auth pages) there is no locale in the URL
+   * and this stays exactly what it was: state plus a cookie.
+   *
+   * Changing it HERE rather than in LangSwitcher means every caller gets the
+   * right behaviour, including the dashboard's own copy of the control. */
   const setLang = (newLang: Lang) => {
     setLangState(newLang);
     if (typeof window !== "undefined") {
-      localStorage.setItem("tarshih_lang", newLang);
+      localStorage.setItem(LANG_STORAGE_KEY, newLang);
+      writeLangCookie(newLang);
+
+      // On a /[lang] route, mirror the current path into the new locale and
+      // navigate. The cookie is written first so the server renders the new
+      // language even on the very first request of the new URL.
+      const { lang: urlLang, rest } = splitLocale(window.location.pathname);
+      if (urlLang) {
+        const target = rest === "/" ? `/${newLang}` : `/${newLang}${rest}`;
+        router.push(target + window.location.search + window.location.hash);
+      }
     }
     persistLanguageToAccount(newLang);
   };
@@ -2405,4 +3013,20 @@ export function LangProvider({ children }: { children: ReactNode }) {
       </div>
     </LangContext.Provider>
   );
+}
+/**
+ * Locale-aware href builder for marketing links.
+ *
+ * `const href = useLocaleHref(); <Link href={href("/pricing")} />` produces
+ * /ar/pricing for an Arabic reader. Non-marketing paths (/signup, /dashboard)
+ * and external hrefs pass through unchanged — see localePath().
+ *
+ * Without this every in-page link would land on a bare path and bounce
+ * through the middleware redirect: an extra round trip and a visible URL
+ * flash on each navigation. The redirect still exists, but as a safety net
+ * for old bookmarks and inbound links rather than as the normal path.
+ */
+export function useLocaleHref() {
+  const { lang } = useLang();
+  return (href: string) => localePath(href, lang);
 }

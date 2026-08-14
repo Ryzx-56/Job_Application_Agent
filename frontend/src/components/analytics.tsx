@@ -40,7 +40,16 @@ export default function Analytics() {
 
       <Script
         src={`https://www.googletagmanager.com/gtag/js?id=${GA_MEASUREMENT_ID}`}
-        strategy="afterInteractive"
+        /* lazyOnload, NOT afterInteractive. Lighthouse measured gtag.js at
+           166KiB of third-party blocking the main thread ~320ms, on a page
+           whose LCP was already render-bound. afterInteractive fetches it as
+           soon as hydration finishes, which is exactly the window LCP is
+           competing for; lazyOnload waits for the window load event, so the
+           page paints and becomes interactive first and analytics arrives
+           after. Consent Mode is unaffected: the consent-defaults script
+           above is still beforeInteractive, so "denied" is set long before
+           gtag.js can send anything. */
+        strategy="lazyOnload"
       />
 
       <Script id="ga-init" strategy="afterInteractive">

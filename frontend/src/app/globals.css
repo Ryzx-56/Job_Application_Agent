@@ -244,9 +244,425 @@
     line-height: 1.7 !important;
   }
 
-  /* Keeps heading elements well-proportioned so they don't visually overlap */
-  [dir="rtl"] h1, [dir="rtl"] h2, [dir="rtl"] h3, [dir="rtl"] h4 {
+  /* Keeps heading elements well-proportioned so they don't visually overlap.
+   *
+   * THE :not() IS LOAD-BEARING, NOT TIDINESS. This rule sits in @layer base;
+   * the marketing type scale further down this file sits in no layer at all.
+   * For !important declarations the cascade runs the layer order in REVERSE,
+   * and unlayered !important ranks LOWEST of every important declaration — so
+   * this rule was silently beating
+   *
+   *     [data-type="editorial"] .t-display-l { line-height: ... !important }
+   *
+   * no matter how specific that selector was. Every heading on the marketing
+   * pages therefore rendered at 1.45 in Arabic instead of the 1.05-1.30 the
+   * scale defines: the hero h1, how it works, all of it. Measured in headless
+   * Chrome — 45.76px type on 66.35px leading, which is 1.45 exactly, in every
+   * section and at every width. English was correct throughout, because no
+   * equivalent rule exists for LTR, so the bug only ever showed in the
+   * language most of these readers use.
+   *
+   * The dashboard still wants this, so it keeps it. Only the marketing
+   * subtree, which sets leading per type role, opts out. */
+  [dir="rtl"] :is(h1, h2, h3, h4):not([data-type="editorial"] *) {
     line-height: 1.45 !important;
     margin-bottom: 0.75rem;
+  }
+}
+
+/* ========================================================================
+   EDITORIAL SURFACE — the marketing pages, and nothing else.
+
+   Everything below is scoped to [data-type="editorial"], which is set on the
+   marketing root in app/page.tsx. The dashboard is a sibling subtree under
+   the same LangProvider and never matches, so its palette, its faces and its
+   type scale are untouched by any of this.
+
+   FACES: the marketing pages use IBM Plex Sans and IBM Plex Sans Arabic, a
+   matched superfamily whose two halves were drawn to the same optical size.
+   The dashboard keeps Cairo and Plus Jakarta Sans. That works even though
+   LangProvider sets Cairo as an inline style on an ANCESTOR div: an inline
+   style on an ancestor is an inherited value, and an inherited value only
+   applies to an element that declares nothing itself. The rule below is a
+   declaration on this element, so it wins for this subtree without needing
+   !important, and the dashboard keeps inheriting Cairo.
+======================================================================== */
+[data-type="editorial"] {
+  /* ── surfaces ── */
+  --surface-base: #09090b;
+  --surface-sunken: #050507;
+  --surface-raised: #131316;
+  --surface-raised-hi: #1b1b1f;
+  --surface-paper: #f7f7f5;
+
+  /* ── lines: one token per job, instead of white/10 doing four ── */
+  --line-hairline: rgb(255 255 255 / 0.07);
+  --line: rgb(255 255 255 / 0.11);
+  --line-strong: rgb(255 255 255 / 0.18);
+  --line-accent: rgb(96 165 250 / 0.38);
+
+  /* ── ink. --ink-3 replaces text-zinc-500 (#71717A), which measured
+        4.11:1 on this canvas and failed the 4.5:1 floor. #83838f is 5.2:1. ── */
+  --ink-1: #fafafa;
+  --ink-2: #b4b4be;
+  --ink-3: #83838f;
+  --ink-paper: #17171a;
+  --ink-paper-soft: #6b6b73;
+
+  /* ── one accent ── */
+  --accent: #2563eb;
+  --accent-hover: #3b82f6;
+  --accent-quiet: #60a5fa;
+  --accent-wash: rgb(37 99 235 / 0.12);
+
+  /* ── type scale. Sizes are SHARED between scripts and nudged for Arabic
+        by a single multiplier, rather than the parallel [dir=rtl] size block
+        the app-wide scale still carries. Line heights are set per script,
+        because Arabic genuinely needs more leading than Latin at the same
+        size — see the [dir="rtl"] block below. ── */
+  /* Display sizes are FLUID. A fixed 3.5rem headline is 56px on a 375px
+     phone, which is four or five characters a line — and most of these
+     readers are on a phone. clamp() carries each display step from its
+     mobile size to its desktop one across the viewport, so there is one
+     scale rather than a set of breakpoint overrides per element. Body and
+     meta stay fixed: reading sizes should not depend on window width. */
+  --script-scale: 1;
+  --display-xl: calc(clamp(2.125rem, 1.4rem + 3.1vw, 3.5rem) * var(--script-scale));
+  --display-l: calc(clamp(1.75rem, 1.2rem + 2.3vw, 2.75rem) * var(--script-scale));
+  --display-m: calc(clamp(1.5rem, 1.15rem + 1.5vw, 2rem) * var(--script-scale));
+  --title: calc(clamp(1.1875rem, 1.05rem + 0.6vw, 1.375rem) * var(--script-scale));
+  --body-l: calc(clamp(1.0625rem, 1rem + 0.25vw, 1.125rem) * var(--script-scale));
+  --body: calc(1rem * var(--script-scale));
+  --meta: calc(0.875rem * var(--script-scale));
+
+  --lh-display-xl: 1.05;
+  --lh-display-l: 1.08;
+  --lh-display-m: 1.15;
+  --lh-title: 1.3;
+  --lh-body-l: 1.6;
+  --lh-body: 1.65;
+  --lh-meta: 1.5;
+
+  --font-editorial: var(--font-plex-sans), ui-sans-serif, system-ui, sans-serif;
+
+  font-family: var(--font-editorial);
+  background-color: var(--surface-base);
+  color: var(--ink-2);
+  font-size: var(--body);
+  line-height: var(--lh-body);
+}
+
+/* Arabic: the matched face, a small optical nudge, and its own leading. */
+[dir="rtl"] [data-type="editorial"] {
+  --script-scale: 1.04;
+  --lh-display-xl: 1.2;
+  --lh-display-l: 1.22;
+  --lh-display-m: 1.3;
+  --lh-title: 1.45;
+  --lh-body-l: 1.85;
+  --lh-body: 1.9;
+  --lh-meta: 1.7;
+
+  --font-editorial: var(--font-plex-arabic), var(--font-cairo-sans), ui-sans-serif, sans-serif;
+}
+
+/*
+ * The marketing subtree spaces headings by layout, not by a global bottom
+ * margin, and takes its leading from the type role below.
+ *
+ * NO !important ON line-height ANY MORE. It was there to fight the app-wide
+ * `[dir="rtl"] h1..h4` rule, and it never could — see the note on that rule,
+ * which now exempts this subtree instead. Left in place it would beat the
+ * Arabic fallback directly below, which is the thing that keeps the older
+ * sections exactly where they were.
+ */
+[data-type="editorial"] h1,
+[data-type="editorial"] h2,
+[data-type="editorial"] h3,
+[data-type="editorial"] h4 {
+  line-height: inherit;
+  margin-bottom: 0;
+}
+
+/*
+ * ARABIC FALLBACK, for a marketing heading with no type-role class — the
+ * older sections' `text-3xl sm:text-4xl` headings, and every heading on
+ * /about, /questions and the legal pages.
+ *
+ * Without this they would inherit BODY leading (1.9 in Arabic), which is far
+ * looser than what they render at today. --lh-title is 1.45 in Arabic, which
+ * is exactly what the rule above used to force on them, so nothing that has
+ * already been reviewed moves. A normal declaration on purpose: the
+ * `.t-display-*` roles below are !important and still win over it.
+ */
+[dir="rtl"] [data-type="editorial"] h1,
+[dir="rtl"] [data-type="editorial"] h2,
+[dir="rtl"] [data-type="editorial"] h3,
+[dir="rtl"] [data-type="editorial"] h4 {
+  line-height: var(--lh-title);
+}
+
+/* Type roles. Set here rather than as Tailwind utilities so the two scripts
+   stay a single decision per role instead of a pair of classes per element.
+
+   LINE-HEIGHT IS !important HERE ON PURPOSE, and it is not paranoia. It has
+   to beat two element-level rules that would otherwise reach these headings:
+   the `line-height: inherit` reset above, which would give a display heading
+   BODY leading (1.65, so two headline lines with a visible gutter between
+   them), and the Arabic fallback beside it. Both are normal declarations, so
+   one !important settles both.
+
+   It does NOT beat a rule in @layer base, whatever its specificity, because
+   unlayered !important is the lowest-priority important there is. That is
+   why the app-wide RTL heading rule had to exempt this subtree rather than
+   be out-specified — the note up there has the measurements. */
+[data-type="editorial"] .t-display-xl { font-size: var(--display-xl); line-height: var(--lh-display-xl) !important; }
+[data-type="editorial"] .t-display-l  { font-size: var(--display-l);  line-height: var(--lh-display-l) !important; }
+[data-type="editorial"] .t-display-m  { font-size: var(--display-m);  line-height: var(--lh-display-m) !important; }
+[data-type="editorial"] .t-title      { font-size: var(--title);      line-height: var(--lh-title) !important; }
+[data-type="editorial"] .t-body-l     { font-size: var(--body-l);     line-height: var(--lh-body-l); }
+[data-type="editorial"] .t-body       { font-size: var(--body);       line-height: var(--lh-body); }
+[data-type="editorial"] .t-meta       { font-size: var(--meta);       line-height: var(--lh-meta); }
+
+/* A step between meta and body, for navigation only. Nav links at meta sat
+   too far below the buttons beside them: measured at 1024, Arabic links were
+   14.56px against buttons at 20.25px, because the buttons were still reading
+   the app-wide RTL scale where text-sm is 20px. This lifts the links and the
+   header buttons drop to body, closing a 39% gap to about 6% — enough that
+   the buttons still read as the heavier things, which they should. */
+[data-type="editorial"] .t-nav        { font-size: calc(0.9375rem * var(--script-scale)); line-height: var(--lh-meta); }
+
+/* Scores and figures line up in columns and don't jitter while counting. */
+[data-type="editorial"] .t-figure { font-variant-numeric: tabular-nums; }
+
+/* ── ENTRANCES ────────────────────────────────────────────────────────────
+   CSS, NOT FRAMER MOTION, FOR ANYTHING ABOVE THE FOLD.
+
+   The hero was built with Framer Motion entrances first, and the rendered
+   HTML shipped `style="opacity:0"` on twenty elements — the headline, the
+   sub-line, the CTA, both visuals. That means the hero is invisible until
+   hydration finishes: bad on a slow connection, broken with JavaScript off,
+   and it pushes LCP out to whenever the JS bundle finishes executing, since
+   the browser does not count an opacity-0 element as painted.
+
+   A CSS animation runs at first paint, needs no JavaScript, and the resting
+   state is the visible one. Framer Motion is still the right tool below the
+   fold and for anything scroll-driven; it is the wrong tool for the first
+   thing a person sees.
+
+   THE HEADLINE IS DELIBERATELY NOT ANIMATED. It is the LCP element and the
+   single sentence the page exists to deliver, so it is simply there, and the
+   supporting material assembles around it. */
+@keyframes editorial-rise {
+  from {
+    opacity: 0;
+    transform: translate3d(var(--rise-x, 0), var(--rise-y, 12px), 0);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+[data-type="editorial"] .rise {
+  animation: editorial-rise 0.55s cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation-delay: var(--rise-delay, 0s);
+}
+
+/* Drifts in from the leading edge instead of from below. Mirrors, so a line
+   settles rightward in Arabic and leftward in English. */
+[data-type="editorial"] .rise-x {
+  --rise-x: -14px;
+  --rise-y: 0;
+}
+[dir="rtl"] [data-type="editorial"] .rise-x {
+  --rise-x: 14px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-type="editorial"] .rise {
+    animation: none;
+  }
+}
+
+/* ── THE PROOF SHEET ──────────────────────────────────────────────────────
+   The hero visual runs on a LOOP, not a one-shot entrance.
+
+   The first version animated once on load. That is invisible to anyone who
+   arrives and looks two seconds later, which is most people, so the panel
+   read as a static card. Everything below shares one `--cycle` duration and
+   differs only by delay, so the sheet composes, holds, clears and composes
+   again — there is always something moving whenever you glance at it.
+
+   No ring, no donut, no arc. The previous score ring was an SVG
+   stroke-dashoffset circle, which is exactly the thing that fails to close
+   cleanly, and a donut chart is the visual language of a dashboard. Scores
+   are set as leader rules instead: a label, a rule that fills to its value,
+   and a figure. That is how a typeset table of contents works, which is the
+   language this page is already speaking. */
+[data-type="editorial"] {
+  --cycle: 9s;
+}
+
+/* THE SHEET'S CONTENT NEVER DISAPPEARS. An earlier draft cleared the whole
+   panel and recomposed it each cycle, which is the same "it vanishes" fault
+   the marquee had — content blinking out reads as a glitch, not as life. The
+   text sets once, on entry (.rise), and stays. What loops is the MEASURING:
+   the score rules empty and refill, the figures recount, and one pass sweeps
+   down the page. The document is finished; the scoring is being re-checked. */
+
+/* The score rules fill to their value and hold. transform-origin is the
+   LEADING edge, so a rule grows rightward in English and leftward in Arabic. */
+@keyframes editorial-leader {
+  0%   { transform: scaleX(0); }
+  22%  { transform: scaleX(var(--leader-to, 1)); }
+  86%  { transform: scaleX(var(--leader-to, 1)); }
+  100% { transform: scaleX(0); }
+}
+
+[data-type="editorial"] .leader-fill {
+  transform-origin: left center;
+  transform: scaleX(var(--leader-to, 1));
+  animation: editorial-leader var(--cycle) cubic-bezier(0.16, 1, 0.3, 1) infinite both;
+  /* Inherits the row's own entrance delay, so a rule starts filling exactly
+     when its line has finished setting. */
+  animation-delay: var(--rise-delay, 0s);
+}
+[dir="rtl"] [data-type="editorial"] .leader-fill {
+  transform-origin: right center;
+}
+
+/* HOW IT WORKS: each bar draws to its width, holds, then clears. Same clock
+   as the hero panels, offset a second per step, so the three diagrams play in
+   the order the steps happen rather than all at once. Transform only. */
+@keyframes editorial-draw {
+  0%   { transform: scaleX(0); opacity: 0.4; }
+  16%  { transform: scaleX(1); opacity: 1; }
+  84%  { transform: scaleX(1); opacity: 1; }
+  100% { transform: scaleX(0); opacity: 0.4; }
+}
+
+[data-type="editorial"] .step-draw {
+  transform-origin: left center;
+  animation: editorial-draw var(--cycle) cubic-bezier(0.16, 1, 0.3, 1) infinite both;
+  animation-delay: var(--step-delay, 0s);
+}
+
+/* Draws from the leading edge, so a bar grows leftward in Arabic. */
+[dir="rtl"] [data-type="editorial"] .step-draw {
+  transform-origin: right center;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-type="editorial"] .step-draw {
+    animation: none;
+    transform: none;
+  }
+}
+
+/* The matched-openings list scans: each row takes its turn on the same cycle,
+   so the two hero visuals breathe together instead of running independently.
+   Background only — the row never moves, never clears, and stays fully legible
+   at every point in the cycle. */
+@keyframes editorial-scan {
+  0%,
+  100% { background-color: transparent; }
+  3%   { background-color: var(--accent-wash); }
+  9%   { background-color: transparent; }
+}
+
+[data-type="editorial"] .scan-row {
+  animation: editorial-scan var(--cycle) linear infinite both;
+  animation-delay: var(--scan-delay, 0s);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-type="editorial"] .leader-fill,
+  [data-type="editorial"] .scan-row {
+    animation: none;
+  }
+  /* Resting state is the finished panel: rules at their real value. */
+  [data-type="editorial"] .leader-fill { transform: scaleX(var(--leader-to, 1)); }
+}
+
+/* ── MARQUEE ──────────────────────────────────────────────────────────────
+   CSS keyframes rather than JS: it runs continuously, and a rAF loop that
+   never stops is the one animation guaranteed to show up in a mobile
+   performance trace. Transform only, so it stays on the compositor.
+
+   ALWAYS 0% -> -50%, IN BOTH LANGUAGES. The track is dir="ltr" so its
+   geometry cannot change between scripts (an RTL max-content flex row grows
+   leftward out of its overflow box, which used to make the whole thing
+   disappear). RTL mirrors the DIRECTION OF TRAVEL with animation-direction,
+   which is the part that actually has to reverse.
+
+   The track holds the list twice and each item carries its own trailing
+   margin rather than the track carrying a flex gap, so the track is exactly
+   two copies wide and -50% is exactly one copy. Any mismatch here shows up
+   as a seam that walks across the screen every cycle. */
+@keyframes marquee-track {
+  from { transform: translate3d(0, 0, 0); }
+  to   { transform: translate3d(-50%, 0, 0); }
+}
+
+[data-type="editorial"] .marquee-track {
+  width: max-content;
+  animation: marquee-track var(--marquee-duration, 60s) linear infinite;
+  /* Promotes the track to its own compositor layer. Without this the browser
+     re-rasterizes a very wide element every frame, which is what made it
+     stutter on desktop. */
+  will-change: transform;
+  backface-visibility: hidden;
+}
+
+[dir="rtl"] [data-type="editorial"] .marquee-track {
+  animation-direction: reverse;
+}
+
+/* ENTRY AND EXIT ARE STATIC OVERLAYS, NOT A MASK ON THE WINDOW.
+   A mask on the window clips the moving track, so the whole strip is
+   re-rasterized every frame and the layer promotion above buys nothing —
+   that was the desktop stutter. Two fixed strips paint once.
+
+   Each strip is the page ground faded along its own axis, so a name dissolves
+   into the background rather than being cut mid-letter. The blur is a
+   backdrop-filter and is deliberately NOT on mobile: it forces a readback of
+   the region behind it every frame, which is the last thing a phone needs
+   here. Phones get the fade, which carries the effect on its own. */
+[data-type="editorial"] .marquee-edge {
+  position: absolute;
+  inset-block: 0;
+  width: clamp(2.5rem, 8vw, 6rem);
+  pointer-events: none;
+  z-index: 1;
+  background: var(--surface-base);
+}
+
+/* The track is dir="ltr", so these are physical on purpose: "start" is the
+   left edge in both languages, which is where the strip has to be. */
+[data-type="editorial"] .marquee-edge-start {
+  left: 0;
+  -webkit-mask-image: linear-gradient(to right, #000 20%, transparent);
+  mask-image: linear-gradient(to right, #000 20%, transparent);
+}
+
+[data-type="editorial"] .marquee-edge-end {
+  right: 0;
+  -webkit-mask-image: linear-gradient(to left, #000 20%, transparent);
+  mask-image: linear-gradient(to left, #000 20%, transparent);
+}
+
+@media (min-width: 640px) {
+  [data-type="editorial"] .marquee-edge {
+    -webkit-backdrop-filter: blur(3px);
+    backdrop-filter: blur(3px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-type="editorial"] .marquee-track {
+    animation: none;
+    transform: none;
+    will-change: auto;
   }
 }

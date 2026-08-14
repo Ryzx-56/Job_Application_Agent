@@ -45,11 +45,17 @@ type TailoredBullet = {
   relevance_score: number;
 };
 
+type MatchTier = "strong" | "partial" | "stretch";
+
 type SimilarJob = {
   title?: string;
   url?: string;
   snippet?: string;
   source?: string;
+  // Machine-readable tier, sent by jobs_finder.py. Prefer this.
+  match_tier?: string;
+  // English prose. Still sent, and the only one present on resumes saved
+  // before match_tier existed.
   match_label?: string;
 };
 
@@ -315,19 +321,41 @@ function buildManualPayload(
   };
 }
 
+// The three tiers jobs_finder.py emits, in each language. The backend sends a
+// tier key and this renders it, rather than the backend sending English prose
+// that got printed verbatim — which is why an Arabic generation used to come
+// back fully Arabic apart from three English badges.
+const MATCH_TIER_COPY: Record<MatchTier, { en: string; ar: string }> = {
+  strong: { en: "Strong Match", ar: "تطابق قوي" },
+  partial: { en: "Partial Match", ar: "تطابق جزئي" },
+  stretch: { en: "Stretch Role", ar: "فرصة طموحة" },
+};
+
 /**
- * Color-codes a similar-job match label into a glassy badge style.
- * jobs_finder.py emits exactly one of: "Strong Match", "Partial Match", "Stretch Role".
+ * Resolves a listing's tier. Prefers match_tier; falls back to reading the
+ * English label for resumes saved before that field existed, which is the
+ * only reason the substring match is still here.
  */
-function getMatchBadgeStyle(label?: string): { classes: string; dot: string } {
-  const normalized = (label || "").toLowerCase();
-  if (normalized.includes("strong")) {
+function getMatchTier(job: SimilarJob): MatchTier | null {
+  const tier = job.match_tier;
+  if (tier === "strong" || tier === "partial" || tier === "stretch") return tier;
+
+  const normalized = (job.match_label || "").toLowerCase();
+  if (normalized.includes("strong")) return "strong";
+  if (normalized.includes("partial")) return "partial";
+  if (normalized.includes("stretch")) return "stretch";
+  return null;
+}
+
+/** Color-codes a match tier into a glassy badge style. */
+function getMatchBadgeStyle(tier: MatchTier | null): { classes: string; dot: string } {
+  if (tier === "strong") {
     return { classes: "border-emerald-400/40 bg-emerald-400/15 text-emerald-200", dot: "bg-emerald-400" };
   }
-  if (normalized.includes("partial")) {
+  if (tier === "partial") {
     return { classes: "border-amber-400/40 bg-amber-400/15 text-amber-200", dot: "bg-amber-400" };
   }
-  if (normalized.includes("stretch")) {
+  if (tier === "stretch") {
     return { classes: "border-rose-400/40 bg-rose-400/15 text-rose-200", dot: "bg-rose-400" };
   }
   return { classes: "border-white/20 bg-white/10 text-white/80", dot: "bg-white/50" };
@@ -1347,7 +1375,8 @@ export default function DashboardHomePage() {
 
                 <ul className="mt-5 space-y-3">
                   {result.similarJobs.map((job, i) => {
-                    const badge = getMatchBadgeStyle(job.match_label);
+                    const tier = getMatchTier(job);
+                    const badge = getMatchBadgeStyle(tier);
                     return (
                       <li key={i}>
                         <a
@@ -1360,12 +1389,12 @@ export default function DashboardHomePage() {
                             <p className="text-base font-semibold text-white sm:text-[17px]">
                               {job.title ?? job.url}
                             </p>
-                            {job.match_label && (
+                            {tier && (
                               <span
                                 className={`inline-flex shrink-0 items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium backdrop-blur-sm ${badge.classes}`}
                               >
                                 <span className={`size-1.5 rounded-full ${badge.dot}`} aria-hidden />
-                                {job.match_label}
+                                {MATCH_TIER_COPY[tier][lang === "ar" ? "ar" : "en"]}
                               </span>
                             )}
                           </div>

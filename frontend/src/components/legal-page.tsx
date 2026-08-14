@@ -121,7 +121,9 @@ export function LegalPageShell({ docKey }: { docKey: PublicLegalDocKey }) {
               backgroundSize: "56px 56px",
             }}
           />
-          <div className="pointer-events-none absolute -top-24 start-1/2 h-64 w-[36rem] -translate-x-1/2 rounded-full bg-blue-600/20 blur-[110px]" />
+          {/* left-1/2, not start-1/2: -translate-x-1/2 is physical and doesn't
+              mirror, so a logical inset here lands off-centre in Arabic. */}
+          <div className="pointer-events-none absolute -top-24 left-1/2 h-64 w-[36rem] -translate-x-1/2 rounded-full bg-blue-600/20 blur-[110px]" />
           <div className="relative mx-auto max-w-4xl px-4 py-16 sm:px-6 sm:py-20">
             {doc.updated && (
               <span className="inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs font-medium text-zinc-400">

@@ -13,6 +13,12 @@ class JobListingResponse(BaseModel):
     url: str
     snippet: str
     source: str
+    # The machine-readable match tier: "strong" | "partial" | "stretch".
+    # This is what clients should localize from. Optional because rows saved
+    # to a user's resume history before this field existed carry only
+    # match_label — see the MATCH TIER note in agents/jobs_finder.py.
+    match_tier: Optional[str] = None
+    # English prose form of match_tier. Kept for those older saved rows.
     match_label: str
 
 class OptimizeResponse(BaseModel):

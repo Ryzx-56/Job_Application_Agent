@@ -79,8 +79,34 @@ export function Logo({ className = "", variant = "dark" }: LogoProps) {
 /* ========================================================================
    LANGUAGE SWITCHER — reads/writes the shared LangProvider from layout.tsx
 ======================================================================== */
-export function LangSwitcher() {
+/**
+ * `compact` shows a single button that switches to the OTHER language, rather
+ * than both options side by side. Added for the marketing header, where the
+ * full control costs ~110px and was part of what pushed the nav past the
+ * width it had to fit in. Every other caller keeps the two-option control by
+ * default, so nothing else changes.
+ */
+export function LangSwitcher({ compact = false }: { compact?: boolean }) {
   const { lang, setLang } = useLang();
+
+  if (compact) {
+    const next = lang === "ar" ? "en" : "ar";
+    return (
+      <button
+        type="button"
+        onClick={() => setLang(next)}
+        lang={next}
+        className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-white/10 bg-white/5 px-3 text-xs font-medium text-zinc-300 transition-colors hover:bg-white/10 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400/60"
+        // The label is in the language it switches TO, so it reads as an
+        // offer rather than as a statement of the current state.
+        aria-label={next === "ar" ? "التبديل إلى العربية" : "Switch to English"}
+      >
+        <Globe className="size-3.5 shrink-0 text-zinc-500" aria-hidden />
+        {next === "ar" ? "العربية" : "English"}
+      </button>
+    );
+  }
+
   return (
     <div className="flex items-center gap-1 rounded-lg border border-white/10 bg-white/5 p-1 text-xs font-medium">
       <Globe className="ms-1 size-3.5 text-zinc-500" aria-hidden />
