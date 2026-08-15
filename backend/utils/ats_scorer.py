@@ -6,22 +6,60 @@ Claude (Agent 5) handles the reasoning layer on top of this.
 """
 
 import re
-from math import sqrt
+from datetime import date
+
+from utils.skills import resolve_skills
 
 
-# ─── WEIGHTS (from roadmap) ──────────────────────────────────────────────────
+# ─── WEIGHTS ─────────────────────────────────────────────────────────────────
+#
+# WAS: keyword 0.40, skills 0.35, education 0.15, experience 0.10.
+#
+# Two things were wrong with that split. Keywords outweighed skills, which is
+# backwards from how real matching engines rank — skills carry the dominant
+# weight in commercial ATS scoring because a skill is the most concrete,
+# checkable claim on a CV. And the two components scored THE SAME EVIDENCE
+# TWICE: jd_analyzer routinely puts "React" in required_skills and in
+# ats_keywords_high, so a single matched skill moved 75% of the score
+# between them while an unmatched one was punished twice over.
+#
+# The double-count is fixed at the source (see _dedupe_keywords) rather than
+# by shrinking the keyword weight to compensate, so keywords now measure what
+# only they can measure: the JD language that is NOT already a named skill.
+#
+# title_match is new — see title_match_score for why its absence was the
+# largest gap against real ATS behaviour.
 WEIGHTS = {
-    "keyword_match":    0.40,
-    "skills_match":     0.35,
-    "education_match":  0.15,
-    "experience_match": 0.10,
+    "skills_match":     0.40,
+    "keyword_match":    0.25,
+    "title_match":      0.15,
+    "experience_match": 0.12,
+    "education_match":  0.08,
 }
 
 
 # ─── TEXT UTILITIES ───────────────────────────────────────────────────────────
 
-def normalize(text: str) -> str:
-    """Lowercase, strip punctuation, collapse whitespace."""
+def normalize(text) -> str:
+    """
+    Lowercase, strip punctuation, collapse whitespace.
+
+    ACCEPTS None AND NON-STRINGS ON PURPOSE. Everything this module scores
+    arrives from a Pydantic model_dump(), and model_dump() emits every
+    Optional field it knows about — including the unset ones, as None. That
+    makes `d.get("degree", "")` a trap: the default only fires when the KEY
+    IS ABSENT, and the key is never absent here, so an education entry with
+    no stated degree handed this function None and it died on .lower().
+
+    That was not hypothetical. A CV with one education entry lacking a
+    degree, or one job lacking dates — both entirely ordinary — crashed
+    calculate_ats_score outright, which takes down the whole scoring node
+    AFTER every agent has run and the user's credit is spent. Same bug class
+    utils/cv_context.py's `_s()` documents; this is that guard, for the
+    scorer.
+    """
+    if not isinstance(text, str):
+        text = "" if text is None else str(text)
     text = text.lower()
     text = re.sub(r"[^\w\s]", " ", text)
     return re.sub(r"\s+", " ", text).strip()
@@ -126,53 +164,98 @@ def exact_keyword_match_rate(
     return rate, matched, unmatched
 
 
-# ─── SIMPLE SEMANTIC MATCHING (TF-IDF cosine, no external models) ─────────────
+# ─── PARTIAL-PHRASE MATCHING (BM25 term weighting) ────────────────────────────
+#
+# WHAT WAS HERE, AND WHY IT WAS REPLACED. This used to be a raw
+# term-frequency cosine between a keyword vector and a whole-CV vector, and
+# it could not fire. Cosine against a bag-of-words document shrinks as the
+# document grows, because the document vector's magnitude grows with it —
+# measured, for a keyword the CV genuinely contains:
+#
+#     CV length   10    50    100   200   400   800  tokens
+#     cosine      0.289 0.092 0.050 0.026 0.014 0.007
+#
+# against a 0.35 threshold. Every real CV is 200+ tokens, so the "semantic"
+# pass matched nothing on any document a user has ever submitted. It was
+# dead weight that made the pipeline look more capable than it was.
+#
+# BM25's term weighting is the standard fix and solves exactly the two
+# problems: SATURATION (the tenth mention of "Python" adds almost nothing
+# over the second, so keyword-stuffed CVs gain no advantage) and LENGTH
+# NORMALISATION (a long CV is not penalised for being long).
+#
+# NOT CALLED "SEMANTIC" ANY MORE, because it is not. BM25 is lexical: it
+# matches the words that are actually there, in any grammatical form via the
+# stemmer. What it adds over the exact pass is PARTIAL CREDIT FOR PARTIAL
+# PHRASES — a JD asking for "clinical variant interpretation" against a CV
+# that says "interpreted variants clinically" now scores as strong coverage
+# instead of a flat miss. Nothing is inferred and nothing is invented; the
+# words are the candidate's own.
 
-def _build_vocab(docs: list[list[str]]) -> list[str]:
-    vocab = set()
-    for doc in docs:
-        vocab.update(doc)
-    return sorted(vocab)
+BM25_K1 = 1.5    # saturation: how fast repeated mentions stop helping
+BM25_B = 0.75    # how strongly to normalise for document length
+BM25_AVG_DOC_TOKENS = 500  # a typical tailored CV body, the reference length
 
-
-def _tf(tokens: list[str], vocab: list[str]) -> list[float]:
-    count = {t: tokens.count(t) for t in vocab}
-    total = len(tokens) or 1
-    return [count[v] / total for v in vocab]
-
-
-def cosine_similarity(vec_a: list[float], vec_b: list[float]) -> float:
-    dot = sum(a * b for a, b in zip(vec_a, vec_b))
-    mag_a = sqrt(sum(a ** 2 for a in vec_a))
-    mag_b = sqrt(sum(b ** 2 for b in vec_b))
-    if mag_a == 0 or mag_b == 0:
+# What one honest mention in an average-length CV is worth. Every term score
+# is expressed as a fraction of this, so "present once, normally" reads as
+# 1.0 and the scale is interpretable rather than an arbitrary BM25 magnitude.
+def _bm25_term_weight(freq: int, doc_len: int) -> float:
+    if freq <= 0:
         return 0.0
-    return dot / (mag_a * mag_b)
+    norm = 1 - BM25_B + BM25_B * (doc_len / BM25_AVG_DOC_TOKENS)
+    return (freq * (BM25_K1 + 1)) / (freq + BM25_K1 * norm)
 
 
-def semantic_keyword_match_rate(
-    keywords: list[str],
-    cv_text: str,
-    threshold: float = 0.35
+_BM25_SINGLE_MENTION = _bm25_term_weight(1, BM25_AVG_DOC_TOKENS)
+
+
+def phrase_coverage(phrase: str, doc_stem_counts: dict[str, int], doc_len: int) -> float:
+    """
+    How much of `phrase` the document actually covers, 0-1.
+
+    The mean over the phrase's stemmed words of each word's BM25 weight,
+    scaled so a single mention in an average-length CV counts as full credit
+    for that word. A two-word phrase with one word present scores ~0.5 —
+    partial credit for partial evidence, which is the whole point.
+    """
+    stems = [_stem(t) for t in normalize(phrase).split() if t]
+    if not stems:
+        return 0.0
+    total = 0.0
+    for stem in stems:
+        weight = _bm25_term_weight(doc_stem_counts.get(stem, 0), doc_len)
+        total += min(1.0, weight / _BM25_SINGLE_MENTION)
+    return total / len(stems)
+
+
+def _stem_counts(text: str) -> tuple[dict[str, int], int]:
+    """Stemmed term frequencies for a document, plus its length in tokens."""
+    tokens = [_stem(t) for t in tokenize(text)]
+    counts: dict[str, int] = {}
+    for token in tokens:
+        counts[token] = counts.get(token, 0) + 1
+    return counts, len(tokens)
+
+
+# A phrase is "covered" once most of its words are genuinely present. 0.6
+# keeps a two-word phrase needing both words (0.5 alone is not enough) while
+# letting a three-word phrase through on two — which is the realistic case
+# where a JD pads a skill name with a word the CV words differently.
+PHRASE_COVERAGE_THRESHOLD = 0.6
+
+
+def bm25_match_rate(
+    phrases: list[str],
+    text: str,
+    threshold: float = PHRASE_COVERAGE_THRESHOLD,
 ) -> tuple[float, list[str]]:
     """
-    Semantic similarity between each keyword and the full CV text using cosine.
-    No external embedding model needed — pure Python TF-IDF vectors.
-    Returns: (rate 0-1, list of semantically matched keywords)
+    Which of `phrases` the text covers, by BM25 partial-phrase coverage.
+    Returns: (rate 0-1, matched list). Replaces semantic_keyword_match_rate.
     """
-    cv_tokens = tokenize(cv_text)
-    matched = []
-
-    for kw in keywords:
-        kw_tokens = tokenize(kw)
-        vocab = _build_vocab([kw_tokens, cv_tokens])
-        vec_kw = _tf(kw_tokens, vocab)
-        vec_cv = _tf(cv_tokens, vocab)
-        sim = cosine_similarity(vec_kw, vec_cv)
-        if sim >= threshold:
-            matched.append(kw)
-
-    rate = len(matched) / len(keywords) if keywords else 1.0
+    counts, doc_len = _stem_counts(text)
+    matched = [p for p in phrases if phrase_coverage(p, counts, doc_len) >= threshold]
+    rate = len(matched) / len(phrases) if phrases else 1.0
     return rate, matched
 
 
@@ -191,9 +274,10 @@ def combined_keyword_rate(
     exact_rate_h, matched_h, unmatched_h = exact_keyword_match_rate(high_keywords, cv_text)
     exact_rate_m, matched_m, unmatched_m = exact_keyword_match_rate(medium_keywords, cv_text)
 
-    # Semantic pass on what exact missed
-    sem_rate_h, sem_matched_h = semantic_keyword_match_rate(unmatched_h, cv_text)
-    sem_rate_m, sem_matched_m = semantic_keyword_match_rate(unmatched_m, cv_text)
+    # BM25 partial-phrase pass on what the exact pass missed. This is the
+    # layer that used to be cosine and never fired — see the note above it.
+    _, sem_matched_h = bm25_match_rate(unmatched_h, cv_text)
+    _, sem_matched_m = bm25_match_rate(unmatched_m, cv_text)
 
     all_matched = list(set(matched_h + matched_m + sem_matched_h + sem_matched_m))
     all_keywords = list(set(high_keywords + medium_keywords))
@@ -260,12 +344,12 @@ def required_skills_match_rate(
             matched.append(skill)
             continue
 
-        # Semantic fallback — check if similar skill exists
-        _, sem_match = semantic_keyword_match_rate(
-            [skill],
-            " ".join(all_candidate_skills),
-            threshold=0.5
-        )
+        # BM25 partial-phrase fallback across the candidate's whole skills
+        # list. The old cosine version here got HARDER the more skills a
+        # candidate listed (0.447 at 5 skills, 0.131 at 35), which punished
+        # exactly the people with the most to show. BM25's length term
+        # removes that.
+        _, sem_match = bm25_match_rate([skill], " ".join(all_candidate_skills))
         if sem_match:
             matched.append(skill)
         else:
@@ -277,74 +361,359 @@ def required_skills_match_rate(
 
 # ─── EDUCATION MATCH ──────────────────────────────────────────────────────────
 
+# Words that describe the LEVEL or the shape of a qualification rather than
+# its subject. Stripped from both sides so what remains is the field itself.
+_DEGREE_STOPWORDS = {
+    "bachelor", "bachelors", "bsc", "bs", "ba", "master", "masters", "msc", "ms", "ma",
+    "phd", "doctorate", "doctoral", "mba", "diploma", "degree", "certificate",
+    "undergraduate", "postgraduate", "graduate", "honours", "honors",
+    "in", "of", "or", "and", "a", "an", "the", "field", "study", "studies",
+    "related", "equivalent", "relevant", "similar", "preferred", "required",
+    "minimum", "least", "at", "with", "any",
+}
+
+
+def _field_terms(text: str) -> set[str]:
+    """The subject words of a degree or a degree requirement, stemmed."""
+    return {
+        _stem(token)
+        for token in normalize(text).split()
+        if token and token not in _DEGREE_STOPWORDS and not token.isdigit()
+    }
+
+
 def education_match_score(
     education_requirement: str,
     facts_json: dict
 ) -> float:
     """
-    Simple heuristic: does the candidate's degree field match the requirement?
-    Returns 0.0, 0.5, or 1.0.
+    How well the candidate's best degree matches the requirement's FIELD.
+
+    FIELD-AGNOSTIC, and that is the fix. This used to test the requirement
+    against a hardcoded list — "computer science", "software", "data",
+    "engineering", "ai" — and the degree against a matching list. Any
+    candidate outside software therefore had no path to a full score: a BSc
+    Nursing against a nursing requirement, or a PhD Molecular Biology
+    against a molecular biology requirement, scored 0.5, the same as "has a
+    degree, field unknown". Worse, an UNRELATED degree against a vague
+    requirement scored 0.8 — higher than an exact match — because the
+    "related/equivalent" branch fired first.
+
+    Now both sides are reduced to their subject words and compared directly,
+    so an exact field match reaches 1.0 whatever the field is, and the
+    software allowlist is gone. The `ai` entry in that list is also gone,
+    which quietly fixes a second bug: it was a substring test, so it matched
+    the "ai" inside "tr-ai-ning" and "av-ai-lable".
+
+    Returns 0.0-1.0.
     """
     if not education_requirement:
         return 1.0
 
-    education = facts_json.get("education", [])
+    education = facts_json.get("education") or []
     if not education:
         return 0.0
 
+    required = _field_terms(education_requirement)
     req_norm = normalize(education_requirement)
+    # "or related field" / "or equivalent" is the requirement explicitly
+    # widening itself, so an off-field degree is still acceptable to it.
+    accepts_related = "related" in req_norm or "equivalent" in req_norm
+
+    best = 0.0
     for edu in education:
-        degree = normalize(edu.get("degree", ""))
-        if any(term in req_norm for term in ["computer science", "ai", "artificial intelligence",
-                                              "software", "engineering", "data"]):
-            if any(term in degree for term in ["artificial intelligence", "computer", "software",
-                                                "data", "engineering"]):
-                return 1.0
-        # Related field
-        if "related" in req_norm or "equivalent" in req_norm:
-            return 0.8
-    return 0.5  # Has a degree but field match uncertain
+        # `or ""`, not a .get() default — see normalize()'s docstring for why
+        # the default never fires on a model_dump()ed Optional field.
+        degree_text = " ".join(filter(None, [
+            edu.get("degree") or "",
+            # Coursework is real evidence of field, and it is the only field
+            # signal at all for an entry that lists an institution but no
+            # degree title.
+            " ".join(edu.get("relevant_coursework") or []),
+        ]))
+        if not degree_text.strip():
+            best = max(best, 0.4 if accepts_related else 0.3)
+            continue
+
+        held = _field_terms(degree_text)
+        if not required:
+            # A requirement with no subject words ("Bachelor's degree") asks
+            # only that a degree exists, and one does.
+            best = max(best, 1.0)
+            continue
+
+        overlap = len(required & held) / len(required)
+        if overlap >= 0.6:
+            score = 1.0                      # same field
+        elif overlap > 0:
+            score = 0.75 if accepts_related else 0.65   # adjacent field
+        else:
+            score = 0.5 if accepts_related else 0.35    # different field
+        best = max(best, score)
+
+    return best
 
 
 # ─── EXPERIENCE YEARS MATCH ───────────────────────────────────────────────────
+
+_MONTHS = {
+    "jan": 1, "feb": 2, "mar": 3, "apr": 4, "may": 5, "jun": 6,
+    "jul": 7, "aug": 8, "sep": 9, "oct": 10, "nov": 11, "dec": 12,
+}
+_ONGOING = ("present", "current", "ongoing", "now", "today", "date")
+_YEAR_RE = re.compile(r"\b((?:19|20)\d{2})\b")
+
+
+def _parse_endpoint(text: str, default_month: int) -> tuple[int, int] | None:
+    """(year, month) from one side of a date range, or None if there's no year."""
+    year_match = _YEAR_RE.search(text)
+    if not year_match:
+        return None
+    month = default_month
+    lowered = text.lower()
+    for name, number in _MONTHS.items():
+        if name in lowered:
+            month = number
+            break
+    return int(year_match.group(1)), month
+
+
+def parse_date_range_months(dates: str, today: tuple[int, int] | None = None) -> int | None:
+    """
+    Length of one role in months, or None when the dates can't be read.
+
+    Handles the shapes cv_parser actually returns: "Jan 2019 - Dec 2024",
+    "2017 - 2019", "2014-2024", "Mar 2016 - Present", "2022-Current".
+    A single bare date ("2024") has no measurable span and returns None
+    rather than a guess.
+    """
+    text = (dates or "").strip()
+    if not text:
+        return None
+
+    now = today or (date.today().year, date.today().month)
+
+    # Split on the usual range separators, including the en/em dashes the
+    # parser preserves verbatim from the source CV.
+    parts = re.split(r"\s*(?:-|–|—|to|until|through)\s*", text, flags=re.IGNORECASE)
+    parts = [p for p in parts if p.strip()]
+    if not parts:
+        return None
+
+    start = _parse_endpoint(parts[0], default_month=1)
+    if not start:
+        return None
+
+    if len(parts) == 1:
+        return None  # a single date is a point, not a span
+
+    tail = " ".join(parts[1:])
+    if any(word in tail.lower() for word in _ONGOING):
+        end = now
+    else:
+        # December, so "2017 - 2019" counts as through the end of 2019 —
+        # the same reading a human gives a year-only range.
+        end = _parse_endpoint(tail, default_month=12)
+        if not end:
+            return None
+
+    months = (end[0] - start[0]) * 12 + (end[1] - start[1]) + 1
+    return months if months > 0 else None
+
+
+def _merge_months(spans: list[tuple[int, int]]) -> int:
+    """Total months covered by these (start, end) absolute-month spans,
+    counting overlapping roles once."""
+    total = 0
+    current_start = current_end = None
+    for start, end in sorted(spans):
+        if current_end is None or start > current_end + 1:
+            if current_end is not None:
+                total += current_end - current_start + 1
+            current_start, current_end = start, end
+        else:
+            current_end = max(current_end, end)
+    if current_end is not None:
+        total += current_end - current_start + 1
+    return total
+
+
+def total_experience_years(facts_json: dict, today: tuple[int, int] | None = None) -> tuple[float, bool]:
+    """
+    (years, measured) — real elapsed years from the CV's own date ranges.
+
+    `measured` is False when nothing could be parsed, so the caller knows to
+    fall back rather than treating 0.0 as "no experience".
+
+    Concurrent roles are merged instead of summed: someone who consulted
+    while employed has not lived through both spans twice.
+    """
+    spans: list[tuple[int, int]] = []
+    now = today or (date.today().year, date.today().month)
+
+    for exp in facts_json.get("experience") or []:
+        months = parse_date_range_months(exp.get("dates") or "", today=now)
+        if months is None:
+            continue
+        start = _parse_endpoint(re.split(r"\s*(?:-|–|—|to|until|through)\s*",
+                                         (exp.get("dates") or "").strip(),
+                                         flags=re.IGNORECASE)[0], default_month=1)
+        if not start:
+            continue
+        start_abs = start[0] * 12 + start[1]
+        spans.append((start_abs, start_abs + months - 1))
+
+    if spans:
+        return round(_merge_months(spans) / 12, 1), True
+
+    # No readable RANGES, but bare years are still real evidence: the span
+    # from the earliest to the latest year mentioned bounds the career. This
+    # tier matters because without it the caller falls through to counting
+    # rows, which is the exact inversion this function exists to remove —
+    # sixteen roles all dated "2021" would otherwise read as eight years
+    # instead of one.
+    years_seen = {
+        int(y)
+        for exp in facts_json.get("experience") or []
+        for y in _YEAR_RE.findall(exp.get("dates") or "")
+    }
+    if years_seen:
+        return float(max(years_seen) - min(years_seen) + 1), True
+
+    return 0.0, False
+
 
 def experience_years_match(
     years_required: int,
     facts_json: dict
 ) -> float:
     """
-    Estimate candidate's years of experience from facts_json.
-    Returns 0-1 score.
+    How much of the required experience the candidate actually has.
+
+    MEASURED FROM DATES, NOT FROM ENTRY COUNT — that inversion was the bug.
+    The old version estimated years as `max(len(experience) * 0.5, ...)`, so
+    it rewarded having MANY rows rather than having a long career:
+
+        one 10-year role   -> 0.5 "years" -> 0.30   (worst bucket)
+        two 6-year roles   -> 1.0 "years" -> 0.30
+        sixteen brief roles-> 8.0 "years" -> 1.00   (perfect)
+
+    A twelve-year veteran scored the floor while a job-hopper scored full
+    marks. Now the real spans are parsed and merged, and the score is the
+    honest fraction of the requirement met. The entry-count heuristic
+    survives only as the fallback for a CV whose dates genuinely cannot be
+    read, where a rough estimate still beats scoring someone zero.
     """
     if not years_required or years_required == 0:
         return 1.0
 
-    experience = facts_json.get("experience", [])
-    # Count distinct years mentioned across all roles
-    year_pattern = re.compile(r"\b(20\d{2})\b")
-    years_found = set()
-    for exp in experience:
-        for bullet in exp.get("bullets", []):
-            years_found.update(year_pattern.findall(bullet))
-        dates = exp.get("dates", "")
-        years_found.update(year_pattern.findall(dates))
+    years, measured = total_experience_years(facts_json)
 
-    # Projects also count as partial experience
-    projects = facts_json.get("projects", [])
-    estimated_years = max(len(experience) * 0.5, len(years_found) * 0.3, len(projects) * 0.2)
-    estimated_years = round(min(estimated_years, 10), 1)
+    if not measured:
+        experience = facts_json.get("experience") or []
+        projects = facts_json.get("projects") or []
+        if not experience and not projects:
+            return 0.0
+        years = min(max(len(experience) * 0.5, len(projects) * 0.2), 10)
 
-    if estimated_years >= years_required:
+    return round(min(1.0, years / years_required), 3)
+
+
+# ─── JOB TITLE & SENIORITY MATCH ──────────────────────────────────────────────
+#
+# NEW COMPONENT. jd_analyzer has always produced job_title and
+# seniority_level and the scorer read neither, which was the single largest
+# gap against how real ATS platforms rank: Workday-style engines weight
+# title-and-level match heavily, because a title is the most reliable
+# statement of what someone actually did. A CV can carry every keyword in a
+# posting and still be the wrong person for it.
+#
+# This scores the candidate's OWN titles, taken verbatim from their CV. It
+# infers nothing about roles they did not hold.
+
+_SENIORITY_RANK = {
+    "intern": 0, "internship": 0, "trainee": 0,
+    "junior": 1, "entry": 1, "graduate": 1, "assistant": 1,
+    "mid": 2, "intermediate": 2, "associate": 2,
+    "senior": 3, "sr": 3, "specialist": 3,
+    "lead": 4, "principal": 4, "staff": 4, "head": 4, "manager": 4, "director": 4,
+}
+
+# Level words are matched separately, so they must not also count as part of
+# the title's subject — otherwise "Senior Nurse" vs "Nurse" looks like a
+# half-match on the wrong axis.
+_TITLE_LEVEL_WORDS = set(_SENIORITY_RANK)
+
+
+def _seniority_rank(text: str) -> int | None:
+    for token in normalize(text).split():
+        if token in _SENIORITY_RANK:
+            return _SENIORITY_RANK[token]
+    return None
+
+
+def _title_subject(text: str) -> str:
+    return " ".join(t for t in normalize(text).split() if t not in _TITLE_LEVEL_WORDS)
+
+
+def title_match_score(job_title: str, seniority_level: str, facts_json: dict) -> float:
+    """
+    How close the candidate's real job titles are to the one being applied
+    for, on two axes: the ROLE itself and its LEVEL.
+
+    Returns 0.0-1.0, or 1.0 when the JD names no title (nothing to fail).
+    """
+    if not (job_title or "").strip():
         return 1.0
-    elif estimated_years >= years_required * 0.7:
-        return 0.7
-    elif estimated_years >= years_required * 0.5:
-        return 0.5
+
+    titles = [
+        str(exp.get("title") or "").strip()
+        for exp in (facts_json.get("experience") or [])
+        if str(exp.get("title") or "").strip()
+    ]
+    if not titles:
+        return 0.0
+
+    # ROLE: the best partial-phrase coverage of the JD's title across every
+    # title the candidate has actually held.
+    subject = _title_subject(job_title)
+    if subject:
+        role = max(
+            (phrase_coverage(subject, *_stem_counts(_title_subject(t))) for t in titles),
+            default=0.0,
+        )
     else:
-        return 0.3
+        role = 1.0  # a title that is only a level, e.g. "Senior"
+
+    # LEVEL: how far apart the two sit on the ladder. The JD's declared
+    # seniority_level wins over whatever adjective is in the title string.
+    wanted = _seniority_rank(seniority_level or "") or _seniority_rank(job_title)
+    held = max((r for r in (_seniority_rank(t) for t in titles) if r is not None), default=None)
+    if wanted is None or held is None:
+        level = 0.75  # unstated on one side: neither credit nor penalty
+    else:
+        gap = abs(wanted - held)
+        level = {0: 1.0, 1: 0.8, 2: 0.55}.get(gap, 0.3)
+
+    return round(0.7 * min(1.0, role) + 0.3 * level, 3)
 
 
 # ─── FINAL ATS SCORE ─────────────────────────────────────────────────────────
+
+def _dedupe_keywords(keywords: list[str], skills: list[str]) -> list[str]:
+    """
+    Drop keywords that are already being scored as skills.
+
+    jd_analyzer emits the same term into both lists constantly ("React" is a
+    required skill AND an ats_keyword_high), so without this the same piece
+    of evidence is counted twice — rewarded twice when present, punished
+    twice when absent. Whatever survives here is the JD's own language that
+    is not a named skill, which is the only thing the keyword component can
+    tell us that the skills component cannot.
+    """
+    skill_norms = {normalize(s) for s in skills if normalize(s)}
+    return [k for k in keywords if normalize(k) not in skill_norms]
+
 
 def calculate_ats_score(
     facts_json: dict,
@@ -359,20 +728,46 @@ def calculate_ats_score(
     # Prefer tailoring_engine.py's cleaned/inferred skills (what's actually
     # on the rendered CV) over the raw facts_json extraction — see the bug
     # note on required_skills_match_rate above.
-    effective_skills = tailored_skills or (facts_json.get("skills", {}) or {})
+    #
+    # resolve_skills, not `or`: Agent 3 returns all five categories present
+    # and empty when it produced no skills, and that shell is truthy. It won
+    # the `or` and zeroed this sub-score against a CV that had 35 real
+    # skills on it. See utils/skills.py.
+    effective_skills = resolve_skills(tailored_skills, facts_json.get("skills"))
 
-    # 1. Keyword match
+    required = weight_factors.get("required_skills") or []
+    preferred = weight_factors.get("preferred_skills") or []
+
+    # 1. Keyword match, over JD language that ISN'T already a scored skill.
     kw_rate, matched_kw, unmatched_kw = combined_keyword_rate(
-        high_keywords=weight_factors.get("ats_keywords_high", []),
-        medium_keywords=weight_factors.get("ats_keywords_medium", []),
+        high_keywords=_dedupe_keywords(weight_factors.get("ats_keywords_high") or [], required + preferred),
+        medium_keywords=_dedupe_keywords(weight_factors.get("ats_keywords_medium") or [], required + preferred),
         cv_text=tailored_cv_text
     )
 
-    # 2. Required skills match
+    # 2. Skills: required in full, preferred at partial credit.
+    #
+    # preferred_skills were parsed and then thrown away. A JD saying "nice to
+    # have: GraphQL" is real, scoreable signal when the candidate genuinely
+    # has it — so it now earns credit, at a fifth of the weight of a required
+    # skill, and NEVER costs anything when absent: a candidate missing a
+    # nice-to-have has not failed a requirement. That asymmetry is why the
+    # blend only applies when preferred skills exist at all.
     skills_rate, matched_skills, missing_skills = required_skills_match_rate(
-        required_skills=weight_factors.get("required_skills", []),
+        required_skills=required,
         effective_skills=effective_skills
     )
+    preferred_rate, matched_preferred, _ = required_skills_match_rate(
+        required_skills=preferred,
+        effective_skills=effective_skills
+    )
+    # Applied to the REMAINING HEADROOM, so a nice-to-have can only ever
+    # lift the score toward the requirements the candidate did meet. A blend
+    # (0.8*required + 0.2*preferred) would have taken a candidate who met
+    # every requirement from 100 down to 90 for lacking an optional extra —
+    # penalising them for a skill the JD itself called optional.
+    if preferred:
+        skills_rate = min(1.0, skills_rate + (1 - skills_rate) * 0.25 * preferred_rate)
 
     # 3. Education match
     edu_score = education_match_score(
@@ -380,18 +775,37 @@ def calculate_ats_score(
         facts_json=facts_json
     )
 
-    # 4. Experience years match
+    # 4. Experience, from real date ranges
     exp_score = experience_years_match(
         years_required=weight_factors.get("years_experience_required", 0),
         facts_json=facts_json
     )
 
-    # 5. Weighted total
+    # 5. Title and seniority
+    title_score = title_match_score(
+        job_title=weight_factors.get("job_title", "") or "",
+        seniority_level=weight_factors.get("seniority_level", "") or "",
+        facts_json=facts_json,
+    )
+
+    # 6. Weighted total.
+    #
+    # When de-duplication leaves NO keywords to score (every ats_keyword was
+    # also a named skill), the keyword component has nothing to say. Scoring
+    # it as 1.0 would hand out free points, so its weight is redistributed
+    # across the components that do have evidence instead.
+    components = {
+        "skills_match": skills_rate,
+        "keyword_match": kw_rate,
+        "title_match": title_score,
+        "experience_match": exp_score,
+        "education_match": edu_score,
+    }
+    active = {k: v for k, v in components.items()
+              if not (k == "keyword_match" and not (matched_kw or unmatched_kw))}
+    total_weight = sum(WEIGHTS[k] for k in active) or 1.0
     ats_score = int(round(
-        (kw_rate    * WEIGHTS["keyword_match"]   +
-         skills_rate * WEIGHTS["skills_match"]    +
-         edu_score   * WEIGHTS["education_match"] +
-         exp_score   * WEIGHTS["experience_match"]) * 100
+        sum(v * WEIGHTS[k] for k, v in active.items()) / total_weight * 100
     ))
 
     return {
@@ -399,21 +813,18 @@ def calculate_ats_score(
         "score_breakdown": {
             "keyword_match":    int(kw_rate * 100),
             "skills_match":     int(skills_rate * 100),
+            "title_match":      int(title_score * 100),
             "education_match":  int(edu_score * 100),
             "experience_match": int(exp_score * 100),
             # Sent through so the frontend's "how ATS is calculated" explainer
             # always shows the real weights instead of a hardcoded guess.
-            "weights": {
-                "keyword_match":    int(WEIGHTS["keyword_match"] * 100),
-                "skills_match":     int(WEIGHTS["skills_match"] * 100),
-                "education_match":  int(WEIGHTS["education_match"] * 100),
-                "experience_match": int(WEIGHTS["experience_match"] * 100),
-            },
+            "weights": {k: int(v * 100) for k, v in WEIGHTS.items()},
         },
         "matched_keywords": matched_kw,
         "unmatched_keywords": unmatched_kw,
         "matched_skills": matched_skills,
         "missing_skills": missing_skills,
+        "matched_preferred_skills": matched_preferred,
     }
 
 
@@ -458,7 +869,8 @@ def run_ats_scorer(state: dict) -> dict:
     volunteer_text = " ".join(tailored_volunteer_work) or " ".join(
         facts_json.get("volunteer_work", []) or []
     )
-    skills_source = tailored_skills or (facts_json.get("skills", {}) or {})
+    # Same empty-shell trap as in calculate_ats_score — see utils/skills.py.
+    skills_source = resolve_skills(tailored_skills, facts_json.get("skills"))
     skills_text = " ".join(
         item
         for category in skills_source.values()

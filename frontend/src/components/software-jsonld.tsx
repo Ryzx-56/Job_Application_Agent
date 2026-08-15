@@ -39,7 +39,7 @@ export function SoftwareApplicationJsonLd() {
     featureList: [
       "Tailored CV and cover letter per job posting",
       "Arabic and English output, correctly typeset in both",
-      "ATS score with a four-factor breakdown",
+      "ATS score with a weighted factor breakdown",
       "Job match score and gap analysis",
       "Matched job openings linking to the original listing",
       "PDF and DOCX export",

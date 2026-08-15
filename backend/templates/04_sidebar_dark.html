@@ -4,19 +4,40 @@
 <meta charset="UTF-8">
 <style>
   :root { --cv-scale: {{ cv_scale|default(1) }}; }
+
+  /* TWO COLUMNS AS A TABLE, NOT AS FLEX — SO THE CV CAN PAGINATE.
+
+     This template used to be `html, body { height: 100% }` plus a flex
+     row. The height rule pinned the body to exactly ONE page box, so
+     WeasyPrint CLIPPED everything that did not fit instead of paginating
+     it: a CV with 16 experience entries came out as a single page holding
+     four of them, with no error anywhere. Measured before the fix, 4/16
+     entries and 20/80 bullets survived. That is the content-loss bug.
+
+     Dropping the height rule alone restored all 16 entries, but flex does
+     not carry a column across a page break in WeasyPrint — page 2 lost
+     the sidebar entirely and the main text slid to the left margin. A
+     table row does fragment correctly, keeping both columns and
+     repainting each cell's background on every fragment, which is also
+     what makes the dark band reach the foot of all pages without any
+     fixed height.
+
+     (An @page linear-gradient band was tried first and rejected: it
+     renders nothing here, and it would have to know the RTL flip.)
+
+     The two widths below must stay in sync with each other. */
   @page { size: A4; margin: 0; }
   * { margin: 0; padding: 0; box-sizing: border-box; }
   body { font-family: "Segoe UI", Arial, sans-serif; font-size: 10.5pt; color: #222; }
-  html, body { height: 100%; }
-  .page { display: flex; min-height: 100%; }
-  .sidebar { width: 34%; background: #16223a; color: #eef1f7; padding: 40px 26px; }
+  .page { display: table; width: 100%; }
+  .sidebar { display: table-cell; width: 34%; background: #16223a; color: #eef1f7; padding: 40px 26px; vertical-align: top; }
   .sidebar h1 { font-size: 17pt; font-weight: 700; line-height: 1.25; }
   .sidebar .tagline { font-size: 9pt; color: #9fb0cf; margin-top: 6px; margin-bottom: 22px; }
   .side-section { margin-bottom: 22px; }
   .side-title { font-size: 9pt; font-weight: 700; letter-spacing: 1.5px; text-transform: uppercase; color: #7fa1e0; margin-bottom: 8px; }
   .side-row { font-size: 9pt; margin-bottom: 5px; color: #d7deea; word-break: break-word; }
   .side-row a { color: #d7deea; }
-  .main { width: 66%; padding: 40px 34px; }
+  .main { display: table-cell; width: 66%; padding: 40px 34px; vertical-align: top; }
   .main-section { margin-bottom: 18px; }
   .main-title { font-size: 12pt; font-weight: 700; color: #16223a; border-bottom: 2px solid #16223a; padding-bottom: 3px; margin-bottom: 9px; }
   .entry { margin-bottom: 12px; page-break-inside: avoid; }

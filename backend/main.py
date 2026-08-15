@@ -268,6 +268,38 @@ def make_initial_state(cv_text: str, jd_text: str, template_id: str = DEFAULT_TE
     )
 
 
+# A CV whose text is shorter than this is too small to judge coverage on —
+# a one-page graduate CV legitimately extracts to very little.
+_MIN_SOURCE_CHARS_FOR_COVERAGE = 1500
+
+# How much of the uploaded CV's text must survive into facts_json. A real
+# extraction lands far above this: structured fields drop section headings,
+# contact lines and whitespace but keep the prose, so healthy runs sit well
+# past half. This is set low on purpose — it is here to catch a catastrophic
+# partial extraction (a name and almost nothing else), NOT to police quality,
+# because a false positive refuses a run the user could otherwise have had.
+_MIN_EXTRACTION_COVERAGE = 0.15
+
+
+def _facts_content_length(facts: dict) -> int:
+    """Characters of real extracted content in facts_json, ignoring the
+    contact block (which survives even a badly truncated extraction)."""
+    total = 0
+    stack = [facts.get(key) for key in (
+        "education", "experience", "skills", "projects",
+        "certifications", "languages_spoken", "volunteer_work", "awards",
+    )]
+    while stack:
+        item = stack.pop()
+        if isinstance(item, str):
+            total += len(item)
+        elif isinstance(item, dict):
+            stack.extend(item.values())
+        elif isinstance(item, (list, tuple)):
+            stack.extend(item)
+    return total
+
+
 def _pipeline_produced_usable_cv(result_state: dict) -> bool:
     """
     True signal that Agent 1 (cv_parser / manual_cv_parser) actually
@@ -276,10 +308,43 @@ def _pipeline_produced_usable_cv(result_state: dict) -> bool:
     limit exhausted all retries). personal.name is the one field Agent 1
     is required to populate — checking it is a general, non-hardcoded
     signal that works no matter *why* Agent 1 failed.
+
+    THE NAME CHECK ALONE WAS NOT ENOUGH. It catches a WHOLLY empty
+    extraction and nothing else, so a PARTIAL one — name present, most of
+    the document missing — passed every gate and rendered as though it were
+    complete. The user was charged for a CV with most of their career
+    silently absent from it, which is the failure mode this second check
+    closes: if the uploaded document clearly had substance and almost none
+    of it reached facts_json, that is a failed extraction, not a short CV.
+
+    Deliberately compares against raw_cv_text rather than a fixed entry
+    count, since "how many jobs should this CV have" is unknowable and
+    varies wildly. Skipped entirely for manual entry, where raw_cv_text is
+    "" by construction (see the manual endpoints in this file) and the form
+    IS the source of truth.
     """
     facts = result_state.get("facts_json") or {}
     personal = facts.get("personal") or {}
-    return bool((personal.get("name") or "").strip())
+    if not (personal.get("name") or "").strip():
+        return False
+
+    source_chars = len(result_state.get("raw_cv_text") or "")
+    if source_chars < _MIN_SOURCE_CHARS_FOR_COVERAGE:
+        return True
+
+    extracted_chars = _facts_content_length(facts)
+    coverage = extracted_chars / source_chars
+    if coverage < _MIN_EXTRACTION_COVERAGE:
+        logger.error(
+            f"❌ PARTIAL EXTRACTION: the uploaded CV holds {source_chars} characters but "
+            f"facts_json carries only {extracted_chars} ({coverage:.0%}, floor "
+            f"{_MIN_EXTRACTION_COVERAGE:.0%}) — "
+            f"{len(facts.get('experience') or [])} experience and "
+            f"{len(facts.get('education') or [])} education entries. Agent 1 returned a name "
+            f"but lost the document; refusing to render rather than shipping a gutted CV."
+        )
+        return False
+    return True
 
 
 def _weight_factors_usable(result_state: dict) -> bool:

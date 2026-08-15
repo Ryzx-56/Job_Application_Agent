@@ -41,16 +41,42 @@ const plexArabic = IBM_Plex_Sans_Arabic({
   display: "swap",
 });
 
+/* ── THE TITLE AND DESCRIPTION ARE WRITTEN FOR SEARCH, NOT FOR US ────────
+   The site was reachable by typing the URL and essentially no other way: it
+   ranked for neither "CV maker" nor "Tarshih", in either language. Both
+   titles used to open with the brand and an em dash, which spends the first
+   third of a ~60-character title budget on a word nobody is searching yet
+   and a punctuation mark search engines get nothing from.
+
+   So the keywords lead and the brand closes. The terms are the ones the
+   product actually delivers — a CV rewritten against a pasted job
+   description, an ATS score, a cover letter, matched openings, in Arabic or
+   English, for the Saudi market. Nothing here names a feature that does not
+   exist, which is the only reason the density is safe: it reads as a
+   description because it is one.
+
+   THE ARABIC IS NOT THE ENGLISH TRANSLATED. Arabic searchers type
+   "منشئ سيرة ذاتية" for the category and reach for the Latin "ATS" rather
+   than an Arabic rendering of it, so the Arabic title is built from those
+   terms rather than from the English word order.
+
+   NO CREDIT COUNT IN EITHER DESCRIPTION ANY MORE. Both used to state the
+   free monthly allowance as a hardcoded word ("Three credits", "ثلاث نقاط")
+   while lib/pricing.ts is the source of truth everywhere else on the site —
+   a number that has already changed several times, typed by hand, in the
+   one string a search engine quotes back at people. The clause is gone
+   rather than interpolated: the description's ~155-character budget buys
+   more in keywords than in an allowance the hero already states exactly. */
 const COPY = {
   en: {
-    title: "Tarshih — a CV rewritten for the job you're applying to",
+    title: "AI CV maker and ATS resume builder for Saudi jobs | Tarshih",
     description:
-      "Paste a job posting and get a CV and cover letter rewritten for it, in Arabic or English, with an ATS score and matched openings. Three credits free every month, no card.",
+      "Tarshih is an AI CV maker for Saudi jobs. Paste a job description and get an ATS-optimized CV and cover letter in Arabic or English, with live matched openings.",
   },
   ar: {
-    title: "ترشيح — سيرة ذاتية تُكتب من جديد للوظيفة التي تتقدّم لها",
+    title: "منشئ سيرة ذاتية بالذكاء الاصطناعي لوظائف السعودية | ترشيح",
     description:
-      "الصق إعلان الوظيفة واحصل على سيرة ذاتية وخطاب تقديم مكتوبين له، بالعربية أو بالإنجليزية، مع درجة التوافق ووظائف مطابقة. ثلاث نقاط مجانًا كل شهر بلا بطاقة.",
+      "ترشيح: منشئ سيرة ذاتية بالذكاء الاصطناعي لوظائف السعودية. الصق إعلان الوظيفة لتحصل على سيرة ذاتية وخطاب تقديم متوافقين مع أنظمة ATS، بالعربية أو بالإنجليزية، مع وظائف مطابقة.",
   },
 };
 

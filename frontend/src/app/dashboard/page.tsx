@@ -60,32 +60,40 @@ type SimilarJob = {
 };
 
 type AtsBreakdown = {
-  keyword_match?: number;
   skills_match?: number;
-  education_match?: number;
+  keyword_match?: number;
+  title_match?: number;
   experience_match?: number;
+  education_match?: number;
   matched_keywords?: string[];
   unmatched_keywords?: string[];
   matched_skills?: string[];
   missing_skills?: string[];
+  matched_preferred_skills?: string[];
   // Weight each factor carries toward the overall ATS score (percent),
   // sent by ats_scorer.py so this always matches the backend exactly
   // instead of a hardcoded guess on the frontend.
   weights?: {
-    keyword_match?: number;
     skills_match?: number;
-    education_match?: number;
+    keyword_match?: number;
+    title_match?: number;
     experience_match?: number;
+    education_match?: number;
   };
 };
 
 // Fallback only — used if an older backend response doesn't include
 // atsBreakdown.weights yet. Mirrors WEIGHTS in utils/ats_scorer.py.
+// Fallback only — the real weights ride in atsBreakdown.weights from
+// utils/ats_scorer.py. Kept in sync with WEIGHTS there; skills leads because
+// a named skill is the most concrete claim on a CV, and title_match exists
+// because real ATS engines weight the role you have held heavily.
 const DEFAULT_ATS_WEIGHTS = {
-  keyword_match: 40,
-  skills_match: 35,
-  education_match: 15,
-  experience_match: 10,
+  skills_match: 40,
+  keyword_match: 25,
+  title_match: 15,
+  experience_match: 12,
+  education_match: 8,
 };
 
 type GapItem = {
@@ -1470,43 +1478,51 @@ export default function DashboardHomePage() {
             </div>
             <p className="mt-2 text-xs leading-relaxed text-slate-600">
               {lang === "ar"
-                ? "ATS تعني «نظام تتبع المتقدمين»، البرنامج الذي تستخدمه معظم الشركات لفرز السير الذاتية قبل أن يراها أي إنسان. نحاكي هذا الفرز لنقدّر مدى مطابقة سيرتك لهذه الوظيفة تحديدًا، بناءً على أربعة عوامل:"
-                : "ATS stands for Applicant Tracking System, the software most companies use to auto-screen CVs before a human ever sees them. We simulate that screening to estimate how well your CV matches this specific job, based on four factors:"}
+                ? "ATS تعني «نظام تتبع المتقدمين»، البرنامج الذي تستخدمه معظم الشركات لفرز السير الذاتية قبل أن يراها أي إنسان. نحاكي هذا الفرز لنقدّر مدى مطابقة سيرتك لهذه الوظيفة تحديدًا، بناءً على العوامل التالية:"
+                : "ATS stands for Applicant Tracking System, the software most companies use to auto-screen CVs before a human ever sees them. We simulate that screening to estimate how well your CV matches this specific job, based on these factors:"}
             </p>
 
             <ul className="mt-4 space-y-3">
               {[
                 {
-                  key: "keyword_match" as const,
-                  title: lang === "ar" ? "الكلمات المفتاحية" : "Keywords",
-                  desc:
-                    lang === "ar"
-                      ? "هل تحتوي سيرتك على المصطلحات والعبارات المحددة الموجودة في وصف الوظيفة؟ نتيجة منخفضة هنا تعني أن سيرتك لا تستخدم نفس الكلمات التي يبحث عنها ATS الخاص بالشركة. هذا لا يعني بالضرورة أنك غير مؤهل."
-                      : "Whether your CV contains the specific terms and phrases from the job description. A low score here means your CV isn't using the same wording the company's ATS is scanning for. It doesn't necessarily mean you're unqualified.",
-                },
-                {
                   key: "skills_match" as const,
                   title: lang === "ar" ? "المهارات" : "Skills",
                   desc:
                     lang === "ar"
-                      ? "مدى تطابق المهارات المطلوبة في الوظيفة مع المهارات المذكورة في ملفك."
-                      : "How many of the required skills for this role are actually listed in your profile.",
+                      ? "مدى تطابق المهارات المطلوبة في الوظيفة مع المهارات المذكورة في ملفك. المهارات المفضّلة (غير الإلزامية) تضيف رصيدًا عند توفرها، ولا تخصم عند غيابها."
+                      : "How many of the required skills for this role are actually listed in your profile. Skills the job lists as preferred add credit when you have them, and never cost you anything when you don't.",
                 },
                 {
-                  key: "education_match" as const,
-                  title: lang === "ar" ? "التعليم" : "Education",
+                  key: "keyword_match" as const,
+                  title: lang === "ar" ? "الكلمات المفتاحية" : "Keywords",
                   desc:
                     lang === "ar"
-                      ? "هل يتوافق تخصصك ودرجتك العلمية مع ما تطلبه الوظيفة."
-                      : "Whether your degree and field of study line up with what the role asks for.",
+                      ? "لغة إعلان الوظيفة التي ليست مهارة مسمّاة أصلًا، حتى لا يُحتسب الشيء نفسه مرتين. نتيجة منخفضة هنا تعني أن سيرتك لا تستخدم نفس صياغة الإعلان، ولا تعني بالضرورة أنك غير مؤهل."
+                      : "The job's own wording that isn't already a named skill, so the same evidence isn't counted twice. A low score here means your CV isn't using the posting's phrasing. It doesn't necessarily mean you're unqualified.",
+                },
+                {
+                  key: "title_match" as const,
+                  title: lang === "ar" ? "المسمى الوظيفي" : "Job title",
+                  desc:
+                    lang === "ar"
+                      ? "مدى قرب المسميات التي شغلتها فعلًا من المسمى المطلوب، ومستواها مقارنة بمستوى الوظيفة. تزن أنظمة التتبع الكبرى هذا العامل بشدة."
+                      : "How close the job titles you've actually held are to the one you're applying for, and how their level compares. Major ATS platforms weight this heavily.",
                 },
                 {
                   key: "experience_match" as const,
                   title: lang === "ar" ? "الخبرة" : "Experience",
                   desc:
                     lang === "ar"
-                      ? "تقدير لعدد سنوات الخبرة لديك مقارنة بما تطلبه الوظيفة."
-                      : "An estimate of your years of relevant experience compared to what the role asks for.",
+                      ? "سنوات خبرتك محسوبة من تواريخ وظائفك نفسها مقارنة بما تطلبه الوظيفة، مع احتساب الفترات المتداخلة مرة واحدة."
+                      : "Your years of experience, measured from the dates on your own roles, against what the job asks for. Overlapping roles are counted once.",
+                },
+                {
+                  key: "education_match" as const,
+                  title: lang === "ar" ? "التعليم" : "Education",
+                  desc:
+                    lang === "ar"
+                      ? "هل يتوافق تخصصك ودرجتك العلمية مع ما تطلبه الوظيفة، في أي مجال كان."
+                      : "Whether your degree and field of study line up with what the role asks for, in any field.",
                 },
               ].map((factor) => {
                 const weight =

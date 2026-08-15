@@ -195,7 +195,7 @@ export function DocumentsPanel() {
    2 — THE SCORES AND WHAT THEY LEFT OUT
 
    Deliberately NOT another copy of the hero's score panel. That one shows
-   the four factors utils/ats_scorer.py weighs; this shows the part the hero
+   the factors utils/ats_scorer.py weighs; this shows the part the hero
    has no room for — the second, separate score (agents/match_scorer.py
    judges fit independently of the ATS composite) and the gap list behind
    both, which is the thing the feature's headline actually promises.

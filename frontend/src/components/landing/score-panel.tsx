@@ -11,11 +11,11 @@ import { Figure } from "./figure";
    exists in the product: there is no formatting score anywhere in the
    pipeline. What the dashboard actually renders after a generation
    (app/dashboard/page.tsx, the ATS card) is an overall score plus a
-   four-factor breakdown, and those four factors are exactly the ones
+   weighted breakdown, and those factors are exactly the ones
    utils/ats_scorer.py computes and weighs:
 
-       keyword_match 40%   skills_match 35%
-       education_match 15% experience_match 10%
+       skills_match 40%   keyword_match 25%   title_match 15%
+       experience_match 12%   education_match 8%
 
    The labels below are the same strings the dashboard uses in each language.
 
@@ -39,22 +39,24 @@ import { Figure } from "./figure";
 
 /** Mirrors WEIGHTS in backend/utils/ats_scorer.py. */
 const WEIGHTS = {
-  keywords: 0.4,
-  skills: 0.35,
-  education: 0.15,
-  experience: 0.1,
+  skills: 0.4,
+  keywords: 0.25,
+  title: 0.15,
+  experience: 0.12,
+  education: 0.08,
 } as const;
 
 type FactorKey = keyof typeof WEIGHTS;
 
 const FACTORS: { key: FactorKey; value: number }[] = [
-  { key: "keywords", value: 94 },
   { key: "skills", value: 88 },
+  { key: "keywords", value: 94 },
+  { key: "title", value: 90 },
+  { key: "experience", value: 100 },
   { key: "education", value: 100 },
-  { key: "experience", value: 76 },
 ];
 
-/** The composite, by the scorer's own formula. Comes out at 91. */
+/** The composite, by the scorer's own formula. Comes out at 92. */
 const OVERALL = Math.round(
   FACTORS.reduce((total, factor) => total + factor.value * WEIGHTS[factor.key], 0),
 );
@@ -89,7 +91,7 @@ export function ScorePanel() {
           />
         </div>
 
-        {/* ── the four factors ── */}
+        {/* ── the weighted factors ── */}
         <div className="mt-7 border-t pt-6" style={{ borderColor: "#e2e2de" }}>
           <div className="space-y-[1.15rem] sm:space-y-[1.35rem]">
             {FACTORS.map((factor, i) => {
@@ -98,8 +100,8 @@ export function ScorePanel() {
                 <div key={factor.key} className="rise flex items-center gap-3 sm:gap-4" style={{ ["--rise-delay" as string]: `${delay}s` }}>
                   {/* Wide enough on a phone for the longest Arabic label,
                       "الكلمات المفتاحية", to stay on one line. Narrower and it
-                      wrapped, which made that one row taller than the other
-                      three and broke the comparison the rules exist to make. */}
+                      wrapped, which made that one row taller than the rest and
+                      broke the comparison the rules exist to make. */}
                   <span
                     className="t-meta w-[7.25rem] shrink-0 truncate text-[0.875rem]"
                     style={{ color: "var(--ink-paper)" }}

@@ -267,10 +267,10 @@ def render_cover_letter_pdf(state: dict, output_path: str) -> str:
     personal = facts.get("personal", {}) or {}
     wf = state.get("weight_factors", {}) or {}
 
-    # Verbatim from profiles.name_ar / profiles.name_en, exactly like the CV
-    # header — see resolve_candidate_name. Previously this took the parsed
-    # facts_json name, so on an Arabic run the letter could sign off with a
-    # different spelling than the CV it accompanied.
+    # Resolved exactly like the CV header — see resolve_candidate_name — so
+    # the letter can never sign off with a different spelling than the CV it
+    # accompanies. That shared call is the whole point: the letter must not
+    # read the parsed name (or the profile name) directly on its own.
     name = resolve_candidate_name(state) or ("اسم المتقدم" if is_arabic else "Candidate Name")
     story.append(Paragraph(f"<b>{body(name)}</b>", styles['CL_Bold']))
     if personal.get("location"):

@@ -10,10 +10,15 @@ class GapItem(BaseModel):
 
 
 class ScoreBreakdown(BaseModel):
-    keyword_match:    int = Field(ge=0, le=100)
+    # Order matches the weights in utils/ats_scorer.py, heaviest first.
+    # title_match is the newest factor: the candidate's own job titles against
+    # the role applied for, which is weighted heavily by real ATS engines and
+    # was previously parsed but never scored.
     skills_match:     int = Field(ge=0, le=100)
-    education_match:  int = Field(ge=0, le=100)
+    keyword_match:    int = Field(ge=0, le=100)
+    title_match:      int = Field(default=0, ge=0, le=100)
     experience_match: int = Field(ge=0, le=100)
+    education_match:  int = Field(ge=0, le=100)
 
 
 class MatchScorerOutput(BaseModel):

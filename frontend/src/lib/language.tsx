@@ -61,29 +61,35 @@ export const content = {
        fewer Arabic CVs than English ones and the copy says so rather than
        rounding in our favour. Numbers come from lib/pricing.ts. */
     hero: {
-      headline: "Every job gets its own CV",
-      sub: "We read the posting, rewrite your CV for it in Arabic or English, and show you how well it matches before you send it. Then we find other roles worth your time.",
+      /* THE H1 NAMES THE CATEGORY NOW. "Every job gets its own CV" was the
+         better sentence and it carried none of the words anyone types into a
+         search box — the page's one h1 said nothing about a CV maker, an ATS
+         score or a cover letter. It names the thing and then makes the same
+         promise, so the search term and the argument are in one line. */
+      headline: "An AI CV maker that rewrites your CV for every job",
+      sub: "Paste the job description and get a CV and cover letter written for it, in Arabic or English. Each one comes with an ATS score, the gaps behind it, and live job openings matched to your CV.",
       ctaPrimary: "Start free",
       ctaSecondary: "See how it works",
       freeLine: `${enCount(TIERS.free.credits, "credit")} free every month, no card. That is ${TIERS.free.credits} CVs in English, or one in Arabic and one in English.`,
       // Alt text. The visuals carry real information, so they get described
       // rather than labelled "product screenshot".
-      scoreAlt: "An ATS score of 91, broken into keywords, skills, education and experience",
+      scoreAlt: "An ATS score of 92, broken into skills, keywords, job title, experience and education",
       matchesAlt: "Five matched job openings, each labelled strong, partial or stretch",
     },
     /* ── HERO VISUAL 1 (§3.1) ─────────────────────────────────────────────
        Labels are the same strings the dashboard's ATS card uses, because they
-       name the four factors utils/ats_scorer.py actually computes. There is no
+       name the factors utils/ats_scorer.py actually computes. There is no
        "formatting" score anywhere in the product; an earlier version of this
        panel showed one. */
     heroScore: {
       title: "ATS Score",
       sub: "The same breakdown you get after every generation, and the weight each factor carries.",
       factors: {
-        keywords: "Keywords",
         skills: "Skills",
-        education: "Education",
+        keywords: "Keywords",
+        title: "Job title",
         experience: "Experience",
+        education: "Education",
       },
       // atsBreakdown.missing_skills. A score that only ever flatters is not a
       // score, so the panel shows what the CV did not cover.
@@ -96,7 +102,7 @@ export const content = {
          the page. The subtext says "up to" because the cap is a target the
          search fills from what is genuinely posted — on a narrow role it can
          come back with fewer, and the code logs exactly that. */
-      headline: "Five real jobs you can apply to today",
+      headline: "Real jobs you can apply to today",
       sub: "As soon as your CV is ready we search what is actually posted right now, and return up to five roles ranked by how well you fit. Every one opens the real listing, so you can apply in the same sitting.",
       countLabel: "live jobs matched",
       // Sits in the panel's header band and again on every row, not as a
@@ -238,10 +244,10 @@ export const content = {
         },
         {
           lead: "See what is missing before a recruiter does",
-          body: "An ATS score with the four factors behind it, a separate match score for the role, and the specific gaps that cost you the rest. Each gap comes with an honest way to close it, never a way to claim it.",
+          body: "An ATS score with the weighted factors behind it, a separate match score for the role, and the specific gaps that cost you the rest. Each gap comes with an honest way to close it, never a way to claim it.",
         },
         {
-          lead: "Five openings, ranked, each one a click from the posting",
+          lead: "Ranked openings, each one a click from the posting",
           body: "Once the CV is ready we search what is posted right now and return up to five roles, labelled by how much of what they ask for your CV already shows. Every row opens the original listing.",
         },
       ],
@@ -355,7 +361,7 @@ export const content = {
         {
           title: "Get everything you need",
           description:
-            "A tailored CV and cover letter, your ATS score and what it is missing, and five live jobs to send it to.",
+            "A tailored CV and cover letter, your ATS score and what it is missing, and up to five live jobs to send it to.",
         },
       ],
     },
@@ -408,7 +414,7 @@ export const content = {
         {
           title: "The score shows its working",
           description:
-            "One number, and the four weighted factors behind it: keywords at 40 percent, skills at 35, education at 15, experience at 10. Then the gaps that cost you the rest, each with an honest way to close it rather than a way to claim it.",
+            "One number, and the weighted factors behind it: skills at 40 percent, keywords at 25, job title at 15, experience at 12, education at 8. Then the gaps that cost you the rest, each with an honest way to close it rather than a way to claim it.",
         },
         {
           title: "It has to read like you wrote it",
@@ -566,7 +572,7 @@ export const content = {
         { label: "CV and cover letter, in English", value: enCount(CREDIT_COST.en, "credit") },
         { label: "CV and cover letter, in Arabic", value: enCount(CREDIT_COST.ar, "credit") },
         { label: "ATS score, match score and the gap list", value: "Included" },
-        { label: "Five matched openings, each linking to its posting", value: "Included" },
+        { label: "Up to five matched openings, each linking to its posting", value: "Included" },
       ],
 
       packsTitle: "Or buy credits on their own",
@@ -1519,26 +1525,31 @@ export const content = {
        the same idea in a construction Arabic actually uses, which is why the
        wording diverges rather than tracking the English word order. */
     hero: {
-      headline: "لكل وظيفة سيرة ذاتية تخصّها",
-      sub: "نقرأ إعلان الوظيفة، ونعيد كتابة سيرتك له بالعربية أو بالإنجليزية، ونعرض درجة توافقها قبل أن ترسلها. ونبحث لك عن وظائف أخرى تناسبك، فلا تبقى تبحث وحدك.",
+      /* مكتوب للبحث العربي لا كترجمة للعنوان الإنجليزي: المصطلح الذي يُبحث
+         عنه فعلًا هو «منشئ سيرة ذاتية»، و«ATS» تُكتب باللاتينية في البحث
+         العربي أكثر مما تُترجم. العنوان يذكر الأداة ثم يعد بما تفعله، كما
+         في الإنجليزية، لكن بصياغة عربية لا تتبع ترتيب كلماتها. */
+      headline: "منشئ سيرة ذاتية بالذكاء الاصطناعي يعيد كتابة سيرتك لكل وظيفة",
+      sub: "الصق إعلان الوظيفة لتحصل على سيرة ذاتية وخطاب تقديم مكتوبين له، بالعربية أو بالإنجليزية. ومع كل سيرة درجة توافق مع أنظمة ATS، وما ينقصها، ووظائف مفتوحة تناسب خبرتك.",
       ctaPrimary: "ابدأ مجانًا",
       ctaSecondary: "شاهد كيف يعمل",
       freeLine: `${arCount(TIERS.free.credits, AR_POINTS)} مجانًا كل شهر، بلا بطاقة. تكفي ${arCount(TIERS.free.credits, AR_CVS)} بالإنجليزية، أو واحدة بالعربية وأخرى بالإنجليزية.`,
-      scoreAlt: "درجة توافق مع أنظمة التتبع 91، موزّعة على الكلمات المفتاحية والمهارات والتعليم والخبرة",
+      scoreAlt: "درجة توافق مع أنظمة التتبع 92، موزّعة على المهارات والكلمات المفتاحية والمسمى الوظيفي والخبرة والتعليم",
       matchesAlt: "خمس وظائف مطابقة، كل واحدة موسومة بتطابق قوي أو جزئي أو فرصة طموحة",
     },
     /* ── الصورة الأولى في الواجهة (§3.1) ────────────────────────────────
        المسميات هنا هي نفسها المستخدمة في بطاقة ATS داخل لوحة التحكم، لأنها
-       العوامل الأربعة التي يحسبها utils/ats_scorer.py فعلًا. لا وجود لدرجة
+       العوامل التي يحسبها utils/ats_scorer.py فعلًا. لا وجود لدرجة
        «تنسيق» في المنتج، وقد كانت معروضة في نسخة سابقة من هذه اللوحة. */
     heroScore: {
       title: "نتيجة نظام ATS",
       sub: "التفصيل نفسه الذي تراه بعد كل إنشاء، ووزن كل عامل في النتيجة.",
       factors: {
-        keywords: "الكلمات المفتاحية",
         skills: "المهارات",
-        education: "التعليم",
+        keywords: "الكلمات المفتاحية",
+        title: "المسمى الوظيفي",
         experience: "الخبرة",
+        education: "التعليم",
       },
       missingLabel: "لم تُغطَّ بعد:",
       missing: ["Terraform", "GraphQL"],
@@ -1547,7 +1558,7 @@ export const content = {
       /* خمسة هو RESULT_CAP في agents/jobs_finder.py، وليس رقمًا اختير للصفحة.
          النص يقول «حتى خمس» لأن الحد هدف يُملأ مما هو منشور فعلًا، وقد تعود
          الوظائف الضيقة بعدد أقل. */
-      headline: "خمس وظائف حقيقية تقدّم عليها اليوم",
+      headline: "وظائف حقيقية تقدّم عليها اليوم",
       sub: "ما إن تجهز سيرتك حتى نبحث في الإعلانات المفتوحة الآن، ونعيد لك ما يصل إلى خمس وظائف مرتبة بحسب مدى ملاءمتك لها. كل واحدة تفتح الإعلان الأصلي، فتقدّم عليها في الجلسة نفسها.",
       countLabel: "وظائف مفتوحة الآن",
       // تظهر في رأس اللوحة وعلى كل سطر، لا كتعليق ختامي: أن كل نتيجة تفتح
@@ -1650,10 +1661,10 @@ export const content = {
         },
         {
           lead: "اعرف ما ينقصك قبل أن يعرفه من يقرأ سيرتك",
-          body: "نتيجة ATS بعواملها الأربعة، ودرجة توافق مستقلة مع الوظيفة، ثم الفجوات المحدّدة التي كلّفتك ما تبقّى. ولكل فجوة طريقة صادقة لسدّها، لا طريقة لادّعائها.",
+          body: "نتيجة ATS بعواملها الموزونة، ودرجة توافق مستقلة مع الوظيفة، ثم الفجوات المحدّدة التي كلّفتك ما تبقّى. ولكل فجوة طريقة صادقة لسدّها، لا طريقة لادّعائها.",
         },
         {
-          lead: "خمس وظائف مرتّبة، كل واحدة على بعد نقرة من إعلانها",
+          lead: "وظائف مرتّبة، كل واحدة على بعد نقرة من إعلانها",
           body: "ما إن تجهز السيرة حتى نبحث فيما هو منشور الآن ونعيد ما يصل إلى خمس وظائف، موسومة بمقدار ما تُظهره سيرتك ممّا تطلبه. وكل سطر يفتح الإعلان الأصلي.",
         },
       ],
@@ -1763,7 +1774,7 @@ export const content = {
         },
         {
           title: "استلم كل ما يلزمك",
-          description: "سيرة ذاتية مخصصة وخطاب تقديم، ودرجة توافقك مع أنظمة التتبع وما ينقصها، وخمس وظائف مفتوحة ترسلها إليها.",
+          description: "سيرة ذاتية مخصصة وخطاب تقديم، ودرجة توافقك مع أنظمة التتبع وما ينقصها، وما يصل إلى خمس وظائف مفتوحة ترسلها إليها.",
         },
       ],
     },
@@ -1806,7 +1817,7 @@ export const content = {
         {
           title: "النتيجة تعرض حسابها",
           description:
-            "رقم واحد، ووراءه أربعة عوامل بأوزانها: الكلمات المفتاحية 40 بالمئة، والمهارات 35، والتعليم 15، والخبرة 10. ثم الفجوات التي كلّفتك ما تبقّى، ولكل واحدة طريقة صادقة لسدّها لا طريقة لادّعائها.",
+            "رقم واحد، ووراءه عوامل بأوزانها: المهارات 40 بالمئة، والكلمات المفتاحية 25، والمسمى الوظيفي 15، والخبرة 12، والتعليم 8. ثم الفجوات التي كلّفتك ما تبقّى، ولكل واحدة طريقة صادقة لسدّها لا طريقة لادّعائها.",
         },
         {
           title: "يجب أن يُقرأ وكأنك كتبته",
@@ -1976,7 +1987,7 @@ export const content = {
         { label: "سيرة ذاتية وخطاب تقديم بالإنجليزية", value: arCount(CREDIT_COST.en, AR_POINTS) },
         { label: "سيرة ذاتية وخطاب تقديم بالعربية", value: arCount(CREDIT_COST.ar, AR_POINTS) },
         { label: "نتيجة ATS ودرجة التوافق وقائمة الفجوات", value: "مشمول" },
-        { label: "خمس وظائف مطابقة، كل واحدة تفتح إعلانها", value: "مشمول" },
+        { label: "ما يصل إلى خمس وظائف مطابقة، كل واحدة تفتح إعلانها", value: "مشمول" },
       ],
 
       packsTitle: "أو اشترِ النقاط وحدها",

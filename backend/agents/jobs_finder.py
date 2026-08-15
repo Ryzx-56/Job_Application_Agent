@@ -5,30 +5,49 @@ import re
 import concurrent.futures
 from collections import Counter
 
+import httpx
 from tavily import TavilyClient
 from loguru import logger
 from core.state import AgentState
 from core.credits import get_admin_client
 from core.llm_config import generate_gemini_json
+# The same phrase matcher the ATS scorer uses, so "does this listing talk
+# about the candidate's field" is answered the same way "does this CV cover
+# the JD" is — see utils/ats_scorer.py's BM25 section.
+from utils.ats_scorer import PHRASE_COVERAGE_THRESHOLD, _stem_counts, phrase_coverage
 
-# Priority job board — Jadarat is Saudi Arabia's national employment
-# platform (jadarat.sa), general-purpose across public and private sector.
-# (Ajeer was considered but dropped — it's specifically for temporary/
-# seasonal staffing, not a general job board, and would've mostly added
-# noise for a typical full-time search.)
+# Priority job board — searched every time and ranked ahead of
+# equally-relevant results from anywhere else. Jadarat (jadarat.sa) is Saudi
+# Arabia's national employment platform, general-purpose across public and
+# private sector.
+#
+# ── WHY AJEER IS NOT HERE ────────────────────────────────────────────────
+# It was added to this lane and then removed, on measurement rather than
+# opinion. Three findings, each independently disqualifying:
+#
+#   1. ajeer.com.sa 301s to ajeer.qiwa.sa, so an include_domains of
+#      "ajeer.com.sa" could never match an indexed page in the first place.
+#   2. Searched under BOTH hostnames, across four queries in English and
+#      Arabic, Tavily returned 0 results. Not thin — zero. (The parent
+#      platform qiwa.sa returns 39, so this is not a Tavily gap.)
+#   3. The site itself is reachable and NOT bot-blocked (HTTP 200, real
+#      content), but what it serves is a login-gated portal for temporary
+#      labour permits — services, FAQ, contact, sign-in. There are no
+#      public vacancy pages to index, which is why 1 and 2 are true.
+#
+# So Ajeer cannot contribute listings, and a priority lane that always
+# returns nothing is worse than no lane: it spends a search per query and
+# occupies weighting that then goes unused. If Ajeer ever publishes public
+# postings, add 'ajeer.qiwa.sa' (not ajeer.com.sa) and re-measure.
 PRIORITY_DOMAINS = ['jadarat.sa']
 
-# Curated allowlist, not an open web search — deliberate choice. An
-# unrestricted search for "job openings" surfaces a real amount of scam/
-# phishing listings (fake-recruiter pages, "pay a fee to start" postings,
-# clone sites impersonating real companies); Tavily's search has no notion
-# of "trustworthy job board" without being told which domains to trust.
-# Every candidate here is a well-established board verified as of this
-# writing (Aug 2026) to be legitimate, not a paid-access site (excludes
-# e.g. FlexJobs, which screens listings but paywalls them from a candidate
-# without their own subscription), and either global or specifically
-# relevant to a Gulf/Saudi candidate base:
-FALLBACK_DOMAINS = [
+# Established boards and aggregators. These are PRE-VETTED: a result from
+# one of them skips the legitimacy filter below, because the platform itself
+# is the vetting. Every entry is a well-established board verified as
+# legitimate, not paid-access (excludes e.g. FlexJobs, which paywalls
+# listings from a candidate without their own subscription), and either
+# global or specifically relevant to a Gulf/Saudi candidate base.
+TRUSTED_DOMAINS = [
     # Major global boards
     'linkedin.com', 'indeed.com', 'glassdoor.com', 'ziprecruiter.com', 'monster.com',
     # ATS platforms — these host real companies' own postings directly
@@ -41,6 +60,139 @@ FALLBACK_DOMAINS = [
     # Gulf/Saudi-specific or pan-Arab boards.
     'bayt.com', 'gulftalent.com', 'naukrigulf.com', 'mihnati.com', 'wuzzuf.net', 'tanqeeb.com',
 ]
+
+# Saudi-specific aggregators, SEARCHED IN THEIR OWN LANE rather than added
+# to the list above — and that placement is the whole point.
+#
+# Added to TRUSTED_DOMAINS first, and it made results WORSE, measured: the
+# genomics run went from one good listing to zero. include_domains splits a
+# single search's result budget across every domain named in it, and these
+# two sites are heavily indexed on SEO CATEGORY pages ("وظائف مهندس زراعي -
+# جدة", "Get Jobs in Jeddah Saudi Arabia 2026") rather than on individual
+# postings. Sharing a lane, those category pages consumed slots and pushed
+# the one genuinely relevant LinkedIn posting out of the pool entirely.
+#
+# In their own lane they are purely ADDITIVE: they contribute their own
+# results without taking any from the established boards. Fetched shallower
+# than the other lanes for the same reason — the useful density is lower.
+SAUDI_AGGREGATOR_DOMAINS = ['getsaudijobs.com', 'saudi.tanqeeb.com']
+SAUDI_AGGREGATOR_FETCH_LIMIT = 10
+
+# BACK-COMPAT: the old name for what is now TRUSTED_DOMAINS. Kept because
+# tests/test_jobs_finder.py imports it.
+FALLBACK_DOMAINS = TRUSTED_DOMAINS
+
+# ─── LEGITIMACY FILTER: HOW AN UNKNOWN DOMAIN EARNS ITS PLACE ──────────────
+#
+# THE MODEL CHANGED HERE, DELIBERATELY. Sourcing used to be allowlist-only:
+# if a domain wasn't named above, its results were discarded (or held back
+# as a thin "reserve"). That is safe and it is also why a real opening
+# posted ONLY on a company's own careers page — the common case for
+# specialist employers, e.g. a genomics lab hiring through its own site —
+# could never be found no matter how well it matched.
+#
+# A hand-maintained list of every employer in Saudi Arabia is not a thing
+# that can exist. So the allowlist stops being the gate and becomes a
+# FAST PATH: named sources are pre-vetted and skip these checks, while
+# anything else has to show it is a real job posting on a real
+# organisation's site. That is a property of the page, which can be
+# checked, rather than a name on a list, which has to be maintained.
+#
+# What is NOT done here: no WHOIS/domain-age lookup (an extra network call
+# per result, and plenty of legitimate Saudi employers have young domains),
+# and no Google SERP scraping (against their terms, and brittle).
+
+# Platforms that host CONTENT, not employment. A job "posting" on one of
+# these is a blog article, a newsletter or a forum thread about a job — not
+# an opening at that platform. Excluded regardless of how well it reads.
+_CONTENT_HOST_SIGNALS = (
+    "blogspot.", "wordpress.com", "medium.com", "substack.com", "tumblr.",
+    "wixsite.com", "weebly.com", "blogger.com", "quora.com", "reddit.com",
+    "facebook.com", "twitter.com", "x.com", "instagram.com", "tiktok.com",
+    "youtube.com", "pinterest.", "t.me", "telegram.",
+)
+
+# Applicant tracking systems. A posting on one of these is hosted by the
+# employer's own recruiting instance, which is about as strong a legitimacy
+# signal as exists: you cannot post to another company's Workday.
+_ATS_HOST_SIGNALS = (
+    "greenhouse.io", "lever.co", "myworkdayjobs.com", "workday.com",
+    "smartrecruiters.com", "icims.com", "ashbyhq.com", "recruitee.com",
+    "bamboohr.com", "teamtailor.com", "personio.", "workable.com",
+    "jazz.co", "breezy.hr", "taleo.net", "successfactors.com", "oraclecloud.com",
+)
+
+# A careers section on an organisation's own site. Weaker than an ATS host
+# but still says "this is an employer publishing its own vacancies".
+_CAREER_PATH_SIGNALS = (
+    "/careers", "/career", "/jobs", "/job/", "/vacancy", "/vacancies",
+    "/join-us", "/work-with-us", "/opportunities", "/recruitment", "/hiring",
+    "/التوظيف", "/وظائف", "/الوظائف",
+)
+
+# The shape of a real posting: it tells you what the job is and asks you to
+# apply. An article about a job does none of these. Bilingual because a
+# Saudi employer's own careers page is as likely to be in Arabic.
+_JOB_STRUCTURE_SIGNALS = (
+    "responsibilities", "requirements", "qualifications", "apply now",
+    "how to apply", "job description", "what you'll do", "what you will do",
+    "we are looking for", "we're looking for", "minimum qualifications",
+    "years of experience", "full-time", "full time", "employment type",
+    "المسؤوليات", "المؤهلات", "المتطلبات", "الوصف الوظيفي", "قدم الآن",
+    "التقديم", "الخبرات المطلوبة", "دوام كامل", "نبحث عن",
+)
+
+# How many structural signals an unknown domain must show. Two, because one
+# is cheap coincidence — "years of experience" appears in careers advice
+# articles constantly — while two together rarely occur outside a real ad.
+_MIN_STRUCTURE_SIGNALS = 2
+
+
+def _host_of(url: str) -> str:
+    parts = (url or "").split("/")
+    return parts[2].lower() if len(parts) > 2 else ""
+
+
+def is_legitimate_open_web_result(url: str, title: str, content: str) -> tuple[bool, str]:
+    """
+    Should this result from an UNKNOWN domain be allowed into the pool?
+
+    Returns (ok, reason) — the reason is logged in aggregate so the filter's
+    behaviour is visible rather than a silent black box.
+
+    Named sources never reach here; this is only for the open lane.
+    """
+    host = _host_of(url)
+    if not host:
+        return False, "no_host"
+    # A bare IP address is never a real employer's careers site.
+    if re.fullmatch(r"[\d.:\[\]]+", host):
+        return False, "ip_host"
+    if any(signal in host for signal in _CONTENT_HOST_SIGNALS):
+        return False, "content_platform"
+
+    url_lower = (url or "").lower()
+    # An employer's own ATS or careers path is sufficient on its own.
+    if any(signal in url_lower for signal in _ATS_HOST_SIGNALS):
+        return True, "ats_host"
+
+    haystack = f"{title or ''} {content or ''}".lower()
+    structure_hits = sum(1 for signal in _JOB_STRUCTURE_SIGNALS if signal in haystack)
+
+    # A careers path is enough on its own. This deliberately does NOT also
+    # require posting structure: what reaches here is Tavily's SNIPPET, a few
+    # hundred characters, and demanding two structural phrases from an
+    # excerpt rejected genuine company postings — 39 of them in one measured
+    # run. Deciding "one posting vs a category index" is the SCREENER's job,
+    # and it reads the page for exactly that. This filter answers the
+    # narrower question the screener cannot: is this a real organisation's
+    # site at all, or a content farm.
+    if any(signal in url_lower for signal in _CAREER_PATH_SIGNALS):
+        return True, "careers_path"
+    if structure_hits >= _MIN_STRUCTURE_SIGNALS:
+        return True, "posting_structure"
+    return False, "no_posting_signals"
+
 
 # Content-based scam signal, applied to EVERY listing regardless of which
 # domain it came from (including Jadarat and the curated list above) — a
@@ -161,6 +313,49 @@ def _looks_like_listing_or_category_page(content: str) -> bool:
 # engineer", which this correctly leaves alone; only the bare placeholder
 # titles are excluded.
 _NOISE_EXACT_TITLES = {"faq", "about us", "jobdetails", "job details", "entity profile"}
+
+# ─── JADARAT IS A JAVASCRIPT SPA, AND THAT WAS BREAKING ITS OWN LANE ───────
+#
+# jadarat.sa serves "JavaScript is required" and nothing else to a non-JS
+# client — 22 characters of visible text. Tavily renders it, so real content
+# does come back, but every posting is served under the SPA's route name:
+# the page <title> of an actual vacancy is the literal string "JobDetails".
+#
+# "jobdetails" is in _NOISE_EXACT_TITLES above, added to drop the platform's
+# own chrome pages. The effect was that Jadarat's REAL postings were dropped
+# by our own filter, every time. Measured across four queries: 25 results,
+# 3 survived, and all five /JobDetails routes — the actual vacancies — were
+# rejected on their title. The priority lane was not failing because Jadarat
+# had nothing; it was failing because we threw its postings away.
+#
+# The route distinguishes them: /JobDetails is one vacancy, while
+# "Entity Profile", "About Jadarat Platform" and the bare platform home are
+# genuinely not postings and must keep being dropped. The real role and
+# employer sit in the rendered content after an "ID:" label, e.g.
+# "ID: Strategy Specialist هيئة تطوير محمية الملك سلمان بن عبدالعزيز".
+_JADARAT_TITLE_RE = re.compile(r"\bID:\s*(.{3,80})")
+
+
+def jadarat_posting_title(url: str, content: str) -> str | None:
+    """
+    The real role/employer text for a Jadarat vacancy page, or None.
+
+    None also means "do not rescue this one": a /JobDetails page whose
+    content has no readable ID: line gives us nothing to show a user, so it
+    is left to be dropped rather than surfaced with "JobDetails" as its
+    title. Deliberately conservative — a listing with a meaningless title in
+    the UI is worse than one fewer listing.
+    """
+    if "/jobdetails" not in (url or "").lower():
+        return None
+    match = _JADARAT_TITLE_RE.search(re.sub(r"\s+", " ", content or ""))
+    if not match:
+        return None
+    title = match.group(1).strip(" -–—|·")
+    # The screener re-extracts a clean role and company from this anyway
+    # (see JOB_SCREEN_PROMPT), so this only has to be honest text from the
+    # page, not a perfectly parsed job title.
+    return title or None
 
 # URL routing conventions, not content vocabulary — a much lower
 # false-positive-risk signal than scanning prose, since these are fixed
@@ -390,8 +585,19 @@ For EACH result below, decide:
      If the location genuinely cannot be determined from the result, set true — do not guess a
      rejection. When the candidate's location is "unknown", always set true.
 
-4. "relevance" — 0.0 to 1.0, how well this role matches the candidate's target role and skills.
-   A closely-matching role in the right place scores high; a loosely related one scores low.
+4. "relevance" — 0.0 to 1.0, how well this role matches the candidate's FIELD and skills.
+
+   JUDGE THE FIELD, NOT THE JOB TITLE. This is the mistake to avoid: a
+   "Senior R&D Scientist" at a glass manufacturer and a "Principal R&D Scientist" at an aluminium
+   company both share almost every word with a molecular geneticist's title and are completely
+   wrong for them — different industry, different science, no transferable day-to-day work. Score
+   those low (0.1-0.2) no matter how similar the words look.
+     0.8-1.0  same field, doing the same kind of work with the same tools
+     0.5-0.7  adjacent field — a real career step across, skills mostly transfer
+     0.1-0.3  the title reads similar but the actual work and industry are unrelated
+     0.0      no connection at all
+   Ask: would someone with THESE skills be a credible applicant, or would the employer see an
+   unrelated background? Title overlap alone is not relevance.
 
 5. "role" — the actual job title, cleaned up. "company" — the employer name. Use "" if genuinely
    not determinable from the result. Do NOT invent an employer.
@@ -404,26 +610,112 @@ Respond ONLY with a JSON array, one object per result id, no markdown:
    "role": "Machine Learning Engineer", "company": "Elm"}}]
 """
 
-# Relevance is a RANKING signal, not a cutoff.
-#
-# It used to be a hard filter, which combined with the location and open
-# checks to return a single listing on a real run — the user asked for five
-# and got one. Showing five imperfect-but-real openings is more useful than
-# showing one perfect one, so nothing is dropped for being a weak match:
-# results are ordered best-first and the list is filled to RESULT_CAP from
-# whatever survived. The ONLY hard exclusion after screening is
-# "this isn't a job posting at all", which is the thing the user actually
-# complained about (articles and blog posts appearing as jobs).
-#
-# This threshold now only decides the "Strong / Partial / Stretch" label.
+# Relevance decides the "Strong / Partial / Stretch" label.
 _STRONG_MATCH = 0.6
 _PARTIAL_MATCH = 0.3
+
+# ─── DOMAIN RELEVANCE: THE FLOOR A LISTING HAS TO CLEAR TO BE SHOWN ─────────
+#
+# THIS REVERSES AN EARLIER DECISION, DELIBERATELY. Relevance used to be a
+# ranking signal only, on the reasoning that five imperfect openings beat one
+# perfect one, so the list was always padded to RESULT_CAP from whatever
+# survived. On a real run for a genomics researcher that produced: one
+# bioinformatics role, one regional research role, and then a Senior R&D
+# Scientist at a GLASS MANUFACTURER, the same glass role a second time under
+# a different URL, and an R&D specialist at an ALUMINIUM company. Three of
+# five slots were filled with things the candidate could not plausibly want,
+# purely to reach a number.
+#
+# Padding to a fixed count is now off. A short list of real matches is the
+# product; a full list of noise is not. If only two listings clear the floor,
+# two are returned.
+#
+# TWO BANDS, because a single relevance floor did not work. Measured on the
+# live genomics run: the screener rated the aluminium role 0.5 and the glass
+# role 0.4 — above any floor low enough to keep honest mid-range matches —
+# because those titles share almost every word with "Senior Research
+# Scientist". Relevance alone cannot separate "same words" from "same work".
+#
+#   at or above HIGH_CONFIDENCE_RELEVANCE : the screener is sure, that stands
+#   below it                              : the listing must also actually
+#                                           mention the candidate's own skills
+#
+# So a strong match never needs corroborating, and everything else has to
+# show real evidence rather than a familiar-looking title.
+HIGH_CONFIDENCE_RELEVANCE = 0.7
+
+# HOW MUCH SKILL EVIDENCE, BY HOW BADLY THE SCREENER RATED IT. Graded rather
+# than flat, and the reason is what this check reads: Tavily's `content` is a
+# SNIPPET, a few hundred characters, not the full posting. Demanding two
+# skill names from a paragraph fails honest matches that simply didn't fit
+# both into the excerpt — measured, a flat two-hit bar cut the genomics run
+# to a single listing by dropping real research roles.
+#
+#   relevance 0.3-0.7 : one skill hit. The screener already thinks it is
+#                       plausible; one concrete term confirms the field.
+#   relevance below   : two hits. The screener thinks it is wrong, so
+#     0.3               overriding that needs more than a coincidence —
+#                       "Python" alone appears in plenty of unrelated ads.
+MIN_SKILL_HITS_PLAUSIBLE = 1
+MIN_SKILL_HITS_TO_RESCUE = 2
+
+# How many of the candidate's skills to test. Enough to characterise a field
+# without turning the check into a scan of a 40-item list per listing.
+_FIELD_SKILL_SAMPLE = 20
 
 # The heuristic fallback path (_normalize_result) scores on a plain skill
 # ratio rather than the screener's relevance, and has always been more
 # generous about what counts as a partial match. Named rather than inline so
 # the difference between the two paths is visible instead of accidental.
 _HEURISTIC_PARTIAL_MATCH = 0.2
+
+
+def candidate_field_terms(facts_json: dict, required_skills: list[str]) -> list[str]:
+    """
+    The vocabulary that characterises this candidate's field, taken verbatim
+    from their CV — their own skills first, then the JD's required skills.
+
+    Nothing is inferred about the candidate here: these are strings they (or
+    the posting) actually wrote. Deduplicated case-insensitively, order
+    preserved so the CV's own wording leads.
+    """
+    terms: list[str] = []
+    seen: set[str] = set()
+    skills = (facts_json.get("skills") or {}) if isinstance(facts_json, dict) else {}
+    for bucket in list(skills.values()) + [required_skills]:
+        if not isinstance(bucket, list):
+            continue
+        for raw in bucket:
+            term = str(raw or "").strip()
+            key = term.lower()
+            # One- and two-character "skills" match everything; skip them.
+            if len(term) < 3 or key in seen:
+                continue
+            seen.add(key)
+            terms.append(term)
+            if len(terms) >= _FIELD_SKILL_SAMPLE:
+                return terms
+    return terms
+
+
+def field_skill_hits(content: str, title: str, field_terms: list[str]) -> int:
+    """
+    How many of the candidate's own skills this listing actually mentions.
+
+    Reuses the BM25 phrase coverage built for the ATS scorer in Section 4
+    rather than substring matching, so "variant calling" still counts when a
+    posting says "calls variants" — the same grammatical-variant tolerance,
+    and the same refusal to invent a match that isn't there.
+    """
+    if not field_terms:
+        return 0
+    counts, length = _stem_counts(f"{title or ''} {content or ''}")
+    if not length:
+        return 0
+    return sum(
+        1 for term in field_terms
+        if phrase_coverage(term, counts, length) >= PHRASE_COVERAGE_THRESHOLD
+    )
 
 
 # ─── MATCH TIER ──────────────────────────────────────────────────────────────
@@ -477,6 +769,7 @@ def _llm_screen_listings(
     job_title: str,
     location: str,
     required_skills: list[str],
+    field_terms: list[str] | None = None,
 ) -> list[dict] | None:
     """
     Asks the model to judge every candidate result at once, and returns the
@@ -541,13 +834,42 @@ def _llm_screen_listings(
         except (TypeError, ValueError):
             relevance = 0.0
 
-        # Open and in-the-right-place become SORT KEYS instead of filters:
-        # a closed or far-away real opening still beats returning nothing,
-        # and it sinks below every better option automatically.
-        is_open = verdict.get("is_open") is not False
+        # CLOSED IS NOW A HARD EXCLUSION, not a sort key.
+        #
+        # It used to only sink a closed listing to the bottom, on the theory
+        # that a closed real opening beats returning nothing. It does not: a
+        # user who clicks through to "this position has been filled" has been
+        # sent to a dead end, which is worse than a shorter list. This is the
+        # "1 relevant listing that was already closed" from the report.
+        if verdict.get("is_open") is False:
+            rejected["closed"] += 1
+            continue
+
+        # DOMAIN RELEVANCE — see HIGH_CONFIDENCE_RELEVANCE for the two bands.
+        # A confident match stands on its own; anything less has to show the
+        # candidate's own skills in the listing text before it can be shown.
+        if relevance < HIGH_CONFIDENCE_RELEVANCE:
+            required_hits = (
+                MIN_SKILL_HITS_PLAUSIBLE if relevance >= _PARTIAL_MATCH
+                else MIN_SKILL_HITS_TO_RESCUE
+            )
+            hits = field_skill_hits(
+                candidates[idx].get("_content") or "",
+                candidates[idx].get("title") or "",
+                field_terms or [],
+            )
+            if hits < required_hits:
+                rejected["off_field"] += 1
+                continue
+            if relevance < _PARTIAL_MATCH:
+                # The screener rated it poorly but the candidate's skills are
+                # demonstrably in it — worth knowing how often that happens.
+                rejected["low_score_kept_on_skill_evidence"] += 1
+
+        # Location stays a SORT KEY rather than a filter: the screener is
+        # told to accept the surrounding region, so a Gulf role for a Saudi
+        # candidate is legitimate and simply ranks below a local one.
         location_ok = verdict.get("location_ok") is not False
-        if not is_open:
-            rejected["closed_kept_last"] += 1
         if not location_ok:
             rejected["wrong_location_kept_last"] += 1
 
@@ -560,20 +882,133 @@ def _llm_screen_listings(
         if role:
             job["title"] = f"{role} - {company}" if company else role
         job["company"] = company
+        # Carried through so the ranking is inspectable rather than implied
+        # by the tier label alone. Additive and optional — older persisted
+        # rows simply don't have it.
+        job["relevance"] = round(relevance, 2)
         _set_match(job, relevance, _STRONG_MATCH, _PARTIAL_MATCH)
-        # Strip every internal field — these get serialized straight into
-        # the API response and persisted in the user's resume history.
-        for internal in ("_content", "_skill_ratio"):
-            job.pop(internal, None)
+        # `_content` is kept for now: the liveness pass and the duplicate
+        # check below still need it. It is stripped in _finalize_listings
+        # before anything is serialized to the API or the user's history.
+        job.pop("_skill_ratio", None)
 
-        # Sort: open first, then right-location, then most relevant.
-        accepted.append(((is_open, location_ok, relevance), job))
+        # Sort: right-location first, then relevance BANDED to one decimal,
+        # then source tier, then exact relevance. Banding is what makes the
+        # priority weighting real without letting it distort: 0.9 from
+        # Jadarat and 0.9 from LinkedIn land in the same band and Jadarat
+        # takes it, while 0.9 from LinkedIn still beats 0.6 from Jadarat.
+        tier_rank = _TIER_RANK.get(candidates[idx].get("_tier", "open"), 1)
+        accepted.append(((location_ok, round(relevance, 1), tier_rank, relevance), job))
 
     if rejected:
         logger.info(f"🔍 Screener verdicts: {dict(rejected)}")
 
     accepted.sort(key=lambda pair: pair[0], reverse=True)
     return [job for _, job in accepted]
+
+
+# ─── LIVENESS: IS THE LISTING STILL THERE? ──────────────────────────────────
+#
+# The screener can only judge what Tavily crawled, which may be days old, and
+# _CLOSED_SIGNALS only catches boards that render "this job has closed" as
+# text. Neither notices a posting that has simply been DELETED. A single
+# request per finalist answers that directly.
+#
+# WHAT IS AND ISN'T TREATED AS DEAD, and why the asymmetry:
+#   404 / 410  -> dead. The page is gone; the user would land on nothing.
+#   anything else, including 403, 429, timeouts, connection errors -> KEPT.
+#     Job boards block automated requests constantly (LinkedIn in
+#     particular). Reading "403 Forbidden" as "the job is gone" would delete
+#     good listings from the biggest boards on the list. When the check
+#     cannot answer, it must not vote.
+_LIVENESS_TIMEOUT_SECONDS = 4.0
+_LIVENESS_DEAD_STATUSES = {404, 410}
+# Enough to look like a browser; boards routinely 403 an unadorned client.
+_LIVENESS_HEADERS = {
+    "User-Agent": "Mozilla/5.0 (compatible; TarshihJobCheck/1.0; +https://tarshih.com)",
+    "Accept": "text/html,application/xhtml+xml",
+}
+
+# Only worth checking the listings that could actually be shown, plus a
+# little headroom to backfill from when one turns out to be dead.
+_LIVENESS_CHECK_LIMIT = RESULT_CAP + 3
+
+
+def _listing_is_dead(url: str) -> bool:
+    """
+    True only when the URL definitively no longer exists.
+
+    HEAD first because it costs a fraction of a GET; some boards don't
+    implement it and answer 405, in which case a GET settles it.
+    """
+    try:
+        with httpx.Client(
+            timeout=_LIVENESS_TIMEOUT_SECONDS,
+            follow_redirects=True,
+            headers=_LIVENESS_HEADERS,
+        ) as client:
+            response = client.head(url)
+            if response.status_code in (405, 501):
+                response = client.get(url)
+            return response.status_code in _LIVENESS_DEAD_STATUSES
+    except Exception:
+        # Timeout, DNS failure, TLS problem, blocked — all "cannot answer".
+        return False
+
+
+def _drop_dead_listings(jobs: list[dict]) -> list[dict]:
+    """Removes listings whose URL 404s, checking them concurrently."""
+    to_check = jobs[:_LIVENESS_CHECK_LIMIT]
+    if not to_check:
+        return jobs
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=len(to_check)) as executor:
+        dead_flags = list(executor.map(lambda j: _listing_is_dead(j.get("url", "")), to_check))
+
+    alive = [job for job, dead in zip(to_check, dead_flags) if not dead]
+    dropped = len(to_check) - len(alive)
+    if dropped:
+        logger.info(f"🔍 Liveness check dropped {dropped} listing(s) whose page no longer exists.")
+    return alive + jobs[_LIVENESS_CHECK_LIMIT:]
+
+
+def _drop_duplicate_roles(jobs: list[dict]) -> list[dict]:
+    """
+    Collapses the same opening posted at more than one URL.
+
+    URL de-duplication already happens while candidates are gathered, but the
+    same role at the same employer routinely appears under two different
+    listing ids on the same board — the genomics test run returned the
+    identical Guardian Industries role twice, occupying two of five slots.
+    Keyed on role plus employer, so genuinely different openings at one
+    company are untouched.
+    """
+    kept, seen = [], set()
+    for job in jobs:
+        key = (
+            _normalize_for_match(job.get("title", "")),
+            _normalize_for_match(job.get("company", "")),
+        )
+        if key in seen and any(key):
+            continue
+        seen.add(key)
+        kept.append(job)
+    if len(kept) < len(jobs):
+        logger.info(f"🔍 Collapsed {len(jobs) - len(kept)} duplicate listing(s) of the same role.")
+    return kept
+
+
+def _finalize_listings(jobs: list[dict]) -> list[dict]:
+    """Duplicate collapse, then liveness, then cap — and strip internals."""
+    jobs = _drop_duplicate_roles(jobs)
+    jobs = _drop_dead_listings(jobs)
+    final = jobs[:RESULT_CAP]
+    for job in final:
+        # Every leading-underscore field is internal and must not reach the
+        # API response or the user's persisted resume history.
+        for internal in ("_content", "_skill_ratio", "_tier"):
+            job.pop(internal, None)
+    return final
 
 
 def _matches_any_domain(url: str, domains: list[str]) -> bool:
@@ -588,18 +1023,35 @@ def _matches_any_domain(url: str, domains: list[str]) -> bool:
     return any(domain in url_lower for domain in domains)
 
 
-def _search_tavily(client: TavilyClient, query: str, domains: list[str], max_results: int):
+# Ranking weight per source lane. Used as a TIE-BREAK behind relevance, not
+# ahead of it: "priority weighting" means Jadarat wins against an equally
+# good match elsewhere, NOT that a weak government listing outranks a strong
+# one from anywhere else. Sorting tier above relevance would have done the
+# latter, which is how a priority board becomes a way to show worse results.
+_TIER_RANK = {"priority": 4, "trusted": 3, "saudi": 2, "open": 1}
+
+
+def _tag_tier(candidates: list[dict], tier: str) -> list[dict]:
+    for candidate in candidates:
+        candidate["_tier"] = tier
+    return candidates
+
+
+def _search_tavily(client: TavilyClient, query: str, domains: list[str] | None, max_results: int):
+    """`domains=None` searches the whole web — that's the open lane."""
     try:
-        results = client.search(
+        kwargs = dict(
             query=query,
             search_depth='advanced',
-            include_domains=domains,
             max_results=max_results,
             time_range=SEARCH_TIME_RANGE,
         )
+        if domains:
+            kwargs["include_domains"] = domains
+        results = client.search(**kwargs)
         return results.get('results', [])
     except Exception as e:
-        logger.error(f"❌ Tavily API search failed for domains {domains}: {e}")
+        logger.error(f"❌ Tavily API search failed for domains {domains or 'OPEN WEB'}: {e}")
         return []
 
 
@@ -624,6 +1076,14 @@ def _to_candidate(r: dict, required_skills_lower: list[str]) -> tuple[dict | Non
 
     if not url:
         return None, "no_url"
+
+    # Recover the real title for a Jadarat vacancy before the noise checks
+    # run, or its route-name title ("JobDetails") trips _NOISE_EXACT_TITLES
+    # and the priority lane silently drops its own postings. See
+    # jadarat_posting_title.
+    recovered = jadarat_posting_title(url, content)
+    if recovered:
+        title = recovered
     if _looks_like_scam(content):
         return None, "scam"
     if _looks_closed(content, title):
@@ -647,12 +1107,20 @@ def _to_candidate(r: dict, required_skills_lower: list[str]) -> tuple[dict | Non
     return job, "ok"
 
 
-def _heuristic_filter(candidates: list[dict], location_terms: list[str]) -> list[dict]:
+def _heuristic_filter(
+    candidates: list[dict],
+    location_terms: list[str],
+    field_terms: list[str] | None = None,
+) -> list[dict]:
     """
     FALLBACK ONLY — used when _llm_screen_listings couldn't run. Applies the
     old word/URL-list rules so a degraded run still doesn't return blog
     posts or wrong-country roles. See the _EDITORIAL_URL_SIGNALS banner for
     why these aren't the primary mechanism.
+
+    The domain-relevance floor applies here too, using the candidate's own
+    skills directly since there is no screener relevance to lean on. A
+    degraded run should still not hand a geneticist an aluminium job.
     """
     kept, dropped = [], Counter()
     for c in candidates:
@@ -669,14 +1137,16 @@ def _heuristic_filter(candidates: list[dict], location_terms: list[str]) -> list
         if not _location_ok(c.get('_content'), c.get('title'), c.get('url'), location_terms):
             dropped["wrong_location"] += 1
             continue
+        if field_terms and field_skill_hits(
+            c.get('_content') or "", c.get('title') or "", field_terms
+        ) < MIN_SKILL_HITS_TO_RESCUE:
+            dropped["off_field"] += 1
+            continue
         kept.append(c)
 
     if dropped:
         logger.info(f"🔍 Heuristic fallback dropped: {dict(dropped)}")
     kept.sort(key=lambda c: c.get('_skill_ratio', 0), reverse=True)
-    for c in kept:
-        c.pop('_content', None)
-        c.pop('_skill_ratio', None)
     return kept
 
 
@@ -699,45 +1169,91 @@ def _run_search_pass(
     client: TavilyClient,
     query: str,
     required_skills_lower: list[str],
-) -> list[dict]:
+) -> tuple[list[dict], list[dict]]:
     """
-    One full search pass: Jadarat and the fallback boards queried
-    concurrently, each post-filtered by _matches_any_domain (Tavily's
-    include_domains is a preference, not an allowlist), then reduced to
-    screening candidates. Jadarat's results lead the returned list — that's
-    its priority weighting — but nothing requires it to hit any minimum.
+    One full search pass across THREE LANES, queried concurrently:
+
+      priority : Jadarat and Ajeer, the Saudi government platforms.
+      trusted  : the established boards and aggregators in TRUSTED_DOMAINS.
+      open     : Tavily with NO domain restriction at all.
+
+    The open lane is the point of this pass. It is what lets a vacancy that
+    exists only on an employer's own careers page be found, which no
+    allowlist can do. Its results are held to is_legitimate_open_web_result
+    before they are allowed into the pool; the other two lanes are
+    pre-vetted by being named and skip that check.
+
+    Returns (named, open_web) so the caller can keep priority and trusted
+    results ahead of open-web ones in the pool.
     """
     logger.info(f"🔍 Agent 6 — Querying Tavily for listings matching: '{query}'...")
-    with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
+    with concurrent.futures.ThreadPoolExecutor(max_workers=4) as executor:
         priority_future = executor.submit(_search_tavily, client, query, PRIORITY_DOMAINS, RAW_FETCH_LIMIT)
-        fallback_future = executor.submit(_search_tavily, client, query, FALLBACK_DOMAINS, RAW_FETCH_LIMIT)
+        trusted_future = executor.submit(_search_tavily, client, query, TRUSTED_DOMAINS, RAW_FETCH_LIMIT)
+        saudi_future = executor.submit(
+            _search_tavily, client, query, SAUDI_AGGREGATOR_DOMAINS, SAUDI_AGGREGATOR_FETCH_LIMIT
+        )
+        # domains=None -> no include_domains -> the whole web.
+        open_future = executor.submit(_search_tavily, client, query, None, RAW_FETCH_LIMIT)
         priority_result = priority_future.result()
-        fallback_result = fallback_future.result()
+        trusted_result = trusted_future.result()
+        saudi_result = saudi_future.result()
+        open_result = open_future.result()
 
     priority_raw = [r for r in priority_result if _matches_any_domain(r.get('url', ''), PRIORITY_DOMAINS)]
-    fallback_raw = [r for r in fallback_result if _matches_any_domain(r.get('url', ''), FALLBACK_DOMAINS)]
+    trusted_raw = [r for r in trusted_result if _matches_any_domain(r.get('url', ''), TRUSTED_DOMAINS)]
+    saudi_raw = [r for r in saudi_result if _matches_any_domain(r.get('url', ''), SAUDI_AGGREGATOR_DOMAINS)]
 
-    # Tavily's include_domains is a preference, not an allowlist, so these
-    # searches also return results from boards we didn't name. They used to
-    # be discarded outright. They're now kept as a RESERVE, used only when
-    # the allowlisted pool can't fill RESULT_CAP — a real opening on a
-    # company's own careers page is far more useful to the candidate than a
-    # short list, and the LLM screen still has to confirm it's a genuine job
-    # posting before it can be shown. The allowlist keeps doing its real job
-    # (scam avoidance) by ordering these last rather than by hiding them.
-    known = set()
-    for r in priority_raw + fallback_raw:
-        known.add(r.get('url', ''))
-    offlist_raw = [
-        r for r in priority_result + fallback_result
-        if r.get('url') and r['url'] not in known
-    ]
+    # Anything from any lane that isn't on a named domain goes through the
+    # legitimacy filter. Pulling these from every lane (not just the open
+    # one) matters because include_domains is a PREFERENCE — the priority
+    # and trusted searches return off-list results too, and those used to be
+    # discarded or held in reserve.
+    named_urls = {r.get('url', '') for r in priority_raw + trusted_raw + saudi_raw}
+    open_raw, rejected = [], Counter()
+    for r in priority_result + trusted_result + saudi_result + open_result:
+        url = r.get('url') or ''
+        if not url or url in named_urls:
+            continue
+        named_urls.add(url)  # also dedupes the open lane against itself
+        ok, reason = is_legitimate_open_web_result(url, r.get('title') or '', r.get('content') or '')
+        if ok:
+            open_raw.append(r)
+        else:
+            rejected[reason] += 1
+    if rejected:
+        logger.info(f"🔍 Legitimacy filter rejected off-list results: {dict(rejected)}")
 
-    return (
-        _collect_candidates(priority_raw, required_skills_lower)
-        + _collect_candidates(fallback_raw, required_skills_lower),
-        _collect_candidates(offlist_raw, required_skills_lower),
+    priority_candidates = _tag_tier(_collect_candidates(priority_raw, required_skills_lower), "priority")
+    trusted_candidates = _tag_tier(_collect_candidates(trusted_raw, required_skills_lower), "trusted")
+    saudi_candidates = _tag_tier(_collect_candidates(saudi_raw, required_skills_lower), "saudi")
+    open_candidates = _tag_tier(_collect_candidates(open_raw, required_skills_lower), "open")
+
+    # PER-LANE HEALTH, LOGGED EVERY PASS. A lane that returns nothing looks
+    # identical to a lane that was never queried, which is how Ajeer sat in
+    # the priority list contributing zero — and how Jadarat's postings were
+    # being dropped by our own noise filter — without either being visible.
+    # Raw vs. usable is the pair that matters: raw>0 with usable=0 means WE
+    # are rejecting them, while raw=0 means the source has nothing to give.
+    lanes = (
+        ("priority", len(priority_result), len(priority_raw), len(priority_candidates)),
+        ("trusted", len(trusted_result), len(trusted_raw), len(trusted_candidates)),
+        ("saudi", len(saudi_result), len(saudi_raw), len(saudi_candidates)),
+        ("open", len(open_result), len(open_raw), len(open_candidates)),
     )
+    logger.info(
+        "🔍 Lane health (returned/on-domain/usable): "
+        + ", ".join(f"{name} {ret}/{on}/{use}" for name, ret, on, use in lanes)
+    )
+    for name, ret, on, use in lanes:
+        if on and not use:
+            logger.warning(
+                f"⚠️  Lane '{name}' returned {on} on-domain result(s) but none survived "
+                f"pre-screen filtering — the filters are rejecting this source, not the "
+                f"source being empty."
+            )
+
+    return priority_candidates + trusted_candidates + saudi_candidates, open_candidates
 
 
 def _run_search_passes(
@@ -747,8 +1263,7 @@ def _run_search_passes(
 ) -> list[tuple[list[dict], list[dict]]]:
     """
     Runs several query variants at the same time, returning one
-    (allowlisted, offlist) pair per query IN QUERY ORDER, not completion
-    order.
+    (named, open_web) pair per query IN QUERY ORDER, not completion order.
 
     Order matters even though the model re-ranks everything afterwards: the
     caller dedupes by URL as it absorbs these, so whichever pass sees a URL
@@ -756,11 +1271,10 @@ def _run_search_passes(
     deterministic, so the same search doesn't return subtly different
     results run to run depending on which request happened to finish first.
 
-    Each pass internally fans out to two Tavily searches (priority board +
-    fallback boards), so the real concurrency here is 2x len(queries). That
-    is bounded by the caller passing at most the three follow-up variants,
-    i.e. six in-flight searches, which is well within Tavily's limits and
-    still just one round trip's worth of latency.
+    Each pass now fans out to THREE Tavily searches (priority, trusted,
+    open web), so the real concurrency is 3x len(queries) — at most twelve
+    in flight given the caller's four query variants, still one round
+    trip's worth of latency and well inside Tavily's limits.
     """
     if not queries:
         return []
@@ -885,7 +1399,7 @@ def find_similar_jobs(
     ]
 
     candidates: list[dict] = []
-    reserve: list[dict] = []
+    open_web: list[dict] = []
     seen_urls: set[str] = set()
 
     def _absorb(batch: list[dict], into: list[dict]) -> None:
@@ -898,12 +1412,12 @@ def find_similar_jobs(
 
     # PASS 1 runs alone. It's the most specific query and usually fills the
     # pool by itself, and running it first is what keeps the common case at
-    # exactly 2 Tavily searches. Firing all four variants up front would be
+    # exactly 3 Tavily searches. Firing all four variants up front would be
     # simpler but would quadruple the search spend on every single request
     # to buy latency the common case never needed.
-    allowlisted, offlist = _run_search_pass(client, queries[0], required_skills_lower)
-    _absorb(allowlisted, candidates)
-    _absorb(offlist, reserve)
+    named, opened = _run_search_pass(client, queries[0], required_skills_lower)
+    _absorb(named, candidates)
+    _absorb(opened, open_web)
 
     # THE REMAINING PASSES RUN CONCURRENTLY, not one after another.
     #
@@ -911,44 +1425,68 @@ def find_similar_jobs(
     # are independent of each other — none reads the others' output, they
     # just widen the same pool. Sequentially that was up to three ~5s round
     # trips stacked back to back; together it's one. Worst-case Tavily spend
-    # is unchanged (the same four queries, two searches each); only the
+    # is unchanged (the same four queries, three searches each); only the
     # wall-clock arrangement differs.
-    if len(candidates) < RESULT_CAP * 3 and len(queries) > 1:
+    #
+    # The pool now counts named AND open-web candidates, because open-web
+    # results are first-class here rather than a reserve — if the open lane
+    # has already produced plenty of legitimate postings there is no reason
+    # to keep querying.
+    if len(candidates) + len(open_web) < RESULT_CAP * 3 and len(queries) > 1:
         remaining = queries[1:]
         logger.info(
-            f"🔍 Pool at {len(candidates)} candidate(s) — broadening with "
-            f"{len(remaining)} more queries, run concurrently..."
+            f"🔍 Pool at {len(candidates)} named + {len(open_web)} open-web candidate(s) — "
+            f"broadening with {len(remaining)} more queries, run concurrently..."
         )
-        for allowlisted, offlist in _run_search_passes(client, remaining, required_skills_lower):
-            _absorb(allowlisted, candidates)
-            _absorb(offlist, reserve)
+        for named, opened in _run_search_passes(client, remaining, required_skills_lower):
+            _absorb(named, candidates)
+            _absorb(opened, open_web)
 
-    # Pull in off-allowlist results only if the trusted pool is too thin to
-    # produce RESULT_CAP after screening — see _run_search_pass.
-    if len(candidates) < RESULT_CAP * 2 and reserve:
-        logger.info(f"🔍 Trusted pool at {len(candidates)} — adding {len(reserve)} off-allowlist candidate(s) as reserve.")
-        candidates += reserve
+    # OPEN-WEB RESULTS ALWAYS JOIN THE POOL — they are no longer a reserve
+    # held back until the named boards come up short. They have already
+    # passed the legitimacy filter, and they still have to pass the screener,
+    # the relevance floor and the liveness check like everything else. This
+    # is the change that lets an employer's own careers page compete: held in
+    # reserve, a genuine vacancy at a specialist lab was only ever seen when
+    # the big boards happened to return too little.
+    #
+    # They are appended AFTER the named ones so that, when two lanes surface
+    # the same role, the pre-vetted copy is the one kept.
+    if open_web:
+        logger.info(
+            f"🔍 Pool: {len(candidates)} from named sources + "
+            f"{len(open_web)} legitimacy-checked open-web candidate(s)."
+        )
+        candidates += open_web
 
     # Drop the posting the user pasted in as their job description. It's a
     # guaranteed "Strong Match" against itself, and recommending someone the
     # exact job they're already applying to is noise, not a suggestion.
     candidates = _drop_source_job(candidates, weight_factors)
 
+    # The candidate's own field vocabulary, used as the safety net under the
+    # screener's relevance judgement — see MIN_SKILL_HITS_TO_RESCUE.
+    field_terms = candidate_field_terms(facts_json, required_skills)
+
     # THE SCREEN — a model reads each candidate and decides whether it's a
     # real posting. Heuristics only step in if that call couldn't be made.
-    screened = _llm_screen_listings(candidates, job_title, effective_location, required_skills)
+    screened = _llm_screen_listings(
+        candidates, job_title, effective_location, required_skills, field_terms=field_terms
+    )
     if screened is None:
-        final = _heuristic_filter(candidates, location_terms)[:RESULT_CAP]
+        filtered = _heuristic_filter(candidates, location_terms, field_terms)
+        final = _finalize_listings(filtered)
         logger.info(f"✅ Found {len(final)} job listings via heuristic fallback (screening unavailable).")
         return final
 
-    final = screened[:RESULT_CAP]
+    final = _finalize_listings(screened)
     if len(final) < RESULT_CAP:
-        # Worth knowing: means the pool itself was thin, not that the
-        # filters were harsh — nothing is dropped for being a weak match.
-        logger.warning(
-            f"⚠️  Only {len(final)}/{RESULT_CAP} listings after screening from "
-            f"{len(candidates)} candidates — the search pool was too small."
+        # NOT padded back up to RESULT_CAP. A short list of listings the
+        # candidate could actually want is the intended outcome — see
+        # MIN_RELEVANCE for the run that made this the rule.
+        logger.info(
+            f"🔍 Returning {len(final)}/{RESULT_CAP} listings — the rest were off-field, "
+            f"closed, duplicated or gone. Not padding with irrelevant results."
         )
     logger.info(
         f"✅ Found {len(final)} screened job listings "

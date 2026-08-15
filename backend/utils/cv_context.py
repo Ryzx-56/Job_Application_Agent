@@ -10,6 +10,10 @@ future bug fix to "how do we match a tailored bullet back to its section"
 only has to happen once, and PDF/DOCX can't drift out of sync again.
 """
 
+from loguru import logger
+
+from core.profile_names import has_arabic, has_latin
+from utils.skills import has_skills
 from utils.template_registry import DEFAULT_TEMPLATE_ID
 from utils.arabic_localizer import apply_glossary, localize_date, to_eastern_arabic_numerals
 
@@ -86,44 +90,127 @@ _LABELS_AR = {
 }
 
 
+def _script_matches_output(name: str, is_arabic: bool) -> bool:
+    """
+    Is this name written in the script the document is being rendered in?
+
+    Deliberately strict — a name must be PURELY the target script to count.
+    A mixed-script string ("Abdulmalik عبدالملك", or an Arabic name with a
+    Latin middle initial) is ambiguous about which spelling its owner
+    considers theirs, so it defers to the profile field rather than guessing.
+    Conservative in the safe direction: the profile value is always something
+    the user typed themselves.
+    """
+    arabic, latin = has_arabic(name), has_latin(name)
+    return (arabic and not latin) if is_arabic else (latin and not arabic)
+
+
 def resolve_candidate_name(state: dict) -> str:
     """
-    The candidate's name for this run, taken VERBATIM from the profile field
-    matching the output language — never machine-translated.
+    The candidate's name for this run. Never machine-translated, and now
+    preferring the name on the CV they actually uploaded.
 
-    A personal name has no single correct translation: the same name maps to
-    several valid Arabic spellings, and only its owner knows which is theirs.
-    Running it through the Arabic glossary produced names that were simply
-    wrong, so it now follows the same preserve-as-is rule that already
-    protects email / phone / LinkedIn / GitHub, sourced from
-    profiles.name_ar / profiles.name_en (see core/profile_names.py).
+    WHY THIS ORDER CHANGED. The profile field used to win unconditionally,
+    and because main.py's apply_candidate_names() refuses the run outright
+    when that field is empty, the parsed CV name was structurally
+    unreachable — every CV rendered with the account's settings name on it,
+    even when the uploaded document said something else. That is the
+    reported bug: upload a CV under an account whose profile name differs,
+    and the wrong person's name comes out on the document.
 
-    FALLBACK ORDER, most to least authoritative:
-      1. The profile field for this output language — the user typed it.
-      2. The other language's profile field, used as-is. Still a real name
-         the user typed, just in the other script; showing that beats
-         inventing a spelling for them.
-      3. The name parsed from the CV, glossary-translated. This is the
-         LEGACY path and only happens when the user explicitly chose to
-         generate without filling the field in — main.py sets
-         name_fallback_used in that case so it stays visible.
+    WHY IT IS NOT SIMPLY "PARSED NAME FIRST". A name has several valid
+    spellings across scripts and only its owner knows which is theirs, which
+    is the whole reason profiles.name_ar / name_en exist (see
+    core/profile_names.py). Taking the parsed name unconditionally would put
+    a Latin name on an Arabic CV whenever someone uploads an English CV and
+    asks for Arabic output — reintroducing exactly what those fields fixed.
 
-    Shared by build_cv_context and pdf_generator's cover letter so the two
-    documents can never disagree about what the candidate is called.
+    So the test is SCRIPT MATCH, not source precedence. When the uploaded CV
+    is already written in the output language, its name is the most
+    authoritative spelling available — profile_names.py makes this same
+    argument itself about Arabic CVs: the document "already contains the
+    candidate's own Arabic spelling, which is authoritative in a way a
+    machine transliteration never is." When the scripts differ, no
+    authoritative spelling exists in the CV and the profile field is the
+    only real answer.
+
+    RESOLUTION ORDER, most to least authoritative:
+      1. The parsed CV name, IF it is written in the output language's
+         script. Verbatim, no glossary.
+      2. The profile field for this output language — the user typed it.
+      3. The other language's profile field, used as-is. Still a real name
+         the user typed, just in the other script.
+      4. The parsed CV name, glossary-translated. LEGACY path, reachable
+         only when the user explicitly opted out of the name prompt —
+         main.py sets name_fallback_used so it stays visible.
+
+    Resolution matrix:
+      EN CV -> EN doc : parsed name      (1)
+      AR CV -> AR doc : parsed name      (1)
+      EN CV -> AR doc : profile name_ar  (2)  no Latin name on an Arabic CV
+      AR CV -> EN doc : profile name_en  (2)
+
+    Shared by build_cv_context and pdf_generator's cover letter so the CV,
+    the DOCX and the letter can never disagree about what the candidate is
+    called. Manual-entry runs resolve identically: run_manual_cv_parser
+    produces the same facts_json shape from the typed form.
     """
     is_arabic = str(state.get("cv_language", "en")).lower().startswith("ar")
 
-    preferred = (state.get("profile_name_ar") if is_arabic else state.get("profile_name_en")) or ""
-    if preferred.strip():
-        return preferred.strip()
+    parsed = _s(((state.get("facts_json", {}) or {}).get("personal", {}) or {}).get("name")).strip()
+    preferred = ((state.get("profile_name_ar") if is_arabic else state.get("profile_name_en")) or "").strip()
+    other = ((state.get("profile_name_en") if is_arabic else state.get("profile_name_ar")) or "").strip()
 
-    other = (state.get("profile_name_en") if is_arabic else state.get("profile_name_ar")) or ""
-    if other.strip():
-        return other.strip()
+    if parsed and _script_matches_output(parsed, is_arabic):
+        return parsed
 
-    raw_name = ((state.get("facts_json", {}) or {}).get("personal", {}) or {}).get("name")
+    # Everything below here is a fallback, and the brief asks that none of
+    # them be silent. Two distinct situations, logged differently on purpose:
+    #
+    #   · No parsed name at all. Agent 1 is REQUIRED to return one
+    #     (facts_schema.PersonalInfo.name is non-optional) and main.py's
+    #     _pipeline_produced_usable_cv gates the whole run on it, so reaching
+    #     here means something upstream went wrong in a way those checks
+    #     missed — a partial extraction. WARNING: this one is a defect
+    #     signal, and it is the line to grep for when a rendered CV has an
+    #     unexpected name on it.
+    #
+    #   · A parsed name in the other script. Entirely expected (an English
+    #     CV asked to render in Arabic) and the correct behaviour, so it is
+    #     INFO, not a warning. Still recorded, because it explains why the
+    #     document does not carry the name printed on the uploaded file.
+    user_id = state.get("user_id") or "unknown"
+    target_script = "Arabic" if is_arabic else "Latin"
+    if not parsed:
+        logger.warning(
+            f"👤 NAME FALLBACK (no parsed name): Agent 1 returned no personal.name for user "
+            f"{user_id}, falling back to the profile name for a '{'ar' if is_arabic else 'en'}' CV. "
+            f"This should not happen — treat it as a partial extraction."
+        )
+    else:
+        logger.info(
+            f"👤 Name fallback (script mismatch): the uploaded CV's name is not {target_script} "
+            f"script, so the {target_script} profile name is used for this "
+            f"'{'ar' if is_arabic else 'en'}' CV (user {user_id})."
+        )
+
+    if preferred:
+        return preferred
+
+    if other:
+        logger.warning(
+            f"👤 NAME FALLBACK (other script): no {target_script} profile name on file for user "
+            f"{user_id} — rendering the other language's profile name as-is."
+        )
+        return other
+
     glossary = (state.get("arabic_glossary") or {}) if is_arabic else {}
-    return apply_glossary(_s(raw_name), glossary) if glossary else _s(raw_name)
+    logger.warning(
+        f"👤 LEGACY NAME PATH: no profile name in either language for user {user_id}; "
+        f"using the CV's parsed name{' via the Arabic glossary' if glossary else ''}. "
+        f"See apply_candidate_names in main.py."
+    )
+    return apply_glossary(parsed, glossary) if glossary else parsed
 
 
 def build_cv_context(state: dict, template_id: str | None = None) -> dict:
@@ -154,15 +241,32 @@ def build_cv_context(state: dict, template_id: str | None = None) -> dict:
         return [ar(v) for v in (values or [])]
 
 
-    tailored_skills = state.get("tailored_skills") or facts.get("skills", {}) or {}
-    # The skills fallback above can hand back the RAW English facts_json
-    # skills when Agent 3 didn't return a tailored set — localize those too
-    # rather than printing an English skills column on an Arabic CV.
-    if glossary and not state.get("tailored_skills"):
-        tailored_skills = {
-            category: ar_list(items) if isinstance(items, list) else items
-            for category, items in (tailored_skills or {}).items()
-        }
+    # WHICH SKILLS ACTUALLY GET PRINTED.
+    #
+    # This was `state.get("tailored_skills") or facts.get("skills", {})`, and
+    # that `or` is why CVs shipped with no Skills section at all: Agent 3
+    # returns the five categories present-and-empty when it produced no
+    # skills, which is truthy, so the raw parsed skills were never reached.
+    # has_skills asks the question the code actually means. See utils/skills.py.
+    #
+    # Whether we fell back also decides localization: a tailored set is
+    # already Arabic, the raw facts set is still English and has to go
+    # through the glossary or an Arabic CV prints an English skills column.
+    agent_skills = state.get("tailored_skills")
+    if has_skills(agent_skills):
+        tailored_skills = agent_skills
+    elif has_skills(facts.get("skills")):
+        raw_skills = facts.get("skills") or {}
+        tailored_skills = (
+            {
+                category: ar_list(items) if isinstance(items, list) else items
+                for category, items in raw_skills.items()
+            }
+            if glossary
+            else raw_skills
+        )
+    else:
+        tailored_skills = {}
 
     bullet_lookup = {
         (b.get("original") or "").strip(): (b.get("tailored") or "").strip()
@@ -268,8 +372,10 @@ def build_cv_context(state: dict, template_id: str | None = None) -> dict:
 
     return {
         "personal": {
-            # name comes verbatim from the profile — see
-            # resolve_candidate_name. location is prose and gets localized.
+            # name comes verbatim from the uploaded CV when its script
+            # matches this document's, and from the profile otherwise —
+            # see resolve_candidate_name. Never glossary-translated on
+            # either path. location is prose and gets localized.
             # email / phone / linkedin / github are IDENTIFIERS and must
             # render byte-for-byte — same rule pdf_generator.py's
             # _arabicize_prose already enforces for its own fields.

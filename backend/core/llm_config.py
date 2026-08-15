@@ -39,10 +39,71 @@ _CLAUDE_MAX_TOKENS_CEILING = 8000
 # worst case of 3 billed responses instead of 5.
 _CLAUDE_MAX_TRUNCATION_RETRIES = 2
 
+# Gemini's own ceiling for this model, read from the API rather than assumed:
+#   client.models.get(model="gemini-3.1-flash-lite").output_token_limit -> 65536
+#
+# SET EXPLICITLY because this config had no cap at all, which leaves the
+# model on its default budget — and a genuinely large CV (16 jobs, 7 degrees,
+# every bullet extracted verbatim) is exactly the input that runs past a
+# default. Asking for the documented maximum costs nothing: max_output_tokens
+# is a ceiling, not a target, and short extractions still stop when they stop.
+GEMINI_MAX_OUTPUT_TOKENS = 65536
+
 # Shared config for Gemini JSON responses
 gemini_json_config = types.GenerateContentConfig(
-    response_mime_type="application/json"
+    response_mime_type="application/json",
+    max_output_tokens=GEMINI_MAX_OUTPUT_TOKENS,
 )
+
+
+class GeminiTruncationError(RuntimeError):
+    """
+    Raised when Gemini stopped before finishing its response.
+
+    Exists because `response.text` HIDES this: the SDK concatenates whatever
+    text parts came back and returns them as an ordinary string, with the
+    stop reason recorded only on the candidate. A response cut off by
+    max_output_tokens therefore arrives looking exactly like a complete one.
+    Today that surfaces downstream as a JSON parse error, which is loud but
+    misleading (it reads as "the model emitted bad JSON" and burns the
+    caller's full retry allowance re-asking an identical, over-budget
+    question). Worse, a truncation that happens to leave parseable JSON —
+    or any caller reading plain text — would pass silently, which on the CV
+    parser means a partial extraction rendered as a complete CV.
+    """
+
+
+def _gemini_text_or_raise(response, context: str) -> str:
+    """
+    The response's text, or a raised error if the model did not finish.
+
+    Anything other than a normal STOP means the output is not the whole
+    answer, so no caller should treat it as one. SAFETY and RECITATION are
+    included deliberately: both truncate mid-answer, and both would
+    otherwise reach the caller as a short-but-valid-looking string.
+    """
+    candidates = getattr(response, "candidates", None) or []
+    finish_reason = getattr(candidates[0], "finish_reason", None) if candidates else None
+    # The SDK hands this back as an enum on the happy path but a plain string
+    # on some transports, so normalise before comparing rather than trusting
+    # either shape.
+    reason = getattr(finish_reason, "name", None) or str(finish_reason or "")
+
+    if reason and reason.upper() not in ("STOP", "FINISH_REASON_UNSPECIFIED"):
+        usage = getattr(response, "usage_metadata", None)
+        raise GeminiTruncationError(
+            f"Gemini stopped early during {context}: finish_reason={reason} "
+            f"(output tokens: {getattr(usage, 'candidates_token_count', '?')}, "
+            f"cap: {GEMINI_MAX_OUTPUT_TOKENS}). The response is incomplete and must not be "
+            f"used as if it were the whole answer."
+        )
+
+    text = response.text
+    if text is None:
+        raise GeminiTruncationError(
+            f"Gemini returned no text during {context} (finish_reason={reason or 'unknown'})."
+        )
+    return text
 
 
 class ClaudeTruncationError(RuntimeError):
@@ -109,7 +170,7 @@ def generate_gemini_json(prompt: str, max_retries: int = 5) -> str:
                 contents=prompt,
                 config=gemini_json_config,
             )
-            return response.text
+            return _gemini_text_or_raise(response, "JSON generation")
         except (genai_errors.ClientError, genai_errors.ServerError) as e:
             last_error = e
             if _is_retryable_gemini_error(e) and attempt < max_retries:
@@ -323,7 +384,7 @@ def generate_gemini_text(prompt: str, max_retries: int = 5) -> str:
                 model=GEMINI_MODEL,
                 contents=prompt,
             )
-            return response.text
+            return _gemini_text_or_raise(response, "text generation")
         except (genai_errors.ClientError, genai_errors.ServerError) as e:
             last_error = e
             if _is_retryable_gemini_error(e) and attempt < max_retries:

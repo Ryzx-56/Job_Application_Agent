@@ -24,6 +24,8 @@ down until it fits on one page).
 """
 
 from io import BytesIO
+
+import fitz  # PyMuPDF — already used by utils/pdf_parser.py
 from weasyprint import HTML
 from pypdf import PdfReader
 from loguru import logger
@@ -46,8 +48,126 @@ RESCUE_STEP = 0.01
 SPARSE_PAGE_CHAR_THRESHOLD = 300  # ~a section heading plus one or two short lines
 
 
+# ─── CLIPPING GUARD ────────────────────────────────────────────────────────
+# A template whose CSS pins the document to one page box makes WeasyPrint
+# CLIP the overflow instead of paginating it. The result is a short PDF that
+# every check here reads as a perfect fit: 04_sidebar_dark.html did exactly
+# this, returning one page holding 4 of a CV's 16 jobs, and the search below
+# returned it at MAX_SCALE — the largest type, so the fewest entries — on the
+# very first pass. Nothing logged, nothing failed, the user got a gutted CV.
+#
+# WHAT THIS COMPARES, AND WHY NOT THE OBVIOUS THING. The first version of
+# this guard compared renders at two scales, on the theory that shrinking the
+# type would reveal content a clipping template had dropped. It does not: the
+# clip box is `height: 100%` and `--cv-scale` is applied with `zoom`, so the
+# box shrinks with the text and exactly as much content survives at 0.82 as at
+# 1.25. Measured on the real bug — 4 of 16 entries at both scales — so that
+# guard would have sat there catching nothing. It is replaced by a comparison
+# against the CONTENT WE ASKED FOR, which is the only reference that cannot
+# itself be clipped.
+#
+# Glyphs drawn vs. characters in the context. Measured, not guessed:
+#
+#   0.29  04_sidebar_dark.html WITH the bug, long CV, at MAX_SCALE
+#   0.70  healthy floor — a one-job CV in sidebar_dark, the template whose
+#         fixed chrome is the largest share of a small document
+#   0.86  healthy floor for an ordinary short CV
+#   0.96-1.00  every template, long CV, both languages
+#
+# 0.5 sits in the empty band between the broken case and the healthy floor
+# with roughly equal margin either side. Counting DRAWN GLYPHS rather than
+# extracted text is deliberate: extraction is not trustworthy here (Arabic
+# PDFs decode badly, see pdf_generator.py), while glyph counting never
+# decodes anything and so behaves identically in both languages — the Arabic
+# ratios above are in the same band as the English ones for that reason.
+CLIPPING_MIN_RATIO = 0.5
+
+# Below this the ratio gets noisy (fixed template chrome dominates) and there
+# is no meaningful amount of content to lose.
+MIN_MEASURABLE_CHARS = 500
+
+
+class ContentClippedError(RuntimeError):
+    """
+    Raised when the rendered PDF is missing a large fraction of the content
+    it was given.
+
+    Deliberately fatal rather than a warning. main.py renders inside the try
+    block that refunds the credit and returns an error to the user, so
+    raising turns a silently gutted CV into a refunded failure — which is the
+    entire point of the brief's rule that page-fitting must never drop real
+    content. A logged warning would leave the broken document in the user's
+    hands, which is the bug, not the fix.
+    """
+
+
 def _page_count(pdf_bytes: bytes) -> int:
     return len(PdfReader(BytesIO(pdf_bytes)).pages)
+
+
+def _glyph_count(pdf_bytes: bytes) -> int:
+    """
+    How many glyphs the PDF actually draws.
+
+    get_texttrace() reports the glyph ids handed to the text operators, so
+    this counts marks on the page rather than characters recovered from a
+    ToUnicode table. Returns -1 if it cannot measure, which the caller
+    treats as "no opinion" rather than as a failure — a guard that breaks
+    rendering when it cannot run is worse than the bug it guards against.
+    """
+    try:
+        with fitz.open(stream=pdf_bytes, filetype="pdf") as doc:
+            return sum(
+                len(span.get("chars", ()))
+                for page in doc
+                for span in page.get_texttrace()
+            )
+    except Exception as e:
+        logger.warning(f"fit_to_page: couldn't count glyphs, clipping guard inactive: {e}")
+        return -1
+
+
+def _context_text_length(context: dict) -> int:
+    """Rough size of the content being rendered, straight off the context."""
+    total = 0
+    stack = [context]
+    while stack:
+        item = stack.pop()
+        if isinstance(item, str):
+            total += len(item)
+        elif isinstance(item, dict):
+            stack.extend(item.values())
+        elif isinstance(item, (list, tuple)):
+            stack.extend(item)
+    return total
+
+
+def _assert_nothing_clipped(pdf_bytes: bytes, context: dict, template_name: str) -> bytes:
+    """
+    Fails the render if the PDF drew far less than the context contained.
+
+    Returns the PDF unchanged when it can't measure (a broken guard must not
+    break rendering) or when there is too little content to judge.
+    """
+    expected = _context_text_length(context)
+    if expected < MIN_MEASURABLE_CHARS:
+        return pdf_bytes
+
+    drawn = _glyph_count(pdf_bytes)
+    if drawn < 0:
+        return pdf_bytes
+
+    ratio = drawn / expected
+    if ratio < CLIPPING_MIN_RATIO:
+        raise ContentClippedError(
+            f"{template_name} rendered only {drawn} glyphs for {expected} characters of "
+            f"content ({ratio:.0%}, floor {CLIPPING_MIN_RATIO:.0%}) across "
+            f"{_page_count(pdf_bytes)} page(s) — the template is clipping overflow instead of "
+            f"paginating it, so most of this CV is missing. A fixed height on html/body, or a "
+            f"container that cannot fragment across pages, causes this."
+        )
+    logger.debug(f"fit_to_page: {template_name} drew {drawn} glyphs for {expected} chars ({ratio:.0%}).")
+    return pdf_bytes
 
 
 def _trailing_page_char_count(pdf_bytes: bytes) -> int:
@@ -111,10 +231,19 @@ def render_html_fit_to_page(jinja_env, template_name: str, context: dict,
             html = html_transform(html)
         return _render(html, base_url)
 
+    # Every return below goes through _assert_nothing_clipped. The check reads
+    # the context, not a second render, so it costs nothing extra and — unlike
+    # the page-count tests around it — it cannot be fooled by a template that
+    # clips its overflow into a tidy one-page PDF.
+    check = lambda pdf: _assert_nothing_clipped(pdf, context, template_name)
+
     # Best case: full-size content already fits in one page — no search needed.
+    # This is the exact line that shipped the gutted CV: a clipped render is
+    # one page, so it returned here on the very first pass, at the largest
+    # scale and therefore with the least content.
     max_pdf = render_at(MAX_SCALE)
     if _page_count(max_pdf) == 1:
-        return max_pdf
+        return check(max_pdf)
 
     # Floor case: even the smallest allowed scale doesn't fit on one page —
     # this is the "genuinely long CV" (or near-miss) path, same as before.
@@ -134,7 +263,7 @@ def render_html_fit_to_page(jinja_env, template_name: str, context: dict,
                 rescue_pdf = render_at(rescue_scale)
                 if _page_count(rescue_pdf) == 1:
                     logger.info(f"fit_to_page: rescue succeeded at scale {rescue_scale}.")
-                    return rescue_pdf
+                    return check(rescue_pdf)
             logger.warning(
                 f"fit_to_page: rescue pass reached {RESCUE_MIN_SCALE} and still "
                 f"didn't fit — returning the {pages_at_min}-page MIN_SCALE result as-is."
@@ -146,7 +275,7 @@ def render_html_fit_to_page(jinja_env, template_name: str, context: dict,
                 f"(~{sparse_chars} chars) — not a rescue candidate. Returning as-is "
                 f"rather than shrinking a genuinely long CV to an unreadable size."
             )
-        return min_pdf
+        return check(min_pdf)
 
     # Normal case: MIN_SCALE fits, MAX_SCALE doesn't — binary search the
     # boundary between them for the largest scale that still fits.
@@ -167,4 +296,4 @@ def render_html_fit_to_page(jinja_env, template_name: str, context: dict,
         else:
             hi = mid
 
-    return best_pdf
+    return check(best_pdf)

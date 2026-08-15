@@ -35,9 +35,13 @@ class AgentState(TypedDict):
     user_id:                 Optional[str]
 
     # ── CANDIDATE NAME (never machine-translated) ───────────────────────
-    # Read from profiles.name_en / profiles.name_ar in main.py and used
-    # VERBATIM by utils/cv_context.py for the matching output language. A
-    # name is not a translation problem — see core/profile_names.py.
+    # Read from profiles.name_en / profiles.name_ar in main.py. These are
+    # the name for a document whose output script differs from the uploaded
+    # CV's; when the CV is already written in the output language, its own
+    # parsed name wins instead. utils/cv_context.py's resolve_candidate_name
+    # owns that decision and documents why. Either way the name is used
+    # verbatim — a name is not a translation problem, see
+    # core/profile_names.py.
     # name_fallback_used records the legacy path: the required field was
     # empty and the user chose to generate anyway, so the name went through
     # the Arabic glossary after all. Tracked so we can see how many users

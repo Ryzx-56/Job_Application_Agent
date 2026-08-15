@@ -32,11 +32,13 @@ export type AtsBreakdown = {
   unmatched_keywords?: string[];
   matched_skills?: string[];
   missing_skills?: string[];
+  title_match?: number;
   weights?: {
-    keyword_match?: number;
     skills_match?: number;
-    education_match?: number;
+    keyword_match?: number;
+    title_match?: number;
     experience_match?: number;
+    education_match?: number;
   };
 };
 

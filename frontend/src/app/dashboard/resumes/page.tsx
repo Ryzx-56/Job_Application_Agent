@@ -8,11 +8,14 @@ import { fetchResumes, getDocumentUrl, deleteResume, ResumeRecord } from "@/lib/
 
 // Mirrors WEIGHTS in utils/ats_scorer.py — fallback only, used if an older
 // saved row doesn't have ats_breakdown.weights yet.
+// Mirrors utils/ats_scorer.py's WEIGHTS — see the note on the copy in
+// dashboard/page.tsx. Fallback only; the real values arrive per resume.
 const DEFAULT_ATS_WEIGHTS = {
-  keyword_match: 40,
-  skills_match: 35,
-  education_match: 15,
-  experience_match: 10,
+  skills_match: 40,
+  keyword_match: 25,
+  title_match: 15,
+  experience_match: 12,
+  education_match: 8,
 };
 
 // Rows per "My Resumes" page. Keeps each page's query/render cost bounded
@@ -108,10 +111,18 @@ function ResumeDetail({ resume, lang, copy, generateCopy }: { resume: ResumeReco
           <ScoreRing score={resume.ats_score} label={generateCopy.atsLabel} size={112} />
         </div>
         <div className="grid gap-3 content-center sm:grid-cols-2">
-          <ScoreBar label={lang === "ar" ? "الكلمات المفتاحية" : "Keywords"} value={resume.ats_breakdown?.keyword_match ?? 0} />
+          {/* Ordered by weight, heaviest first, to match the ATS card on the
+              dashboard and WEIGHTS in utils/ats_scorer.py. title_match is
+              optional because resumes generated before it existed have no
+              value stored for it — those rows simply omit the bar rather
+              than showing a misleading 0. */}
           <ScoreBar label={lang === "ar" ? "المهارات" : "Skills"} value={resume.ats_breakdown?.skills_match ?? 0} />
-          <ScoreBar label={lang === "ar" ? "التعليم" : "Education"} value={resume.ats_breakdown?.education_match ?? 0} />
+          <ScoreBar label={lang === "ar" ? "الكلمات المفتاحية" : "Keywords"} value={resume.ats_breakdown?.keyword_match ?? 0} />
+          {resume.ats_breakdown?.title_match !== undefined && (
+            <ScoreBar label={lang === "ar" ? "المسمى الوظيفي" : "Job title"} value={resume.ats_breakdown.title_match} />
+          )}
           <ScoreBar label={lang === "ar" ? "الخبرة" : "Experience"} value={resume.ats_breakdown?.experience_match ?? 0} />
+          <ScoreBar label={lang === "ar" ? "التعليم" : "Education"} value={resume.ats_breakdown?.education_match ?? 0} />
         </div>
       </div>
 
