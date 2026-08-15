@@ -127,16 +127,39 @@ def _glyph_count(pdf_bytes: bytes) -> int:
         return -1
 
 
+# Context keys that hold EMBEDDED ASSETS rather than text the reader sees.
+#
+# `photo` is a base64 JPEG data URI (see utils/cv_photo.py) — tens of
+# thousands of characters that draw zero glyphs. Counting it as "content
+# we asked for" would push `expected` far past what any template could
+# possibly draw, dropping the ratio below CLIPPING_MIN_RATIO and raising
+# ContentClippedError on a perfectly good CV. That error is fatal by design:
+# it refunds the credit and hands the user a failure. So a photo template
+# would have failed 100% of the time for anyone who has a photo, which is
+# precisely the population it exists for.
+_NON_CONTENT_CONTEXT_KEYS = {"photo"}
+
+
 def _context_text_length(context: dict) -> int:
-    """Rough size of the content being rendered, straight off the context."""
+    """
+    Rough size of the readable content being rendered, straight off the
+    context. Embedded assets are excluded — see _NON_CONTENT_CONTEXT_KEYS.
+    """
     total = 0
     stack = [context]
     while stack:
         item = stack.pop()
         if isinstance(item, str):
-            total += len(item)
+            # Belt-and-braces alongside the key check below: any future
+            # context value carrying an inline asset is skipped on sight,
+            # wherever in the tree it turns up.
+            if not item.startswith("data:"):
+                total += len(item)
         elif isinstance(item, dict):
-            stack.extend(item.values())
+            stack.extend(
+                value for key, value in item.items()
+                if key not in _NON_CONTENT_CONTEXT_KEYS
+            )
         elif isinstance(item, (list, tuple)):
             stack.extend(item)
     return total

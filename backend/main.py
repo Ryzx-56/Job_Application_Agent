@@ -43,9 +43,10 @@ from core.profile_names import (
 )
 from core.usage_tracker import UsageEvent
 from utils.pdf_parser import extract_text_from_pdf, UnsupportedCVFormat
+from utils.cv_photo import extract_candidate_photo
 from utils.pdf_generator import render_cv_pdf, render_cover_letter_pdf
 from utils.docx_generator import generate_cv_docx
-from utils.template_registry import DEFAULT_TEMPLATE_ID
+from utils.template_registry import DEFAULT_TEMPLATE_ID, template_supports_photo
 from schemas.manual_cv_request import ManualCVRequest
 
 # 1. Initialize FastAPI Application Instance
@@ -145,6 +146,29 @@ def read_uploaded_cv(cv_bytes: bytes) -> str:
             status_code=status.HTTP_400_BAD_REQUEST,
             detail={"code": "unreadable_upload", "message": str(e)},
         )
+
+
+def read_uploaded_photo(cv_bytes: bytes, template_id: str | None) -> str:
+    """
+    Pulls the candidate's photo out of the same uploaded bytes, locally.
+
+    Runs beside read_uploaded_cv rather than inside it because the two
+    answer different questions: text is REQUIRED (no text means a 400 and
+    no credit spent), a photo is entirely optional. Nothing here can fail
+    the request — utils/cv_photo.py swallows its own errors and this only
+    normalizes None to "" for the state field.
+
+    Skipped outright unless the chosen template has a photo slot. Most
+    templates don't, and decoding every embedded image in a CV to produce a
+    string nothing will read is work no user should wait for. It also means
+    a face is only ever extracted when the user picked a layout that shows
+    one.
+
+    No Gemini/vision call is involved. See utils/cv_photo.py's docstring.
+    """
+    if not template_supports_photo(template_id):
+        return ""
+    return extract_candidate_photo(cv_bytes) or ""
 
 
 def apply_candidate_names(initial_state: AgentState, user_id: str, allow_name_fallback: bool) -> None:
@@ -265,6 +289,9 @@ def make_initial_state(cv_text: str, jd_text: str, template_id: str = DEFAULT_TE
         profile_name_en=None,
         profile_name_ar=None,
         name_fallback_used=False,
+        # Filled in by read_uploaded_photo() on the upload routes. Stays ""
+        # for the manual 'Create New CV' flow — there's no file to mine.
+        candidate_photo="",
     )
 
 
@@ -526,11 +553,36 @@ _SNAPSHOT_STATE_KEYS = [
     # re-render needs these or it would fall back to the CV's parsed name
     # and print a different name than the original document did.
     "profile_name_en", "profile_name_ar",
+    # The candidate photo, as a JPEG data URI. Same reasoning as everything
+    # above: the rendered PDF isn't kept, so a later download re-renders
+    # from this snapshot alone and would come back with an empty photo slot
+    # without it. See _photo_for_snapshot for why it isn't always included.
+    "candidate_photo",
 ]
 
 
+def _photo_for_snapshot(result_state: dict) -> str:
+    """
+    The photo to persist with this resume — "" unless the chosen template
+    actually renders one.
+
+    read_uploaded_photo already refuses to extract for a non-photo
+    template, so in normal operation this agrees with it. It is repeated
+    here because this is the write that LASTS: the snapshot is the only
+    part of a generation that outlives the request, and a face is not
+    something to keep on a row that will never display it. It also keeps
+    the ~30 KB out of every snapshot for the eleven templates that predate
+    this feature, so their rows stay exactly the size they were.
+    """
+    if not template_supports_photo(result_state.get("template_id")):
+        return ""
+    return result_state.get("candidate_photo") or ""
+
+
 def build_generation_snapshot(result_state: dict) -> dict:
-    return {key: result_state.get(key) for key in _SNAPSHOT_STATE_KEYS}
+    snapshot = {key: result_state.get(key) for key in _SNAPSHOT_STATE_KEYS}
+    snapshot["candidate_photo"] = _photo_for_snapshot(result_state)
+    return snapshot
 
 
 def generate_documents_parallel(result_state: dict, paths: dict) -> dict:
@@ -835,6 +887,9 @@ async def optimize_application(
     initial_state["user_id"] = user_id
     initial_state["additional_info"] = additional_info or ""
     initial_state["cv_language"] = normalize_cv_language(cv_language)
+    # Local image extraction from the bytes already in memory — no second
+    # read of the upload, and no vision call. See read_uploaded_photo.
+    initial_state["candidate_photo"] = read_uploaded_photo(cv_bytes, template_id)
 
     # Reserve credits BEFORE running the (expensive) pipeline. Atomic against
     # concurrent requests — see reserve_credits() in core/credits.py.
@@ -916,6 +971,9 @@ async def optimize_application_stream(
     initial_state["user_id"] = user_id
     initial_state["additional_info"] = additional_info or ""
     initial_state["cv_language"] = normalize_cv_language(cv_language)
+    # Local image extraction from the bytes already in memory — no second
+    # read of the upload, and no vision call. See read_uploaded_photo.
+    initial_state["candidate_photo"] = read_uploaded_photo(cv_bytes, template_id)
 
     # Name check BEFORE credits — being asked for your name costs nothing.
     apply_candidate_names(initial_state, user_id, allow_name_fallback)

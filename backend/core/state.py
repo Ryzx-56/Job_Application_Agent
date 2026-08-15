@@ -50,6 +50,21 @@ class AgentState(TypedDict):
     profile_name_ar:         Optional[str]
     name_fallback_used:      bool
 
+    # ── CANDIDATE PHOTO ─────────────────────────────────────────────────
+    # A JPEG data URI pulled out of the uploaded file by utils/cv_photo.py
+    # BEFORE the graph runs — no agent produces or reads it, and no LLM ever
+    # sees the image (Agent 1 keeps receiving text only). It rides through
+    # state exactly like template_id does, so utils/cv_context.py can put it
+    # in the render context and pdf_generator can reuse it on the cover
+    # letter. Empty string when the CV had no usable photo, or for the
+    # manual 'Create New CV' flow, which has no uploaded file at all.
+    #
+    # Declared here for the reason spelled out in the user_id note above:
+    # LangGraph drops any state key this TypedDict doesn't list, so an
+    # undeclared candidate_photo would silently arrive at the renderers as
+    # None on every single request.
+    candidate_photo:         Optional[str]
+
     # ── CV INPUT MODE ────────────────────────────────────────
     # "upload" (PDF parsed by cv_parser) or "manual" (form data
     # parsed by manual_cv_parser) — orchestrator routes on this.

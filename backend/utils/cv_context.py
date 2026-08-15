@@ -14,7 +14,7 @@ from loguru import logger
 
 from core.profile_names import has_arabic, has_latin
 from utils.skills import has_skills
-from utils.template_registry import DEFAULT_TEMPLATE_ID
+from utils.template_registry import DEFAULT_TEMPLATE_ID, template_supports_photo
 from utils.arabic_localizer import apply_glossary, localize_date, to_eastern_arabic_numerals
 
 
@@ -213,6 +213,26 @@ def resolve_candidate_name(state: dict) -> str:
     return apply_glossary(parsed, glossary) if glossary else parsed
 
 
+def resolve_candidate_photo(state: dict, template_id: str | None) -> str:
+    """
+    The photo this render should draw, or "" for none.
+
+    Extracted from the uploaded file with no LLM call (see utils/cv_photo.py)
+    and carried on state as a JPEG data URI. Gated on the template rather
+    than just on "is there a photo": the eleven original templates have no
+    slot for one, and handing them a 30 KB string they never reference would
+    only inflate the render context — which fit_to_page.py measures.
+
+    Returns "" rather than None so a template's `{% if photo %}` behaves the
+    same whether the key was absent, empty, or never set (the manual
+    'Create New CV' flow has no uploaded file and so never has a photo).
+    """
+    if not template_supports_photo(template_id):
+        return ""
+    photo = _s(state.get("candidate_photo")).strip()
+    return photo if photo.startswith("data:image/") else ""
+
+
 def build_cv_context(state: dict, template_id: str | None = None) -> dict:
     facts = state.get("facts_json", {}) or {}
     personal = facts.get("personal", {}) or {}
@@ -387,6 +407,10 @@ def build_cv_context(state: dict, template_id: str | None = None) -> dict:
             "github": _s(personal.get("github")),
         },
         "tagline": state.get("tagline") or None,
+        # A JPEG data URI, or "" — see resolve_candidate_photo. Only the
+        # photo-slot templates ever receive a non-empty value, and every one
+        # of them guards it with `{% if photo %}`.
+        "photo": resolve_candidate_photo(state, template_id),
         "tailored_summary": state.get("tailored_summary") or ar(facts.get("summary")),
         "experience": experience,
         "projects": projects,
