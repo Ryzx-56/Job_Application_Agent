@@ -18,7 +18,22 @@ def merge_errors(existing: Optional[str], new: Optional[str]) -> Optional[str]:
 class AgentState(TypedDict):
     # ── INPUTS ──────────────────────────────────────────────
     raw_cv_text:             str
+    # The job description being tailored against. USUALLY what the user
+    # pasted — but when they submitted only a job title, jd_analyzer replaces
+    # it with a representative JD composed from real current postings for
+    # that title (see agents/jd_analyzer.py's title-only section) before
+    # anything downstream reads it. Everything after Agent 2 therefore sees
+    # JD-shaped content either way, which is the point: match_scorer reads
+    # this text directly, main.py stores it on the resume, and Interview Prep
+    # reads it back off that row later.
     job_description:         str
+    # True when the field above is a composed representative JD rather than
+    # something the user pasted, with how many real postings went into it.
+    # Declared here because LangGraph drops undeclared keys (see the user_id
+    # note below) — without these, jd_analyzer's update would vanish and the
+    # composite would never reach the rest of the graph.
+    jd_synthesized_from_title: bool
+    jd_source_postings:        int
 
     # BUG FIX (silent state-drop): LangGraph builds its channels from THIS
     # TypedDict's annotations and silently discards any key that isn't

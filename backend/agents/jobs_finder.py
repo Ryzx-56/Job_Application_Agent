@@ -14,7 +14,16 @@ from core.llm_config import generate_gemini_json
 # The same phrase matcher the ATS scorer uses, so "does this listing talk
 # about the candidate's field" is answered the same way "does this CV cover
 # the JD" is — see utils/ats_scorer.py's BM25 section.
-from utils.ats_scorer import PHRASE_COVERAGE_THRESHOLD, _stem_counts, phrase_coverage
+# _title_subject comes from the same module's title component: it strips
+# seniority words ("Senior", "Junior") so two postings for the same role at
+# different levels still compare as the same role. Reused by the Job Search
+# page's exact-vs-adjacent split — see _title_closeness.
+from utils.ats_scorer import (
+    PHRASE_COVERAGE_THRESHOLD,
+    _stem_counts,
+    _title_subject,
+    phrase_coverage,
+)
 
 # Priority job board — searched every time and ranked ahead of
 # equally-relevant results from anywhere else. Jadarat (jadarat.sa) is Saudi
@@ -1323,6 +1332,389 @@ def _drop_source_job(candidates: list[dict], weight_factors: dict) -> list[dict]
     if dropped:
         logger.info(f"🔍 Dropped {dropped} listing(s) matching the pasted job description itself.")
     return kept
+
+
+# ─── SOURCING REAL POSTINGS FOR A BARE JOB TITLE ────────────────────────────
+#
+# Used by agents/jd_analyzer.py when the user gave a job TITLE and no job
+# description. Tailoring against a bare title produces almost no weight
+# factors — no required skills, no ATS keywords, no seniority — and every
+# stage downstream (tailoring, ATS scoring, match scoring) is only as good as
+# what it was given. So the title is turned into a representative JD built
+# out of real, current postings for that title first.
+#
+# THIS DELIBERATELY REUSES THE SEARCH LANES rather than adding a second
+# search path: _run_search_passes is the same priority/trusted/Saudi/open-web
+# fan-out the similar-jobs feature uses, with the same legitimacy filter on
+# off-list domains and the same recency window. A separate "just get me some
+# JD text" search would have quietly reintroduced the spam and dead-listing
+# problems that filter exists to solve.
+JD_SOURCE_POSTINGS = 6           # how many postings to compose a JD from
+JD_SOURCE_MIN_CONTENT = 400      # chars — below this it's a search snippet, not a posting
+
+
+def fetch_postings_for_title(
+    job_title: str,
+    location: str | None = None,
+    limit: int = JD_SOURCE_POSTINGS,
+) -> list[dict]:
+    """
+    Real, currently-live postings for a job title, as raw text to compose a
+    representative JD from.
+
+    Returns [{title, url, source, content}], most authoritative lane first
+    (Jadarat and the trusted boards ahead of open-web finds). Returns [] on
+    any failure — the caller falls back to analysing the bare title, which is
+    worse but still works, and is never worth failing a paid run over.
+
+    Note this returns the postings' TEXT, not listings for display. Nothing
+    here is shown to the user; agents/jd_analyzer.py reads these to build one
+    composite description of what the role generally requires.
+    """
+    title = (job_title or "").strip()
+    if not title:
+        return []
+
+    api_key = os.getenv('TAVILY_API_KEY')
+    if not api_key:
+        logger.error("❌ TAVILY_API_KEY missing — cannot source postings for a title-only submission.")
+        return []
+
+    where = (location or "").strip()
+    # Two query shapes: one aimed at the body of a posting (the words that
+    # appear in a real requirements section), one at the vacancy itself.
+    # Both are location-qualified when we know where the candidate is, so a
+    # Saudi applicant gets a JD reflecting the market they're applying into.
+    queries = [
+        f'"{title}" job description responsibilities requirements qualifications {where}'.strip(),
+        f'{title} vacancy hiring {where}'.strip(),
+    ]
+
+    try:
+        client = TavilyClient(api_key=api_key)
+        # required_skills_lower=[] — there are no known required skills yet;
+        # that is the entire reason this function is being called. It only
+        # affects the heuristic skill ratio, which this caller ignores.
+        passes = _run_search_passes(client, queries, required_skills_lower=[])
+    except Exception as e:
+        logger.error(f"❌ Sourcing postings for title '{title}' failed: {e}")
+        return []
+
+    postings: list[dict] = []
+    seen_urls: set[str] = set()
+    # named lanes first across all passes, then open web — same precedence
+    # the similar-jobs pool uses.
+    for group_index in (0, 1):
+        for named, open_web in passes:
+            for candidate in (named, open_web)[group_index]:
+                url = candidate.get("url") or ""
+                content = candidate.get("_content") or ""
+                if not url or url in seen_urls:
+                    continue
+                if len(content) < JD_SOURCE_MIN_CONTENT:
+                    continue
+                seen_urls.add(url)
+                postings.append({
+                    "title": candidate.get("title") or title,
+                    "url": url,
+                    "source": candidate.get("source") or "",
+                    "content": content,
+                })
+                if len(postings) >= limit:
+                    break
+            if len(postings) >= limit:
+                break
+        if len(postings) >= limit:
+            break
+
+    logger.info(
+        f"🧾 Sourced {len(postings)} real posting(s) for title-only submission '{title}'"
+        + (f" near '{where}'" if where else "")
+    )
+    return postings
+
+
+# ─── STANDALONE TITLE SEARCH (the Job Search page) ──────────────────────────
+#
+# Powers /api/v1/job-search: a title, optionally "internships", and nothing
+# else. No CV, no JD, no weight factors.
+#
+# EVERYTHING BELOW GOES THROUGH THE SAME PIPELINE find_similar_jobs USES —
+# the four search lanes, the legitimacy filter on off-list domains, the model
+# screen, duplicate collapse and the liveness check (_finalize_listings). A
+# second, simpler search path would have been much less code and would have
+# reintroduced every problem Sections 5 and 6 exist to solve: closed
+# listings, content-farm pages, and results from nowhere near the user.
+#
+# WHAT'S DIFFERENT is only what the search has to work with. There is no CV,
+# so there are no required skills to weight a query by and no candidate field
+# vocabulary to act as the relevance safety net. The title carries all of it,
+# which is why the related-title expansion below matters more here than it
+# would inside the tailoring flow.
+
+# How close a listing's title must sit to the requested one to count as an
+# EXACT/CLOSE match rather than an adjacent role. Uses the ATS scorer's own
+# title machinery (_title_subject strips seniority words, phrase_coverage
+# does stemmed partial-phrase coverage) so "is this the same role" is
+# answered the same way here as it is when scoring a CV against a JD.
+TITLE_CLOSE_COVERAGE = 0.6
+
+# Related titles are only searched when the exact pass came up short. Set at
+# the display cap: if the exact pass already fills the page, adjacent roles
+# would push genuine matches off it.
+RELATED_TITLES_MAX = 5
+
+# How many listings the "related roles" group can hold. Larger than
+# RESULT_CAP because this group carries BOTH the pass-1 results whose titles
+# didn't match closely AND everything the adjacent-title searches found —
+# capping it at RESULT_CAP meant paying for expansion searches whose results
+# were then sliced away.
+RELATED_CAP = RESULT_CAP * 2
+
+RELATED_TITLES_PROMPT = """
+List job titles that a person searching for "{job_title}" would also realistically
+apply to, in the same field and at a similar level.
+
+RULES:
+- Return between 3 and {count} titles.
+- They must be ADJACENT ROLES, not rewordings of the same title. For
+  "IT Technician" good answers are "IT Support Specialist", "Help Desk
+  Technician", "Desktop Support Engineer". A bad answer is "Technician, IT".
+- Stay at the same seniority. Do not return manager titles for a junior role.
+- Stay in the same field. A "Data Analyst" must not return "Data Entry Clerk".
+- Use the ordinary English title an employer would advertise.
+
+Return ONLY a JSON array of strings. No commentary.
+"""
+
+
+def related_job_titles(job_title: str, count: int = RELATED_TITLES_MAX) -> list[str]:
+    """
+    Adjacent roles for a title, for the expansion pass.
+
+    WHY A MODEL CALL AND NOT A MAPPING. The codebase's existing variant
+    machinery (utils/ats_scorer.py's _KNOWN_EQUIVALENTS) is a hand-maintained
+    list of unambiguous ABBREVIATIONS — "js"/"javascript", "ml"/"machine
+    learning". That shape works because the pairs are closed and universal.
+    Adjacent job titles are neither: they differ per field, per country and
+    per employer, and a hand-kept table would need entries for nursing,
+    logistics, genomics and every other field this product serves before it
+    helped anyone. So the mapping pattern is reused where it fits — matching
+    a returned listing back to the requested title, via _title_subject and
+    phrase_coverage below — and a model generates the adjacent titles, which
+    is the half no table can cover.
+
+    Returns [] on any failure; the caller then simply shows the exact matches
+    it already has.
+    """
+    title = (job_title or "").strip()
+    if not title:
+        return []
+    try:
+        raw = generate_gemini_json(RELATED_TITLES_PROMPT.format(job_title=title, count=count))
+        parsed = json.loads(raw)
+    except Exception as e:
+        logger.warning(f"🧭 Could not generate related titles for '{title}': {e}")
+        return []
+
+    if not isinstance(parsed, list):
+        return []
+
+    requested_subject = _title_subject(title)
+    out: list[str] = []
+    for item in parsed:
+        candidate = str(item or "").strip()
+        if not candidate or len(candidate) > 80:
+            continue
+        # Drop anything that is really the same title reworded — it would
+        # just re-run the exact pass under a different string.
+        if _title_subject(candidate) == requested_subject:
+            continue
+        if candidate.lower() in {o.lower() for o in out}:
+            continue
+        out.append(candidate)
+        if len(out) >= count:
+            break
+    return out
+
+
+def _title_closeness(listing_title: str, requested_title: str) -> float:
+    """
+    How well a listing's title covers the requested one, 0-1.
+
+    Same two helpers the ATS title component uses: seniority words are
+    stripped so "Senior IT Technician" still reads as the same ROLE as
+    "IT Technician", and coverage is stemmed partial-phrase rather than exact
+    string equality.
+    """
+    subject = _title_subject(requested_title)
+    if not subject:
+        return 0.0
+    return phrase_coverage(subject, *_stem_counts(_title_subject(listing_title)))
+
+
+def _title_search_queries(job_title: str, location: str, internships: bool) -> list[str]:
+    """Progressively broader queries for one title, same shape as
+    find_similar_jobs' ladder."""
+    where = f" in {location}" if location else ""
+    if internships:
+        return [
+            f"{job_title} internship trainee program applications open{where}",
+            f"{job_title} intern vacancies apply{where}",
+            f"{job_title} internship hiring now",
+        ]
+    return [
+        f"{job_title} active job openings hiring{where}",
+        f"{job_title} jobs vacancies apply{where}",
+        f"{job_title} jobs hiring now",
+    ]
+
+
+def _search_one_title(
+    client: TavilyClient,
+    job_title: str,
+    location: str,
+    internships: bool,
+    seen_urls: set[str],
+) -> list[dict]:
+    """One title's worth of candidates, deduped against everything already
+    seen. Named-source results first, open-web after, exactly as the
+    similar-jobs pool orders them."""
+    queries = _title_search_queries(job_title, location, internships)
+    candidates: list[dict] = []
+    open_web: list[dict] = []
+
+    def absorb(batch: list[dict], into: list[dict]) -> None:
+        for candidate in batch:
+            url = candidate.get("url") or ""
+            if not url or url in seen_urls:
+                continue
+            seen_urls.add(url)
+            into.append(candidate)
+
+    # Same staging as find_similar_jobs: the most specific query alone
+    # first, the broader ones only if the pool is thin, and concurrently.
+    named, opened = _run_search_pass(client, queries[0], [])
+    absorb(named, candidates)
+    absorb(opened, open_web)
+
+    if len(candidates) + len(open_web) < RESULT_CAP * 3:
+        for named, opened in _run_search_passes(client, queries[1:], []):
+            absorb(named, candidates)
+            absorb(opened, open_web)
+
+    return candidates + open_web
+
+
+def _screen_and_finalize(
+    candidates: list[dict],
+    job_title: str,
+    location: str,
+    internships: bool,
+) -> list[dict]:
+    """The model screen plus duplicate/liveness finalisation, with the same
+    heuristic fallback find_similar_jobs uses when the screen can't run.
+
+    field_terms is the requested title's own words: with no CV there is no
+    candidate vocabulary, and the title is the only statement of field the
+    user gave us.
+    """
+    if not candidates:
+        return []
+    field_terms = [t for t in _title_subject(job_title).split() if len(t) > 2]
+    screen_title = f"{job_title} (internship)" if internships else job_title
+    screened = _llm_screen_listings(candidates, screen_title, location, [], field_terms=field_terms)
+    if screened is None:
+        logger.info("🧭 Screening unavailable — falling back to heuristics for this title search.")
+        return _finalize_listings(_heuristic_filter(candidates, _location_terms(location), field_terms))
+    return _finalize_listings(screened)
+
+
+def search_jobs_by_title(
+    job_title: str,
+    location: str | None = None,
+    internships: bool = False,
+) -> dict:
+    """
+    The Job Search page's one entry point.
+
+    TWO PASSES, IN ORDER:
+      1. EXACT/CLOSE — the requested title. Everything it returns is split by
+         _title_closeness into genuine matches for the title and listings
+         that came back under it but are really something else.
+      2. RELATED — adjacent titles from related_job_titles, and ONLY when
+         pass 1 didn't fill the page. This is the "IT Technician then IT
+         Support" behaviour: close matches are never displaced by adjacent
+         ones, they're appended after them.
+
+    Returns {"exact": [...], "related": [...], "related_titles": [...]} —
+    kept as two lists rather than one merged list so the page can label the
+    second group honestly instead of implying everything matched the search.
+    """
+    title = (job_title or "").strip()
+    if not title:
+        return {"exact": [], "related": [], "related_titles": []}
+
+    api_key = os.getenv('TAVILY_API_KEY')
+    if not api_key:
+        logger.error("❌ TAVILY_API_KEY missing — job search cannot run.")
+        return {"exact": [], "related": [], "related_titles": []}
+
+    client = TavilyClient(api_key=api_key)
+    where = (location or "").strip()
+    seen_urls: set[str] = set()
+
+    # ── PASS 1: the title itself ──────────────────────────────────────────
+    raw = _search_one_title(client, title, where, internships, seen_urls)
+    screened = _screen_and_finalize(raw, title, where, internships)
+
+    exact, loose = [], []
+    for job in screened:
+        closeness = _title_closeness(job.get("title") or "", title)
+        (exact if closeness >= TITLE_CLOSE_COVERAGE else loose).append(job)
+
+    logger.info(
+        f"🧭 Job search '{title}': {len(exact)} close title match(es), "
+        f"{len(loose)} looser result(s) from the same pass."
+    )
+
+    # ── PASS 2: adjacent titles, once the EXACT matches are exhausted ─────
+    #
+    # Gated on len(exact), not on the combined total: a page showing five
+    # listings that are all titled something other than what the user typed
+    # has not answered the search, so adjacent roles are still worth
+    # offering. `loose` (pass-1 results whose titles didn't match closely)
+    # shares the related group with them.
+    #
+    # RELATED_CAP is deliberately larger than RESULT_CAP so the expansion's
+    # results are actually shown. Sized at RESULT_CAP it ran five extra
+    # Tavily fan-outs and then sliced every one of their results off again —
+    # paid for, screened, liveness-checked, discarded. The loop also stops
+    # the moment the group is full rather than searching every adjacent
+    # title regardless.
+    related = loose
+    searched_titles: list[str] = []
+    if len(exact) < RESULT_CAP:
+        for adjacent in related_job_titles(title):
+            if len(related) >= RELATED_CAP:
+                break
+            logger.info(f"🧭 Expanding '{title}' to adjacent role: '{adjacent}'")
+            searched_titles.append(adjacent)
+            adjacent_raw = _search_one_title(client, adjacent, where, internships, seen_urls)
+            related += _screen_and_finalize(adjacent_raw, adjacent, where, internships)
+
+    # A listing can only appear once, and an exact match always wins its slot.
+    exact_urls = {job.get("url") for job in exact}
+    related = [job for job in related if job.get("url") not in exact_urls]
+    related = _drop_duplicate_roles(related)[:RELATED_CAP]
+
+    logger.info(
+        f"🧭 Job search '{title}' returning {len(exact)} exact + {len(related)} related"
+        + (f" (expanded to {searched_titles})" if searched_titles else " (no expansion needed)")
+    )
+    # Only titles actually SEARCHED are reported, so the page never labels
+    # pass-1 leftovers as having come from an adjacent role.
+    return {"exact": exact, "related": related, "related_titles": searched_titles}
 
 
 def find_similar_jobs(

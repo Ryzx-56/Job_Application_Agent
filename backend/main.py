@@ -36,6 +36,10 @@ from core.linkedin import router as linkedin_router
 # jd_analyzer/ats_scorer/match_scorer output on the resumes row. Stores
 # nothing of its own. See core/interview.py.
 from core.interview import router as interview_router
+# Standalone Job Search (Pro/Elite). Like the two add-ons above it sits
+# outside the CV graph entirely — it takes a job title and nothing else, and
+# reuses agents/jobs_finder.py's search pipeline. See core/job_search.py.
+from core.job_search import router as job_search_router
 from core.profile_names import (
     router as profile_names_router,
     get_profile_names,
@@ -94,6 +98,7 @@ app.include_router(admin_stats_router)
 app.include_router(badges_router)
 app.include_router(linkedin_router)
 app.include_router(interview_router)
+app.include_router(job_search_router)
 
 OUTPUT_DIR = "outputs"
 
@@ -252,6 +257,8 @@ def make_initial_state(cv_text: str, jd_text: str, template_id: str = DEFAULT_TE
     return AgentState(
         raw_cv_text=cv_text,
         job_description=jd_text,
+        jd_synthesized_from_title=False,
+        jd_source_postings=0,
         input_mode="upload",
         manual_cv_data={},
         additional_info="",
