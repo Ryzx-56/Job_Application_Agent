@@ -153,6 +153,70 @@ DOCX_STYLES = {
         "header_shade": None,
         "header_text_color": None,
     },
+
+    # ── Photo templates ───────────────────────────────────────────────────
+    # `photo: True` puts the candidate's picture above the name block in the
+    # Word file too. Without it, choosing a photo template would produce a
+    # PDF with a portrait and a .docx of the same CV without one — the two
+    # downloads sit side by side on the results screen, so that mismatch
+    # would read as a bug. Word can't reproduce a corner bleed or a circular
+    # crop (same limitation this file exists to document), so all five use
+    # the one treatment Word does well: a centred picture above the name.
+    "portrait_rail": {
+        "font_name": "Segoe UI",
+        "heading_color": "#2A2622",
+        "heading_underline": False,
+        "accent_color": "#8C5A3C",
+        "bullet_style": "List Bullet",
+        "heading_border": True,
+        "header_shade": None,
+        "header_text_color": None,
+        "photo": True,
+    },
+    "portrait_band": {
+        "font_name": "Segoe UI",
+        "heading_color": "#14202B",
+        "heading_underline": False,
+        "accent_color": "#B4694A",
+        "bullet_style": "List Bullet",
+        "heading_border": True,
+        "header_shade": "#14202B",
+        "header_text_color": "#FFFFFF",
+        "photo": True,
+    },
+    "portrait_corner": {
+        "font_name": "Segoe UI",
+        "heading_color": "#2F3E46",
+        "heading_underline": False,
+        "accent_color": "#D96F32",
+        "bullet_style": "List Bullet",
+        "heading_border": True,
+        "header_shade": "#2F3E46",
+        "header_text_color": "#FFFFFF",
+        "photo": True,
+    },
+    "portrait_formal": {
+        "font_name": "Georgia",
+        "heading_color": "#1A1A1A",
+        "heading_underline": False,
+        "accent_color": "#6B6B6B",
+        "bullet_style": "List Bullet",
+        "heading_border": True,
+        "header_shade": None,
+        "header_text_color": None,
+        "photo": True,
+    },
+    "portrait_card": {
+        "font_name": "Segoe UI",
+        "heading_color": "#35566E",
+        "heading_underline": False,
+        "accent_color": "#35566E",
+        "bullet_style": "List Bullet",
+        "heading_border": True,
+        "header_shade": None,
+        "header_text_color": None,
+        "photo": True,
+    },
 }
 
 DEFAULT_DOCX_STYLE_ID = "original_classic"

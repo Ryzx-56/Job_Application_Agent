@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<style>
+  :root { --cv-scale: {{ cv_scale|default(1) }}; }
+
+  /* PORTRAIT BAND — photo template 2 of 5.
+     A full-bleed ink header band with the name set large on one side and a
+     round portrait on the other, then a single content column. Shares the
+     "dark band" family with 08_bold_banner but is a different object: that
+     one is a plain banner with yellow marker bars and no portrait, this one
+     is built around the circle and uses a short rust rule ABOVE each
+     heading rather than a bar beside it.
+
+     THE HEADER IS A TABLE, NOT FLEX, for the same reason the two-column
+     templates are: table cells flip their order under `direction: rtl`
+     without any per-language markup, so the portrait sits on the left of an
+     Arabic CV and the right of an English one, automatically. It also
+     cannot leave a stray column behind if the band ever grows tall enough
+     to fragment.
+
+     NO CAPS AS A SIGNAL. Headings carry weight, colour and a rule — never
+     `text-transform: uppercase` as the thing that makes them read as
+     headings, because Arabic has no uppercase and the treatment would
+     simply vanish in the language most of these CVs are written in.
+
+     Renders with no photo: the text cell is the only cell and takes the
+     full band width. */
+  @page { size: A4; margin: 0; }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body { font-family: "Segoe UI", Arial, sans-serif; font-size: 10.5pt; color: #23282d; line-height: 1.5; }
+
+  .band { display: table; width: 100%; background: #14202b; color: #eef2f6; padding: 26px 46px; }
+  .band-text { display: table-cell; vertical-align: middle; }
+  .band-text h1 { font-size: 23pt; font-weight: 700; line-height: 1.15; }
+  .band-text .tagline { font-size: 10.5pt; color: #9db2c4; margin-top: 5px; }
+  .band-text .contact { font-size: 9pt; color: #b8c6d2; margin-top: 10px; line-height: 1.7; }
+  .band-text .contact a { color: #b8c6d2; text-decoration: none; }
+  .band-photo { display: table-cell; width: 140px; vertical-align: middle; }
+  .band-photo img { display: block; width: 118px; height: 118px; border-radius: 50%; object-fit: cover; border: 3px solid #eef2f6; margin-inline-start: auto; }
+
+  .content { padding: 24px 46px 40px; }
+  .section { margin-bottom: 18px; }
+  .section-title { font-size: 11.5pt; font-weight: 700; color: #14202b; margin-bottom: 9px; }
+  .section-title::before { content: ""; display: block; width: 28px; border-top: 3px solid #b4694a; margin-bottom: 6px; }
+
+  .entry { margin-bottom: 12px; page-break-inside: avoid; }
+  .entry-header { display: flex; justify-content: space-between; align-items: baseline; }
+  .entry-title { font-weight: 700; font-size: 10.5pt; }
+  .entry-sub { font-style: italic; font-size: 9.5pt; color: #5f6b76; }
+  .entry-date { font-size: 9pt; color: #8a949e; white-space: nowrap; }
+  ul.bullets { margin-top: 5px; margin-left: 17px; }
+  ul.bullets li { font-size: 10pt; margin-bottom: 4px; }
+  ul.bullets li::marker { color: #b4694a; }
+
+  .skills-grid .row { margin-bottom: 4px; font-size: 10pt; }
+  .skills-grid .label { font-weight: 700; color: #14202b; }
+  .edu-gpa { font-size: 9.5pt; color: #5f6b76; }
+
+  body { zoom: var(--cv-scale, 1); }
+</style>
+</head>
+<body>
+
+<div class="band">
+  <div class="band-text">
+    <h1>{{ personal.name }}</h1>
+    {% if tagline %}<div class="tagline">{{ tagline }}</div>{% endif %}
+    <div class="contact">
+      {%- set contact_items = [] -%}
+      {%- if personal.email %}{% set _ = contact_items.append(personal.email) %}{% endif -%}
+      {%- if personal.phone %}{% set _ = contact_items.append(personal.phone) %}{% endif -%}
+      {%- if personal.location %}{% set _ = contact_items.append(personal.location) %}{% endif -%}
+      {%- if personal.linkedin %}{% set _ = contact_items.append('<a href="https://www.linkedin.com/in/' ~ personal.linkedin ~ '">linkedin.com/in/' ~ personal.linkedin ~ '</a>') %}{% endif -%}
+      {%- if personal.github %}{% set _ = contact_items.append('<a href="https://github.com/' ~ personal.github ~ '">github.com/' ~ personal.github ~ '</a>') %}{% endif -%}
+      {{ contact_items | join(" &nbsp;&middot;&nbsp; ") | safe }}
+    </div>
+  </div>
+  {% if photo %}<div class="band-photo"><img src="{{ photo }}" alt=""></div>{% endif %}
+</div>
+
+<div class="content">
+
+  {% if tailored_summary %}
+  <div class="section">
+    <div class="section-title">{{ labels.profile }}</div>
+    <p>{{ tailored_summary }}</p>
+  </div>
+  {% endif %}
+
+  {% if experience %}
+  <div class="section">
+    <div class="section-title">{{ labels.experience }}</div>
+    {% for exp in experience %}
+    <div class="entry">
+      <div class="entry-header">
+        <div><span class="entry-title">{{ exp.title }}</span> <span class="entry-sub">{{ exp.company }}</span></div>
+        <div class="entry-date">{{ exp.dates }}</div>
+      </div>
+      {% if exp.bullets %}<ul class="bullets">{% for b in exp.bullets %}<li>{{ b }}</li>{% endfor %}</ul>{% endif %}
+    </div>
+    {% endfor %}
+  </div>
+  {% endif %}
+
+  {% if projects %}
+  <div class="section">
+    <div class="section-title">{{ labels.projects }}</div>
+    {% for proj in projects %}
+    <div class="entry">
+      <div class="entry-header">
+        <span class="entry-title">{{ proj.name }}</span>
+        <span class="entry-date">{{ proj.tech_stack | join(", ") }}</span>
+      </div>
+      {% if proj.description %}<p style="font-size:10pt; margin-top:4px;">{{ proj.description }}</p>{% endif %}
+    </div>
+    {% endfor %}
+  </div>
+  {% endif %}
+
+  {% if skills %}
+  <div class="section">
+    <div class="section-title">{{ labels.skills }}</div>
+    <div class="skills-grid">
+      {% if skills.languages %}<div class="row"><span class="label">{{ labels.languages }}: </span>{{ skills.languages | join(", ") }}</div>{% endif %}
+      {% if skills.frameworks %}<div class="row"><span class="label">{{ labels.frameworks_libraries }}: </span>{{ skills.frameworks | join(", ") }}</div>{% endif %}
+      {% if skills.tools %}<div class="row"><span class="label">{{ labels.tools }}: </span>{{ skills.tools | join(", ") }}</div>{% endif %}
+      {% if skills.soft_skills %}<div class="row"><span class="label">{{ labels.soft_skills }}: </span>{{ skills.soft_skills | join(", ") }}</div>{% endif %}
+      {% if skills.other %}<div class="row"><span class="label">{{ labels.other_skills }}: </span>{{ skills.other | join(", ") }}</div>{% endif %}
+    </div>
+  </div>
+  {% endif %}
+
+  {% if education %}
+  <div class="section">
+    <div class="section-title">{{ labels.education }}</div>
+    {% for edu in education %}
+    <div class="entry">
+      <div class="entry-header">
+        <div><span class="entry-title">{{ edu.degree }}</span> <span class="entry-sub">{{ edu.institution }}</span></div>
+        {% if edu.graduation_year %}<div class="entry-date">{{ edu.graduation_year }}</div>{% endif %}
+      </div>
+      {% if edu.gpa or edu.distinctions %}<div class="edu-gpa">{% if edu.gpa %}{{ labels.gpa }}: {{ edu.gpa }}{% endif %}{% if edu.distinctions %} &middot; {{ edu.distinctions | join(", ") }}{% endif %}</div>{% endif %}
+    </div>
+    {% endfor %}
+  </div>
+  {% endif %}
+
+  {% if certifications %}
+  <div class="section">
+    <div class="section-title">{{ labels.certifications }}</div>
+    <ul class="bullets">{% for cert in certifications %}<li>{{ cert }}</li>{% endfor %}</ul>
+  </div>
+  {% endif %}
+
+</div>
+</body>
+</html>

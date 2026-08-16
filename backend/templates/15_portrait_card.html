@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<style>
+  :root { --cv-scale: {{ cv_scale|default(1) }}; }
+
+  /* PORTRAIT CARD — photo template 5 of 5.
+     The photo and the whole contact block live together in one tinted card
+     at the top of page one; everything below it is a full-measure single
+     column.
+
+     WHY THIS IS NOT 11_portrait_rail AGAIN. The rail is a full-height
+     column that runs down every page and permanently narrows the text
+     measure. This card is only as tall as its own contents, so page two
+     onwards is the full width of the sheet — which is the right trade for a
+     long CV, and gives the picker a photo layout that does not cost a third
+     of the page to line length on every page.
+
+     The card is a table (cells flip under `direction: rtl`) and its accent
+     edge uses border-inline-start, so on an Arabic CV the photo and the
+     edge both move to the right with no second layout.
+
+     Renders with no photo: the card holds the name and contact block alone,
+     spanning its full width. It still reads as a deliberate header card
+     rather than a container missing its picture. */
+  @page { size: A4; margin: 0; }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body { font-family: "Segoe UI", Arial, sans-serif; font-size: 10.5pt; color: #24303a; line-height: 1.5; padding: 36px 46px 40px; }
+
+  .idcard { display: table; width: 100%; background: #eef1f4; border-radius: 6px;
+            border-inline-start: 4px solid #35566e; margin-bottom: 20px; }
+  .idcard-photo { display: table-cell; width: 122px; vertical-align: top; padding: 14px; padding-inline-end: 0; }
+  .idcard-photo img { display: block; width: 108px; height: 128px; object-fit: cover; border-radius: 4px; }
+  .idcard-body { display: table-cell; vertical-align: middle; padding: 16px 18px; }
+  .idcard-body h1 { font-size: 20pt; font-weight: 700; color: #24303a; line-height: 1.2; }
+  .idcard-body .tagline { font-size: 10pt; color: #35566e; margin-top: 4px; }
+  .idcard-body .contact { font-size: 9pt; color: #55636e; margin-top: 9px; line-height: 1.7; }
+  .idcard-body .contact a { color: #55636e; text-decoration: none; }
+
+  .section { margin-bottom: 17px; }
+  .section-title { font-size: 11.5pt; font-weight: 700; color: #35566e; margin-bottom: 8px;
+                   padding-bottom: 3px; border-bottom: 1px solid #d5dde4; }
+
+  .entry { margin-bottom: 12px; page-break-inside: avoid; }
+  .entry-header { display: flex; justify-content: space-between; align-items: baseline; }
+  .entry-title { font-weight: 700; font-size: 10.5pt; }
+  .entry-sub { font-style: italic; font-size: 9.5pt; color: #5e6c77; }
+  .entry-date { font-size: 9pt; color: #8b979f; white-space: nowrap; }
+  ul.bullets { margin-top: 5px; margin-left: 17px; }
+  ul.bullets li { font-size: 10pt; margin-bottom: 4px; }
+  ul.bullets li::marker { color: #35566e; }
+
+  .skills-grid .row { margin-bottom: 4px; font-size: 10pt; }
+  .skills-grid .label { font-weight: 700; color: #35566e; }
+  .edu-gpa { font-size: 9.5pt; color: #5e6c77; }
+
+  body { zoom: var(--cv-scale, 1); }
+</style>
+</head>
+<body>
+
+<div class="idcard">
+  {% if photo %}<div class="idcard-photo"><img src="{{ photo }}" alt=""></div>{% endif %}
+  <div class="idcard-body">
+    <h1>{{ personal.name }}</h1>
+    {% if tagline %}<div class="tagline">{{ tagline }}</div>{% endif %}
+    <div class="contact">
+      {%- set contact_items = [] -%}
+      {%- if personal.email %}{% set _ = contact_items.append(personal.email) %}{% endif -%}
+      {%- if personal.phone %}{% set _ = contact_items.append(personal.phone) %}{% endif -%}
+      {%- if personal.location %}{% set _ = contact_items.append(personal.location) %}{% endif -%}
+      {%- if personal.linkedin %}{% set _ = contact_items.append('<a href="https://www.linkedin.com/in/' ~ personal.linkedin ~ '">linkedin.com/in/' ~ personal.linkedin ~ '</a>') %}{% endif -%}
+      {%- if personal.github %}{% set _ = contact_items.append('<a href="https://github.com/' ~ personal.github ~ '">github.com/' ~ personal.github ~ '</a>') %}{% endif -%}
+      {{ contact_items | join(" &nbsp;&middot;&nbsp; ") | safe }}
+    </div>
+  </div>
+</div>
+
+{% if tailored_summary %}
+<div class="section">
+  <div class="section-title">{{ labels.profile }}</div>
+  <p>{{ tailored_summary }}</p>
+</div>
+{% endif %}
+
+{% if experience %}
+<div class="section">
+  <div class="section-title">{{ labels.experience }}</div>
+  {% for exp in experience %}
+  <div class="entry">
+    <div class="entry-header">
+      <div><span class="entry-title">{{ exp.title }}</span> <span class="entry-sub">{{ exp.company }}</span></div>
+      <div class="entry-date">{{ exp.dates }}</div>
+    </div>
+    {% if exp.bullets %}<ul class="bullets">{% for b in exp.bullets %}<li>{{ b }}</li>{% endfor %}</ul>{% endif %}
+  </div>
+  {% endfor %}
+</div>
+{% endif %}
+
+{% if projects %}
+<div class="section">
+  <div class="section-title">{{ labels.projects }}</div>
+  {% for proj in projects %}
+  <div class="entry">
+    <div class="entry-header">
+      <span class="entry-title">{{ proj.name }}</span>
+      <span class="entry-date">{{ proj.tech_stack | join(", ") }}</span>
+    </div>
+    {% if proj.description %}<p style="font-size:10pt; margin-top:4px;">{{ proj.description }}</p>{% endif %}
+  </div>
+  {% endfor %}
+</div>
+{% endif %}
+
+{% if skills %}
+<div class="section">
+  <div class="section-title">{{ labels.skills }}</div>
+  <div class="skills-grid">
+    {% if skills.languages %}<div class="row"><span class="label">{{ labels.languages }}: </span>{{ skills.languages | join(", ") }}</div>{% endif %}
+    {% if skills.frameworks %}<div class="row"><span class="label">{{ labels.frameworks_libraries }}: </span>{{ skills.frameworks | join(", ") }}</div>{% endif %}
+    {% if skills.tools %}<div class="row"><span class="label">{{ labels.tools }}: </span>{{ skills.tools | join(", ") }}</div>{% endif %}
+    {% if skills.soft_skills %}<div class="row"><span class="label">{{ labels.soft_skills }}: </span>{{ skills.soft_skills | join(", ") }}</div>{% endif %}
+    {% if skills.other %}<div class="row"><span class="label">{{ labels.other_skills }}: </span>{{ skills.other | join(", ") }}</div>{% endif %}
+  </div>
+</div>
+{% endif %}
+
+{% if education %}
+<div class="section">
+  <div class="section-title">{{ labels.education }}</div>
+  {% for edu in education %}
+  <div class="entry">
+    <div class="entry-header">
+      <div><span class="entry-title">{{ edu.degree }}</span> <span class="entry-sub">{{ edu.institution }}</span></div>
+      {% if edu.graduation_year %}<div class="entry-date">{{ edu.graduation_year }}</div>{% endif %}
+    </div>
+    {% if edu.gpa or edu.distinctions %}<div class="edu-gpa">{% if edu.gpa %}{{ labels.gpa }}: {{ edu.gpa }}{% endif %}{% if edu.distinctions %} &middot; {{ edu.distinctions | join(", ") }}{% endif %}</div>{% endif %}
+  </div>
+  {% endfor %}
+</div>
+{% endif %}
+
+{% if certifications %}
+<div class="section">
+  <div class="section-title">{{ labels.certifications }}</div>
+  <ul class="bullets">{% for cert in certifications %}<li>{{ cert }}</li>{% endfor %}</ul>
+</div>
+{% endif %}
+
+</body>
+</html>

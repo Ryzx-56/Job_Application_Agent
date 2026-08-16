@@ -1,4 +1,5 @@
 # utils/pdf_generator.py
+import io
 import os
 import re
 from datetime import date
@@ -11,7 +12,10 @@ from reportlab.lib.pagesizes import letter
 from reportlab.lib import colors
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.enums import TA_LEFT, TA_RIGHT
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
+from reportlab.lib.utils import ImageReader
+from reportlab.platypus import (
+    SimpleDocTemplate, Paragraph, Spacer, Image, Table, TableStyle,
+)
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
 
@@ -28,8 +32,9 @@ try:
 except ImportError:
     _ARABIC_SHAPING_AVAILABLE = False
 
-from utils.template_registry import resolve_template_path, DEFAULT_TEMPLATE_ID
+from utils.template_registry import resolve_template_path, DEFAULT_TEMPLATE_ID, template_supports_photo
 from utils.cv_context import build_cv_context, resolve_candidate_name
+from utils.cv_photo import data_uri_to_bytes
 from utils.fit_to_page import render_html_fit_to_page
 from utils.arabic_localizer import to_eastern_arabic_numerals, translate_date_terms
 
@@ -246,6 +251,64 @@ def _cover_letter_styles(is_arabic: bool):
     return styles
 
 
+_CL_PHOTO_HEIGHT = 76          # points, ~1.05 inch — a letterhead portrait
+_CL_PHOTO_COLUMN = 92          # points, the photo column including its gutter
+
+
+def _cover_letter_header(sender_block: list, photo_bytes: bytes | None, is_arabic: bool) -> list:
+    """
+    The letter's sender block, with the candidate's photo beside it when the
+    CV carries one.
+
+    Returns a LIST of flowables so the no-photo letter is the unchanged
+    letter: the caller extends `story` with exactly the same paragraphs, in
+    the same order, that it used to append one by one. Only the photo case
+    introduces a new flowable (a borderless two-column table), so every
+    template that predates this feature produces the identical document.
+
+    SIDE. The photo sits opposite the text: right of a left-aligned English
+    letter, left of a right-aligned Arabic one. ReportLab has no bidi layout
+    engine (that is why _shape_arabic exists at all), so the column order is
+    chosen explicitly here rather than inherited from a direction property
+    the way the HTML templates do it.
+
+    Scaled by HEIGHT, letting width follow the candidate's own aspect ratio,
+    so a square photo and a 3:4 photo both sit on the same baseline as the
+    name beside them instead of one of them being stretched.
+    """
+    if not photo_bytes:
+        return sender_block
+
+    try:
+        reader = ImageReader(io.BytesIO(photo_bytes))
+        src_w, src_h = reader.getSize()
+        width = _CL_PHOTO_HEIGHT * (src_w / src_h) if src_h else _CL_PHOTO_HEIGHT
+        picture = Image(io.BytesIO(photo_bytes), width=width, height=_CL_PHOTO_HEIGHT)
+    except Exception as e:
+        # A letter without the photo is fine; a 500 on the letter is not.
+        logger.warning(f"📷 Couldn't place the photo on the cover letter, continuing without it: {e}")
+        return sender_block
+
+    text_width = 504 - _CL_PHOTO_COLUMN  # 504pt = letter width minus both margins
+    if is_arabic:
+        columns, widths, photo_col = [[picture, sender_block]], [_CL_PHOTO_COLUMN, text_width], 0
+    else:
+        columns, widths, photo_col = [[sender_block, picture]], [text_width, _CL_PHOTO_COLUMN], 1
+
+    table = Table(columns, colWidths=widths, hAlign="LEFT")
+    table.setStyle(TableStyle([
+        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ("LEFTPADDING", (0, 0), (-1, -1), 0),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+        ("TOPPADDING", (0, 0), (-1, -1), 0),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
+        # Push the picture to the outer edge of its own column so it lines
+        # up with the page margin rather than floating mid-gutter.
+        ("ALIGN", (photo_col, 0), (photo_col, 0), "LEFT" if is_arabic else "RIGHT"),
+    ]))
+    return [table]
+
+
 def render_cover_letter_pdf(state: dict, output_path: str) -> str:
     """output_path is REQUIRED — see render_cv_pdf's docstring for why."""
     is_arabic = str(state.get("cv_language", "en")).lower().startswith("ar")
@@ -272,13 +335,32 @@ def render_cover_letter_pdf(state: dict, output_path: str) -> str:
     # accompanies. That shared call is the whole point: the letter must not
     # read the parsed name (or the profile name) directly on its own.
     name = resolve_candidate_name(state) or ("اسم المتقدم" if is_arabic else "Candidate Name")
-    story.append(Paragraph(f"<b>{body(name)}</b>", styles['CL_Bold']))
+
+    sender_block = [Paragraph(f"<b>{body(name)}</b>", styles['CL_Bold'])]
     if personal.get("location"):
-        story.append(Paragraph(body(personal["location"]), styles['CL_Body']))
+        sender_block.append(Paragraph(body(personal["location"]), styles['CL_Body']))
     if personal.get("email"):
         # Identifiers stay LTR and unshaped even inside an Arabic letter -
         # same rule the CV path enforces for email/LinkedIn/GitHub.
-        story.append(Paragraph(personal["email"], styles['CL_Body']))
+        sender_block.append(Paragraph(personal["email"], styles['CL_Body']))
+
+    # THE SAME PHOTO AS THE CV, when the CV is a photo layout.
+    #
+    # No re-extraction: this reads the one data URI utils/cv_photo.py
+    # produced at upload time and state has carried ever since, which is
+    # also what a later re-render off the stored snapshot replays.
+    #
+    # Gated on the CV's template rather than a setting of its own because
+    # the letter has no template picker — there is exactly one cover letter
+    # layout (see this section's header comment). Tying it to the CV is what
+    # makes the pair look like one application: a portrait CV arrives with a
+    # portrait letter, and every other template's letter is untouched.
+    photo_bytes = (
+        data_uri_to_bytes(state.get("candidate_photo"))
+        if template_supports_photo(state.get("template_id"))
+        else None
+    )
+    story.extend(_cover_letter_header(sender_block, photo_bytes, is_arabic))
     story.append(Spacer(1, 15))
 
     today_str = date.today().strftime("%B %d, %Y")

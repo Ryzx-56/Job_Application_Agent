@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<style>
+  :root { --cv-scale: {{ cv_scale|default(1) }}; }
+
+  /* PORTRAIT RAIL — photo template 1 of 5.
+     A narrow PAPER-coloured rail carrying the photo, contact, skills,
+     education and certifications; the name and all prose sit in the wide
+     column. Deliberately the inverse of 04_sidebar_dark, which puts a dark
+     block and the name in its sidebar — this one reads as printed
+     stationery rather than a dashboard.
+
+     TWO COLUMNS AS A TABLE, NOT FLEX. Same hard-won rule as
+     04_sidebar_dark: flex does not carry a column across a page break in
+     WeasyPrint (page 2 loses the rail entirely), and a fixed height on
+     html/body makes WeasyPrint CLIP the overflow instead of paginating it,
+     which is the content-loss bug. A table row fragments correctly and
+     repaints each cell's background on every fragment, so the rail reaches
+     the foot of every page with no height rule anywhere.
+
+     RTL: the table flips its own column order under `direction: rtl`, and
+     one-sided spacing uses logical properties (padding-inline-*), so the
+     rail lands on the right for an Arabic CV with no per-language markup.
+
+     PHOTO: full-bleed to the rail's edges, so the rail itself supplies no
+     horizontal padding — .rail-inner does. That is also why the layout
+     closes up cleanly with no photo: the rail simply starts at its first
+     block. */
+  @page { size: A4; margin: 0; }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body { font-family: "Segoe UI", Arial, sans-serif; font-size: 10.5pt; color: #2a2622; line-height: 1.5; }
+  .page { display: table; width: 100%; }
+
+  .rail { display: table-cell; width: 31%; background: #efebe4; vertical-align: top; padding-bottom: 30px; }
+  .rail-photo { display: block; width: 100%; height: 210px; object-fit: cover; }
+  .rail-inner { padding: 26px 22px 0; }
+  .rail-section { margin-bottom: 20px; }
+  .rail-title { font-family: "Georgia", serif; font-size: 9.5pt; font-weight: 700; color: #8c5a3c; letter-spacing: 0.6px; margin-bottom: 7px; padding-bottom: 3px; border-bottom: 1px solid #d8cfc0; }
+  .rail-row { font-size: 9pt; color: #4a433c; margin-bottom: 5px; word-break: break-word; }
+  .rail-row a { color: #4a433c; }
+  .rail-block { font-size: 9pt; color: #4a433c; margin-bottom: 10px; }
+
+  .main { display: table-cell; width: 69%; vertical-align: top; padding: 34px 32px 40px; }
+  .name { font-family: "Georgia", serif; font-size: 21pt; font-weight: 700; color: #2a2622; line-height: 1.2; }
+  .tagline { font-size: 10pt; color: #8c5a3c; margin-top: 4px; }
+  .main-section { margin-top: 20px; }
+  .main-title { font-family: "Georgia", serif; font-size: 12pt; font-weight: 700; color: #2a2622; margin-bottom: 9px; padding-bottom: 3px; border-bottom: 2px solid #2a2622; }
+
+  .entry { margin-bottom: 12px; page-break-inside: avoid; }
+  .entry-header { display: flex; justify-content: space-between; align-items: baseline; }
+  .entry-title { font-weight: 700; font-size: 10.5pt; }
+  .entry-sub { font-style: italic; font-size: 9.5pt; color: #6b625a; }
+  .entry-date { font-size: 9pt; color: #8c8378; white-space: nowrap; }
+  ul.bullets { margin-top: 5px; margin-left: 17px; }
+  ul.bullets li { font-size: 10pt; margin-bottom: 4px; }
+  ul.bullets li::marker { color: #8c5a3c; }
+
+  body { zoom: var(--cv-scale, 1); }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <div class="rail">
+    {% if photo %}<img class="rail-photo" src="{{ photo }}" alt="">{% endif %}
+    <div class="rail-inner">
+
+      <div class="rail-section">
+        <div class="rail-title">{{ labels.contact }}</div>
+        {% if personal.email %}<div class="rail-row">{{ personal.email }}</div>{% endif %}
+        {% if personal.phone %}<div class="rail-row">{{ personal.phone }}</div>{% endif %}
+        {% if personal.location %}<div class="rail-row">{{ personal.location }}</div>{% endif %}
+        {% if personal.linkedin %}<div class="rail-row"><a href="https://www.linkedin.com/in/{{ personal.linkedin }}">linkedin.com/in/{{ personal.linkedin }}</a></div>{% endif %}
+        {% if personal.github %}<div class="rail-row"><a href="https://github.com/{{ personal.github }}">github.com/{{ personal.github }}</a></div>{% endif %}
+      </div>
+
+      {% if skills %}
+      <div class="rail-section">
+        <div class="rail-title">{{ labels.skills }}</div>
+        {% if skills.languages %}<div class="rail-block"><strong>{{ labels.languages }}</strong><br>{{ skills.languages | join(", ") }}</div>{% endif %}
+        {% if skills.frameworks %}<div class="rail-block"><strong>{{ labels.frameworks_libraries }}</strong><br>{{ skills.frameworks | join(", ") }}</div>{% endif %}
+        {% if skills.tools %}<div class="rail-block"><strong>{{ labels.tools }}</strong><br>{{ skills.tools | join(", ") }}</div>{% endif %}
+        {% if skills.soft_skills %}<div class="rail-block"><strong>{{ labels.soft_skills }}</strong><br>{{ skills.soft_skills | join(", ") }}</div>{% endif %}
+        {% if skills.other %}<div class="rail-block"><strong>{{ labels.other_skills }}</strong><br>{{ skills.other | join(", ") }}</div>{% endif %}
+      </div>
+      {% endif %}
+
+      {% if education %}
+      <div class="rail-section">
+        <div class="rail-title">{{ labels.education }}</div>
+        {% for edu in education %}
+        <div class="rail-block">
+          <strong>{{ edu.degree }}</strong><br>{{ edu.institution }}
+          {% if edu.graduation_year %}<br>{{ edu.graduation_year }}{% endif %}
+          {% if edu.gpa %}<br>{{ labels.gpa }}: {{ edu.gpa }}{% endif %}
+        </div>
+        {% endfor %}
+      </div>
+      {% endif %}
+
+      {% if certifications %}
+      <div class="rail-section">
+        <div class="rail-title">{{ labels.certifications }}</div>
+        {% for cert in certifications %}<div class="rail-row">{{ cert }}</div>{% endfor %}
+      </div>
+      {% endif %}
+
+    </div>
+  </div>
+
+  <div class="main">
+    <div class="name">{{ personal.name }}</div>
+    {% if tagline %}<div class="tagline">{{ tagline }}</div>{% endif %}
+
+    {% if tailored_summary %}
+    <div class="main-section">
+      <div class="main-title">{{ labels.profile }}</div>
+      <p>{{ tailored_summary }}</p>
+    </div>
+    {% endif %}
+
+    {% if experience %}
+    <div class="main-section">
+      <div class="main-title">{{ labels.experience }}</div>
+      {% for exp in experience %}
+      <div class="entry">
+        <div class="entry-header">
+          <div><span class="entry-title">{{ exp.title }}</span> <span class="entry-sub">{{ exp.company }}</span></div>
+          <div class="entry-date">{{ exp.dates }}</div>
+        </div>
+        {% if exp.bullets %}<ul class="bullets">{% for b in exp.bullets %}<li>{{ b }}</li>{% endfor %}</ul>{% endif %}
+      </div>
+      {% endfor %}
+    </div>
+    {% endif %}
+
+    {% if projects %}
+    <div class="main-section">
+      <div class="main-title">{{ labels.projects }}</div>
+      {% for proj in projects %}
+      <div class="entry">
+        <div class="entry-header">
+          <span class="entry-title">{{ proj.name }}</span>
+          <span class="entry-date">{{ proj.tech_stack | join(", ") }}</span>
+        </div>
+        {% if proj.description %}<p style="font-size:10pt; margin-top:4px;">{{ proj.description }}</p>{% endif %}
+      </div>
+      {% endfor %}
+    </div>
+    {% endif %}
+  </div>
+
+</div>
+</body>
+</html>

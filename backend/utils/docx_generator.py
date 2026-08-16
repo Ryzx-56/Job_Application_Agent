@@ -1,13 +1,15 @@
 # utils/docx_generator.py
+import io
 import os
 from docx import Document
-from docx.shared import Pt
+from docx.shared import Inches, Pt
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.oxml.ns import qn
 from docx.oxml import OxmlElement
 from loguru import logger
 
 from utils.cv_context import build_cv_context
+from utils.cv_photo import data_uri_to_bytes
 from utils.docx_styles import resolve_docx_style
 from utils.template_registry import DEFAULT_TEMPLATE_ID
 
@@ -106,6 +108,37 @@ def _bullet(doc, text, is_arabic, style):
     _set_rtl_run(p.runs[0], is_arabic)
 
 
+def _add_photo(doc, photo: str | None, style: dict) -> None:
+    """
+    Puts the candidate's picture, centred, above the name block.
+
+    No-ops unless the preset declares `photo` AND there is one on file, so a
+    photo template chosen by someone with no photo produces a normal header
+    rather than a gap — the same graceful-degradation rule the HTML
+    templates follow with `{% if photo %}`.
+
+    Never raises: a picture that python-docx rejects costs the user the
+    picture, not the .docx. The PDF beside it is rendered independently
+    (main.py runs the three renders in parallel) and is unaffected either way.
+    """
+    if not photo or not style.get("photo"):
+        return
+    raw = data_uri_to_bytes(photo)
+    if not raw:
+        return
+    try:
+        paragraph = doc.add_paragraph()
+        paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        # 1.25" tall is roughly the printed size the HTML templates use, and
+        # height-constrained (not width) because the stored image keeps the
+        # candidate's own aspect ratio — see utils/cv_photo.py, which scales
+        # to fit a box rather than cropping to a fixed shape.
+        paragraph.add_run().add_picture(io.BytesIO(raw), height=Inches(1.25))
+        paragraph.paragraph_format.space_after = Pt(6)
+    except Exception as e:
+        logger.warning(f"📷 Couldn't embed the candidate photo in the .docx, continuing without it: {e}")
+
+
 def generate_cv_docx(state: dict, output_path: str, template_id: str | None = None) -> str:
     """
     Generates .docx version of the tailored CV, styled to match the chosen
@@ -126,6 +159,11 @@ def generate_cv_docx(state: dict, output_path: str, template_id: str | None = No
     context = build_cv_context(state, template_id=resolved_template_id)
     is_arabic = context["is_arabic"]
     personal = context["personal"]
+
+    # Candidate photo, for the presets that declare one. context["photo"] is
+    # already gated on the template having a slot (see cv_context's
+    # resolve_candidate_photo), so this is just "is there one to draw".
+    _add_photo(doc, context.get("photo"), style)
 
     # Header — templates with a header_shade get a filled color block behind
     # the name/contact block (evokes their PDF sidebar/banner identity);

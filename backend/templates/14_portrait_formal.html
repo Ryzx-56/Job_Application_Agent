@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<style>
+  :root { --cv-scale: {{ cv_scale|default(1) }}; }
+
+  /* FORMAL PORTRAIT — photo template 4 of 5.
+     Portrait centred above a centred name, closed by a double rule. This is
+     the shape a formal application in Saudi Arabia is usually expected to
+     take, which is exactly why it is in the set: the other four are design
+     choices, this one is the conventional answer for anyone submitting to
+     a ministry, hospital or university that asks for a photo.
+
+     Deliberately MONOCHROME. 06_elegant_gold already owns the centred
+     serif-with-an-accent-colour look; adding a second one would give the
+     picker two templates that read as the same idea. Ink, one mid grey, one
+     hairline, nothing else — and the photo carries the only colour on the
+     page.
+
+     The portrait is framed the way a formal photo is mounted: a hairline
+     border with a white matte between it and the image (border + padding on
+     the img), not a circle and not a shadow.
+
+     Section headings are weight-and-rule, never letter-spaced capitals —
+     Arabic has no uppercase, so a caps-based heading style silently
+     disappears in the language most of these CVs are written in.
+
+     Renders with no photo: the header is simply the centred name over the
+     same double rule, which is a complete, intentional masthead on its own. */
+  @page { size: A4; margin: 0; }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body { font-family: "Georgia", "Cambria", serif; font-size: 11pt; color: #1a1a1a; line-height: 1.5; padding: 40px 58px; }
+
+  .header { text-align: center; margin-bottom: 6px; }
+  .portrait { display: block; width: 104px; height: 128px; object-fit: cover;
+              border: 1px solid #1a1a1a; padding: 3px; margin: 0 auto 12px; }
+  .header h1 { font-size: 21pt; font-weight: 700; letter-spacing: 0.5px; }
+  .header .tagline { font-size: 10.5pt; font-style: italic; color: #4a4a4a; margin-top: 4px; }
+  .header .contact { font-size: 9.5pt; color: #4a4a4a; margin-top: 7px; line-height: 1.7; }
+  .header .contact a { color: #4a4a4a; text-decoration: none; }
+  .double-rule { border-top: 2px solid #1a1a1a; border-bottom: 1px solid #6b6b6b; height: 4px; margin: 12px 0 16px; }
+
+  .section { margin-bottom: 15px; }
+  .section-title { font-size: 11.5pt; font-weight: 700; color: #1a1a1a; margin-bottom: 8px;
+                   padding-bottom: 3px; border-bottom: 1px solid #cfcfcf; }
+
+  .entry { margin-bottom: 11px; page-break-inside: avoid; }
+  .entry-header { display: flex; justify-content: space-between; align-items: baseline; }
+  .entry-title { font-weight: 700; font-size: 10.5pt; }
+  .entry-sub { font-style: italic; font-size: 10pt; color: #4a4a4a; }
+  .entry-date { font-size: 9.5pt; color: #6b6b6b; white-space: nowrap; }
+  ul.bullets { margin-top: 4px; margin-left: 20px; }
+  ul.bullets li { font-size: 10.3pt; margin-bottom: 4px; }
+
+  .skills-grid .row { margin-bottom: 4px; font-size: 10.3pt; }
+  .skills-grid .label { font-weight: 700; }
+  .edu-gpa { font-size: 9.5pt; color: #4a4a4a; }
+
+  body { zoom: var(--cv-scale, 1); }
+</style>
+</head>
+<body>
+
+<div class="header">
+  {% if photo %}<img class="portrait" src="{{ photo }}" alt="">{% endif %}
+  <h1>{{ personal.name }}</h1>
+  {% if tagline %}<div class="tagline">{{ tagline }}</div>{% endif %}
+  <div class="contact">
+    {%- set contact_items = [] -%}
+    {%- if personal.location %}{% set _ = contact_items.append(personal.location) %}{% endif -%}
+    {%- if personal.phone %}{% set _ = contact_items.append(personal.phone) %}{% endif -%}
+    {%- if personal.email %}{% set _ = contact_items.append(personal.email) %}{% endif -%}
+    {%- if personal.linkedin %}{% set _ = contact_items.append('<a href="https://www.linkedin.com/in/' ~ personal.linkedin ~ '">linkedin.com/in/' ~ personal.linkedin ~ '</a>') %}{% endif -%}
+    {%- if personal.github %}{% set _ = contact_items.append('<a href="https://github.com/' ~ personal.github ~ '">github.com/' ~ personal.github ~ '</a>') %}{% endif -%}
+    {{ contact_items | join(" &nbsp;&middot;&nbsp; ") | safe }}
+  </div>
+</div>
+<div class="double-rule"></div>
+
+{% if tailored_summary %}
+<div class="section">
+  <div class="section-title">{{ labels.professional_summary }}</div>
+  <p>{{ tailored_summary }}</p>
+</div>
+{% endif %}
+
+{% if experience %}
+<div class="section">
+  <div class="section-title">{{ labels.work_experience }}</div>
+  {% for exp in experience %}
+  <div class="entry">
+    <div class="entry-header">
+      <div><span class="entry-title">{{ exp.title }}</span> <span class="entry-sub">{{ exp.company }}</span></div>
+      <div class="entry-date">{{ exp.dates }}</div>
+    </div>
+    {% if exp.bullets %}<ul class="bullets">{% for b in exp.bullets %}<li>{{ b }}</li>{% endfor %}</ul>{% endif %}
+  </div>
+  {% endfor %}
+</div>
+{% endif %}
+
+{% if projects %}
+<div class="section">
+  <div class="section-title">{{ labels.projects }}</div>
+  {% for proj in projects %}
+  <div class="entry">
+    <div class="entry-header">
+      <span class="entry-title">{{ proj.name }}</span>
+      <span class="entry-date">{{ proj.tech_stack | join(", ") }}</span>
+    </div>
+    {% if proj.description %}<p style="font-size:10.3pt; margin-top:4px;">{{ proj.description }}</p>{% endif %}
+  </div>
+  {% endfor %}
+</div>
+{% endif %}
+
+{% if skills %}
+<div class="section">
+  <div class="section-title">{{ labels.skills }}</div>
+  <div class="skills-grid">
+    {% if skills.languages %}<div class="row"><span class="label">{{ labels.languages }}: </span>{{ skills.languages | join(", ") }}</div>{% endif %}
+    {% if skills.frameworks %}<div class="row"><span class="label">{{ labels.frameworks_libraries }}: </span>{{ skills.frameworks | join(", ") }}</div>{% endif %}
+    {% if skills.tools %}<div class="row"><span class="label">{{ labels.tools }}: </span>{{ skills.tools | join(", ") }}</div>{% endif %}
+    {% if skills.soft_skills %}<div class="row"><span class="label">{{ labels.soft_skills }}: </span>{{ skills.soft_skills | join(", ") }}</div>{% endif %}
+    {% if skills.other %}<div class="row"><span class="label">{{ labels.other_skills }}: </span>{{ skills.other | join(", ") }}</div>{% endif %}
+  </div>
+</div>
+{% endif %}
+
+{% if education %}
+<div class="section">
+  <div class="section-title">{{ labels.education }}</div>
+  {% for edu in education %}
+  <div class="entry">
+    <div class="entry-header">
+      <div><span class="entry-title">{{ edu.degree }}</span> <span class="entry-sub">{{ edu.institution }}</span></div>
+      {% if edu.graduation_year %}<div class="entry-date">{{ edu.graduation_year }}</div>{% endif %}
+    </div>
+    {% if edu.gpa or edu.distinctions %}<div class="edu-gpa">{% if edu.gpa %}{{ labels.gpa }}: {{ edu.gpa }}{% endif %}{% if edu.distinctions %} &middot; {{ edu.distinctions | join(", ") }}{% endif %}</div>{% endif %}
+  </div>
+  {% endfor %}
+</div>
+{% endif %}
+
+{% if certifications %}
+<div class="section">
+  <div class="section-title">{{ labels.certifications }}</div>
+  <ul class="bullets">{% for cert in certifications %}<li>{{ cert }}</li>{% endfor %}</ul>
+</div>
+{% endif %}
+
+</body>
+</html>

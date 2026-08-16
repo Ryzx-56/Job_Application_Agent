@@ -264,3 +264,23 @@ def extract_candidate_photo(file_bytes: bytes | None) -> str | None:
             f"({len(candidates)} image(s) qualified, {len(photo)} bytes stored, no LLM call)."
         )
     return photo
+
+
+def data_uri_to_bytes(photo: str | None) -> bytes | None:
+    """
+    Decodes a stored photo data URI back to raw JPEG bytes.
+
+    WeasyPrint consumes the data URI directly, so only the two generators
+    that CAN'T take one need this: python-docx (utils/docx_generator.py) and
+    ReportLab (the cover letter in utils/pdf_generator.py). Returns None for
+    anything that isn't a well-formed image data URI, so a malformed value
+    on an old snapshot degrades to "no photo" instead of raising inside a
+    render thread.
+    """
+    if not photo or not photo.startswith("data:image/"):
+        return None
+    try:
+        return base64.b64decode(photo.split(",", 1)[1])
+    except Exception as e:
+        logger.warning(f"📷 Stored photo could not be decoded, rendering without it: {e}")
+        return None
