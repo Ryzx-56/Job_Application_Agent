@@ -12,16 +12,13 @@ export type TailoredBullet = {
   relevance_score: number;
 };
 
-export type SimilarJob = {
-  title?: string;
-  url?: string;
-  snippet?: string;
-  source?: string;
-  // Machine-readable tier from jobs_finder.py. Rows written before this field
-  // existed carry only match_label; the dashboard falls back to reading it.
-  match_tier?: string;
-  match_label?: string;
-};
+// Imported rather than redeclared: the same listings are rendered by the
+// dashboard's post-generation panel and by My Resumes, and both resolve a
+// listing's tier through @/lib/jobMatch. One shape, one tier function.
+// Re-exported so existing `import { SimilarJob } from ".../resumes"` callers
+// keep working.
+import type { SimilarJob } from "@/lib/jobMatch";
+export type { SimilarJob };
 
 export type AtsBreakdown = {
   keyword_match?: number;

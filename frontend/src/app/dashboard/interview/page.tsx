@@ -3,6 +3,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { AlertCircle, ArrowLeft, ArrowRight, Loader2, RefreshCw } from "lucide-react";
 import { useLang } from "@/lib/language";
+import { formatMediumDate } from "@/lib/pricing";
 import { DashboardButton } from "@/components/dashboard";
 import {
   ApiError,
@@ -84,19 +85,10 @@ export default function InterviewPrepPage() {
   const [filter, setFilter] = useState<InterviewCategory | "all">("all");
   const [openIds, setOpenIds] = useState<Set<number>>(new Set());
 
+  // Shared formatter — see formatMediumDate in @/lib/pricing for why a bare
+  // "ar-SA" is the one locale string this product never passes.
   const formatDate = useCallback(
-    (iso: string) => {
-      if (!iso) return "";
-      try {
-        return new Date(iso).toLocaleDateString(lang === "ar" ? "ar-SA" : "en-US", {
-          year: "numeric",
-          month: "short",
-          day: "numeric",
-        });
-      } catch {
-        return iso;
-      }
-    },
+    (iso: string) => (iso ? formatMediumDate(iso, lang) : ""),
     [lang]
   );
 

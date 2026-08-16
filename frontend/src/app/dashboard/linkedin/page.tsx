@@ -15,6 +15,7 @@ import {
   UserRound,
 } from "lucide-react";
 import { useLang } from "@/lib/language";
+import { formatMediumDate } from "@/lib/pricing";
 import { fetchResumes, ResumeRecord } from "@/lib/supabase/resumes";
 import { updateProfileNames } from "@/lib/supabase/profile-names";
 import {
@@ -83,17 +84,11 @@ function displayCompany(company: string | null | undefined): string | null {
   return value;
 }
 
+// Shared formatter — see formatMediumDate in @/lib/pricing for why a bare
+// "ar-SA" is the one locale string this product never passes.
 function formatDate(iso: string | null | undefined, lang: "en" | "ar") {
   if (!iso) return "";
-  try {
-    return new Date(iso).toLocaleDateString(lang === "ar" ? "ar-SA" : "en-US", {
-      year: "numeric",
-      month: "short",
-      day: "numeric",
-    });
-  } catch {
-    return iso;
-  }
+  return formatMediumDate(iso, lang);
 }
 
 export default function LinkedInPage() {

@@ -139,6 +139,29 @@ export function formatShortDate(value: string | Date, lang: string): string {
   });
 }
 
+/**
+ * A dated record ("2 أغسطس 2026" / "Aug 2, 2026"), Gregorian and Western
+ * digits in both languages.
+ *
+ * Exists because My Resumes, Interview Prep and LinkedIn history each had
+ * their OWN `formatDate` passing a bare "ar-SA", which is the one locale
+ * string this module exists to stop anyone using: it renders Eastern Arabic
+ * numerals (٢٠٢٦) and resolves to the Umm al-Qura calendar in some engines.
+ * The result was a row showing a Hijri-capable Eastern-numeral date next to
+ * a Western-numeral ATS score and a Western-numeral page counter — three
+ * numbering conventions in one view. Every dated row in the product now
+ * comes through here.
+ */
+export function formatMediumDate(value: string | Date, lang: string): string {
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) return typeof value === "string" ? value : "";
+  return date.toLocaleDateString(lang === "ar" ? AR_DATE_LOCALE : "en-US", {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+  });
+}
+
 /** The charged price, formatted for display. */
 export function formatSar(amount: number, lang: string): string {
   const value = formatNumber(amount, lang, {

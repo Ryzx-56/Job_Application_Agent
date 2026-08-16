@@ -1,10 +1,12 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
-import { ChevronDown, ChevronUp, ChevronLeft, ChevronRight, FileText, FileType2, Mail, Loader2, AlertCircle, Trash2 } from "lucide-react";
+import { ChevronDown, ChevronUp, ChevronLeft, ChevronRight, FileText, FileType2, Mail, Loader2, AlertCircle, Trash2, Briefcase, ExternalLink } from "lucide-react";
 import { useLang } from "@/lib/language";
 import { EmptyState, ScoreRing, ScoreBar, FileResultCard } from "@/components/dashboard";
 import { fetchResumes, getDocumentUrl, deleteResume, ResumeRecord } from "@/lib/supabase/resumes";
+import { MATCH_TIER_COPY, getMatchTier, type MatchTier, type SimilarJob } from "@/lib/jobMatch";
+import { formatMediumDate } from "@/lib/pricing";
 
 // Mirrors WEIGHTS in utils/ats_scorer.py — fallback only, used if an older
 // saved row doesn't have ats_breakdown.weights yet.
@@ -23,17 +25,10 @@ const DEFAULT_ATS_WEIGHTS = {
 // of the storage/retention rework.
 const PAGE_SIZE = 20;
 
-function formatDate(iso: string, lang: "en" | "ar") {
-  try {
-    return new Date(iso).toLocaleDateString(lang === "ar" ? "ar-SA" : "en-US", {
-      year: "numeric",
-      month: "short",
-      day: "numeric",
-    });
-  } catch {
-    return iso;
-  }
-}
+// Dates come through the shared formatter so an Arabic row doesn't show
+// Eastern Arabic numerals next to Western-digit scores and page numbers —
+// see formatMediumDate in @/lib/pricing for the whole reasoning.
+const formatDate = formatMediumDate;
 
 /* ========================================================================
    LANGUAGE BADGE — shown in the table so a user can tell EN vs AR runs
@@ -49,6 +44,152 @@ function LanguageBadge({ cvLanguage, copy }: { cvLanguage: "en" | "ar"; copy: an
     >
       {isAr ? copy.languageBadge.ar : copy.languageBadge.en}
     </span>
+  );
+}
+
+/* ========================================================================
+   JOB COUNT — how many listings were saved with a resume, shown on the
+   COLLAPSED row so the jobs are discoverable without opening the row first.
+
+   Reads the same resume.similar_jobs array the expanded panel renders —
+   already fetched with the row, so this costs nothing extra.
+
+   Deliberately not a filled pill: the row is already carrying a language
+   badge and two percentages, and a third coloured chip would turn a data
+   row into a badge collection. A muted icon and count sits underneath the
+   role as metadata, which is what it is. Renders nothing at zero — "0 jobs"
+   is noise on every older row that predates job search.
+======================================================================== */
+function JobCount({ count, copy }: { count: number; copy: any }) {
+  if (count <= 0) return null;
+  return (
+    <span className="inline-flex items-center gap-1 text-xs text-slate-500">
+      <Briefcase className="size-3 shrink-0 text-slate-400" aria-hidden />
+      {copy.jobsCount(count)}
+    </span>
+  );
+}
+
+/* ========================================================================
+   DELETE BUTTON — shared by the mobile card and the desktop table so the
+   two layouts can't drift on hit area, disabled state or aria-label.
+======================================================================== */
+function DeleteButton({
+  onClick,
+  isDeleting,
+  lang,
+}: {
+  onClick: () => void;
+  isDeleting: boolean;
+  lang: "en" | "ar";
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={isDeleting}
+      aria-label={lang === "ar" ? "حذف" : "Delete"}
+      className="inline-flex size-9 shrink-0 items-center justify-center rounded-lg text-slate-400 hover:bg-rose-50 hover:text-rose-600 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-rose-600 disabled:cursor-not-allowed disabled:opacity-50"
+    >
+      {isDeleting ? (
+        <Loader2 className="size-4 animate-spin" aria-hidden />
+      ) : (
+        <Trash2 className="size-4" aria-hidden />
+      )}
+    </button>
+  );
+}
+
+/* ========================================================================
+   MATCH BADGE — the light-theme counterpart to the dashboard panel's glassy
+   badge. Same tiers and same wording (both read @/lib/jobMatch); only the
+   palette differs, because this list sits on white rather than on the
+   dashboard's dark gradient.
+======================================================================== */
+const MATCH_BADGE_CLASSES: Record<MatchTier, string> = {
+  strong: "border-emerald-200 bg-emerald-50 text-emerald-700",
+  partial: "border-amber-200 bg-amber-50 text-amber-700",
+  stretch: "border-rose-200 bg-rose-50 text-rose-700",
+};
+
+/* ========================================================================
+   JOBS FOUND — the listings jobs_finder.py returned for this resume at
+   generation time, read straight off the saved row.
+
+   NO SEARCH RUNS HERE. resumes.similar_jobs is written once by
+   saveResumeResult and fetchResumes already does select("*"), so these
+   listings arrive with the row the page has loaded anyway — this is a
+   pure render of stored data, not a second trip to Tavily.
+
+   Older rows can legitimately have an empty array (saved before job search
+   existed, or a run that genuinely matched nothing), which is why the empty
+   case says nothing was SAVED rather than nothing was found.
+======================================================================== */
+function ResumeJobs({ jobs, lang, copy }: { jobs: SimilarJob[]; lang: "en" | "ar"; copy: any }) {
+  return (
+    <div className="rounded-xl border border-slate-200 bg-white p-4">
+      <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+        <span className="grid size-7 shrink-0 place-items-center rounded-full bg-slate-100 text-slate-600">
+          <Briefcase className="size-3.5" aria-hidden />
+        </span>
+        <p className="text-sm font-semibold text-slate-900">{copy.jobsTitle}</p>
+        {jobs.length > 0 && (
+          <span className="text-xs font-medium text-slate-500">· {copy.jobsCount(jobs.length)}</span>
+        )}
+      </div>
+
+      {jobs.length === 0 ? (
+        <p className="mt-2 text-sm text-slate-500">{copy.jobsEmpty}</p>
+      ) : (
+        <>
+          <p className="mt-1.5 text-xs leading-relaxed text-slate-500">{copy.jobsSub}</p>
+          <ul className="mt-3 space-y-2">
+            {jobs.map((job, i) => {
+              const tier = getMatchTier(job);
+              const title = job.title || job.url;
+              // A listing with neither a title nor a URL has nothing to show
+              // and nowhere to go — skip it rather than render a dead row.
+              if (!title) return null;
+              return (
+                <li key={job.url ?? i}>
+                  <a
+                    href={job.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="group block rounded-lg border border-slate-200 bg-slate-50/60 px-3.5 py-3 transition-colors hover:border-blue-300 hover:bg-blue-50/40 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600"
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <p className="text-sm font-medium leading-snug text-slate-900 group-hover:text-blue-700">
+                        {title}
+                      </p>
+                      {tier && (
+                        <span
+                          className={`inline-flex shrink-0 items-center rounded-full border px-2 py-0.5 text-xs font-medium ${MATCH_BADGE_CLASSES[tier]}`}
+                        >
+                          {MATCH_TIER_COPY[tier][lang === "ar" ? "ar" : "en"]}
+                        </span>
+                      )}
+                    </div>
+                    {job.snippet && (
+                      <p className="mt-1 line-clamp-2 text-xs leading-relaxed text-slate-500">{job.snippet}</p>
+                    )}
+                    <div className="mt-1.5 flex items-center gap-1.5 text-xs text-slate-400">
+                      {job.source && <span className="truncate">{job.source}</span>}
+                      {job.url && (
+                        <span className="inline-flex items-center gap-1 text-blue-600 group-hover:text-blue-700">
+                          <ExternalLink className="size-3 shrink-0" aria-hidden />
+                          <span className="sr-only">{copy.jobsOpen}</span>
+                        </span>
+                      )}
+                    </div>
+                  </a>
+                </li>
+              );
+            })}
+          </ul>
+        </>
+      )}
+    </div>
   );
 }
 
@@ -162,6 +303,10 @@ function ResumeDetail({ resume, lang, copy, generateCopy }: { resume: ResumeReco
           {resume.tailored_summary}
         </p>
       )}
+
+      {/* similar_jobs is a JSONB column that can be null on rows written
+          before job search shipped — coalesce before handing it on. */}
+      <ResumeJobs jobs={resume.similar_jobs ?? []} lang={lang} copy={copy} />
 
       {!hasSnapshot ? (
         <div className="flex items-center gap-2 rounded-xl border border-amber-200 bg-amber-50/60 px-4 py-3 text-sm text-amber-700">
@@ -310,8 +455,92 @@ export default function MyResumesPage() {
         <EmptyState icon={FileText} title={copy.emptyTitle} body={copy.emptyBody} ctaLabel={copy.emptyCta} ctaHref="/dashboard" />
       ) : (
         <>
-          <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
-            <table className="w-full text-start text-sm">
+          {/* ── MOBILE (below md): one card per resume ──────────────────────
+              The table below is eight columns wide and cannot be made to fit
+              375px by any amount of squeezing — it used to sit in a plain
+              `overflow-hidden` container, so on a phone the last columns
+              (job match, details, delete) were simply CLIPPED AND
+              UNREACHABLE: no scrollbar, no way to reach them, no way to
+              delete a resume.
+
+              Adding overflow-x-auto alone would have made them reachable but
+              still meant sideways-scrolling a data table on the device most
+              of these users are on. Cards remove the problem instead of
+              making it scrollable: every field is visible, the whole card is
+              the expand target, and the delete control has a real 36px hit
+              area. The table is kept for the widths it actually suits. */}
+          <ul className="space-y-3 md:hidden">
+            {resumes.map((resume) => {
+              const isExpanded = expandedId === resume.id;
+              const isDeleting = deletingId === resume.id;
+              const jobCount = (resume.similar_jobs ?? []).length;
+              return (
+                <li
+                  key={resume.id}
+                  className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm"
+                >
+                  <div className="flex items-start gap-2 p-4">
+                    <button
+                      type="button"
+                      onClick={() => setExpandedId(isExpanded ? null : resume.id)}
+                      aria-expanded={isExpanded}
+                      className="min-w-0 flex-1 text-start focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600"
+                    >
+                      <p className="truncate font-medium text-slate-900">
+                        {resume.role || copy.untitledRole}
+                      </p>
+                      <p className="mt-0.5 truncate text-sm text-slate-600">
+                        {resume.company || copy.unknownCompany}
+                      </p>
+                      <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1.5">
+                        <LanguageBadge cvLanguage={resume.cv_language} copy={copy} />
+                        <span className="text-xs text-slate-500">{formatDate(resume.created_at, lang)}</span>
+                        <JobCount count={jobCount} copy={copy} />
+                      </div>
+                      <div className="mt-2.5 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-slate-500">
+                        <span>
+                          {copy.columns.score}{" "}
+                          <span className="font-semibold text-slate-800">{resume.ats_score}%</span>
+                        </span>
+                        <span>
+                          {copy.columns.match}{" "}
+                          <span className="font-semibold text-slate-800">{resume.job_match_score}%</span>
+                        </span>
+                      </div>
+                    </button>
+                    <DeleteButton onClick={() => handleDelete(resume)} isDeleting={isDeleting} lang={lang} />
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => setExpandedId(isExpanded ? null : resume.id)}
+                    aria-expanded={isExpanded}
+                    className="flex w-full items-center justify-center gap-1.5 border-t border-slate-100 bg-slate-50/60 px-4 py-2.5 text-xs font-medium text-blue-600 hover:bg-slate-100/60 focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-blue-600"
+                  >
+                    {isExpanded ? copy.hideDetails : copy.viewDetails}
+                    {isExpanded ? (
+                      <ChevronUp className="size-3.5 shrink-0" aria-hidden />
+                    ) : (
+                      <ChevronDown className="size-3.5 shrink-0" aria-hidden />
+                    )}
+                  </button>
+
+                  {isExpanded && (
+                    <ResumeDetail resume={resume} lang={lang} copy={copy} generateCopy={generateCopy} />
+                  )}
+                </li>
+              );
+            })}
+          </ul>
+
+          {/* ── md AND UP: the table ────────────────────────────────────────
+              overflow-x-auto rather than overflow-hidden so that if a long
+              role or company name pushes the eight columns past the
+              container, the row scrolls instead of being clipped away
+              unreachably. min-w keeps the columns from crushing together
+              just above the breakpoint. */}
+          <div className="hidden overflow-x-auto rounded-2xl border border-slate-200 bg-white shadow-sm md:block">
+            <table className="w-full min-w-[720px] text-start text-sm">
               <thead>
                 <tr className="border-b border-slate-200 bg-slate-50 text-xs font-medium uppercase tracking-wide text-slate-500">
                   <th className="px-5 py-3 text-start font-medium">{copy.columns.role}</th>
@@ -335,7 +564,8 @@ export default function MyResumesPage() {
                           <button
                             type="button"
                             onClick={() => setExpandedId(isExpanded ? null : resume.id)}
-                            className="flex items-center gap-1.5 font-medium text-slate-900 hover:text-blue-600"
+                            aria-expanded={isExpanded}
+                            className="flex items-center gap-1.5 font-medium text-slate-900 hover:text-blue-600 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600"
                           >
                             {resume.role || copy.untitledRole}
                             {isExpanded ? (
@@ -344,37 +574,39 @@ export default function MyResumesPage() {
                               <ChevronDown className="size-3.5 shrink-0 text-slate-400" aria-hidden />
                             )}
                           </button>
+                          {/* Sits under the role rather than in a ninth
+                              column — the table is already at the width it
+                              can carry. */}
+                          <div className="mt-1">
+                            <JobCount count={(resume.similar_jobs ?? []).length} copy={copy} />
+                          </div>
                         </td>
                         <td className="px-5 py-3.5 text-slate-600">{resume.company || copy.unknownCompany}</td>
-                        <td className="px-5 py-3.5 text-slate-500">{formatDate(resume.created_at, lang)}</td>
+                        {/* The short cells below hold their content on one
+                            line, so the horizontal space goes to role and
+                            company instead of a three-line wrapped date. */}
+                        <td className="whitespace-nowrap px-5 py-3.5 text-slate-500">{formatDate(resume.created_at, lang)}</td>
                         <td className="px-5 py-3.5">
                           <LanguageBadge cvLanguage={resume.cv_language} copy={copy} />
                         </td>
-                        <td className="px-5 py-3.5 text-slate-600">{resume.ats_score}%</td>
-                        <td className="px-5 py-3.5 text-slate-600">{resume.job_match_score}%</td>
-                        <td className="px-5 py-3.5 text-end">
+                        <td className="whitespace-nowrap px-5 py-3.5 text-slate-600">{resume.ats_score}%</td>
+                        <td className="whitespace-nowrap px-5 py-3.5 text-slate-600">{resume.job_match_score}%</td>
+                        <td className="whitespace-nowrap px-5 py-3.5 text-end">
                           <button
                             type="button"
                             onClick={() => setExpandedId(isExpanded ? null : resume.id)}
-                            className="ms-auto text-xs font-medium text-blue-600 hover:text-blue-700"
+                            aria-expanded={isExpanded}
+                            className="ms-auto text-xs font-medium text-blue-600 hover:text-blue-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600"
                           >
                             {isExpanded ? copy.hideDetails : copy.viewDetails}
                           </button>
                         </td>
                         <td className="px-5 py-3.5 text-end">
-                          <button
-                            type="button"
+                          <DeleteButton
                             onClick={() => handleDelete(resume)}
-                            disabled={isDeleting}
-                            aria-label={lang === "ar" ? "حذف" : "Delete"}
-                            className="inline-flex items-center justify-center rounded-lg p-1.5 text-slate-400 hover:bg-rose-50 hover:text-rose-600 disabled:cursor-not-allowed disabled:opacity-50"
-                          >
-                            {isDeleting ? (
-                              <Loader2 className="size-4 animate-spin" aria-hidden />
-                            ) : (
-                              <Trash2 className="size-4" aria-hidden />
-                            )}
-                          </button>
+                            isDeleting={isDeleting}
+                            lang={lang}
+                          />
                         </td>
                       </tr>
                       {isExpanded && (
