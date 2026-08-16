@@ -957,6 +957,9 @@ export const content = {
         // Directly under My Resumes: it's the next thing you do with a CV
         // you've already made, and it reads as part of that flow.
         interview: "Interview Prep",
+        // Standalone job search — no CV needed, so it sits ABOVE the
+        // CV-derived features rather than in that chain.
+        jobSearch: "Job Search",
         // Sits between My Resumes and Settings — the LinkedIn add-on is
         // something you do AFTER making a CV, so it reads in that order.
         linkedin: "LinkedIn",
@@ -974,6 +977,11 @@ export const content = {
         removeFile: "Remove file",
         jdLabel: "Job description",
         jdPlaceholder: "Paste the full job posting here...",
+        // A title on its own is enough: the backend sources real current
+        // postings for that title and builds a representative description
+        // from them before tailoring (see agents/jd_analyzer.py). Says what
+        // the user gets, not how it works.
+        jdHint: "No posting to hand? Enter just the job title and we'll build the description from current listings for that role.",
         generateCta: "Generate",
         generatingCta: "Generating…",
         resultsTitle: "Your tailored application",
@@ -1046,6 +1054,53 @@ export const content = {
         recommendationLabel: "Overall recommendation",
         factCheckPassed: "Fact-check passed",
         factCheckFlagged: "Fact-check flagged issues",
+        // Jobs found for this resume when it was generated. Re-read from the
+        // saved row — no search runs when the history page is opened — so
+        // the wording says "when this resume was generated", not "open now":
+        // a listing found weeks ago may well have closed since.
+        jobsTitle: "Jobs found for this resume",
+        jobsSub: "Found when this resume was generated. Older listings may have closed since.",
+        jobsCount: (n: number) => (n === 1 ? "1 job" : `${n} jobs`),
+        jobsEmpty: "No job matches were saved with this resume.",
+        jobsOpen: "Open listing",
+      },
+
+      /* ── JOB SEARCH (/dashboard/job-search) ───────────────────────────
+         Pro and Elite. Standalone: a job title and nothing else, no CV and
+         no job description. Free users get the page blurred behind an
+         upgrade panel, same treatment as Interview Prep. */
+      jobSearch: {
+        eyebrow: "Pro and Elite",
+        title: "Job Search",
+        sub: "Search live openings by job title. No CV or job description needed.",
+        titleLabel: "Job title",
+        titlePlaceholder: "IT Technician",
+        kindLabel: "Looking for",
+        kindJobs: "Jobs",
+        kindInternships: "Internships",
+        locationLabel: "Location",
+        locationPlaceholder: "Riyadh, Saudi Arabia",
+        locationHint: "Leave blank to use the location saved in your settings.",
+        searchCta: "Search",
+        searching: "Searching live listings…",
+        exactHeading: (title: string) => `Openings for ${title}`,
+        relatedHeading: "Related roles",
+        relatedSub: "Shown once the closest matches ran out. These are adjacent roles, not exact matches for what you searched.",
+        resultCount: (n: number) => (n === 1 ? "1 result" : `${n} results`),
+        emptyTitle: "No live openings found",
+        emptyBody: "Nothing matching that title is currently open from the sources we check. Try a broader title, or search again in a few days.",
+        errors: {
+          missingTitle: "Enter a job title to search for.",
+          titleTooLong: "That looks like a job description. Enter just the job title.",
+          search: "Job search is temporarily unavailable. Please try again shortly.",
+          upgradeRequired: "Job Search is available on the Pro and Elite plans.",
+        },
+        locked: {
+          badge: "Pro and Elite",
+          title: "Search jobs without a CV",
+          body: "Enter a job title and get current openings from Saudi government platforms, the major boards, and companies' own careers pages. Upgrade to search.",
+          cta: "See plans",
+        },
       },
 
       /* ── INTERVIEW PREP (/dashboard/interview) ────────────────────────
@@ -2349,6 +2404,7 @@ export const content = {
         dashboard: "لوحة التحكم",
         myResumes: "سيري الذاتية",
         interview: "التحضير للمقابلة",
+        jobSearch: "البحث عن وظائف",
         linkedin: "لينكدإن",
         settings: "الإعدادات",
         admin: "الإدارة",
@@ -2364,6 +2420,7 @@ export const content = {
         removeFile: "إزالة الملف",
         jdLabel: "الوصف الوظيفي",
         jdPlaceholder: "الصق نص الإعلان الوظيفي كاملًا هنا...",
+        jdHint: "لا يتوفر لديك إعلان؟ اكتب المسمى الوظيفي فقط، وسنبني الوصف من الإعلانات المنشورة حاليًا لهذه الوظيفة.",
         generateCta: "إنشاء",
         generatingCta: "جارٍ الإنشاء…",
         resultsTitle: "طلبك المخصص",
@@ -2432,6 +2489,49 @@ export const content = {
         recommendationLabel: "التوصية العامة",
         factCheckPassed: "اجتاز التحقق من الحقائق",
         factCheckFlagged: "تم رصد ملاحظات في التحقق من الحقائق",
+        // مكتوبة بالعربية مباشرة، لا ترجمة حرفية للنص الإنجليزي. الصياغة
+        // تقول "عند إنشاء السيرة" وليس "متاحة الآن"، لأن الوظائف محفوظة من
+        // وقت الإنشاء ولا يُعاد البحث عند فتح الصفحة.
+        jobsTitle: "وظائف وُجدت لهذه السيرة",
+        jobsSub: "وُجدت عند إنشاء هذه السيرة الذاتية، وقد يكون بعضها أُغلق منذ ذلك الحين.",
+        jobsCount: (n: number) => (n === 1 ? "وظيفة واحدة" : n === 2 ? "وظيفتان" : `${n} وظائف`),
+        jobsEmpty: "لم تُحفظ أي وظائف مع هذه السيرة الذاتية.",
+        jobsOpen: "فتح الإعلان",
+      },
+
+      /* ── البحث عن وظائف (/dashboard/job-search) ─────────────────────── */
+      jobSearch: {
+        eyebrow: "للباقتين المدفوعتين",
+        title: "البحث عن وظائف",
+        sub: "ابحث عن الوظائف المتاحة بالمسمى الوظيفي. لا تحتاج إلى سيرة ذاتية أو وصف وظيفي.",
+        titleLabel: "المسمى الوظيفي",
+        titlePlaceholder: "فني تقنية معلومات",
+        kindLabel: "تبحث عن",
+        kindJobs: "وظائف",
+        kindInternships: "تدريب",
+        locationLabel: "الموقع",
+        locationPlaceholder: "الرياض، المملكة العربية السعودية",
+        locationHint: "اتركه فارغًا لاستخدام الموقع المحفوظ في إعداداتك.",
+        searchCta: "بحث",
+        searching: "جارٍ البحث في الإعلانات المتاحة…",
+        exactHeading: (title: string) => `وظائف ${title}`,
+        relatedHeading: "وظائف ذات صلة",
+        relatedSub: "تظهر بعد نفاد النتائج الأقرب. هذه وظائف مشابهة وليست مطابقة تمامًا لما بحثت عنه.",
+        resultCount: (n: number) => (n === 1 ? "نتيجة واحدة" : n === 2 ? "نتيجتان" : `${n} نتائج`),
+        emptyTitle: "لا توجد وظائف متاحة",
+        emptyBody: "لا يوجد حاليًا إعلان مفتوح بهذا المسمى في المصادر التي نتحقق منها. جرّب مسمى أوسع، أو أعد البحث بعد أيام.",
+        errors: {
+          missingTitle: "اكتب المسمى الوظيفي للبحث عنه.",
+          titleTooLong: "هذا يبدو وصفًا وظيفيًا. اكتب المسمى الوظيفي فقط.",
+          search: "خدمة البحث غير متاحة حاليًا. حاول مرة أخرى بعد قليل.",
+          upgradeRequired: "البحث عن وظائف متاح في الباقتين المدفوعتين.",
+        },
+        locked: {
+          badge: "للباقتين المدفوعتين",
+          title: "ابحث عن وظائف بدون سيرة ذاتية",
+          body: "اكتب المسمى الوظيفي واحصل على الإعلانات المفتوحة من المنصات الحكومية السعودية ومواقع التوظيف الكبرى وصفحات التوظيف في الشركات نفسها. رقِّ باقتك للبحث.",
+          cta: "عرض الباقات",
+        },
       },
 
       /* ── التحضير للمقابلة (/dashboard/interview) ───────────────────────

@@ -18,6 +18,7 @@ import {
   Loader2,
   Shield,
   MessagesSquare,
+  Search,
 } from "lucide-react";
 // lucide-react v1 has no brand icons, so the LinkedIn mark is our own glyph.
 import { LinkedInGlyph } from "@/components/linkedin-ui";
@@ -30,34 +31,59 @@ import { signOut } from "@/lib/auth";
 /* ========================================================================
    LANGUAGE SWITCHER (light) — brand.tsx's LangSwitcher is styled for the
    dark marketing theme; the dashboard topbar needs a light counterpart.
+
+   NARROW SCREENS GET A SHORTER SWITCH. At full size this control is 165px
+   wide, and next to the menu button and the logo that pushed the topbar
+   about 10px past a 375px viewport — measured, on EVERY dashboard route
+   (and /login, which uses the same chrome), not just one page. The whole
+   document then scrolled sideways, which is why controls sitting at the
+   right edge looked cut off.
+
+   Fixed here rather than per page because one shared component caused it
+   everywhere. Below `sm` the globe and the divider are dropped and the
+   labels shorten to their ISO codes; from `sm` up the control is exactly
+   what it was. The two labels stay VISIBLY DISTINCT rather than collapsing
+   to a single toggle — a reader who cannot yet read the interface needs to
+   see the name of the other language, which is the entire job of this
+   control.
+
+   "EN" / "ع" keep their own `lang` attributes so a screen reader announces
+   each in the right language, and each button carries a full-word
+   aria-label so the short visual form is never the only thing announced.
 ======================================================================== */
 function DashboardLangSwitcher() {
   const { lang, setLang } = useLang();
+  const buttonBase =
+    "rounded-md px-2 py-1.5 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40 sm:px-2.5";
   return (
-    <div className="flex items-center gap-1 rounded-lg border border-slate-200 bg-slate-50 p-1 text-xs font-medium">
-      <Globe className="ms-1 size-3.5 text-slate-400" aria-hidden />
+    <div className="flex shrink-0 items-center gap-1 rounded-lg border border-slate-200 bg-slate-50 p-1 text-xs font-medium">
+      <Globe className="ms-1 hidden size-3.5 text-slate-400 sm:block" aria-hidden />
       <button
         type="button"
         onClick={() => setLang("en")}
         aria-pressed={lang === "en"}
+        aria-label="English"
         lang="en"
-        className={`rounded-md px-2.5 py-1.5 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40 ${
+        className={`${buttonBase} ${
           lang === "en" ? "bg-blue-600 text-white" : "text-slate-500 hover:text-slate-900"
         }`}
       >
-        English
+        <span className="sm:hidden">EN</span>
+        <span className="hidden sm:inline">English</span>
       </button>
-      <span className="text-slate-300">|</span>
+      <span className="hidden text-slate-300 sm:inline">|</span>
       <button
         type="button"
         onClick={() => setLang("ar")}
         aria-pressed={lang === "ar"}
+        aria-label="العربية"
         lang="ar"
-        className={`rounded-md px-2.5 py-1.5 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40 ${
+        className={`${buttonBase} ${
           lang === "ar" ? "bg-blue-600 text-white" : "text-slate-500 hover:text-slate-900"
         }`}
       >
-        العربية
+        <span className="sm:hidden">ع</span>
+        <span className="hidden sm:inline">العربية</span>
       </button>
     </div>
   );
@@ -410,6 +436,12 @@ function useNavItems(isAdmin = false) {
   return [
     { href: "/dashboard", label: t.dashboard.sidebar.dashboard, icon: LayoutDashboard },
     { href: "/dashboard/resumes", label: t.dashboard.sidebar.myResumes, icon: FileText },
+    // Job Search sits directly under Dashboard/My Resumes but is NOT part of
+    // the CV chain below it — it needs no CV and no job description, just a
+    // title. Listed for everyone including Free: the page renders blurred
+    // behind an upgrade panel rather than 404ing, and hiding the entry would
+    // hide the upsell. Access is enforced server-side on /api/v1/job-search.
+    { href: "/dashboard/job-search", label: t.dashboard.sidebar.jobSearch, icon: Search },
     // Interview Prep, directly under My Resumes: it's the next thing you do
     // with a CV you already tailored. Listed for everyone, including Free —
     // the page itself renders blurred behind an upgrade panel rather than

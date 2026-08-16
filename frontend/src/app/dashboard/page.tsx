@@ -23,6 +23,7 @@ import {
   AlertTriangle,
 } from "lucide-react";
 import { useLang } from "@/lib/language";
+import { MATCH_TIER_COPY, getMatchTier, type MatchTier, type SimilarJob } from "@/lib/jobMatch";
 import { CreditsButton } from "@/components/CreditsButton";
 import { DashboardButton, ScoreRing, ScoreBar, UploadZone, FileResultCard } from "@/components/dashboard";
 import { AgentProgress } from "@/components/agent-progress";
@@ -45,19 +46,10 @@ type TailoredBullet = {
   relevance_score: number;
 };
 
-type MatchTier = "strong" | "partial" | "stretch";
-
-type SimilarJob = {
-  title?: string;
-  url?: string;
-  snippet?: string;
-  source?: string;
-  // Machine-readable tier, sent by jobs_finder.py. Prefer this.
-  match_tier?: string;
-  // English prose. Still sent, and the only one present on resumes saved
-  // before match_tier existed.
-  match_label?: string;
-};
+// MatchTier / SimilarJob / MATCH_TIER_COPY / getMatchTier moved to
+// @/lib/jobMatch so the My Resumes page renders the same saved listings
+// through the same tier logic — see that file's header for why a second
+// copy was the wrong answer.
 
 type AtsBreakdown = {
   skills_match?: number;
@@ -133,10 +125,15 @@ const API_URL = process.env.NEXT_PUBLIC_API_URL;
 // you add a template on the backend, add its id/label pair here too so it
 // shows up in the picker. Deliberately does NOT include the cover letter
 // template; this list is CV-only.
-// `thumbnail` points at /public/templates/<id>.png — a real screenshot of
-// each template rendered with sample data (see scripts/generate-template-thumbs
-// or regenerate manually whenever a template's HTML changes).
-const CV_TEMPLATES: { id: string; label: string; labelAr: string; accent: string; thumbnail: string }[] = [
+// `thumbnail` points at /public/templates/<id>.png — a real render of each
+// template with the same sample candidate, produced by
+// backend/tools/generate_template_thumbs.py. Re-run it whenever a
+// template's HTML changes.
+// `photo: true` mirrors the backend registry's photo flag: the template has
+// a slot for the candidate's picture, extracted from the uploaded CV. The
+// slot is optional — these templates lay out correctly for someone whose CV
+// has no photo in it, so this is a label, not a requirement.
+const CV_TEMPLATES: { id: string; label: string; labelAr: string; accent: string; thumbnail: string; photo?: boolean }[] = [
   { id: "original_classic", label: "Classic (Default)", labelAr: "الكلاسيكي (الافتراضي)", accent: "#1a1a1a", thumbnail: "/templates/original_classic.png" },
   { id: "classic_serif", label: "Classic Serif", labelAr: "كلاسيكي", accent: "#1a1a1a", thumbnail: "/templates/classic_serif.png" },
   { id: "modern_minimal", label: "Modern Minimal", labelAr: "بسيط عصري", accent: "#b0b0b0", thumbnail: "/templates/modern_minimal.png" },
@@ -148,6 +145,11 @@ const CV_TEMPLATES: { id: string; label: string; labelAr: string; accent: string
   { id: "bold_banner", label: "Bold Banner", labelAr: "شريط جريء", accent: "#1C1C1C", thumbnail: "/templates/bold_banner.png" },
   { id: "geometric_creative", label: "Geometric Creative", labelAr: "إبداعي هندسي", accent: "#FF6B6B", thumbnail: "/templates/geometric_creative.png" },
   { id: "letterhead_corporate", label: "Corporate Letterhead", labelAr: "ترويسة رسمية", accent: "#333333", thumbnail: "/templates/letterhead_corporate.png" },
+  { id: "portrait_rail", label: "Portrait Rail", labelAr: "عمود جانبي بصورة", accent: "#8C5A3C", thumbnail: "/templates/portrait_rail.png", photo: true },
+  { id: "portrait_band", label: "Portrait Band", labelAr: "ترويسة بصورة", accent: "#14202B", thumbnail: "/templates/portrait_band.png", photo: true },
+  { id: "portrait_corner", label: "Corner Portrait", labelAr: "صورة في الزاوية", accent: "#D96F32", thumbnail: "/templates/portrait_corner.png", photo: true },
+  { id: "portrait_formal", label: "Formal Portrait", labelAr: "رسمي بصورة", accent: "#1A1A1A", thumbnail: "/templates/portrait_formal.png", photo: true },
+  { id: "portrait_card", label: "Portrait Card", labelAr: "بطاقة بصورة", accent: "#35566E", thumbnail: "/templates/portrait_card.png", photo: true },
 ];
 const DEFAULT_CV_TEMPLATE_ID = "original_classic";
 
@@ -329,33 +331,7 @@ function buildManualPayload(
   };
 }
 
-// The three tiers jobs_finder.py emits, in each language. The backend sends a
-// tier key and this renders it, rather than the backend sending English prose
-// that got printed verbatim — which is why an Arabic generation used to come
-// back fully Arabic apart from three English badges.
-const MATCH_TIER_COPY: Record<MatchTier, { en: string; ar: string }> = {
-  strong: { en: "Strong Match", ar: "تطابق قوي" },
-  partial: { en: "Partial Match", ar: "تطابق جزئي" },
-  stretch: { en: "Stretch Role", ar: "فرصة طموحة" },
-};
-
-/**
- * Resolves a listing's tier. Prefers match_tier; falls back to reading the
- * English label for resumes saved before that field existed, which is the
- * only reason the substring match is still here.
- */
-function getMatchTier(job: SimilarJob): MatchTier | null {
-  const tier = job.match_tier;
-  if (tier === "strong" || tier === "partial" || tier === "stretch") return tier;
-
-  const normalized = (job.match_label || "").toLowerCase();
-  if (normalized.includes("strong")) return "strong";
-  if (normalized.includes("partial")) return "partial";
-  if (normalized.includes("stretch")) return "stretch";
-  return null;
-}
-
-/** Color-codes a match tier into a glassy badge style. */
+/** Color-codes a match tier into a glassy badge style, for the dark panel. */
 function getMatchBadgeStyle(tier: MatchTier | null): { classes: string; dot: string } {
   if (tier === "strong") {
     return { classes: "border-emerald-400/40 bg-emerald-400/15 text-emerald-200", dot: "bg-emerald-400" };
@@ -851,8 +827,12 @@ export default function DashboardHomePage() {
             value={jobDescription}
             onChange={(e) => setJobDescription(e.target.value)}
             placeholder={copy.jdPlaceholder}
+            aria-describedby="jdHint"
             className="block w-full resize-y rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 placeholder:text-slate-400 outline-none transition-colors focus:border-blue-400 focus:bg-white focus:ring-2 focus:ring-blue-500/20"
           />
+          <p id="jdHint" className="mt-2 text-xs leading-relaxed text-slate-500">
+            {copy.jdHint}
+          </p>
         </div>
 
         {error && (
@@ -1621,11 +1601,23 @@ export default function DashboardHomePage() {
                         aria-hidden
                       />
                     </span>
-                    <span className="flex w-full items-center justify-between gap-2">
-                      <span className="text-sm font-medium text-slate-900">
-                        {lang === "ar" ? tpl.labelAr : tpl.label}
+                    <span className="flex w-full flex-col gap-0.5">
+                      <span className="flex w-full items-center justify-between gap-2">
+                        <span className="text-sm font-medium text-slate-900">
+                          {lang === "ar" ? tpl.labelAr : tpl.label}
+                        </span>
+                        {selected && <CheckCircle2 className="size-4 shrink-0 text-blue-600" aria-hidden />}
                       </span>
-                      {selected && <CheckCircle2 className="size-4 shrink-0 text-blue-600" aria-hidden />}
+                      {/* Says what the slot does without promising a photo the
+                          user's CV may not contain — these templates lay out
+                          correctly either way. */}
+                      {tpl.photo && (
+                        <span className="text-xs text-slate-500">
+                          {lang === "ar"
+                            ? "يعرض صورتك الشخصية إذا كانت موجودة في الملف الذي رفعته"
+                            : "Shows your photo if the CV you upload has one"}
+                        </span>
+                      )}
                     </span>
                   </button>
                 );
