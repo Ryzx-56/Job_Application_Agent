@@ -134,6 +134,20 @@ def make_request_id() -> str:
     return uuid.uuid4().hex
 
 
+def assign_request_id(initial_state: AgentState) -> str:
+    """Generates this request's id AND stamps it onto the state.
+
+    The two belong together: the id names this request's output files (see
+    output_paths) and the agents log it, so a log line, a generated file and
+    a download URL can all be traced back to the same run. Setting it on the
+    state is what carries it into the graph — see the request_id note in
+    core/state.py.
+    """
+    request_id = make_request_id()
+    initial_state["request_id"] = request_id
+    return request_id
+
+
 def read_uploaded_cv(cv_bytes: bytes) -> str:
     """
     Parses an uploaded CV, turning an unreadable file into a clean 400 with
@@ -299,6 +313,9 @@ def make_initial_state(cv_text: str, jd_text: str, template_id: str = DEFAULT_TE
         # Filled in by read_uploaded_photo() on the upload routes. Stays ""
         # for the manual 'Create New CV' flow — there's no file to mine.
         candidate_photo="",
+        # Stamped by assign_request_id() once the run is actually going
+        # ahead (i.e. past the name check and the credit reservation).
+        request_id="",
     )
 
 
@@ -306,13 +323,42 @@ def make_initial_state(cv_text: str, jd_text: str, template_id: str = DEFAULT_TE
 # a one-page graduate CV legitimately extracts to very little.
 _MIN_SOURCE_CHARS_FOR_COVERAGE = 1500
 
-# How much of the uploaded CV's text must survive into facts_json. A real
-# extraction lands far above this: structured fields drop section headings,
-# contact lines and whitespace but keep the prose, so healthy runs sit well
-# past half. This is set low on purpose — it is here to catch a catastrophic
-# partial extraction (a name and almost nothing else), NOT to police quality,
-# because a false positive refuses a run the user could otherwise have had.
+# How much of the uploaded CV's text must survive into facts_json. This is
+# set low on purpose — it is here to catch a catastrophic partial extraction
+# (a name and almost nothing else), NOT to police quality, because a false
+# positive refuses a run the user could otherwise have had.
+#
+# IT IS NO LONGER THE ONLY SIGNAL, because on its own it produced exactly
+# the false positive it was meant to avoid. The ratio measures the SHAPE OF
+# THE SOURCE DOCUMENT as much as the quality of the extraction:
+#   - FactsJSON has no field for a lot of what real CVs contain — summary /
+#     objective, publications, references, hobbies, memberships, and the
+#     personal-details block (nationality, date of birth, marital status)
+#     that is standard on Saudi CVs. That text is permanently in the
+#     denominator and can never reach the numerator, so a narrative-heavy or
+#     academic CV scores near zero no matter how perfectly it was read.
+#   - _facts_content_length also excludes `personal` by design.
+# A real run was refused this way: 4 education entries, 16 experience
+# entries and full skills/certifications/awards lists — an unambiguously
+# successful extraction — rejected at 7% because the source was prose-heavy.
+# _populated_fact_groups below is the structural signal that now decides
+# those cases; this ratio only rules on extractions with no structure to
+# judge, which is the failure it was actually written for.
 _MIN_EXTRACTION_COVERAGE = 0.15
+
+# Agent 1's fact groups. A CV always has at least one CORE group — someone
+# with no experience, no education and no projects has nothing to tailor —
+# so finding none of them is the real signature of a gutted extraction.
+_CORE_FACT_GROUPS = ("experience", "education", "projects")
+_SUPPORTING_FACT_GROUPS = (
+    "skills", "certifications", "languages_spoken", "volunteer_work", "awards",
+)
+
+# How many groups must be populated before the extraction counts as
+# structurally sound. Two is deliberately low: the catastrophic failure this
+# gate exists to catch returns a name and at most one stray field, while any
+# genuine extraction lands three or more.
+_MIN_POPULATED_FACT_GROUPS = 2
 
 
 def _facts_content_length(facts: dict) -> int:
@@ -334,6 +380,26 @@ def _facts_content_length(facts: dict) -> int:
     return total
 
 
+def _populated_fact_groups(facts: dict) -> list[str]:
+    """Which of Agent 1's fact groups actually came back with content.
+
+    Independent of the source document's length and formatting, which is
+    the whole point — this is what tells a genuine extraction apart from a
+    gutted one when the character ratio can't (see _MIN_EXTRACTION_COVERAGE).
+    """
+    populated = []
+    for key in _CORE_FACT_GROUPS + _SUPPORTING_FACT_GROUPS:
+        value = facts.get(key)
+        # `skills` is a dict of category -> list, not a list. Flatten it so an
+        # all-empty skills block doesn't count as populated on the strength of
+        # its category keys alone.
+        if isinstance(value, dict):
+            value = [item for sublist in value.values() for item in (sublist or [])]
+        if value:
+            populated.append(key)
+    return populated
+
+
 def _pipeline_produced_usable_cv(result_state: dict) -> bool:
     """
     True signal that Agent 1 (cv_parser / manual_cv_parser) actually
@@ -351,11 +417,19 @@ def _pipeline_produced_usable_cv(result_state: dict) -> bool:
     closes: if the uploaded document clearly had substance and almost none
     of it reached facts_json, that is a failed extraction, not a short CV.
 
-    Deliberately compares against raw_cv_text rather than a fixed entry
-    count, since "how many jobs should this CV have" is unknowable and
-    varies wildly. Skipped entirely for manual entry, where raw_cv_text is
-    "" by construction (see the manual endpoints in this file) and the form
-    IS the source of truth.
+    Never judges on a fixed entry count, since "how many jobs should this CV
+    have" is unknowable and varies wildly. Skipped entirely for manual entry,
+    where raw_cv_text is "" by construction (see the manual endpoints in this
+    file) and the form IS the source of truth.
+
+    Two signals, checked in order of reliability:
+      1. STRUCTURE — did Agent 1 come back with populated fact groups? A
+         gutted extraction has a name and essentially nothing else, which is
+         directly visible in the shape of facts_json and does not depend on
+         the source document's formatting at all.
+      2. COVERAGE — only consulted when the structure is too thin to rule on.
+         See _MIN_EXTRACTION_COVERAGE for why this can no longer be the sole
+         signal.
     """
     facts = result_state.get("facts_json") or {}
     personal = facts.get("personal") or {}
@@ -368,14 +442,41 @@ def _pipeline_produced_usable_cv(result_state: dict) -> bool:
 
     extracted_chars = _facts_content_length(facts)
     coverage = extracted_chars / source_chars
+    populated = _populated_fact_groups(facts)
+    has_core = any(group in populated for group in _CORE_FACT_GROUPS)
+
+    # Both messages below quote Agent 1's own numbers back, so they MUST be
+    # attributable to the same run Agent 1 logged — comparing this gate's
+    # entry count against an Agent 1 summary from a different request is
+    # what turned a resubmitted CV into a phantom "entry got dropped" bug.
+    run = f"[req {result_state.get('request_id')}] " if result_state.get("request_id") else ""
+
+    if has_core and len(populated) >= _MIN_POPULATED_FACT_GROUPS:
+        if coverage < _MIN_EXTRACTION_COVERAGE:
+            # Worth seeing, not worth refusing: either the CV is genuinely
+            # narrative-heavy, or something upstream is inflating
+            # raw_cv_text. Both are real things to look at, and neither
+            # justifies throwing away a good extraction.
+            logger.warning(
+                f"📄 {run}LOW COVERAGE, USABLE EXTRACTION: facts_json carries {extracted_chars} of "
+                f"{source_chars} source characters ({coverage:.0%}, floor "
+                f"{_MIN_EXTRACTION_COVERAGE:.0%}), but Agent 1 populated "
+                f"{len(populated)} fact groups ({', '.join(populated)}) — "
+                f"{len(facts.get('experience') or [])} experience and "
+                f"{len(facts.get('education') or [])} education entries. Proceeding."
+            )
+        return True
+
     if coverage < _MIN_EXTRACTION_COVERAGE:
         logger.error(
-            f"❌ PARTIAL EXTRACTION: the uploaded CV holds {source_chars} characters but "
+            f"❌ {run}PARTIAL EXTRACTION: the uploaded CV holds {source_chars} characters but "
             f"facts_json carries only {extracted_chars} ({coverage:.0%}, floor "
             f"{_MIN_EXTRACTION_COVERAGE:.0%}) — "
             f"{len(facts.get('experience') or [])} experience and "
-            f"{len(facts.get('education') or [])} education entries. Agent 1 returned a name "
-            f"but lost the document; refusing to render rather than shipping a gutted CV."
+            f"{len(facts.get('education') or [])} education entries, "
+            f"{len(populated)} fact groups populated ({', '.join(populated) or 'none'}). "
+            f"Agent 1 returned a name but lost the document; refusing to render rather "
+            f"than shipping a gutted CV."
         )
         return False
     return True
@@ -905,7 +1006,7 @@ async def optimize_application(
     apply_candidate_names(initial_state, user_id, allow_name_fallback)
 
     reserved_amount = reserve_credits(user_id, initial_state["cv_language"])
-    request_id = make_request_id()
+    request_id = assign_request_id(initial_state)
     paths = output_paths(user_id, request_id)
     result = {}  # bound before the try so the outer except can still build a UsageEvent from it
 
@@ -986,7 +1087,7 @@ async def optimize_application_stream(
     apply_candidate_names(initial_state, user_id, allow_name_fallback)
 
     reserved_amount = reserve_credits(user_id, initial_state["cv_language"])
-    request_id = make_request_id()
+    request_id = assign_request_id(initial_state)
 
     return StreamingResponse(
         _stream_pipeline(initial_state, user_id, reserved_amount, request_id),
@@ -1024,7 +1125,7 @@ async def optimize_manual_application_stream(
     apply_candidate_names(initial_state, user_id, bool(payload.allow_name_fallback))
 
     reserved_amount = reserve_credits(user_id, initial_state["cv_language"])
-    request_id = make_request_id()
+    request_id = assign_request_id(initial_state)
 
     return StreamingResponse(
         _stream_pipeline(initial_state, user_id, reserved_amount, request_id),
@@ -1064,7 +1165,7 @@ async def optimize_manual_application(
     apply_candidate_names(initial_state, user_id, bool(payload.allow_name_fallback))
 
     reserved_amount = reserve_credits(user_id, initial_state["cv_language"])
-    request_id = make_request_id()
+    request_id = assign_request_id(initial_state)
     paths = output_paths(user_id, request_id)
     result = {}  # bound before the try so the outer except can still build a UsageEvent from it
 

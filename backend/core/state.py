@@ -49,6 +49,18 @@ class AgentState(TypedDict):
     # declared here.
     user_id:                 Optional[str]
 
+    # This request's unique id — the same one output_paths() builds the
+    # generated file names from, so a log line and a downloaded file can be
+    # traced to each other. Agents log it so two runs are distinguishable:
+    # every agent prints under a fixed "[Agent N]" tag, so two requests in
+    # flight at once (or one resubmitted after a failure) produce two
+    # interleaved sets of identical-looking lines, and a genuinely puzzling
+    # discrepancy — Agent 1 reporting 16 experience entries while the
+    # usable-CV gate a few lines later reported 15 — could not be resolved
+    # from the log at all. Declared here for the reason in the user_id note
+    # above: LangGraph drops any state key this TypedDict doesn't list.
+    request_id:              str
+
     # ── CANDIDATE NAME (never machine-translated) ───────────────────────
     # Read from profiles.name_en / profiles.name_ar in main.py. These are
     # the name for a document whose output script differs from the uploaded

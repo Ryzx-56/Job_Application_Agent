@@ -149,38 +149,57 @@ CV TEXT:
 Return ONLY the JSON object. No explanation, no markdown, no extra text.
 """
 
-def parse_cv(cv_path: str, max_retries: int = 3) -> FactsJSON:
+def _tag(request_id: str = "") -> str:
+    """This agent's log prefix, carrying the request id when there is one.
+
+    Every line Agent 1 emits is otherwise identical between runs, so two
+    requests in flight at once — or one CV resubmitted after a failure —
+    produce two interleaved sets of indistinguishable lines. That made a
+    real discrepancy impossible to diagnose: Agent 1 reported 16 experience
+    entries and the usable-CV gate in main.py reported 15 a few lines
+    later, with no way to tell from the log whether those were even the
+    same run. The id is the same one that names this request's output files
+    (see output_paths in main.py). Empty for direct callers like the tests,
+    which run one at a time.
+    """
+    return f"[Agent 1][req {request_id}]" if request_id else "[Agent 1]"
+
+
+def parse_cv(cv_path: str, max_retries: int = 3, request_id: str = "") -> FactsJSON:
     """
     Extracts facts from a CV PDF and returns a validated FactsJSON object.
     Retries up to max_retries times if Pydantic validation fails.
     Only personal.name is required — all other sections are optional.
     """
-    return parse_cv_text(extract_text_from_pdf(cv_path), max_retries=max_retries)
+    return parse_cv_text(
+        extract_text_from_pdf(cv_path), max_retries=max_retries, request_id=request_id
+    )
 
 
-def parse_cv_text(cv_text: str, max_retries: int = 3) -> FactsJSON:
+def parse_cv_text(cv_text: str, max_retries: int = 3, request_id: str = "") -> FactsJSON:
     """Extract facts from raw CV text."""
     last_error = None
+    tag = _tag(request_id)
 
     for attempt in range(1, max_retries + 1):
-        print(f"[Agent 1] Attempt {attempt}/{max_retries}")
+        print(f"{tag} Attempt {attempt}/{max_retries} ({len(cv_text)} chars of CV text)")
 
         try:
             raw_json = generate_gemini_json(CV_PARSER_PROMPT.format(cv_text=cv_text))
             data = json.loads(raw_json)
             facts = FactsJSON.model_validate(data)
 
-            print(f"[Agent 1] ✅ Extraction successful on attempt {attempt}")
-            _print_summary(facts)
+            print(f"{tag} ✅ Extraction successful on attempt {attempt}")
+            _print_summary(facts, tag)
             return facts
 
         except (json.JSONDecodeError, ValidationError) as e:
             last_error = e
-            print(f"[Agent 1] ❌ Attempt {attempt} failed: {e}")
+            print(f"{tag} ❌ Attempt {attempt} failed: {e}")
             continue
 
     raise RuntimeError(
-        f"[Agent 1] CV parsing failed after {max_retries} attempts. "
+        f"{tag} CV parsing failed after {max_retries} attempts. "
         f"Last error: {last_error}"
     )
 
@@ -193,7 +212,7 @@ def run_cv_parser(state: dict) -> dict:
         if additional_info:
             cv_text += "\n\nADDITIONAL INFORMATION FROM CANDIDATE:\n" + additional_info
 
-        facts = parse_cv_text(cv_text)
+        facts = parse_cv_text(cv_text, request_id=state.get("request_id", "") or "")
         return {"facts_json": facts.model_dump(), "error": None}
     except Exception as e:
         return {"error": f"Agent 1 failed: {e}"}
@@ -295,23 +314,26 @@ def run_manual_cv_parser(state: dict) -> dict:
         manual_data = state.get("manual_cv_data", {}) or {}
         additional_info = state.get("additional_info", "") or ""
         serialized = serialize_manual_cv(manual_data, additional_info)
-        facts = parse_cv_text(serialized)
+        facts = parse_cv_text(serialized, request_id=state.get("request_id", "") or "")
         return {"facts_json": facts.model_dump(), "error": None}
     except Exception as e:
         return {"error": f"Manual CV parsing failed: {e}"}
 
 
-def _print_summary(facts: FactsJSON):
-    print(f"  → Name: {facts.personal.name}")
-    print(f"  → Education entries: {len(facts.education)}")
-    print(f"  → Experience entries: {len(facts.experience)}")
-    print(f"  → Projects: {len(facts.projects)}")
-    print(f"  → Skills (languages): {facts.skills.languages}")
-    print(f"  → Skills (frameworks): {facts.skills.frameworks}")
-    print(f"  → Skills (tools): {facts.skills.tools}")
-    print(f"  → Skills (soft): {facts.skills.soft_skills}")
-    print(f"  → Skills (other): {facts.skills.other}")
-    print(f"  → Certifications: {facts.certifications}")
-    print(f"  → Languages spoken: {facts.languages_spoken}")
-    print(f"  → Volunteer work: {len(facts.volunteer_work)} entries")
-    print(f"  → Awards: {facts.awards}")
+def _print_summary(facts: FactsJSON, tag: str = "[Agent 1]"):
+    # Every line carries the tag, not just the header — these lines are what
+    # interleave with another concurrent run's, and a summary whose header
+    # alone is identifiable is no easier to attribute than one without.
+    print(f"{tag}   → Name: {facts.personal.name}")
+    print(f"{tag}   → Education entries: {len(facts.education)}")
+    print(f"{tag}   → Experience entries: {len(facts.experience)}")
+    print(f"{tag}   → Projects: {len(facts.projects)}")
+    print(f"{tag}   → Skills (languages): {facts.skills.languages}")
+    print(f"{tag}   → Skills (frameworks): {facts.skills.frameworks}")
+    print(f"{tag}   → Skills (tools): {facts.skills.tools}")
+    print(f"{tag}   → Skills (soft): {facts.skills.soft_skills}")
+    print(f"{tag}   → Skills (other): {facts.skills.other}")
+    print(f"{tag}   → Certifications: {facts.certifications}")
+    print(f"{tag}   → Languages spoken: {facts.languages_spoken}")
+    print(f"{tag}   → Volunteer work: {len(facts.volunteer_work)} entries")
+    print(f"{tag}   → Awards: {facts.awards}")
