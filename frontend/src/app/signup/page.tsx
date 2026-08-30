@@ -7,6 +7,7 @@ import { Eye, EyeOff, ArrowRight, ArrowLeft, Lock, ScanSearch, BadgeCheck } from
 import { useLang } from "@/lib/language";
 import { Button, Logo, LangSwitcher } from "@/components/brand";
 import { createClient } from "@/lib/supabase/client";
+import { isPasswordBreached } from "@/lib/pwned-password";
 import { getCountryList, getCitiesForCountry, formatLocation, OTHER_CITY_VALUE, CountryOption, CityOption } from "@/lib/countries";
 import { SearchableSelect } from "@/components/searchable-select";
 
@@ -171,8 +172,25 @@ function SignupForm() {
       setError(t.signup.errors.invalidEmail);
       return;
     }
+    // Checked BEFORE the mismatch test: someone who typed the same short
+    // password twice should be told it is too short, not that the two differ.
+    // This mirrors the floor already enforced on reset-password and settings.
+    // It is a UX guardrail, not a security boundary — the real floor is
+    // Supabase's minimum_password_length, since this call goes straight from
+    // the browser to Supabase Auth and can be made without this form.
+    if (password.length < 8) {
+      setError(t.signup.errors.passwordTooShort);
+      return;
+    }
     if (password !== confirmPassword) {
       setError(t.signup.errors.passwordMismatch);
+      return;
+    }
+    // Breach check before the terms check, so someone who has to change their
+    // password isn't told about it only after also ticking a box.
+    // Fails open — see lib/pwned-password.ts.
+    if (await isPasswordBreached(password)) {
+      setError(t.signup.errors.passwordBreached);
       return;
     }
     if (!agreedToTerms) {

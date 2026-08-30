@@ -2,7 +2,6 @@
 
 import React, { useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { Eye, EyeOff, ArrowRight, ArrowLeft, Lock, ScanSearch, BadgeCheck } from "lucide-react";
 import { useLang } from "@/lib/language";
 import { Button, Logo, LangSwitcher } from "@/components/brand";
@@ -94,7 +93,6 @@ function BackToHome({ isRTL }: { isRTL: boolean }) {
 ======================================================================== */
 function LoginForm() {
   const { t, isRTL } = useLang();
-  const router = useRouter();
   const ForwardIcon = isRTL ? ArrowLeft : ArrowRight;
 
   const [identifier, setIdentifier] = useState("");
@@ -111,18 +109,40 @@ function LoginForm() {
       return;
     }
     setSubmitting(true);
-    const supabase = createClient();
-    const { error: signInError } = await supabase.auth.signInWithPassword({
-      email: identifier.trim(),
-      password,
-    });
+
+    // Goes through our own route rather than calling Supabase directly, so
+    // that attempts pass a per-IP and per-account rate limiter first. See
+    // app/api/auth/login/route.ts for why that route exists at all.
+    let res: Response;
+    try {
+      res = await fetch("/api/auth/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: identifier.trim(), password }),
+      });
+    } catch {
+      // Network failure reaching our own origin. Same message as bad
+      // credentials would be misleading, so reuse the generic one.
+      setSubmitting(false);
+      setError(t.form.oauthError);
+      return;
+    }
     setSubmitting(false);
-    if (signInError) {
+
+    if (res.status === 429) {
+      setError(t.form.tooManyAttempts);
+      return;
+    }
+    if (!res.ok) {
       setError(t.form.invalidCredentials);
       return;
     }
-    router.push("/dashboard");
-    router.refresh();
+
+    // Full navigation rather than a client-side push. The session cookies
+    // were set by the server on that response; a hard load guarantees the
+    // browser Supabase client re-initialises from them rather than from its
+    // own in-memory state.
+    window.location.assign("/dashboard");
   }
 
   async function handleGoogle() {

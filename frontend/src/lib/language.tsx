@@ -850,6 +850,10 @@ export const content = {
       hidePassword: "Hide password",
       missingFields: "Please enter your email/username and password.",
       invalidCredentials: "Incorrect email or password.",
+      // Shown when the login route's rate limiter rejects an attempt. Kept
+      // vague about which limit was hit (IP or account) so it gives an
+      // attacker nothing to calibrate against.
+      tooManyAttempts: "Too many sign-in attempts. Please wait a few minutes and try again.",
       oauthError: "Something went wrong with Google sign-in. Please try again.",
       backToHome: "Back to home",
     },
@@ -886,6 +890,7 @@ export const content = {
       submitting: "Updating...",
       missingFields: "Fill in both fields.",
       tooShort: "Password must be at least 8 characters.",
+      breached: "This password has appeared in a known data breach. Please choose a different one.",
       mismatch: "Passwords don't match.",
       samePassword: "Your new password must be different from your current one.",
       weakPassword: "That password is too easy to guess. Try adding numbers, symbols, or uppercase letters.",
@@ -942,6 +947,14 @@ export const content = {
       errors: {
         missingFields: "Please fill in all required fields.",
         invalidEmail: "Please enter a valid email address.",
+        // Matches the 8-character floor already enforced on the reset-password
+        // and settings forms. Signup had no length check at all, so an account
+        // could be created with a password its owner could not later re-set.
+        passwordTooShort: "Password must be at least 8 characters.",
+        // Deliberately says the password appeared in a breach elsewhere, not
+        // that Tarshih was breached, and does not name a count — a number
+        // invites arguing with it rather than picking another password.
+        passwordBreached: "This password has appeared in a known data breach. Please choose a different one.",
         passwordMismatch: "Passwords do not match.",
         termsRequired: "You must agree to the Terms and Privacy Policy to continue.",
         signupFailed: "Something went wrong creating your account. Please try again.",
@@ -2306,6 +2319,7 @@ export const content = {
       hidePassword: "إخفاء كلمة المرور",
       missingFields: "يرجى إدخال البريد الإلكتروني وكلمة المرور.",
       invalidCredentials: "البريد الإلكتروني أو كلمة المرور غير صحيحة.",
+      tooManyAttempts: "جرّبت تسجيل الدخول مرات كثيرة. انتظر بضع دقائق ثم أعد المحاولة.",
       oauthError: "حدث خطأ أثناء تسجيل الدخول عبر جوجل. حاول مرة أخرى.",
       backToHome: "العودة إلى الرئيسية",
     },
@@ -2342,6 +2356,7 @@ export const content = {
       submitting: "جارٍ التحديث...",
       missingFields: "الرجاء تعبئة الحقلين.",
       tooShort: "يجب أن تتكون كلمة المرور من 8 أحرف على الأقل.",
+      breached: "كلمة المرور هذه ظهرت في تسريب بيانات معروف. اختر كلمة مرور غيرها.",
       mismatch: "كلمتا المرور غير متطابقتين.",
       samePassword: "يجب أن تكون كلمة المرور الجديدة مختلفة عن كلمة المرور الحالية.",
       weakPassword: "كلمة المرور سهلة التخمين. جرّب إضافة أرقام أو رموز أو أحرف كبيرة.",
@@ -2391,6 +2406,8 @@ export const content = {
       errors: {
         missingFields: "يرجى تعبئة جميع الحقول المطلوبة.",
         invalidEmail: "يرجى إدخال بريد إلكتروني صالح.",
+        passwordTooShort: "يجب ألا تقل كلمة المرور عن 8 أحرف.",
+        passwordBreached: "كلمة المرور هذه ظهرت في تسريب بيانات معروف. اختر كلمة مرور غيرها.",
         passwordMismatch: "كلمتا المرور غير متطابقتين.",
         termsRequired: "يجب الموافقة على الشروط وسياسة الخصوصية للمتابعة.",
         signupFailed: "حدث خطأ أثناء إنشاء حسابك. حاول مرة أخرى.",

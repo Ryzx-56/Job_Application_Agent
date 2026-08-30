@@ -10,6 +10,7 @@ import { passwordErrorKey } from "@/lib/auth-errors";
 import { fetchCredits, Tier } from "@/lib/supabase/credits";
 import { updateLocation } from "@/lib/supabase/location";
 import { fetchProfileNames, updateProfileNames, fetchAdminStatus, fetchBadges } from "@/lib/supabase/profile-names";
+import { isPasswordBreached } from "@/lib/pwned-password";
 import { RoleBadges, BadgeKey } from "@/components/badges";
 import { getCountryList, getCitiesForCountry, formatLocation, parseLocation, OTHER_CITY_VALUE, CountryOption, CityOption } from "@/lib/countries";
 import { SearchableSelect } from "@/components/searchable-select";
@@ -193,6 +194,15 @@ export default function SettingsPage() {
     }
     if (newPassword !== confirmPassword) {
       setPasswordError(isAr ? "كلمتا المرور غير متطابقتين" : "Passwords don't match");
+      return;
+    }
+    // Fails open if HIBP is unreachable - see lib/pwned-password.ts.
+    if (await isPasswordBreached(newPassword)) {
+      setPasswordError(
+        isAr
+          ? "كلمة المرور هذه ظهرت في تسريب بيانات معروف. اختر كلمة مرور غيرها."
+          : "This password has appeared in a known data breach. Please choose a different one."
+      );
       return;
     }
 

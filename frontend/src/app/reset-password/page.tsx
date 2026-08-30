@@ -8,6 +8,7 @@ import { useLang } from "@/lib/language";
 import { Button, Logo, LangSwitcher } from "@/components/brand";
 import { createClient } from "@/lib/supabase/client";
 import { passwordErrorKey } from "@/lib/auth-errors";
+import { isPasswordBreached } from "@/lib/pwned-password";
 
 export default function ResetPasswordPage() {
   const { t, dir } = useLang();
@@ -52,6 +53,12 @@ export default function ResetPasswordPage() {
     }
     if (password !== confirmPassword) {
       setError(c.mismatch);
+      return;
+    }
+    // Fails open if HIBP is unreachable - see lib/pwned-password.ts. A
+    // password reset must never be blocked by a third party being down.
+    if (await isPasswordBreached(password)) {
+      setError(c.breached);
       return;
     }
 
