@@ -1,0 +1,57 @@
+# Dependency updates.
+#
+# Grouped and rate-limited on purpose. A solo maintainer drowning in twelve
+# separate PRs a week stops reading them, and an unread security PR is worth
+# less than no PR at all. Security updates are always raised individually and
+# immediately; routine version bumps arrive batched, weekly.
+version: 2
+
+updates:
+  # ─── Frontend (Next.js / React) ───────────────────────────────────────────
+  - package-ecosystem: npm
+    directory: /frontend
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    groups:
+      # Next, React and their types move together or not at all — bumping one
+      # without the others is how a build breaks.
+      next-react:
+        patterns:
+          - "next"
+          - "eslint-config-next"
+          - "react"
+          - "react-dom"
+          - "@types/react"
+          - "@types/react-dom"
+      dev-tooling:
+        dependency-type: development
+      production-minor-patch:
+        dependency-type: production
+        update-types:
+          - minor
+          - patch
+
+  # ─── Backend (FastAPI / LangGraph) ────────────────────────────────────────
+  - package-ecosystem: pip
+    directory: /backend
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    groups:
+      python-minor-patch:
+        update-types:
+          - minor
+          - patch
+
+  # ─── The workflows themselves ─────────────────────────────────────────────
+  # These hold repository secrets (SUPABASE_DB_URL), so a compromised or
+  # abandoned action is a credential problem, not just a broken build.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 3

@@ -3,6 +3,19 @@
 .env.local
 .env.*.local
 
+# Credentials of any other shape. Verified 2026-08-30 that none of these have
+# ever been committed (the whole history was swept for Gemini, Anthropic,
+# Tavily, Supabase, Resend and PEM key patterns and came back clean); these
+# patterns exist so that stays true.
+*.pem
+*.key
+*.p12
+*.pfx
+*.keystore
+service-account*.json
+credentials*.json
+*-credentials.json
+
 # Python cache
 __pycache__/
 *.pyc
