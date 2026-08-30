@@ -116,5 +116,5 @@ python-bidi==0.6.6
 PyJWT[crypto]==2.13.0
 supabase==2.31.0
 # --- added for template-driven PDF rendering (utils/pdf_generator.py rewrite) ---
-weasyprint==63.1
+weasyprint==69.0
 pypdf==5.1.0
