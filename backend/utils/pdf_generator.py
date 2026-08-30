@@ -7,6 +7,8 @@ from pathlib import Path
 
 import jinja2
 from loguru import logger
+from markupsafe import Markup
+from xml.sax.saxutils import escape as _xml_escape
 
 from reportlab.lib.pagesizes import letter
 from reportlab.lib import colors
@@ -198,7 +200,40 @@ def _inject_arabic_overrides(html: str) -> str:
 # ---------------------------------------------------------------------------
 
 _TEMPLATES_DIR = Path(__file__).parent.parent / "templates"
-_jinja_env = jinja2.Environment(loader=jinja2.FileSystemLoader(str(_TEMPLATES_DIR)))
+
+# autoescape=True is load-bearing, not tidiness.
+#
+# Jinja's default is autoescape=False, and this environment used to take it.
+# Every CV field — name, summary, bullets, employer, and anything Gemini
+# produced — was therefore interpolated as raw HTML into the document
+# WeasyPrint renders. A CV containing `<img src="http://…">` made the SERVER
+# issue that request (verified against a local listener), which is a
+# server-side request forgery reachable by any signed-up user, not merely a
+# broken-looking PDF.
+#
+# The contact line needed a second fix: the templates built their own <a>
+# tags by concatenation and printed them through `| safe`, which this flag
+# does not reach. That construction now lives in cv_context.py, escaped, and
+# arrives here as ready-made Markup. See _profile_anchor there.
+_jinja_env = jinja2.Environment(
+    loader=jinja2.FileSystemLoader(str(_TEMPLATES_DIR)),
+    autoescape=jinja2.select_autoescape(default=True, default_for_string=True),
+)
+
+
+def _join_safe(items, separator: str) -> Markup:
+    """
+    Joins already-escaped fragments with a separator that is itself markup.
+
+    `{{ items | join(" &nbsp;|&nbsp; ") }}` cannot be used with autoescape on:
+    the separator is a plain str, so Jinja escapes it and the page prints a
+    literal "&nbsp;". This keeps the separator as markup while still escaping
+    any item that is not already Markup.
+    """
+    return Markup(separator).join(items)
+
+
+_jinja_env.filters["join_safe"] = _join_safe
 
 
 def render_cv_pdf(state: dict, output_path: str, template_id: str | None = None) -> str:
@@ -337,8 +372,20 @@ def render_cover_letter_pdf(state: dict, output_path: str) -> str:
         logger.warning("Arabic cover letter requested but the Arabic font isn't registered — falling back to Helvetica (will show tofu boxes).")
 
     def body(text: str) -> str:
-        """Shape+reorder Arabic prose; pass English straight through."""
-        return _shape_arabic(text) if is_arabic else text
+        """
+        Shape+reorder Arabic prose, then escape for ReportLab.
+
+        ESCAPING IS NOT OPTIONAL HERE. Paragraph() parses a mini-XML markup,
+        so unescaped candidate or model text does two bad things: `<b>` in a
+        summary is silently INTERPRETED as markup, and an ordinary
+        unbalanced angle bracket — "Consultant <Growth" — raises
+        ValueError("paraparser: syntax error") and takes the whole cover
+        letter down with a 500. Both were reproduced before this was added.
+
+        Escaping last, after shaping, so the Arabic reshaper still sees real
+        text rather than entities.
+        """
+        return _xml_escape(_shape_arabic(text) if is_arabic else text)
 
     # RTL documents still read left-to-right for the page margins ReportLab
     # itself lays out (it's the text direction *inside* each paragraph that
@@ -363,7 +410,7 @@ def render_cover_letter_pdf(state: dict, output_path: str) -> str:
     if personal.get("email"):
         # Identifiers stay LTR and unshaped even inside an Arabic letter -
         # same rule the CV path enforces for email/LinkedIn/GitHub.
-        sender_block.append(Paragraph(personal["email"], styles['CL_Body']))
+        sender_block.append(Paragraph(_xml_escape(personal["email"]), styles['CL_Body']))
 
     # THE SAME PHOTO AS THE CV, when the CV is a photo layout.
     #
@@ -387,7 +434,7 @@ def render_cover_letter_pdf(state: dict, output_path: str) -> str:
     today_str = date.today().strftime("%B %d, %Y")
     if is_arabic:
         today_str = _to_eastern_arabic_numerals(_translate_date_terms(today_str))
-    story.append(Paragraph(body(today_str) if is_arabic else today_str, styles['CL_Body']))
+    story.append(Paragraph(body(today_str) if is_arabic else _xml_escape(today_str), styles['CL_Body']))
     story.append(Spacer(1, 15))
 
     company = wf.get("company")
@@ -397,7 +444,7 @@ def render_cover_letter_pdf(state: dict, output_path: str) -> str:
     if company:
         # Company names are usually proper nouns/Latin script even in an
         # Arabic letter - shaping is a harmless no-op on non-Arabic text.
-        story.append(Paragraph(body(company) if is_arabic else company, styles['CL_Body']))
+        story.append(Paragraph(body(company) if is_arabic else _xml_escape(company), styles['CL_Body']))
     story.append(Spacer(1, 15))
     if job_title:
         re_label = f"الموضوع: التقديم على وظيفة {job_title}" if is_arabic else f"RE: Application for {job_title}"

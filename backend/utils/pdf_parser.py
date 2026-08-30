@@ -1,6 +1,8 @@
 import io
+import zipfile
 
 import fitz
+from loguru import logger
 
 
 class UnsupportedCVFormat(ValueError):
@@ -14,6 +16,24 @@ class UnsupportedCVFormat(ValueError):
 # Guards the recursive walk below against a pathological (or hand-crafted)
 # nesting depth. Real CVs nest a table two or three deep at most.
 _MAX_DOCX_NESTING_DEPTH = 12
+
+# ─── DECOMPRESSION BOMB GUARDS ──────────────────────────────────────────────
+# A .docx is a ZIP, so a tiny upload can expand to an enormous XML document.
+# Measured on a hand-built one before these limits existed: a 57.8 KB file
+# holding 57 MB of compressible XML was accepted as a valid CV, parsed
+# happily, and peaked at 139 MB of process memory for 60 million characters
+# of "text". On a 512 MB instance a few hundred KB of crafted upload is an
+# out-of-memory kill, and it costs the sender nothing to repeat.
+#
+# Both limits are checked from the ZIP CENTRAL DIRECTORY, before a single
+# member is decompressed, so a bomb is refused rather than survived.
+_MAX_DOCX_UNCOMPRESSED_BYTES = 80 * 1024 * 1024   # generous: real CVs are < 5 MB unpacked
+_MAX_DOCX_COMPRESSION_RATIO = 200                 # real .docx files land around 3-10x
+
+# Ceiling on the text handed back to the pipeline. A CV that legitimately
+# exceeds this does not exist; the cap also stops an oversized extraction
+# from being forwarded into a paid model call.
+MAX_EXTRACTED_CHARS = 200_000
 
 # Word writes a text box TWICE for backwards compatibility: once under
 # mc:Choice (the modern DrawingML shape) and again under mc:Fallback (the
@@ -119,6 +139,41 @@ def _header_footer_containers(document, kind: str):
             yield container
 
 
+def _reject_docx_bomb(file_bytes: bytes) -> None:
+    """
+    Refuses a .docx whose declared uncompressed size is absurd, before any of
+    it is decompressed.
+
+    Reads the ZIP central directory only — ZipInfo.file_size is metadata, so
+    this costs nothing and never expands the payload. A file that lies about
+    its size still cannot get past the total check, because python-docx would
+    have to actually produce those bytes to exceed it.
+
+    Raises UnsupportedCVFormat so the caller turns it into a 400 with a
+    message the uploader can act on, rather than a 500 or an OOM.
+    """
+    try:
+        with zipfile.ZipFile(io.BytesIO(file_bytes)) as archive:
+            total = sum(info.file_size for info in archive.infolist())
+    except zipfile.BadZipFile:
+        # Not a real ZIP. The caller's own error handling covers this; the
+        # point here is only that we did not try to decompress it.
+        return
+
+    if total > _MAX_DOCX_UNCOMPRESSED_BYTES:
+        raise UnsupportedCVFormat(
+            "That Word file expands to far more content than a CV should. "
+            "Please upload the CV itself rather than an archive or a merged document."
+        )
+
+    compressed = max(len(file_bytes), 1)
+    if total // compressed > _MAX_DOCX_COMPRESSION_RATIO:
+        raise UnsupportedCVFormat(
+            "That Word file doesn't look like a normal document. "
+            "Please re-save it from Word and upload it again."
+        )
+
+
 def _extract_text_from_docx(file_bytes: bytes) -> str:
     """
     BUG FIX: the upload input accepts ".pdf,.docx" (see the file input in
@@ -141,6 +196,8 @@ def _extract_text_from_docx(file_bytes: bytes) -> str:
     same content more than once.
     """
     from docx import Document  # local import: only needed on the .docx path
+
+    _reject_docx_bomb(file_bytes)
 
     document = Document(io.BytesIO(file_bytes))
     parts: list[str] = []
@@ -221,4 +278,18 @@ def extract_text_from_pdf(pdf_path: str = None, pdf_bytes: bytes = None) -> str:
             "please upload a version with selectable text."
         )
 
-    return text.strip()
+    text = text.strip()
+
+    # Last line of defence on volume. The per-format guards above already
+    # refuse the obvious abuse, but a merged or auto-generated document can
+    # still be legitimately enormous, and everything downstream of here —
+    # the graph state, the snapshot written to Postgres, and the prompt sent
+    # to a paid model — is sized by this string. Truncating beats both an
+    # out-of-memory kill and a needlessly large model call.
+    if len(text) > MAX_EXTRACTED_CHARS:
+        logger.warning(
+            f"Extracted CV text was {len(text):,} chars; truncating to {MAX_EXTRACTED_CHARS:,}."
+        )
+        text = text[:MAX_EXTRACTED_CHARS]
+
+    return text

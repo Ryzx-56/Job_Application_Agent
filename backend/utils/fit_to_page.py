@@ -24,11 +24,22 @@ down until it fits on one page).
 """
 
 from io import BytesIO
+from pathlib import Path
+from urllib.parse import urlparse
+from urllib.request import url2pathname
 
 import fitz  # PyMuPDF — already used by utils/pdf_parser.py
-from weasyprint import HTML
+from weasyprint import HTML, default_url_fetcher
 from pypdf import PdfReader
 from loguru import logger
+
+# The only directories a rendered document may read files from. Both hold
+# assets we ship: the CV templates and the bundled Arabic fonts.
+_BACKEND_DIR = Path(__file__).resolve().parent.parent
+_ALLOWED_ASSET_ROOTS = (
+    (_BACKEND_DIR / "templates").resolve(),
+    (_BACKEND_DIR / "assets").resolve(),
+)
 
 MIN_SCALE = 0.82
 MAX_SCALE = 1.25
@@ -211,9 +222,50 @@ def _trailing_page_char_count(pdf_bytes: bytes) -> int:
         return SPARSE_PAGE_CHAR_THRESHOLD + 1  # treat as "not sparse" — safe default, no rescue attempted
 
 
+class BlockedResourceError(Exception):
+    """Raised when a rendered document asks for a resource we refuse to load."""
+
+
+def _local_only_url_fetcher(url: str):
+    """
+    The only resources a CV may load: `data:` URIs, and files that live inside
+    the templates directory.
+
+    WHY. WeasyPrint resolves every url() and every <img src> it finds, over
+    the network, from the render process. Any content that reaches the
+    document can therefore make the SERVER issue a request — that was a
+    confirmed SSRF here, reachable by putting a tag in a CV field, and
+    verified against a local listener before this was added.
+
+    Escaping the templates closes the injection. This closes the CAPABILITY,
+    so a future template or a missed escape cannot reopen it. Both are worth
+    having: the escaping is the fix, this is the thing that stays true when
+    someone edits a template a year from now.
+
+    The candidate photo is a base64 `data:` URI (see utils/cv_photo.py) and
+    the Arabic fonts are loaded as `file:` URIs from assets/, so nothing
+    legitimate needs the network.
+    """
+    if url.startswith("data:"):
+        return default_url_fetcher(url)
+
+    if url.startswith("file:"):
+        try:
+            path = Path(url2pathname(urlparse(url).path)).resolve()
+        except Exception as err:
+            raise BlockedResourceError(f"Unresolvable local resource: {url}") from err
+        for allowed in _ALLOWED_ASSET_ROOTS:
+            if path == allowed or allowed in path.parents:
+                return default_url_fetcher(url)
+        raise BlockedResourceError(f"Local resource outside the allowed roots: {path}")
+
+    # http, https, ftp, and anything else. This is the SSRF door.
+    raise BlockedResourceError(f"Blocked remote resource request from a rendered document: {url}")
+
+
 def _render(html: str, base_url: str | None) -> bytes:
     buf = BytesIO()
-    HTML(string=html, base_url=base_url).write_pdf(buf)
+    HTML(string=html, base_url=base_url, url_fetcher=_local_only_url_fetcher).write_pdf(buf)
     return buf.getvalue()
 
 

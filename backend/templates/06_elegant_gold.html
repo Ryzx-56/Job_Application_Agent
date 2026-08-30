@@ -33,13 +33,7 @@
     {% if tagline %}<div class="tagline">{{ tagline }}</div>{% endif %}
     <hr>
     <div class="contact">
-      {%- set contact_items = [] -%}
-      {%- if personal.email %}{% set _ = contact_items.append(personal.email) %}{% endif -%}
-      {%- if personal.phone %}{% set _ = contact_items.append(personal.phone) %}{% endif -%}
-      {%- if personal.location %}{% set _ = contact_items.append(personal.location) %}{% endif -%}
-      {%- if personal.linkedin %}{% set _ = contact_items.append('<a href="https://www.linkedin.com/in/' ~ personal.linkedin ~ '">linkedin.com/in/' ~ personal.linkedin ~ '</a>') %}{% endif -%}
-      {%- if personal.github %}{% set _ = contact_items.append('<a href="https://github.com/' ~ personal.github ~ '">github.com/' ~ personal.github ~ '</a>') %}{% endif -%}
-      {{ contact_items | join(" &nbsp;&bull;&nbsp; ") | safe }}
+      {{ contact_items | join_safe(" &nbsp;&bull;&nbsp; ") }}
     </div>
   </div>
 

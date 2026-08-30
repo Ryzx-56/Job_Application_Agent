@@ -30,13 +30,7 @@
   <div class="header">
     <h1>{{ personal.name }}</h1>
     <div class="contact">
-      {%- set contact_items = [] -%}
-      {%- if personal.email %}{% set _ = contact_items.append('<span class="ci">' ~ personal.email ~ '</span>') %}{% endif -%}
-      {%- if personal.phone %}{% set _ = contact_items.append('<span class="ci">' ~ personal.phone ~ '</span>') %}{% endif -%}
-      {%- if personal.location %}{% set _ = contact_items.append('<span class="ci">' ~ personal.location ~ '</span>') %}{% endif -%}
-      {%- if personal.linkedin %}{% set _ = contact_items.append('<span class="ci">linkedin.com/in/' ~ personal.linkedin ~ '</span>') %}{% endif -%}
-      {%- if personal.github %}{% set _ = contact_items.append('<span class="ci">github.com/' ~ personal.github ~ '</span>') %}{% endif -%}
-      {{ contact_items | join(" | ") | safe }}
+      {{ contact_items | join_safe(" | ") }}
     </div>
   </div>
 

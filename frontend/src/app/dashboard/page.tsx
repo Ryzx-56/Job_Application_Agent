@@ -480,6 +480,25 @@ export default function DashboardHomePage() {
   const [cvSelectedFormat, setCvSelectedFormat] = useState<"pdf" | "docx">("pdf");
 
   const [error, setError] = useState("");
+
+  /* Mirrors MAX_CV_UPLOAD_BYTES in backend/main.py. The server is the real
+     limit — this only means someone with a 40 MB scan is told so straight
+     away instead of after uploading all of it on a phone connection. */
+  const MAX_CV_UPLOAD_BYTES = 5 * 1024 * 1024;
+
+  function handleCvFileSelect(selected: File) {
+    if (selected.size > MAX_CV_UPLOAD_BYTES) {
+      setCvFile(null);
+      setError(
+        lang === "ar"
+          ? "حجم الملف أكبر من 5 ميجابايت. أرفق نسخة أصغر من سيرتك الذاتية."
+          : "That file is larger than 5 MB. Please upload a smaller CV."
+      );
+      return;
+    }
+    setError("");
+    setCvFile(selected);
+  }
   const [showAllBullets, setShowAllBullets] = useState(false);
   const [showAllGaps, setShowAllGaps] = useState(false);
 
@@ -830,7 +849,7 @@ export default function DashboardHomePage() {
         {cvMode === "upload" ? (
           <UploadZone
             file={cvFile}
-            onFileSelect={setCvFile}
+            onFileSelect={handleCvFileSelect}
             onRemove={() => setCvFile(null)}
             label={copy.uploadLabel}
             hint={copy.uploadHint}

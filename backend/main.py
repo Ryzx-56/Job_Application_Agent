@@ -148,6 +148,59 @@ def assign_request_id(initial_state: AgentState) -> str:
     return request_id
 
 
+# Largest CV upload accepted. A text CV is tens of KB; 5 MB leaves generous
+# room for a photo-heavy PDF exported from Word while keeping a single
+# request's memory bounded on a 512 MB instance.
+MAX_CV_UPLOAD_BYTES = 5 * 1024 * 1024
+
+# Read granularity. Memory in flight is bounded by MAX_CV_UPLOAD_BYTES plus
+# one chunk, never by whatever the client decided to send.
+_UPLOAD_CHUNK_BYTES = 64 * 1024
+
+
+async def read_upload_capped(upload: UploadFile) -> bytes:
+    """
+    Reads an upload, refusing anything over MAX_CV_UPLOAD_BYTES.
+
+    Streamed rather than `await upload.read()`, deliberately. The one-shot
+    read buffers whatever arrives BEFORE any size or format check runs, so a
+    large upload was already resident in memory by the time anything could
+    object to it. Reading in chunks with a running total means an oversized
+    file is abandoned partway instead of being fully received first.
+
+    Content-Length is not trusted as the check — it is a client-supplied
+    header. It is only used, when present, to reject early and avoid pulling
+    bytes we already know we will not accept.
+    """
+    declared = upload.size
+    if declared is not None and declared > MAX_CV_UPLOAD_BYTES:
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail={
+                "code": "file_too_large",
+                "message": f"That file is larger than {MAX_CV_UPLOAD_BYTES // (1024 * 1024)} MB. Please upload a smaller CV.",
+            },
+        )
+
+    chunks: list[bytes] = []
+    total = 0
+    while True:
+        chunk = await upload.read(_UPLOAD_CHUNK_BYTES)
+        if not chunk:
+            break
+        total += len(chunk)
+        if total > MAX_CV_UPLOAD_BYTES:
+            raise HTTPException(
+                status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                detail={
+                    "code": "file_too_large",
+                    "message": f"That file is larger than {MAX_CV_UPLOAD_BYTES // (1024 * 1024)} MB. Please upload a smaller CV.",
+                },
+            )
+        chunks.append(chunk)
+    return b"".join(chunks)
+
+
 def read_uploaded_cv(cv_bytes: bytes) -> str:
     """
     Parses an uploaded CV, turning an unreadable file into a clean 400 with
@@ -1004,7 +1057,7 @@ async def optimize_application(
 ):
     logger.info("🚀 API Gateway received an application optimization request.")
 
-    cv_bytes = await cv.read()
+    cv_bytes = await read_upload_capped(cv)
     final_cv_text = read_uploaded_cv(cv_bytes)
     final_jd_text = job_description or SHORT_SAMPLE_JD
 
@@ -1088,7 +1141,7 @@ async def optimize_application_stream(
     """
     logger.info("🚀 API Gateway received a STREAMING application optimization request.")
 
-    cv_bytes = await cv.read()
+    cv_bytes = await read_upload_capped(cv)
     final_cv_text = read_uploaded_cv(cv_bytes)
     final_jd_text = job_description or SHORT_SAMPLE_JD
 

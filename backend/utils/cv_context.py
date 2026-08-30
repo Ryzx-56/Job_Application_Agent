@@ -12,6 +12,8 @@ only has to happen once, and PDF/DOCX can't drift out of sync again.
 
 from loguru import logger
 
+from markupsafe import Markup, escape
+
 from core.profile_names import has_arabic, has_latin
 from utils.skills import has_skills
 from utils.template_registry import DEFAULT_TEMPLATE_ID, template_supports_photo
@@ -334,6 +336,71 @@ def resolve_candidate_photo(state: dict, template_id: str | None) -> str:
     return photo if photo.startswith("data:image/") else ""
 
 
+def _profile_anchor(url_prefix: str, label_prefix: str, handle: str) -> Markup:
+    """
+    One contact link, safe to drop straight into a template.
+
+    WHY THIS MOVED OUT OF THE TEMPLATES
+    Every template used to build this line itself, concatenating the raw
+    handle into an <a href> and rendering the result through `| safe`:
+
+        {% set _ = contact_items.append(
+             '<a href="https://www.linkedin.com/in/' ~ personal.linkedin ~ '">…</a>') %}
+        {{ contact_items | join(" &nbsp;|&nbsp; ") | safe }}
+
+    With the Jinja environment's autoescape off (its default, and how it was
+    configured), a handle like `x"><img src=http://attacker/…>` closed the
+    href and injected arbitrary markup into the HTML WeasyPrint then renders
+    — which it will happily fetch server-side. `| safe` meant turning
+    autoescape on would not have fixed that line either.
+
+    Markup.format() escapes every argument it interpolates, so the handle is
+    escaped exactly once and the surrounding tag stays real markup. The
+    scheme is a fixed literal here, so a handle can never introduce its own
+    (no `javascript:`).
+    """
+    if not handle:
+        return Markup("")
+    return Markup('<a href="{prefix}{handle}">{label}{handle}</a>').format(
+        prefix=url_prefix, label=label_prefix, handle=handle
+    )
+
+
+def _contact_items(personal: dict) -> list[Markup]:
+    """
+    The contact line as a list of ready-escaped fragments, in the order every
+    template printed them. Templates join these with their own separator via
+    the `join_safe` filter (see pdf_generator.py) instead of assembling HTML.
+    """
+    items: list[Markup] = []
+    for key in ("email", "phone", "location"):
+        value = personal.get(key)
+        if value:
+            items.append(escape(value))
+    if personal.get("linkedin"):
+        items.append(_profile_anchor("https://www.linkedin.com/in/", "linkedin.com/in/", personal["linkedin"]))
+    if personal.get("github"):
+        items.append(_profile_anchor("https://github.com/", "github.com/", personal["github"]))
+    return items
+
+
+def _contact_lines(personal: dict) -> list[Markup]:
+    """
+    The same details grouped into three stacked lines, which is what the
+    letterhead template (10) prints instead of one run. Empty lines are
+    dropped so the block never renders a blank row.
+    """
+    sep = Markup(" &nbsp;|&nbsp; ")
+    line1 = [escape(personal["location"])] if personal.get("location") else []
+    line2 = [escape(personal[k]) for k in ("phone", "email") if personal.get(k)]
+    line3 = []
+    if personal.get("linkedin"):
+        line3.append(_profile_anchor("https://www.linkedin.com/in/", "linkedin.com/in/", personal["linkedin"]))
+    if personal.get("github"):
+        line3.append(_profile_anchor("https://github.com/", "github.com/", personal["github"]))
+    return [sep.join(line) for line in (line1, line2, line3) if line]
+
+
 def build_cv_context(state: dict, template_id: str | None = None) -> dict:
     facts = state.get("facts_json", {}) or {}
     personal = facts.get("personal", {}) or {}
@@ -606,6 +673,24 @@ def build_cv_context(state: dict, template_id: str | None = None) -> dict:
             "linkedin": _profile_handle(personal.get("linkedin")),
             "github": _profile_handle(personal.get("github")),
         },
+        # Pre-escaped contact fragments. Templates print these through the
+        # `join_safe` filter rather than concatenating <a> tags themselves —
+        # see _profile_anchor for the injection this closes.
+        "contact_items": _contact_items({
+            "email": _s(personal.get("email")),
+            "phone": _s(personal.get("phone")),
+            "location": ar(personal.get("location")),
+            "linkedin": _profile_handle(personal.get("linkedin")),
+            "github": _profile_handle(personal.get("github")),
+        }),
+        # Same details as three stacked lines, for the letterhead template.
+        "contact_lines": _contact_lines({
+            "email": _s(personal.get("email")),
+            "phone": _s(personal.get("phone")),
+            "location": ar(personal.get("location")),
+            "linkedin": _profile_handle(personal.get("linkedin")),
+            "github": _profile_handle(personal.get("github")),
+        }),
         "tagline": state.get("tagline") or None,
         # A JPEG data URI, or "" — see resolve_candidate_photo. Only the
         # photo-slot templates ever receive a non-empty value, and every one
