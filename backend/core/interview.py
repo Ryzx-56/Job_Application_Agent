@@ -29,6 +29,7 @@ import json
 import queue
 import threading
 
+from core.rate_limit import enforce, ADDON_GENERATION
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import StreamingResponse
 from loguru import logger
@@ -399,6 +400,10 @@ def generate_interview_prep(
     Events: `step` (a real phase began), `ping` (keep-alive, ignore),
     `complete` (the payload), `error` (code + message).
     """
+    # Before anything else, including the SSE stream opening. The monthly
+    # add-on quota caps the total; this caps the rate.
+    enforce(ADDON_GENERATION, user_id)
+
     row = _fetch_resume(payload.resume_id, user_id)
 
     eligibility = _eligibility(row)

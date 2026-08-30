@@ -28,6 +28,7 @@
 # there — but shipping one now would mean a migration this repo has no
 # migrations directory for, and consume_addon_quota fails OPEN without it,
 # which would be a cap that isn't a cap.
+from core.rate_limit import enforce, JOB_SEARCH
 from fastapi import APIRouter, Depends, HTTPException, status
 from loguru import logger
 from pydantic import BaseModel, Field
@@ -85,6 +86,12 @@ def job_search(
     can label the second group honestly rather than implying every result
     matched what was typed.
     """
+    # The only ceiling on this endpoint. Unlike generation it has no credit
+    # cost and no monthly quota, so without this a subscriber's Tavily spend
+    # is unbounded. Enforced before the title is even validated: a rejected
+    # call should cost nothing.
+    enforce(JOB_SEARCH, user_id)
+
     title = (payload.job_title or "").strip()
     if not title:
         raise HTTPException(

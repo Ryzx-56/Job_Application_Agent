@@ -171,6 +171,17 @@ export class InsufficientCreditsError extends Error {
 // explicitly — a user who sees "generation failed" with no mention of their
 // credits reasonably assumes they were charged anyway.
 const GENERATION_ERROR_COPY: Record<string, { en: string; ar: string }> = {
+  // Returned by the backend's per-user rate limiter (core/rate_limit.py).
+  // Says nothing was charged, because nothing was: the limit is enforced
+  // before credits are reserved.
+  rate_limited: {
+    en: "You've made a lot of requests in a short time. Please wait a few minutes and try again — nothing has been charged.",
+    ar: "أرسلت طلبات كثيرة خلال وقت قصير. انتظر بضع دقائق ثم أعد المحاولة، ولم يُخصم أي رصيد.",
+  },
+  file_too_large: {
+    en: "That file is larger than 5 MB. Please upload a smaller CV.",
+    ar: "حجم الملف أكبر من 5 ميجابايت. أرفق نسخة أصغر من سيرتك الذاتية.",
+  },
   unreadable_upload: {
     en: "We couldn't read that file. Please upload your CV as a PDF or Word (.docx) file with selectable text.",
     ar: "تعذّرت قراءة هذا الملف. يرجى رفع سيرتك الذاتية بصيغة PDF أو Word ‏(.docx) بنص قابل للتحديد.",

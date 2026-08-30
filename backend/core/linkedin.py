@@ -24,6 +24,7 @@ import re
 import threading
 from datetime import datetime, timedelta, timezone
 
+from core.rate_limit import enforce, ADDON_GENERATION
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from loguru import logger
 
@@ -852,6 +853,11 @@ def linkedin_generate(
     can't stall the event loop for everyone else the way an un-awaited
     blocking call inside an async endpoint would.
     """
+    # Covers both routes below. The paid route is bounded by the purchase and
+    # the included route by its monthly cap, so this is burst protection on a
+    # Claude call that runs for tens of seconds.
+    enforce(ADDON_GENERATION, user_id)
+
     if not (payload.purchase_id or "").strip():
         return _generate_included(payload, user_id)
 

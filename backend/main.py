@@ -46,6 +46,8 @@ from core.profile_names import (
     required_name_for,
 )
 from core.usage_tracker import UsageEvent
+from core.rate_limit import enforce, GENERATION
+from utils.uploads import read_upload_capped, MAX_CV_UPLOAD_BYTES
 from utils.pdf_parser import extract_text_from_pdf, UnsupportedCVFormat
 from utils.cv_photo import extract_candidate_photo
 from utils.pdf_generator import render_cv_pdf, render_cover_letter_pdf
@@ -146,59 +148,6 @@ def assign_request_id(initial_state: AgentState) -> str:
     request_id = make_request_id()
     initial_state["request_id"] = request_id
     return request_id
-
-
-# Largest CV upload accepted. A text CV is tens of KB; 5 MB leaves generous
-# room for a photo-heavy PDF exported from Word while keeping a single
-# request's memory bounded on a 512 MB instance.
-MAX_CV_UPLOAD_BYTES = 5 * 1024 * 1024
-
-# Read granularity. Memory in flight is bounded by MAX_CV_UPLOAD_BYTES plus
-# one chunk, never by whatever the client decided to send.
-_UPLOAD_CHUNK_BYTES = 64 * 1024
-
-
-async def read_upload_capped(upload: UploadFile) -> bytes:
-    """
-    Reads an upload, refusing anything over MAX_CV_UPLOAD_BYTES.
-
-    Streamed rather than `await upload.read()`, deliberately. The one-shot
-    read buffers whatever arrives BEFORE any size or format check runs, so a
-    large upload was already resident in memory by the time anything could
-    object to it. Reading in chunks with a running total means an oversized
-    file is abandoned partway instead of being fully received first.
-
-    Content-Length is not trusted as the check — it is a client-supplied
-    header. It is only used, when present, to reject early and avoid pulling
-    bytes we already know we will not accept.
-    """
-    declared = upload.size
-    if declared is not None and declared > MAX_CV_UPLOAD_BYTES:
-        raise HTTPException(
-            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
-            detail={
-                "code": "file_too_large",
-                "message": f"That file is larger than {MAX_CV_UPLOAD_BYTES // (1024 * 1024)} MB. Please upload a smaller CV.",
-            },
-        )
-
-    chunks: list[bytes] = []
-    total = 0
-    while True:
-        chunk = await upload.read(_UPLOAD_CHUNK_BYTES)
-        if not chunk:
-            break
-        total += len(chunk)
-        if total > MAX_CV_UPLOAD_BYTES:
-            raise HTTPException(
-                status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
-                detail={
-                    "code": "file_too_large",
-                    "message": f"That file is larger than {MAX_CV_UPLOAD_BYTES // (1024 * 1024)} MB. Please upload a smaller CV.",
-                },
-            )
-        chunks.append(chunk)
-    return b"".join(chunks)
 
 
 def read_uploaded_cv(cv_bytes: bytes) -> str:
@@ -1055,6 +1004,7 @@ async def optimize_application(
     allow_name_fallback: bool = Form(False),
     user_id: str = Depends(get_current_user_id),
 ):
+    enforce(GENERATION, user_id)
     logger.info("🚀 API Gateway received an application optimization request.")
 
     cv_bytes = await read_upload_capped(cv)
@@ -1139,6 +1089,7 @@ async def optimize_application_stream(
     Credits are reserved up front exactly like /optimize; refunds on
     failure happen inside _stream_pipeline.
     """
+    enforce(GENERATION, user_id)
     logger.info("🚀 API Gateway received a STREAMING application optimization request.")
 
     cv_bytes = await read_upload_capped(cv)
@@ -1180,6 +1131,7 @@ async def optimize_manual_application_stream(
     user_id: str = Depends(get_current_user_id),
 ):
     """Streaming variant of /api/v1/optimize-manual — see optimize_application_stream."""
+    enforce(GENERATION, user_id)
     logger.info("🚀 API Gateway received a STREAMING manual optimization request.")
 
     manual_data = payload.model_dump(exclude={"job_description", "additional_info", "cv_language", "template_id", "allow_name_fallback"})
@@ -1220,6 +1172,7 @@ async def optimize_manual_application(
     on the same LangGraph, just entering through a different parser node
     (see core/orchestrator.py's route_cv_input).
     """
+    enforce(GENERATION, user_id)
     logger.info("🚀 API Gateway received a MANUAL CV optimization request.")
 
     manual_data = payload.model_dump(exclude={"job_description", "additional_info", "cv_language", "template_id", "allow_name_fallback"})

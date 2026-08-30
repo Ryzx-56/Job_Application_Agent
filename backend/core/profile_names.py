@@ -16,6 +16,7 @@
 # this router using the service_role client.
 import re
 
+from core.rate_limit import enforce, CV_PARSE
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
 from pydantic import BaseModel, Field
 from loguru import logger
@@ -298,9 +299,20 @@ async def suggest_name_from_cv(
     # Imported here rather than at module scope to keep this module free of
     # a hard dependency on the parser for the read/write endpoints above.
     from utils.pdf_parser import extract_text_from_pdf, UnsupportedCVFormat
+    from utils.uploads import read_upload_capped
+
+    # Read OUTSIDE the try below. This endpoint deliberately swallows parse
+    # failures (an unreadable CV must never stop someone typing their own
+    # name), and that catch-all would swallow the 413 too — leaving a person
+    # who uploaded a 40 MB scan staring at an empty box with no idea why.
+    # Too-large is worth saying out loud; unreadable is not.
+    # No credits, no quota, no LLM — but it does parse a document, which is
+    # CPU this instance has little of. This is the only thing bounding it.
+    enforce(CV_PARSE, user_id)
+
+    cv_bytes = await read_upload_capped(cv)
 
     try:
-        cv_bytes = await cv.read()
         text = extract_text_from_pdf(pdf_bytes=cv_bytes)
     except (UnsupportedCVFormat, Exception) as e:  # noqa: B014 - intentional catch-all
         logger.info(f"Name suggestion skipped, CV unreadable: {e}")
