@@ -105,6 +105,19 @@ def _order_lines(order: dict) -> list[tuple[str, str]]:
     ]
 
 
+def _order_ref(order: dict) -> str:
+    """
+    A safe way to name an order in a log line.
+
+    Deliberately NOT the buyer. The two call sites below used to append
+    _plain_text(order), which writes the buyer's NAME, EMAIL AND PHONE into
+    the logs in plaintext on every send failure. The order is already in the
+    database and in the admin queue either way, so a log line needs an
+    identifier to look it up with, not the customer's contact details.
+    """
+    return str(order.get("id") or order.get("payment_reference") or "unknown")
+
+
 def _plain_text(order: dict) -> str:
     lines = [f"{label}: {value}" for label, value in _order_lines(order)]
     return (
@@ -165,13 +178,13 @@ def send_premium_order_alert(order: dict) -> bool:
             timeout=_TIMEOUT_SECONDS,
         )
     except Exception as e:
-        logger.error(f"❌ Premium-order email failed to send: {e}\n{_plain_text(order)}")
+        logger.error(f"❌ Premium-order email failed to send for purchase {_order_ref(order)}: {e}")
         return False
 
     if response.status_code >= 300:
         logger.error(
-            f"❌ Resend rejected the premium-order email ({response.status_code}): {response.text}\n"
-            f"{_plain_text(order)}"
+            f"❌ Resend rejected the premium-order email for purchase "
+            f"{_order_ref(order)} ({response.status_code}): {response.text}"
         )
         return False
 
