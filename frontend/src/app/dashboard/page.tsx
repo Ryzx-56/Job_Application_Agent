@@ -267,6 +267,18 @@ function buildUploadFormData(
 }
 
 /**
+ * The form's "one per line" textareas (achievements, teaching posts, awards,
+ * a custom section's entries) as the string lists the backend expects —
+ * the same convention experience bullets already use.
+ */
+function splitLines(text: string): string[] {
+  return text
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean);
+}
+
+/**
  * Converts the flat "Create New CV" form state into the nested JSON shape
  * the backend's ManualCVRequest schema expects.
  */
@@ -323,6 +335,38 @@ function buildManualPayload(
         .map((s) => s.trim())
         .filter(Boolean),
     },
+    // Human languages, not programming ones — facts_json keeps the two apart
+    // and every template renders this list as its own Languages section.
+    languages_spoken: data.languages
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean),
+    // The categories FactsJSON gained. Same filtering rule as the blocks
+    // above: an entry the user started and left blank is dropped rather than
+    // posted as an empty row, since the form seeds every repeatable list with
+    // one empty item.
+    summary: data.summary.trim() || null,
+    major_achievements: splitLines(data.achievements),
+    training_courses: data.training
+      .filter((t) => t.name.trim())
+      .map((t) => ({ name: t.name, provider: t.provider, date: t.date })),
+    participation: data.participation
+      .filter((p) => p.title.trim())
+      .map((p) => ({
+        title: p.title,
+        role: p.role,
+        organization: p.organization,
+        scope: p.scope,
+        date: p.date,
+      })),
+    publications: data.publications
+      .filter((p) => p.title.trim())
+      .map((p) => ({ title: p.title, venue: p.venue, year: p.year })),
+    teaching_and_editorial: splitLines(data.teaching),
+    awards: splitLines(data.awards),
+    additional_sections: data.customSections
+      .map((s) => ({ section_title: s.section_title.trim(), entries: splitLines(s.entries) }))
+      .filter((s) => s.entries.length > 0),
     job_description: jobDescription,
     additional_info: additionalInfo || "",
     cv_language: cvLanguage,

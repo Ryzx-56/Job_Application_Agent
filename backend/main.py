@@ -352,7 +352,20 @@ _MIN_EXTRACTION_COVERAGE = 0.15
 _CORE_FACT_GROUPS = ("experience", "education", "projects")
 _SUPPORTING_FACT_GROUPS = (
     "skills", "certifications", "languages_spoken", "volunteer_work", "awards",
+    # Added with the facts_schema expansion. These MUST be listed here and in
+    # _FACT_CONTENT_GROUPS below, or the gate gets systematically worse as the
+    # schema gets better: content that now extracts correctly would still be
+    # missing from both the numerator and the structure count, so a CV whose
+    # substance is publications, courses and its own sections would look
+    # emptier to this check than it did before those fields existed.
+    "summary", "major_achievements", "training_courses", "participation",
+    "publications", "teaching_and_editorial", "additional_sections",
 )
+
+# Every group whose characters count as "extracted content" — the fact groups
+# above plus the two core ones the structure check treats separately.
+# `personal` is excluded by design (see _facts_content_length).
+_FACT_CONTENT_GROUPS = tuple(dict.fromkeys(_CORE_FACT_GROUPS + _SUPPORTING_FACT_GROUPS))
 
 # How many groups must be populated before the extraction counts as
 # structurally sound. Two is deliberately low: the catastrophic failure this
@@ -363,12 +376,17 @@ _MIN_POPULATED_FACT_GROUPS = 2
 
 def _facts_content_length(facts: dict) -> int:
     """Characters of real extracted content in facts_json, ignoring the
-    contact block (which survives even a badly truncated extraction)."""
+    contact block (which survives even a badly truncated extraction).
+
+    Reads _FACT_CONTENT_GROUPS rather than its own hardcoded tuple, so a
+    field added to the schema can't be counted by the structure check and
+    forgotten by the character count — they were two separate lists, and the
+    second one is the numerator of the coverage ratio this gate refuses runs
+    on. The walk below is shape-agnostic (strings, lists, nested dicts), so
+    additional_sections' {section_title, entries} objects are counted without
+    needing a case of their own."""
     total = 0
-    stack = [facts.get(key) for key in (
-        "education", "experience", "skills", "projects",
-        "certifications", "languages_spoken", "volunteer_work", "awards",
-    )]
+    stack = [facts.get(key) for key in _FACT_CONTENT_GROUPS]
     while stack:
         item = stack.pop()
         if isinstance(item, str):

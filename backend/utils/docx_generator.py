@@ -8,6 +8,7 @@ from docx.oxml.ns import qn
 from docx.oxml import OxmlElement
 from loguru import logger
 
+from core.profile_names import has_arabic
 from utils.cv_context import build_cv_context
 from utils.cv_photo import data_uri_to_bytes
 from utils.docx_styles import resolve_docx_style
@@ -108,6 +109,21 @@ def _bullet(doc, text, is_arabic, style):
     _set_rtl_run(p.runs[0], is_arabic)
 
 
+def _verbatim_is_rtl(text: str, is_arabic: bool) -> bool:
+    """
+    Should this verbatim line be laid out right-to-left?
+
+    Only for the two fields no agent translates — publications and the CV's
+    own sections. Word applies the paragraph's bidi flag to the neutral
+    characters in a line, so an untranslated English line inside an Arabic
+    document comes out with its leading number pushed to the far end, exactly
+    as it did in the PDF (see the [dir="ltr"] rules in pdf_generator.py and
+    utils/cv_context.text_direction). Flagging the line by its own script
+    keeps the .docx and the .pdf showing the same thing.
+    """
+    return is_arabic and has_arabic(text)
+
+
 def _add_photo(doc, photo: str | None, style: dict) -> None:
     """
     Puts the candidate's picture, centred, above the name block.
@@ -182,10 +198,15 @@ def generate_cv_docx(state: dict, output_path: str, template_id: str | None = No
     if header_shade:
         _shade_paragraph(name_p, header_shade)
 
+    # personal.linkedin / .github are bare handles (see _profile_handle in
+    # utils/cv_context.py). The linkedin line was missing the "in/" path
+    # segment the HTML templates all use, so even a correct handle printed a
+    # URL that doesn't resolve — the .docx and the .pdf of the same CV showed
+    # two different addresses.
     contact = " · ".join(filter(None, [
         personal.get("email", ""),
         personal.get("location", ""),
-        f"linkedin.com/{personal['linkedin']}" if personal.get("linkedin") else "",
+        f"linkedin.com/in/{personal['linkedin']}" if personal.get("linkedin") else "",
         f"github.com/{personal['github']}" if personal.get("github") else "",
     ]))
     cp = doc.add_paragraph()
@@ -197,12 +218,26 @@ def generate_cv_docx(state: dict, output_path: str, template_id: str | None = No
         _shade_paragraph(cp, header_shade)
         cp.paragraph_format.space_after = Pt(10)
 
+    # Section headings for everything added with the facts_schema expansion
+    # come from context["labels"] (utils/cv_context.py) rather than inline
+    # literals, so the .docx and the .pdf of the same CV can't drift apart on
+    # what a section is called. The older headings below are left as they are.
+    labels = context.get("labels", {})
+
     # Summary
     if context["tailored_summary"]:
         _heading(doc, "الملخص المهني" if is_arabic else "Professional Summary", is_arabic, style)
         p = doc.add_paragraph()
         _add_run(p, context["tailored_summary"], is_arabic, style)
         _set_rtl_paragraph(p, is_arabic)
+
+    # Key achievements sit directly under the summary — the career-highlights
+    # position, and the same order the HTML templates use, so the two formats
+    # of one CV read identically.
+    if context.get("major_achievements"):
+        _heading(doc, labels.get("achievements", "Key Achievements"), is_arabic, style)
+        for item in context["major_achievements"]:
+            _bullet(doc, item, is_arabic, style)
 
     # Experience — context["experience"][i]["bullets"] is already the
     # resolved (tailored, in original order) list of strings.
@@ -239,7 +274,6 @@ def generate_cv_docx(state: dict, output_path: str, template_id: str | None = No
         # local dict, so the DOCX and the PDF of the same CV can't disagree
         # about what a section is called — they previously had two separate
         # Arabic wordings for the same skill categories.
-        labels = context.get("labels", {})
         label_keys = {
             "languages": "languages", "frameworks": "frameworks", "tools": "tools",
             "soft_skills": "soft_skills", "other": "other_skills",
@@ -256,6 +290,14 @@ def generate_cv_docx(state: dict, output_path: str, template_id: str | None = No
                 _add_run(p, ", ".join(items), is_arabic, style)
                 p.paragraph_format.space_after = Pt(2)
                 _set_rtl_paragraph(p, is_arabic)
+
+    # Human languages, straight after Skills — where the HTML templates put
+    # them, and where a reader expects a language list.
+    if context.get("languages_spoken"):
+        _heading(doc, labels.get("spoken_languages", "Languages"), is_arabic, style)
+        p = doc.add_paragraph()
+        _add_run(p, ", ".join(context["languages_spoken"]), is_arabic, style)
+        _set_rtl_paragraph(p, is_arabic)
 
     # Volunteer work
     if context["volunteer_work"]:
@@ -277,11 +319,57 @@ def generate_cv_docx(state: dict, output_path: str, template_id: str | None = No
                 gp.paragraph_format.space_after = Pt(2)
                 _set_rtl_paragraph(gp, is_arabic)
 
+    # Training and courses — a course attended, as opposed to a credential
+    # held (that stays under Certifications, immediately below).
+    if context.get("training_courses"):
+        _heading(doc, labels.get("training", "Training & Courses"), is_arabic, style)
+        for course in context["training_courses"]:
+            _bullet(doc, ", ".join(filter(None, [
+                course.get("name"), course.get("provider"), course.get("date"),
+            ])), is_arabic, style)
+
     # Certifications
     if context["certifications"]:
         _heading(doc, "الشهادات" if is_arabic else "Certifications", is_arabic, style)
         for cert in context["certifications"]:
             _bullet(doc, cert, is_arabic, style)
+
+    if context.get("publications"):
+        _heading(doc, labels.get("publications", "Publications"), is_arabic, style)
+        for pub in context["publications"]:
+            citation = ", ".join(filter(None, [
+                pub.get("title"), pub.get("venue"), pub.get("year"),
+            ]))
+            _bullet(doc, citation, _verbatim_is_rtl(citation, is_arabic), style)
+
+    if context.get("participation"):
+        _heading(doc, labels.get("participation", "Conferences & Participation"), is_arabic, style)
+        for item in context["participation"]:
+            _bullet(doc, ", ".join(filter(None, [
+                item.get("title"), item.get("role"), item.get("organization"),
+                item.get("scope"), item.get("date"),
+            ])), is_arabic, style)
+
+    if context.get("teaching_and_editorial"):
+        _heading(doc, labels.get("teaching_editorial", "Teaching & Editorial Boards"), is_arabic, style)
+        for item in context["teaching_and_editorial"]:
+            _bullet(doc, item, is_arabic, style)
+
+    if context.get("awards"):
+        _heading(doc, labels.get("awards", "Awards"), is_arabic, style)
+        for award in context["awards"]:
+            _bullet(doc, award, is_arabic, style)
+
+    # The CV's own sections, under the candidate's own headings — see
+    # FactsJSON.additional_sections. Verbatim: this is where a procedure
+    # count or a flight-hours total lives, and nothing here reformats one.
+    for section in context.get("additional_sections", []):
+        # cv_context already decided this section's reading direction from its
+        # own content — reuse it rather than re-deriving a second opinion.
+        section_rtl = is_arabic and section.get("dir") == "rtl"
+        _heading(doc, section["section_title"], section_rtl, style)
+        for entry in section["entries"]:
+            _bullet(doc, entry, section_rtl, style)
 
     doc.save(output_path)
     logger.info(f"✅ CV DOCX saved → {output_path} (template: {resolved_template_id})")

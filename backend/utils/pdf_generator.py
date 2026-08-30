@@ -163,6 +163,27 @@ def _arabic_override_css() -> str:
       a[href^="mailto"], a[href*="linkedin.com"], a[href*="github.com"] {{
         direction: ltr; unicode-bidi: embed; font-family: inherit !important;
       }}
+      /* VERBATIM BLOCKS KEEP THEIR OWN DIRECTION.
+         Publications and the CV's own sections are never translated (see
+         utils/cv_context.py), so on an Arabic CV they are Latin text inside
+         an RTL page. Left to the page's direction, bidi moves their leading
+         digits to the end of the line — "1,240 procedures ..." renders as
+         "procedures ... 1,240", i.e. the candidate's own figure lands on the
+         wrong end of its sentence. utils/cv_context.text_direction marks each
+         such block with the direction it actually reads in, and these rules
+         are what let that mark win against the blanket `direction: rtl`
+         above — which is !important, so these have to be too. A block whose
+         content really is Arabic is marked rtl and is untouched by this. */
+      /* The descendant selector is not optional: the blanket rule above is
+         `body, body *`, so each <li> carries its own `direction: rtl
+         !important` and styling only the list leaves every line inside it
+         still reordered. */
+      [dir="ltr"], [dir="ltr"] * {{
+        direction: ltr !important; text-align: left !important;
+      }}
+      ul.bullets[dir="ltr"] {{
+        margin-left: 18px !important; margin-right: 0 !important; padding-left: 0;
+      }}
     </style>
     """
 

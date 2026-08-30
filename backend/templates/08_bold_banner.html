@@ -11,7 +11,7 @@
   .banner h1 { font-size: 24pt; font-weight: 800; }
   .banner .tagline { font-size: 10.5pt; color: #cfcfcf; margin-top: 4px; }
   .banner .contact { font-size: 9pt; color: #b5b5b5; margin-top: 10px; }
-  .banner .contact a { color: #f0c419; text-decoration: none; }
+  .banner .contact a { color: #f0c419; text-decoration: none; white-space: nowrap; }
   .body-content { padding: 26px 50px 40px; }
   .section-title { font-size: 12pt; font-weight: 800; color: #1c1c1c; margin: 16px 0 8px; position: relative; padding-left: 12px; }
   .section-title::before { content: ""; position: absolute; left: 0; top: 2px; bottom: 2px; width: 4px; background: #f0c419; }
@@ -49,6 +49,11 @@
     <p>{{ tailored_summary }}</p>
     {% endif %}
 
+    {% if major_achievements %}
+    <div class="section-title">{{ labels.achievements }}</div>
+    <ul class="bullets">{% for item in major_achievements %}<li>{{ item }}</li>{% endfor %}</ul>
+    {% endif %}
+
     {% if experience %}
     <div class="section-title">{{ labels.experience }}</div>
     {% for exp in experience %}
@@ -84,6 +89,11 @@
     </div>
     {% endif %}
 
+    {% if languages_spoken %}
+    <div class="section-title">{{ labels.spoken_languages }}</div>
+    <div class="skills-grid"><div class="row">{{ languages_spoken | join(", ") }}</div></div>
+    {% endif %}
+
     {% if education %}
     <div class="section-title">{{ labels.education }}</div>
     {% for edu in education %}
@@ -97,10 +107,54 @@
     {% endfor %}
     {% endif %}
 
+    {% if training_courses %}
+    <div class="section-title">{{ labels.training }}</div>
+    {% for course in training_courses %}
+    <div class="entry">
+      <div class="entry-header">
+        <div><span class="entry-title">{{ course.name }}</span>{% if course.provider %}<span class="entry-sub"> &mdash; {{ course.provider }}</span>{% endif %}</div>
+        {% if course.date %}<div class="entry-date">{{ course.date }}</div>{% endif %}
+      </div>
+    </div>
+    {% endfor %}
+    {% endif %}
+
     {% if certifications %}
     <div class="section-title">{{ labels.certifications }}</div>
     <ul class="bullets">{% for cert in certifications %}<li>{{ cert }}</li>{% endfor %}</ul>
     {% endif %}
+
+    {% if publications %}
+    <div class="section-title">{{ labels.publications }}</div>
+    <ul class="bullets" dir="{{ publications_dir }}">{% for pub in publications %}<li>{{ pub.title }}{% if pub.venue %}, <em>{{ pub.venue }}</em>{% endif %}{% if pub.year %}, {{ pub.year }}{% endif %}</li>{% endfor %}</ul>
+    {% endif %}
+
+    {% if participation %}
+    <div class="section-title">{{ labels.participation }}</div>
+    {% for item in participation %}
+    <div class="entry">
+      <div class="entry-header">
+        <div><span class="entry-title">{{ item.title }}</span>{% set details = [item.role, item.organization, item.scope] | select | join(', ') %}{% if details %}<span class="entry-sub"> &mdash; {{ details }}</span>{% endif %}</div>
+        {% if item.date %}<div class="entry-date">{{ item.date }}</div>{% endif %}
+      </div>
+    </div>
+    {% endfor %}
+    {% endif %}
+
+    {% if teaching_and_editorial %}
+    <div class="section-title">{{ labels.teaching_editorial }}</div>
+    <ul class="bullets">{% for item in teaching_and_editorial %}<li>{{ item }}</li>{% endfor %}</ul>
+    {% endif %}
+
+    {% if awards %}
+    <div class="section-title">{{ labels.awards }}</div>
+    <ul class="bullets">{% for award in awards %}<li>{{ award }}</li>{% endfor %}</ul>
+    {% endif %}
+
+    {% for section in additional_sections %}
+    <div class="section-title">{{ section.section_title }}</div>
+    <ul class="bullets" dir="{{ section.dir }}">{% for entry in section.entries %}<li>{{ entry }}</li>{% endfor %}</ul>
+    {% endfor %}
   </div>
 </body>
 </html>

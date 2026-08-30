@@ -39,6 +39,30 @@ STRICT RULES — DO NOT CROSS THESE:
   - You MUST NOT invent percentages, numbers, timeframes, team sizes, or outcomes
   - If the candidate lacks a required skill, DO NOT mention it. It will be flagged in gap analysis.
 
+READ-ONLY FIELDS — PRINTED VERBATIM, NEVER YOURS TO REWRITE:
+  These FACTS_JSON fields are rendered onto the finished CV EXACTLY as they were extracted,
+  and there is no slot for them in the JSON you return:
+    major_achievements, training_courses, participation, publications,
+    teaching_and_editorial, awards, certifications, education, additional_sections
+  - Do NOT return them. Do NOT produce rewritten versions of them. Nothing you write about
+    them reaches the document.
+  - additional_sections is the CV's own sections that no other field covers — a surgeon's
+    procedure counts, a pilot's flight hours, a researcher's grant totals. It is raw source
+    data under the candidate's own headings, and it carries hard numbers that were checked by
+    nobody but the candidate. NEVER restate, round, reformat, convert, re-derive or summarize
+    any figure from it anywhere in your output. A paraphrased number is a fabricated number.
+  - What these fields ARE for you: evidence. Read them to understand what this candidate has
+    actually done, and let that inform the professional summary, the bullets you emphasize,
+    and which JD keywords you can honestly cover. A skill demonstrated by a publication, a
+    course or a committee role is a real skill and may go in tailored_skills.
+
+FACTS_JSON.summary — the candidate's own profile paragraph from their CV:
+  - Treat it as the primary source for "professional_summary". Cover its substance: the
+    seniority, specialism, sector and focus it states are facts about this candidate, and
+    losing them to a shorter, blander three-liner is a failure of this task.
+  - Rewrite it for this specific job, in your own words and register — do not copy it back
+    verbatim, and do not repeat any claim it makes that FACTS_JSON does not support elsewhere.
+
 WHAT YOU SHOULD DO — BE BOLD HERE, THIS IS WHERE MOST OF YOUR VALUE IS:
   - Reword every bullet significantly — different verbs, different sentence shape, not a
     keyword swapped into an otherwise-untouched sentence. A bullet that still reads almost
@@ -318,6 +342,41 @@ def _facts_strings_for_glossary(facts_json: dict, include_name: bool = False) ->
     out.extend(str(v) for v in (facts_json.get("volunteer_work", []) or []) if v)
     if facts_json.get("summary"):
         out.append(str(facts_json["summary"]))
+
+    # The named fields added for the content real CVs carry: achievements,
+    # awards, teaching/editorial boards, courses, participation. All of these
+    # RENDER, and no agent translates them — so without seeding their terms
+    # here they would sit in English on an otherwise Arabic CV, which is the
+    # exact bug the employer / university / certification lines above were
+    # added to fix.
+    #
+    # DELIBERATELY ABSENT: publications and additional_sections. Those two
+    # render verbatim in their original script even on an Arabic CV, and the
+    # reasoning lives with the decision, in utils/cv_context.py — in short, a
+    # translated citation can't be looked up, and phrase-level substitution
+    # turned a "30-day complication rate" into a "daily" one. Not seeding
+    # their terms is what makes that guarantee cheap AND real: no translation
+    # is even requested for text that must not change, and the glossary stays
+    # smaller (build_glossary caps at 120 terms, so a long publication list
+    # would otherwise crowd out the employer and degree names that DO need
+    # translating).
+    out.extend(str(a) for a in (facts_json.get("major_achievements", []) or []) if a)
+    out.extend(str(a) for a in (facts_json.get("awards", []) or []) if a)
+    out.extend(str(t) for t in (facts_json.get("teaching_and_editorial", []) or []) if t)
+    # Human languages now render too (see cv_context), and "Arabic (native)"
+    # sitting in Latin script on an Arabic CV is the same leak as an
+    # untranslated employer name.
+    out.extend(str(lang) for lang in (facts_json.get("languages_spoken", []) or []) if lang)
+
+    for course in facts_json.get("training_courses", []) or []:
+        for key in ("name", "provider"):
+            if course.get(key):
+                out.append(str(course[key]))
+
+    for item in facts_json.get("participation", []) or []:
+        for key in ("title", "role", "organization", "scope"):
+            if item.get(key):
+                out.append(str(item[key]))
 
     for proj in facts_json.get("projects", []) or []:
         for key in ("name", "description"):

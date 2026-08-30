@@ -88,6 +88,13 @@
       </div>
       {% endif %}
 
+      {% if languages_spoken %}
+      <div class="rail-section">
+        <div class="rail-title">{{ labels.spoken_languages }}</div>
+        {% for lang in languages_spoken %}<div class="rail-row">{{ lang }}</div>{% endfor %}
+      </div>
+      {% endif %}
+
       {% if education %}
       <div class="rail-section">
         <div class="rail-title">{{ labels.education }}</div>
@@ -122,6 +129,13 @@
     </div>
     {% endif %}
 
+    {% if major_achievements %}
+    <div class="main-section">
+      <div class="main-title">{{ labels.achievements }}</div>
+      <ul class="bullets">{% for item in major_achievements %}<li>{{ item }}</li>{% endfor %}</ul>
+    </div>
+    {% endif %}
+
     {% if experience %}
     <div class="main-section">
       <div class="main-title">{{ labels.experience }}</div>
@@ -151,6 +165,62 @@
       {% endfor %}
     </div>
     {% endif %}
+    {% if training_courses %}
+    <div class="main-section">
+      <div class="main-title">{{ labels.training }}</div>
+      {% for course in training_courses %}
+      <div class="entry">
+        <div class="entry-header">
+          <div><span class="entry-title">{{ course.name }}</span>{% if course.provider %}<span class="entry-sub"> &mdash; {{ course.provider }}</span>{% endif %}</div>
+          {% if course.date %}<div class="entry-date">{{ course.date }}</div>{% endif %}
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+    {% endif %}
+
+    {% if publications %}
+    <div class="main-section">
+      <div class="main-title">{{ labels.publications }}</div>
+      <ul class="bullets" dir="{{ publications_dir }}">{% for pub in publications %}<li>{{ pub.title }}{% if pub.venue %}, <em>{{ pub.venue }}</em>{% endif %}{% if pub.year %}, {{ pub.year }}{% endif %}</li>{% endfor %}</ul>
+    </div>
+    {% endif %}
+
+    {% if participation %}
+    <div class="main-section">
+      <div class="main-title">{{ labels.participation }}</div>
+      {% for item in participation %}
+      <div class="entry">
+        <div class="entry-header">
+          <div><span class="entry-title">{{ item.title }}</span>{% set details = [item.role, item.organization, item.scope] | select | join(', ') %}{% if details %}<span class="entry-sub"> &mdash; {{ details }}</span>{% endif %}</div>
+          {% if item.date %}<div class="entry-date">{{ item.date }}</div>{% endif %}
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+    {% endif %}
+
+    {% if teaching_and_editorial %}
+    <div class="main-section">
+      <div class="main-title">{{ labels.teaching_editorial }}</div>
+      <ul class="bullets">{% for item in teaching_and_editorial %}<li>{{ item }}</li>{% endfor %}</ul>
+    </div>
+    {% endif %}
+
+    {% if awards %}
+    <div class="main-section">
+      <div class="main-title">{{ labels.awards }}</div>
+      <ul class="bullets">{% for award in awards %}<li>{{ award }}</li>{% endfor %}</ul>
+    </div>
+    {% endif %}
+
+    {% for section in additional_sections %}
+    <div class="main-section">
+      <div class="main-title">{{ section.section_title }}</div>
+      <ul class="bullets" dir="{{ section.dir }}">{% for entry in section.entries %}<li>{{ entry }}</li>{% endfor %}</ul>
+    </div>
+    {% endfor %}
+
   </div>
 
 </div>

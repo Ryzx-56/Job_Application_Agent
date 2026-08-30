@@ -33,6 +33,50 @@ def _s(value) -> str:
     return "" if value is None else str(value)
 
 
+def _profile_handle(value) -> str:
+    """
+    The bare username out of a LinkedIn/GitHub value, whatever shape it
+    arrived in.
+
+    WHY THIS EXISTS. Every one of the 16 templates renders this field as a
+    PREFIX PLUS THE VALUE — `linkedin.com/in/{{ personal.linkedin }}` — which
+    is only correct if the value is a bare handle. Agent 1 extracts what the
+    CV actually prints, and a CV normally prints the full URL, so the real
+    output was:
+
+        linkedin.com/in/https://www.linkedin.com/in/abdulmalik-hawsawi/
+        github.com/https://github.com/Ryzx-56
+
+    on the contact line of every template, plus an href pointing at that same
+    doubled path. Fixed here rather than in the 16 templates (or in the
+    parser prompt) for two reasons: one place cannot drift out of sync with
+    fifteen others, and doing it at RENDER time also repairs every CV already
+    stored in a generation_snapshot, which a parser-side fix could not.
+
+    Handles: full URLs with or without scheme/www, a "in/handle" fragment
+    (what the manual form's placeholder suggests), an "@handle", a bare
+    handle, trailing slashes, and query strings. Returns the last real path
+    segment, so an unexpected shape still yields something well-formed rather
+    than a URL nested inside a URL.
+    """
+    text = _s(value).strip()
+    if not text:
+        return ""
+    text = text.split("?", 1)[0].split("#", 1)[0]
+    text = text.rstrip("/").lstrip("@")
+    segments = [segment for segment in text.split("/") if segment]
+    if not segments:
+        return ""
+    handle = segments[-1]
+    # A scheme-only value ("https://") or a bare host ("linkedin.com") leaves
+    # nothing that is actually a username — better an empty contact line than
+    # a link to linkedin.com/in/linkedin.com.
+    if handle.lower() in ("linkedin.com", "www.linkedin.com", "github.com",
+                          "www.github.com", "http:", "https:", "in"):
+        return ""
+    return handle
+
+
 # ─── TEMPLATE CHROME ────────────────────────────────────────────────────────
 # Section headings and field labels were hardcoded English literals inside
 # all 12 Jinja templates ("Skills", "Languages:", "GPA", ...). Since they
@@ -64,6 +108,22 @@ _LABELS_EN = {
     "other_skills": "Other",
     "gpa": "GPA",
     "coursework": "Relevant Coursework",
+    # Sections added with the facts_schema expansion — see FactsJSON. The
+    # last one is the heading for a catch-all section whose own title didn't
+    # survive extraction; the section's content is still printed under it
+    # rather than dropped.
+    "achievements": "Key Achievements",
+    "training": "Training & Courses",
+    "participation": "Conferences & Participation",
+    "publications": "Publications",
+    "teaching_editorial": "Teaching & Editorial Boards",
+    "awards": "Awards",
+    "additional": "Additional Information",
+    # NOT "languages" — that key is already taken by the SKILLS category
+    # (programming languages) and reusing it would relabel a skills row.
+    # This one is the human languages Agent 1 extracts into
+    # facts_json.languages_spoken.
+    "spoken_languages": "Languages",
 }
 
 _LABELS_AR = {
@@ -87,7 +147,48 @@ _LABELS_AR = {
     "other_skills": "مهارات أخرى",
     "gpa": "المعدل التراكمي",
     "coursework": "المواد الدراسية ذات الصلة",
+    "achievements": "أبرز الإنجازات",
+    "training": "الدورات التدريبية",
+    "participation": "المشاركات المحلية والدولية",
+    "publications": "الأبحاث والمنشورات",
+    "teaching_editorial": "التدريس وعضوية هيئات التحرير",
+    "awards": "الجوائز والتكريمات",
+    "additional": "معلومات إضافية",
+    "spoken_languages": "اللغات",
 }
+
+
+def text_direction(strings, default: str) -> str:
+    """
+    "ltr" or "rtl" for a block of text, decided by the script it's written in.
+
+    NEEDED BY THE VERBATIM FIELDS. `publications` and `additional_sections`
+    are deliberately not translated (see build_cv_context), so on an Arabic CV
+    they are Latin text sitting inside an RTL paragraph — and the Unicode bidi
+    algorithm then resolves their NEUTRAL characters (leading digits, the
+    trailing full stop) to the paragraph's direction. The result is not a font
+    problem or a shaping problem, it is a MEANING problem:
+
+        "1,240 procedures performed ... between 2019 and 2024."
+                 rendered as
+        ".procedures performed ... between 2019 and 2024 1,240"
+
+    The surgeon's own figure lands at the end of the sentence it belongs at
+    the front of. Marking the block with its real direction keeps each line
+    laid out the way its own script reads. Works in both directions: an Arabic
+    section inside an English CV gets `rtl` by the same test.
+
+    `default` is the document's direction, used when the text has no strong
+    characters either way (a line of pure digits).
+    """
+    for text in strings:
+        if not isinstance(text, str):
+            continue
+        if has_arabic(text):
+            return "rtl"
+        if has_latin(text):
+            return "ltr"
+    return default
 
 
 def _script_matches_output(name: str, is_arabic: bool) -> bool:
@@ -377,6 +478,102 @@ def build_cv_context(state: dict, template_id: str | None = None) -> dict:
                             or ar(proj.get("description")),
         })
 
+    # ─── FACTS THAT NO AGENT REWRITES ───────────────────────────────────────
+    #
+    # Everything from here to the return is raw facts_json, rendered as
+    # extracted. Agent 3 is told explicitly not to touch these (see the
+    # READ-ONLY FIELDS block in tailoring_engine.py): a publication citation,
+    # a course title, an award, and above all the numbers inside a CV's own
+    # sections are the candidate's factual record, and rephrasing them is
+    # fabrication, not tailoring.
+    #
+    # Most of them take `ar()` — deterministic glossary substitution for
+    # Arabic CVs, the same treatment certifications and institution names
+    # already get.
+    #
+    # TWO ARE EXEMPT: `publications` and `additional_sections` are NOT
+    # localized, in either direction. The glossary cannot alter a digit, but
+    # it can still change what a line MEANS: it translates the longest Latin
+    # run it finds, and "0.8% 30-day complication rate" splits into "30-" plus
+    # the phrase "day complication rate", which came back as "معدل المضاعفات
+    # اليومي" — a DAILY complication rate. The number survived and the
+    # clinical window it referred to did not. That is a factual error on a
+    # surgeon's CV, not a cosmetic one, and this field is precisely where
+    # unverifiable factual data lives.
+    #
+    # Publications are exempt for a related reason: a citation is a lookup
+    # key. Half-transliterating it ("Hawsawi, A." -> "حواساوي, A.") produces a
+    # reference nobody can find, which defeats the only purpose a citation
+    # has. Both therefore render in their original script on an Arabic CV.
+    #
+    # (The localizer's digit-hyphen handling is worth fixing on its own; it
+    # affects certifications and volunteer work today, and is deliberately not
+    # bundled in here.)
+    def _date(value) -> str:
+        return localize_date(value) if is_arabic else _s(value)
+
+    training_courses = [
+        {
+            "name": ar(course.get("name")),
+            "provider": ar(course.get("provider")),
+            "date": _date(course.get("date")),
+        }
+        for course in (facts.get("training_courses", []) or [])
+        if any(_s(course.get(k)).strip() for k in ("name", "provider", "date"))
+    ]
+
+    participation = [
+        {
+            "title": ar(item.get("title")),
+            "role": ar(item.get("role")),
+            "organization": ar(item.get("organization")),
+            "scope": ar(item.get("scope")),
+            "date": _date(item.get("date")),
+        }
+        for item in (facts.get("participation", []) or [])
+        if any(_s(item.get(k)).strip() for k in ("title", "role", "organization"))
+    ]
+
+    # Verbatim, including on an Arabic CV — see the exemption note above.
+    publications = []
+    for pub in (facts.get("publications", []) or []):
+        title = _s(pub.get("title")).strip()
+        if not title:
+            continue
+        venue = _s(pub.get("venue")).strip()
+        year = _s(pub.get("year")).strip()
+        # A title extracted from a full citation usually ends in the citation's
+        # own full stop, and the renderers then append ", {venue}" — printing
+        # "...Document Generation., Journal of Applied AI". Drop that one
+        # terminator, and only when something actually follows it.
+        if (venue or year) and title[-1:] in ".,;":
+            title = title[:-1].rstrip()
+        publications.append({"title": title, "venue": venue, "year": year,
+                             "url": _s(pub.get("url"))})
+    # The direction these citations actually read in — see text_direction.
+    publications_dir = text_direction(
+        [p["title"] for p in publications] + [p["venue"] for p in publications],
+        "rtl" if is_arabic else "ltr",
+    )
+
+    # The catch-all, verbatim in both languages — see the exemption note
+    # above. Sections whose own heading didn't survive extraction are kept and
+    # printed under the generic label rather than dropped: losing the heading
+    # is a formatting problem, losing the content is a data loss.
+    additional_sections = []
+    for section in (facts.get("additional_sections", []) or []):
+        entries = [_s(entry) for entry in (section.get("entries") or []) if _s(entry).strip()]
+        if not entries:
+            continue
+        title = _s(section.get("section_title")).strip()
+        additional_sections.append({
+            "section_title": title or (_LABELS_AR if is_arabic else _LABELS_EN)["additional"],
+            "entries": entries,
+            # Per section, not per line: a CV section is written in one
+            # language, and a heading and its bullets belong to each other.
+            "dir": text_direction([title] + entries, "rtl" if is_arabic else "ltr"),
+        })
+
     education = [
         {
             "institution": ar(edu.get("institution")),
@@ -403,8 +600,11 @@ def build_cv_context(state: dict, template_id: str | None = None) -> dict:
             "email": _s(personal.get("email")),
             "phone": _s(personal.get("phone")),
             "location": ar(personal.get("location")),
-            "linkedin": _s(personal.get("linkedin")),
-            "github": _s(personal.get("github")),
+            # Bare handles, never full URLs — every template renders these
+            # behind a "linkedin.com/in/" / "github.com/" prefix of its own.
+            # See _profile_handle.
+            "linkedin": _profile_handle(personal.get("linkedin")),
+            "github": _profile_handle(personal.get("github")),
         },
         "tagline": state.get("tagline") or None,
         # A JPEG data URI, or "" — see resolve_candidate_photo. Only the
@@ -425,6 +625,31 @@ def build_cv_context(state: dict, template_id: str | None = None) -> dict:
             if display_volunteer is tailored_volunteer_work
             else ar_list(display_volunteer)
         ),
+        # Raw facts, rendered verbatim — see the note above `training_courses`.
+        # Blank entries are dropped rather than passed through: docx_generator's
+        # _bullet() reads runs[0] on the paragraph it just created, and an empty
+        # string produces a paragraph with no runs (IndexError, no .docx). The
+        # schema's validators already strip empties out of a fresh extraction;
+        # this also covers a re-render off an older stored snapshot, which never
+        # goes through them.
+        "major_achievements": [item for item in ar_list(facts.get("major_achievements")) if item.strip()],
+        "training_courses": training_courses,
+        "participation": participation,
+        "publications": publications,
+        "publications_dir": publications_dir,
+        "teaching_and_editorial": [item for item in ar_list(facts.get("teaching_and_editorial")) if item.strip()],
+        # `awards` was extracted by Agent 1 from the very first version of the
+        # schema and never reached a template — it had no key in this context
+        # at all, so every award on every CV was silently discarded at render
+        # time. Same class of gap as the fields above, just older.
+        "awards": [item for item in ar_list(facts.get("awards")) if item.strip()],
+        # Human languages. Extracted by Agent 1 since the first version of the
+        # schema and, like `awards` was, never given a key here — so no
+        # template could render it and every CV silently lost its Languages
+        # section. Localized like the other named fields: a language's name is
+        # exactly the kind of term the Arabic glossary should translate.
+        "languages_spoken": [item for item in ar_list(facts.get("languages_spoken")) if item.strip()],
+        "additional_sections": additional_sections,
         "is_arabic": is_arabic,
         # Section headings / field labels for whichever language this CV is
         # in — see _LABELS_EN / _LABELS_AR. Templates must read these rather

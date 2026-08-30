@@ -92,6 +92,57 @@ EXPERIENCE BULLETS — read carefully, this is a common mistake:
   candidate genuinely wrote that many distinct points. Merge fragments of the same sentence back
   together before finalizing.
 
+NOTHING IN THE CV MAY BE DROPPED — read this carefully, it is the most common failure:
+- Every section of the CV must end up somewhere in the JSON. If a section's content doesn't
+  match any named field below, it goes in "additional_sections" under the CV's own heading.
+  "There was no field for it" is never a reason to leave content out.
+- Use a NAMED field when the content clearly belongs to it (see the routing rules below).
+  Otherwise use "additional_sections". Do not force content into a named field that doesn't
+  fit it, and do not invent a new top-level field name.
+- Each piece of content goes in EXACTLY ONE place. Never copy the same entry into both a named
+  field and "additional_sections" — it would then be printed twice on the finished CV.
+
+ROUTING THE NAMED FIELDS — what belongs in each:
+- "summary": the candidate's own profile / objective / "about me" / personal statement
+  paragraph, copied VERBATIM and IN FULL. Do not shorten it, do not rewrite it, do not
+  summarize the summary. If the CV has no such paragraph, return null.
+- "major_achievements": a standalone achievements/accomplishments section — lines the CV
+  presents as notable results in their own right, not as duties under a specific job. A bullet
+  that sits under a job entry stays in that job's "bullets"; it does not move here.
+- "education": EVERY educational entry the CV lists, not only the highest or most recent
+  degree. Earlier schooling, diplomas, secondary/high school, preparatory years and foundation
+  programmes all get their own entry when the CV mentions them.
+- "training_courses": courses, workshops, training programmes and short professional
+  development. DISTINCT from "certifications": a certification is a credential the candidate
+  holds (name it in "certifications"); a course is something they attended.
+- "participation": conferences, committees, symposia, programmes, events and memberships the
+  candidate took part in. Saudi and academic CVs commonly split these into "local" and
+  "international" — put that word in "scope" when the CV states it, and null otherwise.
+  "role" is how they took part (attendee, speaker, organizer, committee member) if stated.
+- "awards": awards, honours, prizes, medals, recognitions.
+- "teaching_and_editorial": teaching or lecturing appointments, supervision/mentoring roles,
+  and membership of editorial boards, review panels or scientific committees of journals.
+- "publications": papers, articles, book chapters, books, abstracts, posters. Split into
+  title/venue/year only when the split is obvious. If a citation doesn't split cleanly, put
+  the ENTIRE citation line verbatim into "title" and leave the other fields null — never drop
+  part of a citation to make it fit.
+
+"additional_sections" — THE CATCH-ALL, use it freely:
+- For any CV section that doesn't clearly match a named field. Examples of what belongs here:
+  a surgeon's procedure/outcome counts, a pilot's flight hours, a researcher's grants or
+  funding, patents, references, memberships, personal details (nationality, date of birth,
+  marital status), hobbies, driving licence, military service, media appearances — anything.
+- "section_title" must be the CV's OWN heading for that section, copied exactly as written
+  (e.g. "Surgical Outcomes", "Flight Hours", "المشاركات المجتمعية"). Do not translate it, do
+  not tidy it, do not replace it with a heading you think is better.
+- "entries" must be the section's lines copied VERBATIM, one string per line/bullet, keeping
+  the original structure as closely as reasonable. Strip only a leading bullet glyph (•, ➢, -,
+  *, ●), exactly as with experience bullets. If a line is a label/value pair ("Nationality:
+  Saudi"), keep it as one string with the label intact.
+- NUMBERS IN THESE ENTRIES ARE FACTS AND MUST BE COPIED EXACTLY. "1,240 procedures", "4,800
+  flight hours", "SAR 2.3M in funding" — never round them, never reformat them, never
+  recalculate them, never convert units.
+
 Return your response as a single valid JSON object matching this exact structure:
 {{
   "personal": {{
@@ -103,6 +154,7 @@ Return your response as a single valid JSON object matching this exact structure
     "location": "string or null",
     "portfolio": "string or null"
   }},
+  "summary": "the candidate's own profile/objective paragraph, verbatim and complete, or null",
   "education": [{{
     "institution": "string",
     "degree": "string",
@@ -135,7 +187,31 @@ Return your response as a single valid JSON object matching this exact structure
   "certifications": ["list of certification names or empty list"],
   "languages_spoken": ["human languages spoken, NOT programming languages or empty list"],
   "volunteer_work": ["list of volunteer work descriptions or empty list"],
-  "awards": ["list of awards or empty list"]
+  "awards": ["list of awards, honours and prizes or empty list"],
+  "major_achievements": ["standalone achievement lines, verbatim, or empty list"],
+  "training_courses": [{{
+    "name": "course/workshop/training programme name",
+    "provider": "who ran it, or null",
+    "date": "exactly as written, or null"
+  }}],
+  "participation": [{{
+    "title": "conference/committee/programme/event name",
+    "role": "attendee, speaker, organizer, member... only if stated, else null",
+    "organization": "string or null",
+    "scope": "\\"local\\" or \\"international\\" ONLY if the CV says so, else null",
+    "date": "exactly as written, or null"
+  }}],
+  "publications": [{{
+    "title": "paper title, or the ENTIRE citation verbatim if it does not split cleanly",
+    "venue": "journal / conference / publisher, or null",
+    "year": "string or null",
+    "url": "string or null"
+  }}],
+  "teaching_and_editorial": ["teaching posts, supervision, editorial/review board memberships, or empty list"],
+  "additional_sections": [{{
+    "section_title": "the CV's OWN heading for a section that fits none of the fields above",
+    "entries": ["that section's lines, verbatim, one string per line"]
+  }}]
 }}
 
 IMPORTANT: 
@@ -234,6 +310,11 @@ def serialize_manual_cv(form_data: dict, additional_info: str = "") -> str:
         if personal.get(key):
             lines.append(f"{label}: {personal[key]}")
 
+    summary = (form_data.get("summary") or "").strip()
+    if summary:
+        lines.append("\nPROFILE:")
+        lines.append(summary)
+
     education = form_data.get("education") or []
     if education:
         lines.append("\nEDUCATION:")
@@ -296,6 +377,65 @@ def serialize_manual_cv(form_data: dict, additional_info: str = "") -> str:
         for award in awards:
             lines.append(f"- {award}")
 
+    # ── The categories added with the FactsJSON expansion ─────────────────
+    # Written under the same headings a real CV uses, because this text goes
+    # straight back through parse_cv_text (the SAME Gemini extraction an
+    # uploaded PDF gets). The headings are what route each block to the right
+    # field, so they deliberately match the wording in CV_PARSER_PROMPT's
+    # routing rules rather than the form's field names.
+    def _joined(*parts) -> str:
+        return ", ".join(str(p).strip() for p in parts if str(p or "").strip())
+
+    achievements = form_data.get("major_achievements") or []
+    if achievements:
+        lines.append("\nMAJOR ACHIEVEMENTS:")
+        for item in achievements:
+            lines.append(f"- {item}")
+
+    training_courses = form_data.get("training_courses") or []
+    if training_courses:
+        lines.append("\nTRAINING AND COURSES:")
+        for course in training_courses:
+            line = _joined(course.get("name"), course.get("provider"), course.get("date"))
+            if line:
+                lines.append(f"- {line}")
+
+    participation = form_data.get("participation") or []
+    if participation:
+        lines.append("\nLOCAL AND INTERNATIONAL PARTICIPATION:")
+        for item in participation:
+            line = _joined(item.get("title"), item.get("role"),
+                           item.get("organization"), item.get("scope"), item.get("date"))
+            if line:
+                lines.append(f"- {line}")
+
+    publications = form_data.get("publications") or []
+    if publications:
+        lines.append("\nPUBLICATIONS:")
+        for pub in publications:
+            line = _joined(pub.get("title"), pub.get("venue"), pub.get("year"))
+            if line:
+                lines.append(f"- {line}")
+
+    teaching = form_data.get("teaching_and_editorial") or []
+    if teaching:
+        lines.append("\nTEACHING AND EDITORIAL BOARD MEMBERSHIP:")
+        for item in teaching:
+            lines.append(f"- {item}")
+
+    # The catch-all, under the heading the USER typed. Emitted last and
+    # verbatim, so a section the form has no field for ("Surgical Outcomes",
+    # "Flight Hours") reaches facts_json.additional_sections exactly as it
+    # would from an uploaded CV.
+    for section in form_data.get("additional_sections") or []:
+        title = (section.get("section_title") or "").strip()
+        entries = [str(e).strip() for e in (section.get("entries") or []) if str(e).strip()]
+        if not entries:
+            continue
+        lines.append(f"\n{title.upper() if title else 'ADDITIONAL INFORMATION'}:")
+        for entry in entries:
+            lines.append(f"- {entry}")
+
     if additional_info and additional_info.strip():
         lines.append("\nADDITIONAL INFORMATION FROM CANDIDATE:")
         lines.append(additional_info.strip())
@@ -337,3 +477,15 @@ def _print_summary(facts: FactsJSON, tag: str = "[Agent 1]"):
     print(f"{tag}   → Languages spoken: {facts.languages_spoken}")
     print(f"{tag}   → Volunteer work: {len(facts.volunteer_work)} entries")
     print(f"{tag}   → Awards: {facts.awards}")
+    print(f"{tag}   → Summary: {'yes' if (facts.summary or '').strip() else 'none'}")
+    print(f"{tag}   → Major achievements: {len(facts.major_achievements)} entries")
+    print(f"{tag}   → Training/courses: {len(facts.training_courses)} entries")
+    print(f"{tag}   → Participation: {len(facts.participation)} entries")
+    print(f"{tag}   → Publications: {len(facts.publications)} entries")
+    print(f"{tag}   → Teaching/editorial: {len(facts.teaching_and_editorial)} entries")
+    # The catch-all is worth naming individually, not just counting: its
+    # headings are the only visible evidence of what the CV contained that no
+    # named field covers, which is exactly what you want to see when someone
+    # reports a missing section.
+    for section in facts.additional_sections:
+        print(f"{tag}   → Additional section '{section.section_title}': {len(section.entries)} entries")

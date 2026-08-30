@@ -1,7 +1,11 @@
 "use client";
 
 import React, { useMemo, useState } from "react";
-import { Plus, Trash2, User, GraduationCap, Briefcase, FolderKanban, Award, Wrench } from "lucide-react";
+import {
+  Plus, Trash2, User, GraduationCap, Briefcase, FolderKanban, Award, Wrench,
+  Trophy, BookOpen, Users, FileText, ScrollText, Presentation, Medal, ListPlus, ChevronDown,
+  Languages,
+} from "lucide-react";
 import { useLang } from "@/lib/language";
 import {
   getCountryList,
@@ -38,6 +42,37 @@ export type CertificationEntry = {
   name: string;
 };
 
+/* ── The categories FactsJSON gained (see backend/schemas/facts_schema.py) ──
+   An uploaded CV can put content in every one of these; without matching
+   fields here, someone typing their CV in by hand simply could not. Each is
+   optional, and they live behind the "more sections" disclosure below so the
+   default form stays as short as it was — most people have none of them, and
+   most people are on a phone. */
+export type TrainingEntry = {
+  name: string;
+  provider: string;
+  date: string;
+};
+
+export type ParticipationEntry = {
+  title: string;
+  role: string;
+  organization: string;
+  scope: string; // "" | "local" | "international"
+  date: string;
+};
+
+export type PublicationEntry = {
+  title: string;
+  venue: string;
+  year: string;
+};
+
+export type CustomSectionEntry = {
+  section_title: string;
+  entries: string; // one per line — split on submit, same as experience bullets
+};
+
 export type ManualCvData = {
   name: string;
   email: string;
@@ -45,11 +80,20 @@ export type ManualCvData = {
   phoneCountry: string; // ISO code into COUNTRY_OPTIONS below — drives phone formatting
   linkedin: string;
   location: string;
+  summary: string;
   education: EducationEntry[];
   experience: ExperienceEntry[];
   projects: ProjectEntry[];
   certifications: CertificationEntry[];
   skills: string; // comma separated — split on submit
+  languages: string; // human languages, comma separated — split on submit
+  achievements: string; // one per line — split on submit
+  training: TrainingEntry[];
+  participation: ParticipationEntry[];
+  publications: PublicationEntry[];
+  teaching: string; // one per line — split on submit
+  awards: string; // one per line — split on submit
+  customSections: CustomSectionEntry[];
 };
 
 export const emptyManualCvData: ManualCvData = {
@@ -59,11 +103,20 @@ export const emptyManualCvData: ManualCvData = {
   phoneCountry: "SA",
   linkedin: "",
   location: "",
+  summary: "",
   education: [{ institution: "", degree: "", gpa: "", graduation_year: "" }],
   experience: [{ company: "", title: "", dates: "", bullets: "" }],
   projects: [{ name: "", tech_stack: "", description: "" }],
   certifications: [{ name: "" }],
   skills: "",
+  languages: "",
+  achievements: "",
+  training: [{ name: "", provider: "", date: "" }],
+  participation: [{ title: "", role: "", organization: "", scope: "", date: "" }],
+  publications: [{ title: "", venue: "", year: "" }],
+  teaching: "",
+  awards: "",
+  customSections: [{ section_title: "", entries: "" }],
 };
 
 type CountryPhoneOption = {
@@ -241,6 +294,40 @@ function RepeatableSection<T>({
   );
 }
 
+/**
+ * A textarea for a plain list of lines — the shape `major_achievements`,
+ * `teaching_and_editorial` and `awards` actually have on the backend (a list
+ * of strings). Reuses the "one per line" convention the Experience card
+ * already uses for bullets rather than inventing a second way to type a list.
+ */
+function LineListSection({
+  icon,
+  title,
+  value,
+  onChange,
+  placeholder,
+  rows = 3,
+}: {
+  icon: React.ElementType;
+  title: string;
+  value: string;
+  onChange: (value: string) => void;
+  placeholder: string;
+  rows?: number;
+}) {
+  return (
+    <SectionCard icon={icon} title={title}>
+      <textarea
+        className={`${inputClass} resize-y`}
+        rows={rows}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder={placeholder}
+      />
+    </SectionCard>
+  );
+}
+
 export function ManualCvForm({
   value,
   onChange,
@@ -249,6 +336,11 @@ export function ManualCvForm({
   onChange: (value: ManualCvData) => void;
 }) {
   const { lang, dir } = useLang();
+  // The extra CV sections start collapsed. They're all optional, the form is
+  // already long, and most users are on a phone — but anything typed into
+  // them is still submitted whether the group is open or shut, since the data
+  // lives on ManualCvData, not on this flag.
+  const [showMore, setShowMore] = useState(false);
 
   function set(patch: Partial<ManualCvData>) {
     onChange({ ...value, ...patch });
@@ -543,6 +635,244 @@ export function ManualCvForm({
           }
         />
       </SectionCard>
+
+      {/* Human languages — facts_json.languages_spoken, which every template
+          now renders as its own section directly after Skills. */}
+      <SectionCard icon={Languages} title={lang === "ar" ? "اللغات" : "Languages"}>
+        <input
+          className={inputClass}
+          value={value.languages}
+          onChange={(e) => set({ languages: e.target.value })}
+          placeholder={
+            lang === "ar"
+              ? "العربية (اللغة الأم)، الإنجليزية (متقدم) — مفصولة بفاصلة"
+              : "Arabic (native), English (fluent) — comma separated"
+          }
+        />
+      </SectionCard>
+
+      <button
+        type="button"
+        onClick={() => setShowMore((open) => !open)}
+        aria-expanded={showMore}
+        className="flex w-full items-center justify-between gap-2 rounded-xl border border-slate-200 bg-white px-4 py-3 text-start text-sm font-medium text-slate-700 transition-colors hover:border-slate-300 hover:bg-slate-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500"
+      >
+        <span>
+          {lang === "ar" ? "أقسام إضافية (اختيارية)" : "More sections (optional)"}
+          <span className="ms-2 text-xs font-normal text-slate-500">
+            {lang === "ar"
+              ? "الملخص، الإنجازات، الدورات، المشاركات، الأبحاث، الجوائز"
+              : "Summary, achievements, courses, participation, publications, awards"}
+          </span>
+        </span>
+        <ChevronDown
+          className={`size-4 shrink-0 text-slate-400 transition-transform ${showMore ? "rotate-180" : ""}`}
+          aria-hidden
+        />
+      </button>
+
+      {showMore && (
+        <div className="space-y-4">
+          <SectionCard icon={FileText} title={lang === "ar" ? "الملخص المهني" : "Professional summary"}>
+            <textarea
+              className={`${inputClass} resize-y`}
+              rows={4}
+              value={value.summary}
+              onChange={(e) => set({ summary: e.target.value })}
+              placeholder={
+                lang === "ar"
+                  ? "نبذة قصيرة عن خبرتك وتخصصك، كما تكتبها في سيرتك الذاتية"
+                  : "A short profile of your background and specialism, as you'd write it on your CV"
+              }
+            />
+          </SectionCard>
+
+          <LineListSection
+            icon={Trophy}
+            title={lang === "ar" ? "أبرز الإنجازات" : "Key achievements"}
+            value={value.achievements}
+            onChange={(achievements) => set({ achievements })}
+            placeholder={lang === "ar" ? "إنجاز واحد في كل سطر" : "One achievement per line"}
+          />
+
+          <RepeatableSection
+            icon={BookOpen}
+            title={lang === "ar" ? "الدورات التدريبية" : "Training & courses"}
+            lang={lang}
+            items={value.training}
+            emptyItem={{ name: "", provider: "", date: "" }}
+            onChange={(training) => set({ training })}
+            renderItem={(item, update) => (
+              <div className="grid gap-2.5 sm:grid-cols-2">
+                <input
+                  className={`${inputClass} sm:col-span-2`}
+                  value={item.name}
+                  onChange={(e) => update({ name: e.target.value })}
+                  placeholder={lang === "ar" ? "اسم الدورة أو البرنامج" : "Course or programme name"}
+                />
+                <input
+                  className={inputClass}
+                  value={item.provider}
+                  onChange={(e) => update({ provider: e.target.value })}
+                  placeholder={lang === "ar" ? "الجهة المنظمة" : "Provider"}
+                />
+                <input
+                  className={inputClass}
+                  value={item.date}
+                  onChange={(e) => update({ date: e.target.value })}
+                  placeholder={lang === "ar" ? "التاريخ، مثل: مارس 2025" : "Date, e.g. March 2025"}
+                />
+              </div>
+            )}
+          />
+
+          <RepeatableSection
+            icon={Users}
+            title={lang === "ar" ? "المشاركات المحلية والدولية" : "Conferences & participation"}
+            lang={lang}
+            items={value.participation}
+            emptyItem={{ title: "", role: "", organization: "", scope: "", date: "" }}
+            onChange={(participation) => set({ participation })}
+            renderItem={(item, update) => (
+              <div className="grid gap-2.5 sm:grid-cols-2">
+                <input
+                  className={`${inputClass} sm:col-span-2`}
+                  value={item.title}
+                  onChange={(e) => update({ title: e.target.value })}
+                  placeholder={lang === "ar" ? "اسم المؤتمر أو اللجنة أو البرنامج" : "Conference, committee or programme"}
+                />
+                <input
+                  className={inputClass}
+                  value={item.role}
+                  onChange={(e) => update({ role: e.target.value })}
+                  placeholder={lang === "ar" ? "صفة المشاركة، مثل: متحدث" : "Your role, e.g. speaker"}
+                />
+                <input
+                  className={inputClass}
+                  value={item.organization}
+                  onChange={(e) => update({ organization: e.target.value })}
+                  placeholder={lang === "ar" ? "الجهة المنظمة" : "Organization"}
+                />
+                <select
+                  value={item.scope}
+                  onChange={(e) => update({ scope: e.target.value })}
+                  aria-label={lang === "ar" ? "نطاق المشاركة" : "Scope"}
+                  className={inputClass}
+                >
+                  <option value="">{lang === "ar" ? "النطاق (اختياري)" : "Scope (optional)"}</option>
+                  <option value="local">{lang === "ar" ? "محلي" : "Local"}</option>
+                  <option value="international">{lang === "ar" ? "دولي" : "International"}</option>
+                </select>
+                <input
+                  className={inputClass}
+                  value={item.date}
+                  onChange={(e) => update({ date: e.target.value })}
+                  placeholder={lang === "ar" ? "التاريخ" : "Date"}
+                />
+              </div>
+            )}
+          />
+
+          <RepeatableSection
+            icon={ScrollText}
+            title={lang === "ar" ? "الأبحاث والمنشورات" : "Publications"}
+            lang={lang}
+            items={value.publications}
+            emptyItem={{ title: "", venue: "", year: "" }}
+            onChange={(publications) => set({ publications })}
+            renderItem={(item, update) => (
+              <div className="grid gap-2.5 sm:grid-cols-2">
+                <input
+                  className={`${inputClass} sm:col-span-2`}
+                  value={item.title}
+                  onChange={(e) => update({ title: e.target.value })}
+                  placeholder={lang === "ar" ? "عنوان البحث أو المقال" : "Title of the paper or article"}
+                />
+                <input
+                  className={inputClass}
+                  value={item.venue}
+                  onChange={(e) => update({ venue: e.target.value })}
+                  placeholder={lang === "ar" ? "المجلة أو المؤتمر أو الناشر" : "Journal, conference or publisher"}
+                />
+                <input
+                  className={inputClass}
+                  value={item.year}
+                  onChange={(e) => update({ year: e.target.value })}
+                  placeholder={lang === "ar" ? "السنة" : "Year"}
+                />
+              </div>
+            )}
+          />
+
+          <LineListSection
+            icon={Presentation}
+            title={lang === "ar" ? "التدريس وعضوية هيئات التحرير" : "Teaching & editorial boards"}
+            value={value.teaching}
+            onChange={(teaching) => set({ teaching })}
+            placeholder={
+              lang === "ar"
+                ? "مهمة تدريسية أو عضوية واحدة في كل سطر"
+                : "One teaching post or board membership per line"
+            }
+          />
+
+          <LineListSection
+            icon={Medal}
+            title={lang === "ar" ? "الجوائز والتكريمات" : "Awards"}
+            value={value.awards}
+            onChange={(awards) => set({ awards })}
+            placeholder={lang === "ar" ? "جائزة واحدة في كل سطر" : "One award per line"}
+          />
+
+        </div>
+      )}
+
+      {/* THE FREE-FORM ESCAPE HATCH — deliberately outside the collapsed
+          group above, and last.
+
+          Everything else on this form is a category we chose. This is the one
+          that lets the candidate name their own: an "Add section" button, a
+          heading they write, and as many lines as they want under it, repeated
+          for as many sections as their CV has. It is the typed-in equivalent
+          of FactsJSON.additional_sections, which is how an UPLOADED CV keeps a
+          section we never anticipated — a surgeon's procedure counts, a
+          pilot's flight hours. Hiding it behind a disclosure made the manual
+          flow look like a fixed menu of categories, which is exactly what it
+          is not. */}
+      <RepeatableSection
+        icon={ListPlus}
+        title={lang === "ar" ? "أقسام تضيفها بنفسك" : "Add your own sections"}
+        lang={lang}
+        items={value.customSections}
+        emptyItem={{ section_title: "", entries: "" }}
+        onChange={(customSections) => set({ customSections })}
+        renderItem={(item, update) => (
+          <div className="space-y-2.5">
+            <input
+              className={inputClass}
+              value={item.section_title}
+              onChange={(e) => update({ section_title: e.target.value })}
+              placeholder={
+                lang === "ar"
+                  ? "عنوان القسم كما تريده أن يظهر، مثل: العمليات الجراحية"
+                  : "Your own section heading, e.g. Surgical Outcomes"
+              }
+            />
+            <textarea
+              className={`${inputClass} resize-y`}
+              rows={3}
+              value={item.entries}
+              onChange={(e) => update({ entries: e.target.value })}
+              placeholder={lang === "ar" ? "بند واحد في كل سطر" : "One line per entry"}
+            />
+          </div>
+        )}
+      />
+      <p className="px-1 text-xs text-slate-500">
+        {lang === "ar"
+          ? "أي قسم في سيرتك الذاتية لا تجده أعلاه: اكتب عنوانه وبنوده كما هي، وسيظهر في السيرة كما كتبته."
+          : "Any section of your CV that isn't listed above: write its heading and its lines, and it appears on the CV exactly as you wrote it."}
+      </p>
     </div>
   );
 }

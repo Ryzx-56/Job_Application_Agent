@@ -45,8 +45,41 @@ class SkillsInput(BaseModel):
     other: List[str] = []
 
 
+# ── The categories the expanded FactsJSON gained ──────────────────────────
+# Mirrors schemas/facts_schema.py so someone typing their CV in by hand can
+# reach every section an uploaded CV can. Every field is optional: the form
+# posts only what was filled in, and serialize_manual_cv skips empty entries.
+class TrainingCourseEntry(BaseModel):
+    name: str = ""
+    provider: str = ""
+    date: str = ""
+
+
+class ParticipationEntry(BaseModel):
+    title: str = ""
+    role: str = ""
+    organization: str = ""
+    scope: str = ""          # "local" / "international", blank if not stated
+    date: str = ""
+
+
+class PublicationEntry(BaseModel):
+    title: str = ""
+    venue: str = ""
+    year: str = ""
+
+
+class AdditionalSectionEntry(BaseModel):
+    """A section the user names themselves — the typed-in equivalent of
+    FactsJSON.additional_sections. Whatever their CV has that none of the
+    fields above cover: procedure counts, flight hours, grants, memberships."""
+    section_title: str = ""
+    entries: List[str] = []
+
+
 class ManualCVRequest(BaseModel):
     personal: PersonalInfo
+    summary: Optional[str] = None
     education: List[EducationEntry] = []
     experience: List[ExperienceEntry] = []
     projects: List[ProjectEntry] = []
@@ -54,6 +87,12 @@ class ManualCVRequest(BaseModel):
     certifications: List[str] = []
     languages_spoken: List[str] = []
     awards: List[str] = []
+    major_achievements: List[str] = []
+    training_courses: List[TrainingCourseEntry] = []
+    participation: List[ParticipationEntry] = []
+    publications: List[PublicationEntry] = []
+    teaching_and_editorial: List[str] = []
+    additional_sections: List[AdditionalSectionEntry] = []
     additional_info: Optional[str] = ""
     job_description: str
     cv_language: Optional[str] = "en"  # "en" or "ar" — output language for the generated CV/cover letter
