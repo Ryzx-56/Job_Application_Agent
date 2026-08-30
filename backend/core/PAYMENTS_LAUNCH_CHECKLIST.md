@@ -65,23 +65,31 @@ exactly one of two concurrent webhooks updates a row.
       the provider's event id with a unique constraint, and treat an insert
       conflict as "already processed".
 
-## 4. Cross-check the amount before unlocking — NOT IMPLEMENTED
+## 4. Cross-check the amount before unlocking — DONE (2026-08-30)
 
-**This is the real gap.** `WebhookEvent` carries `amount` and `currency`, but
-`_confirm_paid(event.reference)` takes only the reference. The amount that was
-actually paid is never compared with anything.
+`_confirm_paid` now takes `paid_amount` / `paid_currency` and verifies both
+against the purchase's stored `price_paid` and `currency` **before** the row is
+touched, so a mismatch leaves the purchase pending rather than paid-then-
+corrected. The webhook passes the verified event through; a mismatch returns
+200 (the delivery was authentic, so the provider must not retry) and logs at
+ERROR.
 
-- [ ] Compare `event.amount` (and currency) against the stored
-      `linkedin_purchases.price_paid` before flipping to paid, and refuse the
-      unlock on a mismatch rather than logging and continuing.
-- [ ] Mind the **unit**: Moyasar quotes amounts in the minor unit (halalas),
-      `price_paid` is stored in SAR. A naive `==` will fail 100% of the time.
-- [ ] For anything ambiguous, re-fetch the payment from
-      `GET /v1/payments/{id}` with the secret key and trust that over the
-      webhook body.
+`MoyasarGateway._to_major_units` converts halalas to SAR inside the gateway,
+so the provider's minor-unit convention never leaks past that class. Verified:
+underpaying, a raw `4900` leaking through unconverted, and a wrong currency are
+all refused; a half-halala rounding difference is tolerated.
 
-This one does **not** depend on Moyasar and could be implemented now against
-`price_paid`.
+`paid_amount=None` skips the check and logs a WARNING naming itself — the mock
+gateway's auto-confirm path has no amount to check.
+
+**Still to confirm at wiring time:**
+
+- [ ] That Moyasar's webhooks quote the same minor unit as their payment
+      object. If a currency with a different exponent is ever accepted,
+      `_to_major_units` needs the currency's exponent rather than a hardcoded
+      100.
+- [ ] For anything ambiguous, re-fetch from `GET /v1/payments/{id}` with the
+      secret key and trust that over the webhook body.
 
 ## 5. Logging so a failed or replayed webhook is visible — partly done
 
@@ -99,18 +107,27 @@ references log at INFO, and every mock payment logs a WARNING naming itself.
 
 ## Found during the audit, not in the original brief
 
-- [ ] **`claim_founding_member_slot` has no caller.** The migration that
-      created it says the payment webhook should call it on the first
-      successful charge. As things stand, switching payments on would award
-      Founding Member to nobody, silently. Wire it into the paid path.
-      (Note there are two overloads; the 1-arg `claim_founding_member_slot(uuid)`
-      is the correct, locked-down one — the 3-arg version is stale and its
-      EXECUTE was revoked in the Section 1 hardening.)
-- [ ] **Subscriptions have no payment path.** Only the LinkedIn add-on has a
-      webhook. `cancel_subscription` carries a TODO to cancel the real
-      recurring charge via the stored `payment_subscription_id`; until that is
-      wired, a cancellation stops access at the cycle boundary but would not
-      stop a real charge.
+- **`claim_founding_member_slot` now has a caller** (2026-08-30).
+      `core/subscription.py::activate_paid_subscription()` is the single
+      function a subscription payment webhook must call: it sets the tier,
+      clears any scheduled downgrade, records the provider ids, and claims the
+      founding slot. Claiming happens there rather than at a separate call site
+      precisely so the badge cannot be forgotten independently of the thing
+      that earns it. It uses the 1-arg `claim_founding_member_slot(uuid)` —
+      the correct, locked-down overload; the 3-arg version is stale and had its
+      EXECUTE revoked in the Section 1 hardening.
+      - [ ] **Nothing calls it yet**, because no subscription payment flow
+            exists. Wiring the webhook to this one function is the remaining
+            step.
+- **Provider-side cancellation is now wired** (2026-08-30).
+      `cancel_subscription` calls `gateway.cancel_subscription()` when the
+      profile has a `payment_subscription_id`, and raises **before** scheduling
+      the downgrade if that call fails — so nobody is told their subscription
+      is cancelled while the card is still being charged. Inert today (no
+      provider issues a subscription id yet), so behaviour is unchanged until
+      one does.
+      - [ ] `MoyasarGateway.cancel_subscription` raises `GatewayUnavailable`
+            until their subscription endpoint is confirmed. Fill it in.
 - [ ] **Harden the `mock` gateway against production.** `PAYMENT_GATEWAY=mock`
       auto-confirms payments server-side and would give the paid content away.
       It is opt-in and logs a warning, which is good, but consider refusing to

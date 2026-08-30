@@ -113,6 +113,11 @@ class MockGateway:
             auto_confirm=True,
         )
 
+    def cancel_subscription(self, subscription_id: str) -> None:
+        """Nothing to cancel provider-side; recorded so the call path is
+        exercised end to end in local testing."""
+        logger.warning(f"🧪 MOCK: pretending to cancel provider subscription {subscription_id}.")
+
     def verify_and_parse_webhook(self, *, headers: dict, payload: dict) -> WebhookEvent:
         """The mock gateway accepts a hand-made webhook so the idempotency
         path can be exercised (e.g. posting the same event twice) without a
@@ -180,6 +185,44 @@ class MoyasarGateway:
             "Set PAYMENT_GATEWAY=mock for local testing, or leave it unset in production."
         )
 
+    def cancel_subscription(self, subscription_id: str) -> None:
+        """
+        Stops a recurring charge provider-side.
+
+        NOT IMPLEMENTED, same reason as create_payment: the account
+        application is still pending, so the subscription endpoint and its
+        payload are unconfirmed. Raising rather than silently succeeding is
+        the point — core/subscription.py refuses to tell someone their
+        subscription is cancelled when the charge may still be live.
+        """
+        raise GatewayUnavailable(
+            "Moyasar subscription cancellation is not implemented yet: the account "
+            "application is still pending, so the endpoint is unconfirmed."
+        )
+
+    @staticmethod
+    def _to_major_units(amount: Any) -> Optional[float]:
+        """
+        Moyasar quotes money in the MINOR unit — halalas for SAR, 100 to the
+        riyal. Everything on our side (linkedin_purchases.price_paid, the
+        pricing copy) is in the major unit, so a raw comparison of the two
+        fails by a factor of 100 every single time.
+
+        Converting here keeps the provider's convention inside the provider's
+        class, which is the whole point of this module.
+
+        CONFIRM WITH MOYASAR: that webhooks quote the same minor unit their
+        payment object documents. If a future currency with a different
+        exponent is ever accepted, this needs the currency's exponent rather
+        than a hardcoded 100.
+        """
+        if amount is None:
+            return None
+        try:
+            return round(float(amount) / 100.0, 2)
+        except (TypeError, ValueError):
+            return None
+
     def verify_and_parse_webhook(self, *, headers: dict, payload: dict) -> WebhookEvent:
         """
         Proves the request came from Moyasar, then normalizes it.
@@ -213,7 +256,7 @@ class MoyasarGateway:
         return WebhookEvent(
             reference=str(reference),
             status=self.STATUS_MAP.get(raw_status, PENDING),
-            amount=_dig(payload, ("data", "amount")),
+            amount=self._to_major_units(_dig(payload, ("data", "amount"))),
             currency=_dig(payload, ("data", "currency")),
             raw=payload,
         )

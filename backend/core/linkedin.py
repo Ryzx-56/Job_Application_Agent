@@ -237,7 +237,14 @@ def _is_stale(row: dict) -> bool:
 # ─── PAYMENT CONFIRMATION ───────────────────────────────────────────────────
 
 
-def _confirm_paid(reference: str) -> dict:
+# How far the paid amount may differ from the price we recorded before the
+# unlock is refused. Covers rounding on the provider's side and nothing more —
+# it is not a discount allowance.
+_AMOUNT_TOLERANCE = 0.01
+
+
+def _confirm_paid(reference: str, *, paid_amount: float | None = None,
+                  paid_currency: str | None = None) -> dict:
     """
     Marks the purchase behind `reference` as paid. THE only place that flips a
     purchase to 'paid', used by both the real webhook and the mock gateway's
@@ -249,6 +256,18 @@ def _confirm_paid(reference: str) -> dict:
     second premium alert. The conditional update (…eq('payment_status',
     'pending')) is what makes that safe under two simultaneous deliveries
     rather than merely likely: exactly one of them updates a row.
+
+    AMOUNT IS VERIFIED, NOT ASSUMED. When the caller knows what was actually
+    paid, it is checked against the price recorded when the purchase was
+    created, and a mismatch refuses the unlock. Without this, holding a valid
+    webhook secret and a real payment reference was enough to unlock a
+    premium order at any price, because nothing downstream ever looked at the
+    amount. The gateway normalises to the major unit first (Moyasar quotes
+    halalas) — see MoyasarGateway._to_major_units.
+
+    paid_amount=None means the caller genuinely has no amount to check
+    (the mock gateway's auto-confirm path). It skips the comparison and says
+    so in the log rather than silently appearing verified.
     """
     admin = get_admin_client()
     purchase = (
@@ -265,6 +284,30 @@ def _confirm_paid(reference: str) -> dict:
     if purchase.get("payment_status") == PAID:
         logger.info(f"↩️ Payment {reference} was already recorded as paid, ignoring duplicate confirmation.")
         return {"matched": True, "purchase": purchase, "already_paid": True}
+
+    # Checked BEFORE the row is touched: a wrong amount must leave the
+    # purchase pending, not paid-then-corrected.
+    if paid_amount is None:
+        logger.warning(
+            f"⚠️ Confirming payment {reference} WITHOUT an amount check "
+            "(caller supplied none). Expected only for the mock gateway."
+        )
+    else:
+        expected = float(purchase.get("price_paid") or 0)
+        if abs(float(paid_amount) - expected) > _AMOUNT_TOLERANCE:
+            logger.error(
+                f"🚫 Payment {reference} paid {paid_amount} but purchase "
+                f"{purchase['id']} costs {expected}. Refusing to unlock."
+            )
+            return {"matched": True, "purchase": purchase, "amount_mismatch": True}
+
+        expected_currency = str(purchase.get("currency") or "SAR").upper()
+        if paid_currency and str(paid_currency).upper() != expected_currency:
+            logger.error(
+                f"🚫 Payment {reference} was in {paid_currency}, expected "
+                f"{expected_currency} for purchase {purchase['id']}. Refusing to unlock."
+            )
+            return {"matched": True, "purchase": purchase, "currency_mismatch": True}
 
     updates = {
         "payment_status": PAID,
@@ -699,7 +742,14 @@ async def linkedin_payment_webhook(request: Request) -> dict:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Webhook could not be verified.")
 
     if event.status == PAID:
-        result = _confirm_paid(event.reference)
+        result = _confirm_paid(
+            event.reference, paid_amount=event.amount, paid_currency=event.currency
+        )
+        if result.get("amount_mismatch") or result.get("currency_mismatch"):
+            # 200, not 4xx: the webhook was authentic and correctly received,
+            # so the provider must not retry it. The refusal is ours, and it
+            # is already logged at ERROR for investigation.
+            return {"ok": True, "rejected": "amount_mismatch"}
         if not result.get("matched"):
             # Not a LinkedIn purchase, fine, and not an error.
             logger.info(f"Payment webhook for {event.reference} matched no LinkedIn purchase, ignoring.")

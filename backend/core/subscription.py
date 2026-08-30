@@ -12,15 +12,91 @@
 # whatever's left) happens in reset_credits_if_due() once credits_reset_at
 # is reached — see 006_deferred_downgrade.sql.
 #
-# NOTE: this only schedules the change in your DB — it does NOT yet call the
-# payment provider to actually stop a real recurring charge. Once a provider
-# is wired, add that call here (e.g. cancel the provider-side subscription
-# using payment_subscription_id) so the next billing cycle genuinely doesn't
-# charge for the old tier.
+# PROVIDER-SIDE CANCELLATION is wired below rather than left as a note. It is
+# inert today (nobody has a payment_subscription_id, because no provider
+# creates one yet) and becomes live the moment one does, without anyone having
+# to remember this file exists.
 from fastapi import HTTPException, status
 from loguru import logger
 
 from core.credits import get_admin_client
+from core.payment_gateway import GatewayUnavailable, get_gateway
+
+
+def activate_paid_subscription(
+    user_id: str,
+    tier: str,
+    *,
+    provider: str | None = None,
+    customer_id: str | None = None,
+    subscription_id: str | None = None,
+    locked_price: float | None = None,
+) -> dict:
+    """
+    Turns a SUCCESSFUL PAYMENT into a paid account. Call this from the
+    subscription payment webhook, once, on a charge that actually succeeded.
+
+    THIS IS THE FUNCTION THE FOUNDING-MEMBER BADGE DEPENDS ON.
+    claim_founding_member_slot() exists in the database and, until this
+    function was added, had no caller anywhere in the codebase. Switching
+    payments on without calling it would have awarded Founding Member to
+    nobody — silently, while the pricing page promises it to the first 50 Pro
+    subscribers. Claiming the slot here rather than at a separate call site is
+    the point: there is one place a subscription becomes paid, so the badge
+    cannot be forgotten independently of the thing that earns it.
+
+    Nothing calls this yet, because no subscription payment flow exists — only
+    the LinkedIn add-on has a webhook. It is the documented integration point;
+    see core/PAYMENTS_LAUNCH_CHECKLIST.md.
+
+    Ordered so the money-state is recorded before the badge: a failure to
+    claim a slot must never cost someone the subscription they paid for, which
+    is why the claim is caught rather than raised.
+    """
+    if tier not in ("pro", "elite"):
+        raise ValueError(f"activate_paid_subscription is for paid tiers only, got {tier!r}.")
+
+    admin = get_admin_client()
+
+    updates: dict = {
+        "tier": tier,
+        "subscription_status": "active",
+        # A fresh payment clears any scheduled downgrade — someone who
+        # cancelled and then paid again is not still on their way to Free.
+        "pending_tier": None,
+    }
+    if provider:
+        updates["payment_provider"] = provider
+    if customer_id:
+        updates["payment_customer_id"] = customer_id
+    if subscription_id:
+        updates["payment_subscription_id"] = subscription_id
+    if locked_price is not None:
+        updates["locked_price"] = locked_price
+
+    result = admin.table("profiles").update(updates).eq("id", user_id).select().execute()
+    row = result.data[0] if result.data else None
+    if not row:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Profile not found.")
+
+    logger.info(f"💳 Subscription activated for user {user_id} on {tier}.")
+
+    # The 1-arg overload is the correct one: it is idempotent (a retried
+    # webhook cannot consume a second slot), takes an advisory lock so two
+    # simultaneous payments cannot both be handed slot 50, and is granted to
+    # service_role only. The 3-arg overload is stale and had its EXECUTE
+    # revoked during the Section 1 hardening — do not call it.
+    try:
+        slot = admin.rpc("claim_founding_member_slot", {"p_user_id": user_id}).execute().data
+        if slot:
+            logger.info(f"🏅 User {user_id} claimed Founding Member slot #{slot}.")
+    except Exception as e:
+        # Never fatal: the person has paid and their tier is already set. A
+        # missing badge is cosmetic and recoverable by hand; failing here
+        # would leave a real payment unrecorded.
+        logger.error(f"❌ Could not claim a founding-member slot for {user_id}: {e}")
+
+    return row
 
 
 def cancel_subscription(user_id: str) -> dict:
@@ -35,7 +111,7 @@ def cancel_subscription(user_id: str) -> dict:
     # this file and in core/credits.py.
     profile = (
         admin.table("profiles")
-        .select("tier, pending_tier, credits_reset_at")
+        .select("tier, pending_tier, credits_reset_at, payment_subscription_id")
         .eq("id", user_id)
         .maybe_single()
         .execute()
@@ -50,9 +126,50 @@ def cancel_subscription(user_id: str) -> dict:
             detail="You're already on the Free plan.",
         )
 
-    # TODO once a payment provider is wired: cancel the actual recurring
-    # charge here, using the stored payment_subscription_id. If that call
-    # fails, raise before scheduling the downgrade below.
+    # STOP THE REAL CHARGE FIRST.
+    #
+    # Ordered deliberately: if the provider-side cancellation fails we raise
+    # here, BEFORE the row is updated. Telling someone their subscription is
+    # cancelled while the card keeps being charged is the worst outcome
+    # available, and scheduling the downgrade first would produce exactly
+    # that whenever the provider call failed.
+    #
+    # No subscription id means there is nothing to cancel provider-side —
+    # which is every account today, since no provider issues one yet. That
+    # path is unchanged from before this was wired.
+    provider_subscription_id = profile.get("payment_subscription_id")
+    if provider_subscription_id:
+        try:
+            get_gateway().cancel_subscription(provider_subscription_id)
+            logger.info(
+                f"🛑 Cancelled provider subscription {provider_subscription_id} for user {user_id}."
+            )
+        except GatewayUnavailable as e:
+            logger.error(
+                f"❌ Cannot cancel provider subscription {provider_subscription_id} for user "
+                f"{user_id}: {e}. Refusing to schedule the downgrade — the charge may still be live."
+            )
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail={
+                    "code": "cancellation_unavailable",
+                    "message": "We couldn't cancel your billing just now. Please try again shortly, "
+                               "or contact support so we can stop it manually.",
+                },
+            )
+        except Exception as e:
+            logger.error(
+                f"❌ Provider cancellation failed for subscription {provider_subscription_id}, "
+                f"user {user_id}: {e}. Refusing to schedule the downgrade."
+            )
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail={
+                    "code": "cancellation_failed",
+                    "message": "We couldn't cancel your billing just now. Please try again shortly, "
+                               "or contact support so we can stop it manually.",
+                },
+            )
 
     # Founding-member price is locked in only while the subscription stays
     # continuously active — clearing it here means a resubscribe later goes
