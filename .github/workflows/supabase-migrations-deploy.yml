@@ -99,12 +99,18 @@ jobs:
       - name: Migration state BEFORE
         env:
           SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
-        run: supabase migration list --db-url "$SUPABASE_DB_URL"
+        run: |
+          set -o pipefail
+          supabase migration list --db-url "$SUPABASE_DB_URL" 2>&1 | tee /tmp/before.log
 
       - name: Apply migrations
         env:
           SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
-        run: supabase db push --db-url "$SUPABASE_DB_URL"
+        run: |
+          # pipefail so `tee` cannot swallow a non-zero exit and turn a failed
+          # deploy into a green tick.
+          set -o pipefail
+          supabase db push --db-url "$SUPABASE_DB_URL" 2>&1 | tee /tmp/push.log
 
       # Runs even on failure, so a partial apply is visible in the log rather
       # than leaving you guessing which migrations landed.
@@ -112,4 +118,39 @@ jobs:
         if: always()
         env:
           SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
-        run: supabase migration list --db-url "$SUPABASE_DB_URL"
+        run: |
+          set -o pipefail
+          supabase migration list --db-url "$SUPABASE_DB_URL" 2>&1 | tee /tmp/after.log
+
+      # ── Why the output is copied into the job summary ──────────────────
+      # Reading a workflow's raw logs through the API needs admin rights on
+      # the repository, so a deploy failure could only be diagnosed by a human
+      # opening the run in a browser. The job summary is part of the check
+      # run, which is readable by anyone who can read the repo — so putting
+      # the deploy output here makes a failure diagnosable without special
+      # access, and preserves the psql NOTICEs (the default-privileges
+      # migration reports through those) rather than burying them.
+      #
+      # ⚠️ THIS REPOSITORY IS PUBLIC AND SO IS THIS SUMMARY. Everything
+      # written here is scrubbed of anything shaped like a connection string
+      # first. Do not add raw environment dumps to it.
+      - name: Publish the deploy output to the job summary
+        if: always()
+        run: |
+          redact() {
+            [ -f "$1" ] || { echo "(no output captured)"; return; }
+            sed -E \
+              -e 's#(postgres(ql)?://)[^[:space:]]*#\1REDACTED#g' \
+              -e 's#(:)[^:@/[:space:]]+(@)#\1REDACTED\2#g' \
+              "$1" | tail -120
+          }
+          {
+            echo "## Supabase migration deploy"
+            echo ""
+            echo "### Before"
+            echo '```'; redact /tmp/before.log; echo '```'
+            echo "### db push"
+            echo '```'; redact /tmp/push.log;   echo '```'
+            echo "### After"
+            echo '```'; redact /tmp/after.log;  echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
