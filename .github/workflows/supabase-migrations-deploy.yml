@@ -103,6 +103,13 @@ jobs:
           set -o pipefail
           supabase migration list --db-url "$SUPABASE_DB_URL" 2>&1 | tee /tmp/before.log
 
+      # ── Why the output is re-emitted as ::error:: ──────────────────────
+      # A failing step annotates the run with a bare "Process completed with
+      # exit code 1" and puts the actual reason only in the raw log, which
+      # needs ADMIN rights to read through the API. Echoing the captured
+      # output back as an annotation puts the real error where anyone with
+      # read access can see it — including on a phone, without opening the
+      # run. Redacted first; this repository is public.
       - name: Apply migrations
         env:
           SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
@@ -110,7 +117,17 @@ jobs:
           # pipefail so `tee` cannot swallow a non-zero exit and turn a failed
           # deploy into a green tick.
           set -o pipefail
-          supabase db push --db-url "$SUPABASE_DB_URL" 2>&1 | tee /tmp/push.log
+          if ! supabase db push --db-url "$SUPABASE_DB_URL" 2>&1 | tee /tmp/push.log; then
+            # Annotations are single-line: %0A is the encoding for a newline,
+            # and a literal "::" would terminate the workflow command early.
+            MSG=$(sed -E \
+                    -e 's#(postgres(ql)?://)[^[:space:]]*#\1REDACTED#g' \
+                    -e 's#(:)[^:@/[:space:]]+(@)#\1REDACTED\2#g' \
+                    -e 's#::#;;#g' \
+                    /tmp/push.log | tail -30 | sed ':a;N;$!ba;s/\n/%0A/g')
+            echo "::error title=supabase db push failed::${MSG}"
+            exit 1
+          fi
 
       # Runs even on failure, so a partial apply is visible in the log rather
       # than leaving you guessing which migrations landed.
@@ -121,6 +138,11 @@ jobs:
         run: |
           set -o pipefail
           supabase migration list --db-url "$SUPABASE_DB_URL" 2>&1 | tee /tmp/after.log
+          # Which migrations actually landed, as an annotation — the single
+          # most useful fact after a partial or failed deploy.
+          MSG=$(sed -E -e 's#(postgres(ql)?://)[^[:space:]]*#\1REDACTED#g' -e 's#::#;;#g' \
+                  /tmp/after.log | tail -30 | sed ':a;N;$!ba;s/\n/%0A/g')
+          echo "::notice title=Migration state after deploy::${MSG}"
 
       # ── Why the output is copied into the job summary ──────────────────
       # Reading a workflow's raw logs through the API needs admin rights on
