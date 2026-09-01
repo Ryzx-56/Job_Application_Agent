@@ -27,6 +27,38 @@ jobs:
   dry-run:
     name: Preview pending migrations
     runs-on: ubuntu-latest
+    # ── Why this variable is here ──────────────────────────────────────
+    # supabase/config.toml declares [auth.hook.send_email] with
+    # `secrets = "env(SEND_EMAIL_HOOK_SECRET)"`. The CLI VALIDATES that value
+    # while loading the config, before it does anything else — so with the
+    # variable absent or empty every command fails with:
+    #
+    #   LegacyDbConfigLoadError: Invalid hook config:
+    #   auth.hook.send_email.secrets must be formatted as
+    #   "v1,whsec_<base64_encoded_secret>" with a minimum length of 32 characters.
+    #
+    # That is what broke the deploy on 2026-09-01: `migration list` failed,
+    # `db push` was skipped, and no migration reached production.
+    #
+    # THE PLACEHOLDER IS DELIBERATE — DO NOT REPLACE IT WITH THE REAL SECRET.
+    # The hook itself is genuinely live (it sends every signup confirmation
+    # and password reset via supabase/functions/send-email), but PRODUCTION's
+    # copy is configured in the Supabase Dashboard, and the config.toml block
+    # is local-dev only — its uri is host.docker.internal:54321. This job runs
+    # `migration list` and `db push`, neither of which invokes the hook or
+    # applies auth config. So CI needs a syntactically valid value and nothing
+    # more; shipping the real signing secret here would widen its exposure for
+    # no functional gain.
+    #
+    # ⚠️ IF YOU EVER ADD `supabase config push` TO THIS WORKFLOW, STOP.
+    # That command WOULD write this value to the project and break every auth
+    # email. Set the real secret as a repository secret first — the fallback
+    # below picks it up automatically if it exists.
+    env:
+      SEND_EMAIL_HOOK_SECRET: >-
+        ${{ secrets.SEND_EMAIL_HOOK_SECRET ||
+            'v1,whsec_Q0ktT05MWS1QTEFDRUhPTERFUi1OT1QtQS1SRUFMLVNFQ1JFVA==' }}
+
     steps:
       - name: Check out the PR
         uses: actions/checkout@v4
