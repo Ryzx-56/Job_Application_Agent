@@ -1,7 +1,12 @@
 "use client";
 
 import React, { createContext, useContext, useState, useEffect, ReactNode, useRef } from "react";
-import { createClient } from "@/lib/supabase/client";
+// Supabase is NOT imported here. This module is the LangProvider, which the
+// root layout wraps every page in — so a static import puts the whole
+// Supabase client in the critical-path bundle for every visitor on every
+// route, including signed-out readers of the marketing pages. It is loaded on
+// demand inside persistLanguageToAccount() instead, which only runs when
+// somebody actually changes language.
 // Neutral module, not a client one — the server reads the same cookie name.
 // See the note in lib/lang-cookie.ts for why it cannot live in this file.
 import { LANG_COOKIE, localePath, splitLocale } from "@/lib/lang-cookie";
@@ -3024,6 +3029,7 @@ export function useSyncLanguageFromAccount(preferredLanguage: string | null | un
 async function persistLanguageToAccount(lang: Lang) {
   if (typeof window === "undefined") return;
   try {
+    const { createClient } = await import("@/lib/supabase/client");
     const supabase = createClient();
     const {
       data: { user },
