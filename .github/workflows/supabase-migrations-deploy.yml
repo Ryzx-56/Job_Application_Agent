@@ -202,12 +202,16 @@ jobs:
       # granted to browser roles.
       - name: Verify default privileges took effect
         if: always()
+        # A diagnostic must never be the reason a deploy goes red, and its
+        # output must never be mistaken for a result when the query did not
+        # actually run — see the connection guard below.
+        continue-on-error: true
         env:
           SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
         run: |
           DB_URL=$(printf '%s' "$SUPABASE_DB_URL" | tr -d '\r\n\t' | sed -e 's/^ *//' -e 's/ *$//')
           echo "::add-mask::$DB_URL"
-          OUT=$(psql "$DB_URL" -At -F'|' -c "
+          if ! OUT=$(psql "$DB_URL" -At -F'|' -c "
             SELECT r.rolname,
                    a.defaclobjtype,
                    coalesce(array_to_string(a.defaclacl, ' '), '(none)')
@@ -215,7 +219,14 @@ jobs:
             JOIN pg_roles r     ON r.oid = a.defaclrole
             JOIN pg_namespace n ON n.oid = a.defaclnamespace
             WHERE n.nspname = 'public'
-            ORDER BY 1, 2;" 2>&1 | sed 's#::#;;#g')
+            ORDER BY 1, 2;" 2>&1); then
+            # psql failed — that is a CONNECTIVITY result, not a privilege
+            # result. Reporting it as one is how "could not connect" gets
+            # rendered as "2 objects are exposed".
+            echo "::warning title=Privilege verification could not run::$(printf '%s' "$OUT" | sed 's#::#;;#g' | sed ':a;N;$!ba;s/\n/%0A/g')"
+            exit 0
+          fi
+          OUT=$(printf '%s' "$OUT" | sed 's#::#;;#g')
           LEAKY=$(printf '%s' "$OUT" | grep -cE '(^|[ =])(anon|authenticated)=' || true)
           MSG=$(printf '%s' "$OUT" | sed ':a;N;$!ba;s/\n/%0A/g')
           echo "::notice title=Default ACLs in public (browser-role grants: ${LEAKY})::${MSG}"
@@ -237,7 +248,7 @@ jobs:
           # template has a separate entry for each of those three object
           # types, so an inventory that only looked at tables would report
           # "clean" while a sequence or function sat there granted to anon.
-          OWN=$(psql "$DB_URL" -At -F'|' -c "
+          if ! OWN=$(psql "$DB_URL" -At -F'|' -c "
             SELECT r.rolname, c.relkind::text, c.relname,
                    coalesce(array_to_string(c.relacl, ' '), '(owner default)')
             FROM pg_class c
@@ -254,7 +265,11 @@ jobs:
             JOIN pg_roles r     ON r.oid = p.proowner
             WHERE n.nspname = 'public'
               AND r.rolname <> 'postgres'
-            ORDER BY 1, 2, 3;" 2>&1 | sed 's#::#;;#g')
+            ORDER BY 1, 2, 3;" 2>&1); then
+            echo "::warning title=Ownership inventory could not run::$(printf '%s' "$OWN" | sed 's#::#;;#g' | sed ':a;N;$!ba;s/\n/%0A/g')"
+            exit 0
+          fi
+          OWN=$(printf '%s' "$OWN" | sed 's#::#;;#g')
           if [ -z "$OWN" ]; then
             echo "::notice title=Object ownership in public (non-postgres owners: 0)::Every table, view, sequence and function in public is owned by postgres, so the default-privilege hardening that DID apply covers all of them. supabase_admin owns nothing here, so its unalterable template governs nothing."
           else
