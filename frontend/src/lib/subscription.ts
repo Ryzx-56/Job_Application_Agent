@@ -1,6 +1,15 @@
-import { createClient } from "@/lib/supabase/client";
-
 const API_URL = process.env.NEXT_PUBLIC_API_URL;
+
+/* Loaded on demand rather than imported at the top. This module is reached
+   from the PRICING page, which is a marketing page most visitors read signed
+   out — and both functions below are only ever called from a button a
+   subscriber clicks. A static import here put the Supabase client back into
+   the marketing bundle through the back door, undoing the split in
+   lib/auth.ts. See the note there. */
+async function supabaseClient() {
+  const { createClient } = await import("@/lib/supabase/client");
+  return createClient();
+}
 
 /**
  * Cancels a Pro/Elite subscription and downgrades to Free. Used for both
@@ -8,7 +17,7 @@ const API_URL = process.env.NEXT_PUBLIC_API_URL;
  * downgrade — same backend call either way.
  */
 export async function cancelSubscription(): Promise<void> {
-  const supabase = createClient();
+  const supabase = await supabaseClient();
   const {
     data: { session },
   } = await supabase.auth.getSession();
@@ -28,7 +37,7 @@ export async function cancelSubscription(): Promise<void> {
 
 /** Undoes a scheduled cancellation/downgrade. */
 export async function resumeSubscription(): Promise<void> {
-  const supabase = createClient();
+  const supabase = await supabaseClient();
   const {
     data: { session },
   } = await supabase.auth.getSession();

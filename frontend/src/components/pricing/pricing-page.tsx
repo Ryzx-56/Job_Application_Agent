@@ -8,7 +8,11 @@ import { useLang, useLocaleHref } from "@/lib/language";
 import { formatSar, formatShortDate, sarPerCredit, usdApprox } from "@/lib/pricing";
 import { LinkedInGlyph } from "@/components/linkedin-ui";
 import { useAuth } from "@/lib/auth";
-import { fetchCredits, Tier } from "@/lib/supabase/credits";
+// Type-only: erased at compile time, so it adds nothing to the bundle. The
+// fetchCredits implementation is imported dynamically in the effect below —
+// it pulls in the Supabase client, and this page is a MARKETING page that
+// most visitors read signed out. See the note in lib/auth.ts.
+import type { Tier } from "@/lib/supabase/credits";
 import { cancelSubscription, resumeSubscription } from "@/lib/subscription";
 import { SiteHeader, SiteFooter } from "@/components/landing/site-chrome";
 import { FaqList, FaqJsonLd, useFaqItems, FinalCta } from "@/components/landing/faq-cta";
@@ -221,7 +225,11 @@ export function PricingPage() {
     // while isLoggedIn is false. The version this moved from set it here
     // anyway, which did nothing except trip the cascading-render lint.
     if (!isLoggedIn) return;
-    fetchCredits()
+    // Only signed-in visitors ever need this, and only after hydration, so
+    // the Supabase client is fetched on demand rather than shipped to every
+    // reader of the pricing page.
+    import("@/lib/supabase/credits")
+      .then(({ fetchCredits }) => fetchCredits())
       .then((c) => {
         setTier(c.tier);
         setPendingTier(c.pendingTier);
