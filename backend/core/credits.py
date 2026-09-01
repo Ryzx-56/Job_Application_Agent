@@ -115,8 +115,7 @@ def reserve_credits(user_id: str, cv_language: str) -> ReservedCredits:
     # if it is. Avoids needing a cron job for now.
     admin.rpc("reset_credits_if_due", {"p_user_id": user_id}).execute()
 
-    result = admin.rpc("spend_credits", {"p_user_id": user_id, "p_amount": cost}).execute()
-    outcome = result.data if isinstance(result.data, dict) else {}
+    outcome = _spend(admin, user_id, cost)
     reserved = bool(outcome.get("ok"))
 
     if not reserved:
@@ -161,6 +160,56 @@ def reserve_credits(user_id: str, cv_language: str) -> ReservedCredits:
     return ReservedCredits(cost, from_monthly, from_purchased)
 
 
+def _spend(admin, user_id: str, cost: int) -> dict:
+    """
+    Deduct `cost`, returning {"ok", "from_monthly", "from_purchased"}.
+
+    FALLS BACK TO THE OLD FUNCTION IF THE NEW ONE ISN'T DEPLOYED YET.
+    The backend (Render) and the database migrations (GitHub Actions) deploy
+    independently and can fail independently — a migration run that fails
+    leaves new application code talking to an old schema, and spend_credits()
+    not existing would 500 every single CV generation. Credit spending is the
+    hot path of the entire product; it does not get to depend on two
+    deployments having landed in the right order.
+
+    reserve_credits() is the previous function, still present and still
+    correct (see 20260901230500_purchased_credits_survive_reset.sql, which
+    redefines rather than drops it). On the old schema it simply has no
+    purchased-credit bucket to split across, so the whole cost is reported as
+    monthly — which is exactly right when the column does not exist yet.
+
+    Only a "function not found" is caught. A real failure inside
+    spend_credits still raises, because silently falling back on a genuine
+    error would hide a bug and mis-report the split.
+    """
+    try:
+        result = admin.rpc("spend_credits", {"p_user_id": user_id, "p_amount": cost}).execute()
+        data = result.data if isinstance(result.data, dict) else {}
+        if data:
+            return data
+        # A dict is always returned by the real function; anything else means
+        # something is wrong with the call rather than with the balance.
+        raise RuntimeError(f"spend_credits returned {result.data!r}")
+    except Exception as err:
+        if not _is_missing_function(err, "spend_credits"):
+            raise
+        logger.warning(
+            "⚠️ spend_credits() is not in the database — falling back to reserve_credits(). "
+            "The purchased-credits migration has not been applied to this environment "
+            "(supabase/migrations/20260901230500_purchased_credits_survive_reset.sql). "
+            "Credits still work; the monthly/purchased split is not tracked until it lands."
+        )
+        ok = bool(admin.rpc("reserve_credits", {"p_user_id": user_id, "p_amount": cost}).execute().data)
+        return {"ok": ok, "from_monthly": cost if ok else 0, "from_purchased": 0}
+
+
+def _is_missing_function(err: Exception, name: str) -> bool:
+    """PostgREST answers PGRST202 for an RPC it cannot find. Matched on the
+    text too, since the exception type differs across supabase-py versions."""
+    text = f"{getattr(err, 'code', '')} {err}".lower()
+    return "pgrst202" in text or ("could not find" in text and name.lower() in text)
+
+
 def refund_credits(user_id: str, amount: int) -> None:
     """
     Call this if the pipeline raises AFTER reserve_credits() succeeded.
@@ -181,14 +230,24 @@ def refund_credits(user_id: str, amount: int) -> None:
         from_monthly, from_purchased = int(amount), 0
 
     try:
-        get_admin_client().rpc(
-            "restore_credits",
-            {
-                "p_user_id": user_id,
-                "p_from_monthly": from_monthly,
-                "p_from_purchased": from_purchased,
-            },
-        ).execute()
+        try:
+            get_admin_client().rpc(
+                "restore_credits",
+                {
+                    "p_user_id": user_id,
+                    "p_from_monthly": from_monthly,
+                    "p_from_purchased": from_purchased,
+                },
+            ).execute()
+        except Exception as err:
+            if not _is_missing_function(err, "restore_credits"):
+                raise
+            # Same deploy-skew fallback as _spend(). The old function only
+            # takes a total, which is correct on the old schema.
+            get_admin_client().rpc(
+                "refund_credits",
+                {"p_user_id": user_id, "p_amount": from_monthly + from_purchased},
+            ).execute()
         logger.info(
             f"↩️ Refunded {from_monthly + from_purchased} credit(s) to user {user_id} "
             f"after a failed generation ({from_monthly} monthly, {from_purchased} purchased)."
@@ -220,9 +279,25 @@ def grant_credits(user_id: str, amount: int, *, reason: str = "") -> None:
     if amount <= 0:
         raise ValueError(f"grant_credits needs a positive amount, got {amount}.")
 
-    get_admin_client().rpc(
-        "grant_purchased_credits", {"p_user_id": user_id, "p_amount": amount}
-    ).execute()
+    try:
+        get_admin_client().rpc(
+            "grant_purchased_credits", {"p_user_id": user_id, "p_amount": amount}
+        ).execute()
+    except Exception as err:
+        if not _is_missing_function(err, "grant_purchased_credits"):
+            raise
+        # DELIBERATELY NOT silent: on the old schema these credits will be
+        # wiped by the next monthly reset, which is the exact bug the
+        # migration fixes. The customer still gets what they paid for now,
+        # and the log says loudly that the migration is overdue.
+        logger.error(
+            f"🚨 grant_purchased_credits() is not in the database — granting {amount} credit(s) "
+            f"to {user_id} as ORDINARY credits instead. They will be erased at this user's next "
+            "monthly reset. Apply 20260901230500_purchased_credits_survive_reset.sql."
+        )
+        get_admin_client().rpc(
+            "refund_credits", {"p_user_id": user_id, "p_amount": amount}
+        ).execute()
     logger.info(
         f"🎁 Granted {amount} credit(s) to user {user_id}"
         + (f" for {reason}." if reason else ".")

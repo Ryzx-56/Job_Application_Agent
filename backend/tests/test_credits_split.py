@@ -167,3 +167,81 @@ def test_grant_raises_rather_than_swallowing(monkeypatch):
     monkeypatch.setattr(credits, "get_admin_client", lambda: Boom())
     with pytest.raises(RuntimeError):
         credits.grant_credits("user-1", 5)
+
+
+# ─── Deploy skew: new code, old database ────────────────────────────────────
+#
+# The backend and the migrations deploy independently and can fail
+# independently. On 2026-09-01 the migration run failed while the backend
+# shipped, which is exactly this case. Credit spending is the product's hot
+# path and must not depend on two deployments landing in the right order.
+
+
+class MissingFunctionAdmin(FakeAdmin):
+    """A database where the new functions were never created. PostgREST
+    answers PGRST202 for an RPC it cannot find."""
+
+    def __init__(self, missing):
+        super().__init__()
+        self.missing = missing
+
+    def rpc(self, name, params):
+        self.calls.append((name, params))
+        if name in self.missing:
+            raise RuntimeError(
+                f"{{'code': 'PGRST202', 'message': 'Could not find the function "
+                f"public.{name} in the schema cache'}}"
+            )
+        if name == "reserve_credits":
+            return FakeRPC(self, True)
+        return FakeRPC(self, None)
+
+
+def test_spend_falls_back_when_the_migration_has_not_landed(monkeypatch):
+    fake = MissingFunctionAdmin({"spend_credits"})
+    monkeypatch.setattr(credits, "get_admin_client", lambda: fake)
+
+    reserved = credits.reserve_credits("user-1", "ar")
+
+    assert reserved == 2
+    # Tried the new one, fell back to the old one — generation still works.
+    assert [n for n, _ in fake.calls] == [
+        "reset_credits_if_due", "spend_credits", "reserve_credits"
+    ]
+    # Nothing is claimed as purchased on a schema with no such column.
+    assert (reserved.from_monthly, reserved.from_purchased) == (2, 0)
+
+
+def test_refund_falls_back_when_the_migration_has_not_landed(monkeypatch):
+    fake = MissingFunctionAdmin({"restore_credits"})
+    monkeypatch.setattr(credits, "get_admin_client", lambda: fake)
+
+    credits.refund_credits("user-1", credits.ReservedCredits(2, 1, 1))
+
+    assert params_for(fake, "refund_credits") == {"p_user_id": "user-1", "p_amount": 2}
+
+
+def test_grant_falls_back_but_still_delivers_the_credits(monkeypatch):
+    """The customer has paid. They get their credits either way — the log is
+    what says the migration is overdue."""
+    fake = MissingFunctionAdmin({"grant_purchased_credits"})
+    monkeypatch.setattr(credits, "get_admin_client", lambda: fake)
+
+    credits.grant_credits("user-1", 30, reason="power_pack")
+
+    assert params_for(fake, "refund_credits") == {"p_user_id": "user-1", "p_amount": 30}
+
+
+def test_a_real_error_is_not_swallowed_as_a_missing_function(monkeypatch):
+    """Falling back on a genuine failure would hide a bug and mis-report the
+    monthly/purchased split."""
+    class Broken(FakeAdmin):
+        def rpc(self, name, params):
+            self.calls.append((name, params))
+            if name == "spend_credits":
+                raise RuntimeError("deadlock detected")
+            return FakeRPC(self, None)
+
+    monkeypatch.setattr(credits, "get_admin_client", lambda: Broken())
+    with pytest.raises(RuntimeError, match="deadlock"):
+        credits.reserve_credits("user-1", "en")
