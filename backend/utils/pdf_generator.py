@@ -93,16 +93,43 @@ def _arabicize_prose(context: dict) -> None:
 # ---------------------------------------------------------------------------
 
 ASSETS_FONT_DIR = Path(__file__).parent.parent / "assets" / "fonts"
-_ARABIC_FONT_REGULAR = ASSETS_FONT_DIR / "NotoNaskhArabic-Regular.ttf"
-_ARABIC_FONT_BOLD = ASSETS_FONT_DIR / "NotoNaskhArabic-Bold.ttf"
+
+# IBM PLEX SANS ARABIC, not Noto Naskh. This is a TEXT-LAYER fix, not a
+# restyling — although it is also a restyling, so every template was reviewed
+# in both languages before the swap shipped.
+#
+# Noto Naskh decomposes letters into skeleton + mark glyphs that are SHARED
+# between different letters (the "two dots above" glyph is used by ت, ة and
+# ق). WeasyPrint writes one ToUnicode entry per glyph id, so a shared glyph
+# can only ever map back to one of the letters that use it. The rendered page
+# looked right; the extractable text underneath had letters silently swapped
+# — ب coming out as ج — which meant copy-pasting from an Arabic CV produced
+# garbage, and any ATS that parses the PDF text read garbage too. That is the
+# opposite of what this product sells.
+#
+# Measured before switching: 5 Arabic sample lines, extracted with pypdf AND
+# PyMuPDF independently, both required to agree.
+#   Noto Naskh            0/5
+#   IBM Plex Sans Arabic  5/5
+# Almarai, Tajawal and Cairo also scored 5/5; Plex was chosen because it is
+# the only candidate with a matching Latin companion, which also fixes the
+# mismatched serif that Latin runs (emails, GitHub URLs, tech terms) inside
+# Arabic CVs were falling back to.
+#
+# ⚠️ A font swap alone does NOT fix this. It needs weasyprint >= 69.0, where
+# the separate RTL cluster-mapping bug is fixed, and it needs
+# fit_to_page.py to pass font_config= so @font-face is honoured at all.
+# All three are required; see prompts/UNDONE/arabic-text-layer-bug.md.
+_ARABIC_FONT_REGULAR = ASSETS_FONT_DIR / "IBMPlexSansArabic-Regular.ttf"
+_ARABIC_FONT_BOLD = ASSETS_FONT_DIR / "IBMPlexSansArabic-Bold.ttf"
 
 
 # Register the same font files with ReportLab (separate registry from
 # WeasyPrint/Pango) so render_cover_letter_pdf can reference them by name.
 # This runs once at import time; failures are logged, not raised, since a
 # missing font asset shouldn't take down English cover letters too.
-_ARABIC_FONT_NAME = "NotoNaskhArabic"
-_ARABIC_FONT_NAME_BOLD = "NotoNaskhArabic-Bold"
+_ARABIC_FONT_NAME = "IBMPlexSansArabic"
+_ARABIC_FONT_NAME_BOLD = "IBMPlexSansArabic-Bold"
 _ARABIC_REPORTLAB_FONT_REGISTERED = False
 
 if _ARABIC_FONT_REGULAR.exists():
@@ -155,7 +182,7 @@ def _arabic_override_css() -> str:
     <style>
       {font_face}
       body, body * {{
-        font-family: 'Arabic', 'Noto Naskh Arabic', sans-serif !important;
+        font-family: 'Arabic', 'IBM Plex Sans Arabic', sans-serif !important;
         direction: rtl;
       }}
       body {{ text-align: right; }}
@@ -282,7 +309,7 @@ def render_cv_pdf(state: dict, output_path: str, template_id: str | None = None)
 # CL_Body was hardcoded to fontName="Helvetica", which has no Arabic
 # glyphs at all - this is a different bug from the old "isolated letters"
 # CV issue (font simply couldn't draw the characters, vs. drawing them
-# unshaped). Now uses the same NotoNaskhArabic asset as the CV, registered
+# unshaped). Now uses the same IBMPlexSansArabic asset as the CV, registered
 # separately for ReportLab, plus manual shaping/bidi (see _shape_arabic)
 # since ReportLab - unlike WeasyPrint/Pango - doesn't do that automatically.
 # ---------------------------------------------------------------------------

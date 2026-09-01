@@ -30,6 +30,7 @@ from urllib.request import url2pathname
 
 import fitz  # PyMuPDF — already used by utils/pdf_parser.py
 from weasyprint import HTML, default_url_fetcher
+from weasyprint.text.fonts import FontConfiguration
 from pypdf import PdfReader
 from loguru import logger
 
@@ -263,9 +264,26 @@ def _local_only_url_fetcher(url: str):
     raise BlockedResourceError(f"Blocked remote resource request from a rendered document: {url}")
 
 
+# WITHOUT THIS, EVERY @font-face IN THE DOCUMENT IS SILENTLY IGNORED.
+#
+# WeasyPrint only resolves @font-face rules when it is handed a
+# FontConfiguration; with no font_config= argument it drops them without a
+# warning and falls back to whatever the system offers. That is why the
+# bundled Arabic font asset had never actually been used in production — CVs
+# were rendering in whatever Arabic face the Render image happened to ship,
+# not the file in assets/fonts/. Swapping the font asset changes nothing
+# unless this is passed.
+#
+# Built once at import rather than per render: constructing it scans the
+# system font set, which is wasteful to repeat on every page of a fit search.
+_FONT_CONFIG = FontConfiguration()
+
+
 def _render(html: str, base_url: str | None) -> bytes:
     buf = BytesIO()
-    HTML(string=html, base_url=base_url, url_fetcher=_local_only_url_fetcher).write_pdf(buf)
+    HTML(
+        string=html, base_url=base_url, url_fetcher=_local_only_url_fetcher
+    ).write_pdf(buf, font_config=_FONT_CONFIG)
     return buf.getvalue()
 
 
