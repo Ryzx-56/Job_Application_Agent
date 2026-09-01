@@ -126,6 +126,42 @@ def refund_credits(user_id: str, amount: int) -> None:
         logger.error(f"❌ Failed to refund {amount} credit(s) to user {user_id}: {err}")
 
 
+def grant_credits(user_id: str, amount: int, *, reason: str = "") -> None:
+    """
+    ADD credits to a user because they bought them. Called from
+    core/payments.py once a Moyasar payment is confirmed paid.
+
+    Deliberately reuses the `refund_credits` Postgres function, which is a
+    plain `credits_remaining = credits_remaining + p_amount`. The RPC's name
+    is about the case it was written for, not about what it does, and adding a
+    second SQL function that performs an identical UPDATE would be two things
+    to keep in step for no gain. The log line says "granted" so the ledger
+    reads correctly even though the RPC underneath says refund.
+
+    RAISES on failure, unlike refund_credits() which swallows. The caller has
+    already taken the customer's money, so a silent failure here is a customer
+    who paid and got nothing — core/payments.py catches it and logs everything
+    needed to fix the balance by hand.
+
+    ⚠️ CREDITS BOUGHT THIS WAY DO NOT SURVIVE THE MONTHLY RESET.
+    reset_credits_if_due() SETS credits_remaining to the tier allotment rather
+    than adding to it, so a pack bought shortly before a reset is erased by it.
+    That is a pre-existing behaviour of the reset function, not of this one,
+    and it has to be resolved before packs go on sale. See the note in
+    supabase/migrations/20260901113509_moyasar_billing.sql.
+    """
+    if amount <= 0:
+        raise ValueError(f"grant_credits needs a positive amount, got {amount}.")
+
+    get_admin_client().rpc(
+        "refund_credits", {"p_user_id": user_id, "p_amount": amount}
+    ).execute()
+    logger.info(
+        f"🎁 Granted {amount} credit(s) to user {user_id}"
+        + (f" for {reason}." if reason else ".")
+    )
+
+
 def get_credits(user_id: str) -> dict:
     """Used by a small /api/v1/credits GET endpoint (see main.py) so the
     frontend has a live source of truth beyond direct Supabase reads."""

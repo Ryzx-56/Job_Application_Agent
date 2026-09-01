@@ -70,6 +70,54 @@ export const ADDON_CAPS: Record<"pro" | "elite", { linkedinEssential: number; in
  *  it is an inclusion, not a product. */
 export const LINKEDIN_PREMIUM_SAR = 200;
 
+/* ── WHAT THE BACKEND CALLS THESE ────────────────────────────────────────
+   The `reference` slug identifying a product to the payment system. The
+   browser sends ONLY this — never an amount. The backend looks the price up
+   in backend/core/pricing.py and refuses the payment if what Moyasar
+   confirms doesn't match, so a tampered amount buys nothing.
+
+   THESE STRINGS MUST MATCH THE KEYS OF `CATALOG` IN backend/core/pricing.py.
+   backend/tests/test_pricing_parity.py reads this file and fails if they
+   drift, so a rename here without one there is caught by the test suite
+   rather than by a customer.
+
+   The prices above are what the SITE DISPLAYS. The checkout page renders the
+   amount it received from /api/v1/payments/catalog instead, so the figure a
+   buyer sees on the payment form is the same integer the server will verify
+   — a drift between this file and the backend can make a marketing page
+   wrong, but it can never make a CHARGE wrong. */
+
+export const PLAN_REFERENCE: Record<"pro" | "elite", string> = {
+  pro: "pro_plan",
+  elite: "elite_plan",
+};
+
+export const PACK_REFERENCE: Record<keyof typeof PACKS, string> = {
+  starter: "starter_pack",
+  "best-value": "best_value_pack",
+  power: "power_pack",
+};
+
+/** The one LinkedIn tier that is sold. Essential is bundled, so it has no
+ *  reference: there is nothing to charge for. */
+export const LINKEDIN_PREMIUM_REFERENCE = "linkedin_premium";
+
+/** Free never reaches the payment provider, so it has no reference at all.
+ *  Exported as a named constant so the omission reads as deliberate. */
+export const FREE_HAS_NO_REFERENCE = true;
+
+/**
+ * SAR -> halalas, the minor unit Moyasar quotes and charges in.
+ *
+ * 100 halalas to the riyal. Every current price is a whole number of riyals,
+ * so the rounding never fires today — it is there because 22.5 * 100 is
+ * 2250.0000000000005 in IEEE 754, and a fractional halala sent to Moyasar is
+ * rejected. Never send a float as an amount.
+ */
+export function toHalalas(sar: number): number {
+  return Math.round(Number(sar) * 100);
+}
+
 /**
  * Arabic counted nouns.
  *
