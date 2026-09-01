@@ -83,6 +83,24 @@ jobs:
             exit 1
           fi
 
+          # ── The secret must be the SESSION POOLER, not the direct host ──
+          # db.<ref>.supabase.co is IPv6-only unless the IPv4 add-on is paid
+          # for, and GitHub-hosted runners are IPv4-only — so a direct URL
+          # fails with "Network is unreachable". This is stated at the top of
+          # the file, but it was still what the secret contained, and the
+          # failure only surfaced once the host stopped answering on IPv4:
+          # three deploys passed, then every one after failed, with nothing
+          # in between to explain it.
+          #
+          # Checked here so the run says WHY in one line instead of leaving a
+          # network error to be interpreted.
+          case "$SUPABASE_DB_URL" in
+            *db.*.supabase.co*)
+              echo "::error title=SUPABASE_DB_URL points at the direct host::The secret uses db.<ref>.supabase.co, which is IPv6-only without the paid IPv4 add-on, and GitHub runners are IPv4-only. Use the SESSION POOLER string from Supabase → Project Settings → Database → Connection string → Session pooler. It looks like postgresql://postgres.<ref>:<password>@aws-0-<region>.pooler.supabase.com:5432/postgres — port 5432 (session mode), NOT 6543 (transaction mode), which cannot run DDL."
+              exit 1
+              ;;
+          esac
+
       # Pinned to the version this workflow was written and tested against.
       - name: Install the Supabase CLI
         uses: supabase/setup-cli@v1
