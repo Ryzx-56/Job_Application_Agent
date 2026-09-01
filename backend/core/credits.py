@@ -21,6 +21,18 @@ SUPABASE_SERVICE_ROLE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY", "")
 # toggle on the generate page.
 CREDIT_COST = {"en": 1, "ar": 2}
 
+# THERE ARE TWO KINDS OF CREDIT, and the difference is what someone paid.
+#
+#   MONTHLY    granted by the tier. Replaced — not topped up — every cycle by
+#              reset_credits_if_due(). Does not roll over.
+#   PURCHASED  bought with money (a credit pack). Never expires, never reset.
+#
+# `profiles.credits_remaining` is the SPENDABLE TOTAL of both, so every reader
+# in the app and the frontend keeps working without knowing any of this.
+# `profiles.purchased_credits` records how much of that total is the
+# non-expiring kind. Spending takes from the monthly portion first, because it
+# is the one with an expiry date.
+
 # Monthly credit allotment per tier. Must stay in sync with THREE places:
 #   1. reset_credits_if_due() in the SQL migration (001_profiles_credits.sql),
 #      which is what actually grants them each cycle.
@@ -56,16 +68,44 @@ def normalize_cv_language(cv_language: str) -> str:
     return "ar" if str(cv_language).lower().startswith("ar") else "en"
 
 
-def reserve_credits(user_id: str, cv_language: str) -> int:
+class ReservedCredits(int):
+    """
+    How many credits were taken, AND which of the two balances they came out
+    of. See core/credits.py's header note on the two kinds of credit.
+
+    An int subclass rather than a tuple or dataclass so that every existing
+    `reserved_amount = reserve_credits(...)` call site keeps working
+    untouched — it still IS the number, it just carries the breakdown along
+    with it so refund_credits() can put each kind back where it belongs.
+    """
+
+    from_monthly: int = 0
+    from_purchased: int = 0
+
+    def __new__(cls, total: int, from_monthly: int, from_purchased: int) -> "ReservedCredits":
+        self = super().__new__(cls, total)
+        self.from_monthly = from_monthly
+        self.from_purchased = from_purchased
+        return self
+
+
+def reserve_credits(user_id: str, cv_language: str) -> ReservedCredits:
     """
     Call this BEFORE running the generation pipeline. Atomically checks AND
-    deducts credits in one step (via the reserve_credits() Postgres
-    function), so two parallel requests can't both pass a check before
-    either one deducts. Raises 402 if the balance is insufficient.
+    deducts credits in one step (via the spend_credits() Postgres function),
+    so two parallel requests can't both pass a check before either one
+    deducts. Raises 402 if the balance is insufficient.
 
     Returns the credit amount reserved — pass this to refund_credits() if
     the pipeline fails afterward, since a failed generation should never
-    cost the user.
+    cost the user. The returned value is an int, but it also remembers
+    whether the credits came from the monthly allowance or from a bought
+    pack, so a refund can restore the right one.
+
+    MONTHLY CREDITS ARE SPENT FIRST, decided in spend_credits(): the monthly
+    allowance expires at the next reset and purchased credits never do, so
+    spending the perishable one first is the only order that can't destroy
+    something the user paid for.
     """
     lang = normalize_cv_language(cv_language)
     cost = CREDIT_COST[lang]
@@ -75,8 +115,9 @@ def reserve_credits(user_id: str, cv_language: str) -> int:
     # if it is. Avoids needing a cron job for now.
     admin.rpc("reset_credits_if_due", {"p_user_id": user_id}).execute()
 
-    result = admin.rpc("reserve_credits", {"p_user_id": user_id, "p_amount": cost}).execute()
-    reserved = bool(result.data)
+    result = admin.rpc("spend_credits", {"p_user_id": user_id, "p_amount": cost}).execute()
+    outcome = result.data if isinstance(result.data, dict) else {}
+    reserved = bool(outcome.get("ok"))
 
     if not reserved:
         # BUG FIX: .single() raises an exception (instead of returning a
@@ -111,19 +152,51 @@ def reserve_credits(user_id: str, cv_language: str) -> int:
             },
         )
 
-    logger.info(f"✅ Reserved {cost} credit(s) for user {user_id} ({lang} CV).")
-    return cost
+    from_monthly = int(outcome.get("from_monthly") or 0)
+    from_purchased = int(outcome.get("from_purchased") or 0)
+    logger.info(
+        f"✅ Reserved {cost} credit(s) for user {user_id} ({lang} CV) — "
+        f"{from_monthly} monthly, {from_purchased} purchased."
+    )
+    return ReservedCredits(cost, from_monthly, from_purchased)
 
 
 def refund_credits(user_id: str, amount: int) -> None:
-    """Call this if the pipeline raises AFTER reserve_credits() succeeded."""
+    """
+    Call this if the pipeline raises AFTER reserve_credits() succeeded.
+
+    Pass the value reserve_credits() returned, not a bare number: it knows
+    which balance each credit came out of, and each kind goes back where it
+    came from. Returning a purchased credit into the monthly allowance would
+    silently convert something the user paid for into something that expires
+    at the next reset.
+
+    A bare int still works — every credit is assumed monthly, which is the
+    safe direction (it can under-restore the non-expiring balance, never
+    invent one).
+    """
+    if isinstance(amount, ReservedCredits):
+        from_monthly, from_purchased = amount.from_monthly, amount.from_purchased
+    else:
+        from_monthly, from_purchased = int(amount), 0
+
     try:
-        get_admin_client().rpc("refund_credits", {"p_user_id": user_id, "p_amount": amount}).execute()
-        logger.info(f"↩️ Refunded {amount} credit(s) to user {user_id} after a failed generation.")
+        get_admin_client().rpc(
+            "restore_credits",
+            {
+                "p_user_id": user_id,
+                "p_from_monthly": from_monthly,
+                "p_from_purchased": from_purchased,
+            },
+        ).execute()
+        logger.info(
+            f"↩️ Refunded {from_monthly + from_purchased} credit(s) to user {user_id} "
+            f"after a failed generation ({from_monthly} monthly, {from_purchased} purchased)."
+        )
     except Exception as err:
         # Don't let a refund failure mask the original pipeline error —
         # log loudly so you can manually fix the balance if this ever fires.
-        logger.error(f"❌ Failed to refund {amount} credit(s) to user {user_id}: {err}")
+        logger.error(f"❌ Failed to refund {int(amount)} credit(s) to user {user_id}: {err}")
 
 
 def grant_credits(user_id: str, amount: int, *, reason: str = "") -> None:
@@ -131,30 +204,24 @@ def grant_credits(user_id: str, amount: int, *, reason: str = "") -> None:
     ADD credits to a user because they bought them. Called from
     core/payments.py once a Moyasar payment is confirmed paid.
 
-    Deliberately reuses the `refund_credits` Postgres function, which is a
-    plain `credits_remaining = credits_remaining + p_amount`. The RPC's name
-    is about the case it was written for, not about what it does, and adding a
-    second SQL function that performs an identical UPDATE would be two things
-    to keep in step for no gain. The log line says "granted" so the ledger
-    reads correctly even though the RPC underneath says refund.
+    Goes through grant_purchased_credits(), which adds to the spendable
+    balance AND records the credits as the non-expiring kind in one
+    statement. That second half is the whole point: reset_credits_if_due()
+    REPLACES the monthly allowance every cycle, so a credit that isn't
+    marked as purchased is erased at the next reset. A pack bought on day 29
+    used to vanish on day 30, with the money kept — see
+    supabase/migrations/20260901230500_purchased_credits_survive_reset.sql.
 
     RAISES on failure, unlike refund_credits() which swallows. The caller has
     already taken the customer's money, so a silent failure here is a customer
     who paid and got nothing — core/payments.py catches it and logs everything
     needed to fix the balance by hand.
-
-    ⚠️ CREDITS BOUGHT THIS WAY DO NOT SURVIVE THE MONTHLY RESET.
-    reset_credits_if_due() SETS credits_remaining to the tier allotment rather
-    than adding to it, so a pack bought shortly before a reset is erased by it.
-    That is a pre-existing behaviour of the reset function, not of this one,
-    and it has to be resolved before packs go on sale. See the note in
-    supabase/migrations/20260901113509_moyasar_billing.sql.
     """
     if amount <= 0:
         raise ValueError(f"grant_credits needs a positive amount, got {amount}.")
 
     get_admin_client().rpc(
-        "refund_credits", {"p_user_id": user_id, "p_amount": amount}
+        "grant_purchased_credits", {"p_user_id": user_id, "p_amount": amount}
     ).execute()
     logger.info(
         f"🎁 Granted {amount} credit(s) to user {user_id}"

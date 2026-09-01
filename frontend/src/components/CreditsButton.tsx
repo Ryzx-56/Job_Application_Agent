@@ -29,7 +29,12 @@ export function CreditsButton({ creditsRemaining, creditsTotal, lang = "en", upg
     return () => document.removeEventListener("mousedown", handleClick);
   }, []);
 
-  const pct = creditsTotal > 0 ? creditsRemaining / creditsTotal : 0;
+  // Clamped to 1: creditsRemaining is the spendable total and INCLUDES any
+  // credits bought as a pack, which are deliberately not part of the tier's
+  // monthly allotment. So someone holding a purchased balance legitimately
+  // has more than creditsTotal, and an unclamped ratio would draw a progress
+  // bar wider than the track it sits in.
+  const pct = creditsTotal > 0 ? Math.min(creditsRemaining / creditsTotal, 1) : 0;
   const isLow = pct <= 0.15;
   const isEmpty = creditsRemaining <= 0;
 
