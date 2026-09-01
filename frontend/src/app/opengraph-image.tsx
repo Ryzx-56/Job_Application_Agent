@@ -85,7 +85,7 @@ export default function Image() {
         <div style={{ display: "flex", alignItems: "center", gap: 18 }}>
           <div style={{ width: 96, height: 2, background: ACCENT }} />
           <div style={{ fontSize: 24, color: INK_SOFT }}>
-            ATS score · gap analysis · matched openings
+            ATS score · gap analysis · job & internship search
           </div>
         </div>
       </div>
