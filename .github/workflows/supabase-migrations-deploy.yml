@@ -101,7 +101,21 @@ jobs:
           SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
         run: |
           set -o pipefail
-          supabase migration list --db-url "$SUPABASE_DB_URL" 2>&1 | tee /tmp/before.log
+          # ── The secret has a stray control character in it ──────────────
+          # The 2026-09-01 deploys failed here with:
+          #   failed to parse connection string ... invalid control character in URL
+          # A pasted secret picks up a trailing newline easily, and a valid
+          # Postgres URL never contains one, nor leading/trailing whitespace —
+          # so trimming is safe and makes the job survive a secret that was
+          # entered with one. FIX THE SECRET TOO; this is a seatbelt, not a
+          # substitute.
+          #
+          # add-mask registers the trimmed value for redaction: GitHub only
+          # masks the EXACT secret string, and a trimmed copy is a different
+          # string that would otherwise print in the clear.
+          DB_URL=$(printf '%s' "$SUPABASE_DB_URL" | tr -d '\r\n\t' | sed -e 's/^ *//' -e 's/ *$//')
+          echo "::add-mask::$DB_URL"
+          supabase migration list --db-url "$DB_URL" 2>&1 | tee /tmp/before.log
 
       # ── Why the output is re-emitted as ::error:: ──────────────────────
       # A failing step annotates the run with a bare "Process completed with
@@ -117,7 +131,21 @@ jobs:
           # pipefail so `tee` cannot swallow a non-zero exit and turn a failed
           # deploy into a green tick.
           set -o pipefail
-          if ! supabase db push --db-url "$SUPABASE_DB_URL" 2>&1 | tee /tmp/push.log; then
+          # ── The secret has a stray control character in it ──────────────
+          # The 2026-09-01 deploys failed here with:
+          #   failed to parse connection string ... invalid control character in URL
+          # A pasted secret picks up a trailing newline easily, and a valid
+          # Postgres URL never contains one, nor leading/trailing whitespace —
+          # so trimming is safe and makes the job survive a secret that was
+          # entered with one. FIX THE SECRET TOO; this is a seatbelt, not a
+          # substitute.
+          #
+          # add-mask registers the trimmed value for redaction: GitHub only
+          # masks the EXACT secret string, and a trimmed copy is a different
+          # string that would otherwise print in the clear.
+          DB_URL=$(printf '%s' "$SUPABASE_DB_URL" | tr -d '\r\n\t' | sed -e 's/^ *//' -e 's/ *$//')
+          echo "::add-mask::$DB_URL"
+          if ! supabase db push --db-url "$DB_URL" 2>&1 | tee /tmp/push.log; then
             # Annotations are single-line: %0A is the encoding for a newline,
             # and a literal "::" would terminate the workflow command early.
             MSG=$(sed -E \
@@ -137,7 +165,21 @@ jobs:
           SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
         run: |
           set -o pipefail
-          supabase migration list --db-url "$SUPABASE_DB_URL" 2>&1 | tee /tmp/after.log
+          # ── The secret has a stray control character in it ──────────────
+          # The 2026-09-01 deploys failed here with:
+          #   failed to parse connection string ... invalid control character in URL
+          # A pasted secret picks up a trailing newline easily, and a valid
+          # Postgres URL never contains one, nor leading/trailing whitespace —
+          # so trimming is safe and makes the job survive a secret that was
+          # entered with one. FIX THE SECRET TOO; this is a seatbelt, not a
+          # substitute.
+          #
+          # add-mask registers the trimmed value for redaction: GitHub only
+          # masks the EXACT secret string, and a trimmed copy is a different
+          # string that would otherwise print in the clear.
+          DB_URL=$(printf '%s' "$SUPABASE_DB_URL" | tr -d '\r\n\t' | sed -e 's/^ *//' -e 's/ *$//')
+          echo "::add-mask::$DB_URL"
+          supabase migration list --db-url "$DB_URL" 2>&1 | tee /tmp/after.log
           # Which migrations actually landed, as an annotation — the single
           # most useful fact after a partial or failed deploy.
           MSG=$(sed -E -e 's#(postgres(ql)?://)[^[:space:]]*#\1REDACTED#g' -e 's#::#;;#g' \

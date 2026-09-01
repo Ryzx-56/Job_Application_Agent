@@ -95,10 +95,28 @@ jobs:
         if: steps.guard.outputs.available == 'true'
         env:
           SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
-        run: supabase migration list --db-url "$SUPABASE_DB_URL"
+        run: |
+          # The SUPABASE_DB_URL secret was entered with a trailing control
+          # character, which made `db push` fail with "invalid control
+          # character in URL". A valid Postgres URL never contains one, so
+          # trimming is safe. add-mask registers the trimmed value for log
+          # redaction — GitHub only masks the EXACT secret string, and a
+          # trimmed copy is a different string.
+          DB_URL=$(printf '%s' "$SUPABASE_DB_URL" | tr -d '\r\n\t' | sed -e 's/^ *//' -e 's/ *$//')
+          echo "::add-mask::$DB_URL"
+          supabase migration list --db-url "$DB_URL"
 
       - name: Dry run - what WOULD be applied
         if: steps.guard.outputs.available == 'true'
         env:
           SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
-        run: supabase db push --dry-run --db-url "$SUPABASE_DB_URL"
+        run: |
+          # The SUPABASE_DB_URL secret was entered with a trailing control
+          # character, which made `db push` fail with "invalid control
+          # character in URL". A valid Postgres URL never contains one, so
+          # trimming is safe. add-mask registers the trimmed value for log
+          # redaction — GitHub only masks the EXACT secret string, and a
+          # trimmed copy is a different string.
+          DB_URL=$(printf '%s' "$SUPABASE_DB_URL" | tr -d '\r\n\t' | sed -e 's/^ *//' -e 's/ *$//')
+          echo "::add-mask::$DB_URL"
+          supabase db push --dry-run --db-url "$DB_URL"
