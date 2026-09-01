@@ -186,6 +186,40 @@ jobs:
                   /tmp/after.log | tail -30 | sed ':a;N;$!ba;s/\n/%0A/g')
           echo "::notice title=Migration state after deploy::${MSG}"
 
+      # ── Post-deploy security assertion ────────────────────────────────
+      # 20260901120344_default_privileges_deny_by_default.sql tightens the
+      # default privileges so a newly created table is not automatically
+      # granted to anon/authenticated. It has to do that for TWO owning roles,
+      # and ALTER DEFAULT PRIVILEGES FOR ROLE X requires membership in X — CI
+      # connects as postgres, which on Supabase may not be a member of
+      # supabase_admin. The migration catches that and warns rather than
+      # failing, so the warning is easy to miss and it only appears in the raw
+      # log, which needs admin rights to read.
+      #
+      # This asserts the END STATE instead, which is what actually matters:
+      # if anon or authenticated still appear in the default ACLs for public,
+      # the hardening did not fully take and new tables are still being
+      # granted to browser roles.
+      - name: Verify default privileges took effect
+        if: always()
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: |
+          DB_URL=$(printf '%s' "$SUPABASE_DB_URL" | tr -d '\r\n\t' | sed -e 's/^ *//' -e 's/ *$//')
+          echo "::add-mask::$DB_URL"
+          OUT=$(psql "$DB_URL" -At -F'|' -c "
+            SELECT r.rolname,
+                   a.defaclobjtype,
+                   coalesce(array_to_string(a.defaclacl, ' '), '(none)')
+            FROM pg_default_acl a
+            JOIN pg_roles r     ON r.oid = a.defaclrole
+            JOIN pg_namespace n ON n.oid = a.defaclnamespace
+            WHERE n.nspname = 'public'
+            ORDER BY 1, 2;" 2>&1 | sed 's#::#;;#g')
+          LEAKY=$(printf '%s' "$OUT" | grep -cE '(^|[ =])(anon|authenticated)=' || true)
+          MSG=$(printf '%s' "$OUT" | sed ':a;N;$!ba;s/\n/%0A/g')
+          echo "::notice title=Default ACLs in public (browser-role grants: ${LEAKY})::${MSG}"
+
       # ── Why the output is copied into the job summary ──────────────────
       # Reading a workflow's raw logs through the API needs admin rights on
       # the repository, so a deploy failure could only be diagnosed by a human
