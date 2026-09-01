@@ -233,20 +233,30 @@ jobs:
           # list of objects. This prints it on every deploy, which also turns
           # the "always add tables via a migration" rule into something
           # observable rather than something people have to remember.
+          # Relations AND sequences AND functions: the default-privilege
+          # template has a separate entry for each of those three object
+          # types, so an inventory that only looked at tables would report
+          # "clean" while a sequence or function sat there granted to anon.
           OWN=$(psql "$DB_URL" -At -F'|' -c "
-            SELECT r.rolname,
-                   c.relkind,
-                   c.relname,
+            SELECT r.rolname, c.relkind::text, c.relname,
                    coalesce(array_to_string(c.relacl, ' '), '(owner default)')
             FROM pg_class c
             JOIN pg_namespace n ON n.oid = c.relnamespace
             JOIN pg_roles r     ON r.oid = c.relowner
             WHERE n.nspname = 'public'
-              AND c.relkind IN ('r','p','v','m')
+              AND c.relkind IN ('r','p','v','m','S')
               AND r.rolname <> 'postgres'
-            ORDER BY 1, 3;" 2>&1 | sed 's#::#;;#g')
+            UNION ALL
+            SELECT r.rolname, 'func', p.proname,
+                   coalesce(array_to_string(p.proacl, ' '), '(owner default)')
+            FROM pg_proc p
+            JOIN pg_namespace n ON n.oid = p.pronamespace
+            JOIN pg_roles r     ON r.oid = p.proowner
+            WHERE n.nspname = 'public'
+              AND r.rolname <> 'postgres'
+            ORDER BY 1, 2, 3;" 2>&1 | sed 's#::#;;#g')
           if [ -z "$OWN" ]; then
-            echo "::notice title=Object ownership in public (non-postgres owners: 0)::Every table, view and sequence in public is owned by postgres, so the default-privilege hardening covers all of them."
+            echo "::notice title=Object ownership in public (non-postgres owners: 0)::Every table, view, sequence and function in public is owned by postgres, so the default-privilege hardening that DID apply covers all of them. supabase_admin owns nothing here, so its unalterable template governs nothing."
           else
             COUNT=$(printf '%s' "$OWN" | grep -c . || true)
             OWNMSG=$(printf '%s' "$OWN" | sed ':a;N;$!ba;s/\n/%0A/g')
