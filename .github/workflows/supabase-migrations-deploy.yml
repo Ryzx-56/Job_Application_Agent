@@ -250,9 +250,21 @@ jobs:
                         -e 's#(:)[^:@/[:space:]]+(@)#\1REDACTED\2#g' "$2" \
                  | tail -40 | sed ':a;N;$!ba;s/\n/%0A/g')"
           }
-          if ! supabase migration list --debug --db-url "$DB_URL" 2>&1 | tee /tmp/before.log; then
-            annotate_failure "migration list (before) failed" /tmp/before.log
-            exit 1
+          # --debug is deliberately OFF. It was added to turn the CLI's
+          # generic "Failed to connect" into the real Postgres error, which
+          # it did — the cause was a password-auth failure. But with it on,
+          # `db push` exited non-zero after printing "Remote database is up
+          # to date", from its own telemetry/version-check HTTP calls rather
+          # than from anything to do with the migration, turning a clean
+          # deploy red. Re-add it temporarily when diagnosing a connection,
+          # not as a standing option.
+          set +e
+          supabase migration list --db-url "$DB_URL" 2>&1 | tee /tmp/before.log
+          STATUS=${PIPESTATUS[0]}
+          set -e
+          if [ "$STATUS" -ne 0 ]; then
+            annotate_failure "migration list (before) failed (exit $STATUS)" /tmp/before.log
+            exit "$STATUS"
           fi
 
       # ── Why the output is re-emitted as ::error:: ──────────────────────
@@ -297,9 +309,21 @@ jobs:
                         -e 's#(:)[^:@/[:space:]]+(@)#\1REDACTED\2#g' "$2" \
                  | tail -40 | sed ':a;N;$!ba;s/\n/%0A/g')"
           }
-          if ! supabase db push --debug --db-url "$DB_URL" 2>&1 | tee /tmp/push.log; then
-            annotate_failure "db push failed" /tmp/push.log
-            exit 1
+          # --debug is deliberately OFF. It was added to turn the CLI's
+          # generic "Failed to connect" into the real Postgres error, which
+          # it did — the cause was a password-auth failure. But with it on,
+          # `db push` exited non-zero after printing "Remote database is up
+          # to date", from its own telemetry/version-check HTTP calls rather
+          # than from anything to do with the migration, turning a clean
+          # deploy red. Re-add it temporarily when diagnosing a connection,
+          # not as a standing option.
+          set +e
+          supabase db push --db-url "$DB_URL" 2>&1 | tee /tmp/push.log
+          STATUS=${PIPESTATUS[0]}
+          set -e
+          if [ "$STATUS" -ne 0 ]; then
+            annotate_failure "db push failed (exit $STATUS)" /tmp/push.log
+            exit "$STATUS"
           fi; then
             # Annotations are single-line: %0A is the encoding for a newline,
             # and a literal "::" would terminate the workflow command early.
@@ -348,9 +372,21 @@ jobs:
                         -e 's#(:)[^:@/[:space:]]+(@)#\1REDACTED\2#g' "$2" \
                  | tail -40 | sed ':a;N;$!ba;s/\n/%0A/g')"
           }
-          if ! supabase migration list --debug --db-url "$DB_URL" 2>&1 | tee /tmp/after.log; then
-            annotate_failure "migration list (after) failed" /tmp/after.log
-            exit 1
+          # --debug is deliberately OFF. It was added to turn the CLI's
+          # generic "Failed to connect" into the real Postgres error, which
+          # it did — the cause was a password-auth failure. But with it on,
+          # `db push` exited non-zero after printing "Remote database is up
+          # to date", from its own telemetry/version-check HTTP calls rather
+          # than from anything to do with the migration, turning a clean
+          # deploy red. Re-add it temporarily when diagnosing a connection,
+          # not as a standing option.
+          set +e
+          supabase migration list --db-url "$DB_URL" 2>&1 | tee /tmp/after.log
+          STATUS=${PIPESTATUS[0]}
+          set -e
+          if [ "$STATUS" -ne 0 ]; then
+            annotate_failure "migration list (after) failed (exit $STATUS)" /tmp/after.log
+            exit "$STATUS"
           fi
           # Which migrations actually landed, as an annotation — the single
           # most useful fact after a partial or failed deploy.
