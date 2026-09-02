@@ -207,6 +207,17 @@ jobs:
       # Do NOT switch this to port 6543: that is transaction mode, which is
       # not safe for migrations.
       - name: Migration state BEFORE
+        # INFORMATIONAL, so it must not gate the apply. The pooler connection
+        # is intermittently refusing this first call — the e51c305 run had
+        # BEFORE fail while both the psql diagnostics and the AFTER listing
+        # connected fine moments later. With this step fatal, one flaky
+        # connection skipped `db push` entirely and a deploy that had nothing
+        # wrong with it applied nothing.
+        #
+        # `db push` remains the authoritative step: if the database is
+        # genuinely unreachable, it fails there and the job goes red on the
+        # command that actually matters, with its own error annotation.
+        continue-on-error: true
         env:
           SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
         run: |
