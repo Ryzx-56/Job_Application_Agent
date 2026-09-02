@@ -45,12 +45,17 @@ export default function CheckoutPage() {
 
   const plan = params.get("plan");
   const packParam = params.get("pack");
+  // The LinkedIn add-on sends the reference directly, plus the purchase row
+  // it belongs to. It goes through this same page and the same Moyasar form
+  // as a credit pack — one checkout for the whole product.
+  const directReference = params.get("reference");
+  const purchaseId = params.get("purchase");
 
   const reference = isPackSlug(packParam)
     ? PACK_REFERENCE[packParam]
     : plan === "pro" || plan === "elite"
       ? PLAN_REFERENCE[plan]
-      : null;
+      : directReference || null;
   // Subscriptions are §5. Until then this page sells packs only.
   const isSubscription = reference === PLAN_REFERENCE.pro || reference === PLAN_REFERENCE.elite;
 
@@ -122,8 +127,13 @@ export default function CheckoutPage() {
         currency: product.currency,
         description: isAr ? product.label_ar : product.label_en,
         callbackUrl: `${window.location.origin}/payment/callback`,
-        // The server prices the payment from `reference` alone.
-        metadata: { reference: product.reference },
+        // The server prices the payment from `reference` alone. purchase_id
+        // is carried through so the webhook knows WHICH LinkedIn purchase a
+        // paid add-on unlocks; it decides nothing about the amount.
+        metadata: {
+          reference: product.reference,
+          ...(purchaseId ? { purchase_id: purchaseId } : {}),
+        },
         lang,
         // A credit-pack buyer did not ask us to keep their card. Saving one
         // is §5's subscribe flow, where it is the point of the transaction.
@@ -145,7 +155,7 @@ export default function CheckoutPage() {
           : "The payment form couldn't load. Check your connection and refresh."
       );
     }
-  }, [product, isAr, lang]);
+  }, [product, isAr, lang, purchaseId]);
 
   useEffect(() => {
     void mountForm();
@@ -157,8 +167,8 @@ export default function CheckoutPage() {
       <Shell dir={dir}>
         <Notice tone="warning">
           {isAr
-            ? "لم يتم تحديد باقة. اختر باقة من صفحة الأسعار."
-            : "No pack selected. Choose one from the pricing page."}
+            ? "لم يتم تحديد منتج للشراء. اختر واحدًا من صفحة الأسعار."
+            : "Nothing selected to buy. Choose something from the pricing page."}
         </Notice>
         <BackLink isAr={isAr} Arrow={BackArrow} />
       </Shell>

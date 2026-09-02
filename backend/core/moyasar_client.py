@@ -8,10 +8,11 @@
 #                                         turning a non-2xx into a typed
 #                                         exception. Knows Moyasar's endpoint
 #                                         names and nothing about Tarshih.
-#   core/payment_gateway.py               speaks *our* vocabulary. Normalizes
-#                                         a provider's status strings onto
-#                                         PAID/FAILED/PENDING, verifies
-#                                         webhooks, and is what the rest of
+#   core/payments.py                      speaks the PRODUCT's vocabulary.
+#                                         Verifies a payment against the
+#                                         price list, records it, grants what
+#                                         it bought, and owns the webhook
+#                                         receiver. It is what the rest of
 #                                         the app imports.
 #
 # So: no credit granting, no Supabase, no pricing, no tier logic in this file.
@@ -24,8 +25,9 @@
 # never appears in anything we format ourselves.
 #
 # MONEY IS ALWAYS AN INTEGER OF HALALAS here — 100 to the riyal, Moyasar's
-# own convention. Never a float, never SAR. The conversion to major units for
-# display happens in payment_gateway.py, deliberately not here.
+# own convention. Never a float, never SAR. Conversion to major units for
+# display happens in core/pricing.py (Product.amount_sar), deliberately not
+# here.
 import os
 import uuid
 from typing import Any, Optional

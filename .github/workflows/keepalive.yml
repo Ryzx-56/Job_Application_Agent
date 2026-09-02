@@ -1,0 +1,47 @@
+# Keeps the scheduled workflows alive.
+#
+# GitHub DISABLES scheduled workflows after 60 days of repository inactivity,
+# and it counts commits, not workflow runs — so a repo whose only activity IS
+# a cron job switches that cron off and then looks perfectly healthy while
+# nothing runs. For this repository that would silently stop
+# billing-renewals.yml, which means subscriptions stop being charged and
+# nobody finds out until a customer notices they have not been billed.
+#
+# One empty commit a month resets the clock. Monthly rather than at day 59:
+# a single missed run must not be enough to lose the schedule.
+
+name: keepalive
+
+on:
+  schedule:
+    - cron: "0 3 1 * *"      # 03:00 UTC on the 1st of every month
+  workflow_dispatch: {}
+
+# The default GITHUB_TOKEN is read-only in repositories whose default
+# workflow permissions are restricted, and the push below fails without this.
+permissions:
+  contents: write
+
+concurrency:
+  group: keepalive
+  cancel-in-progress: false
+
+jobs:
+  keepalive:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Push an empty commit
+        run: |
+          set -e
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git commit --allow-empty -m "keepalive: prevent scheduled workflow disable"
+          git push
+
+          # An empty commit touches no paths, so it cannot trigger the
+          # migration deploy (which filters on supabase/migrations/** and its
+          # own workflow file) or anything else that watches paths. Verified
+          # against the current triggers rather than assumed.
+          echo "::notice title=keepalive::Empty commit pushed; the 60-day scheduled-workflow clock is reset."

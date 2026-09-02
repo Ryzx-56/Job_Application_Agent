@@ -33,6 +33,7 @@ from agents.linkedin_generator import (
     run_linkedin_generator,
 )
 from core.auth import get_current_admin_user_id, get_current_user_id, read_admin_flag
+from core import moyasar_client, pricing
 from core.credits import get_admin_client
 from core.entitlements import (
     LINKEDIN_ESSENTIAL,
@@ -41,15 +42,13 @@ from core.entitlements import (
     release_addon_quota,
 )
 from core.linkedin_notify import lookup_buyers, send_premium_order_alert
-from core.payment_gateway import (
-    FAILED,
-    PAID,
-    GatewayError,
-    GatewayUnavailable,
-    WebhookVerificationError,
-    gateway_status,
-    get_gateway,
-)
+# Payment status vocabulary, previously imported from core/payment_gateway.py.
+# That module was an abstraction over "which provider is this" — a question
+# the product no longer has. There is one provider and one integration for it
+# (core/payments.py), so the two constants live here instead of behind an
+# indirection that exists to support a second gateway nobody is building.
+PAID = "paid"
+FAILED = "failed"
 from core.profile_names import get_profile_names, required_name_for
 from schemas.linkedin_schema import LinkedInCheckoutRequest, LinkedInGenerateRequest
 
@@ -71,9 +70,16 @@ router = APIRouter()
 # list of things that can be bought, and Essential can't be. It comes with a
 # Pro or Elite subscription, capped monthly (see core/entitlements.py), so it
 # has no price, no checkout and no purchase row. Premium is unchanged.
+# Read through from core/pricing.py rather than restated, so what the
+# checkout quotes and what the server verifies against cannot drift. §6 wants
+# a single price list; this is that list.
 PRICING = {
-    "premium": {"price": 200.00, "currency": "SAR"},
+    "premium": {
+        "price": float(pricing.CATALOG["linkedin_premium"].amount_sar),
+        "currency": pricing.CURRENCY,
+    },
 }
+
 
 # The tier value Essential generations still carry in the database. Existing
 # rows use it and the history view reads it, so the string stays even though
@@ -341,6 +347,77 @@ def _confirm_paid(reference: str, *, paid_amount: float | None = None,
     return {"matched": True, "purchase": purchase, "already_paid": False}
 
 
+def confirm_premium_purchase(purchase_id: str, moyasar_payment_id: str,
+                             paid_halalas: int, paid_currency: str) -> dict:
+    """
+    Unlock a premium purchase after Moyasar confirms its payment.
+
+    THE ONLY WAY A PREMIUM PURCHASE BECOMES PAID. Called from
+    core/payments.py once a payment referencing `linkedin_premium` has been
+    re-read from Moyasar's API and found paid — never from a client response
+    or a success redirect.
+
+    Amount is verified HERE as well as there. payments.py already checks the
+    charge against core/pricing.py, but this function is what flips a row that
+    unlocks a 200 SAR service, and a second check against the price recorded
+    when the purchase was created costs nothing. Halalas throughout — the
+    integer comparison has no rounding to argue about, unlike the float
+    tolerance the old gateway path needed.
+
+    IDEMPOTENT: the update is conditional on the row still being 'pending', so
+    a redelivered webhook cannot fire a second fulfilment alert. Two
+    simultaneous deliveries mean exactly one wins the update.
+    """
+    admin = get_admin_client()
+    purchase = (
+        admin.table("linkedin_purchases").select("*")
+        .eq("id", purchase_id).maybe_single().execute().data
+    )
+    if not purchase:
+        logger.error(f"🚫 Payment {moyasar_payment_id} names purchase {purchase_id}, which does not exist.")
+        return {"matched": False}
+
+    if purchase.get("payment_status") == PAID:
+        logger.info(f"↩️ LinkedIn purchase {purchase_id} was already paid; ignoring duplicate.")
+        return {"matched": True, "already_paid": True, "purchase": purchase}
+
+    expected_halalas = int(round(float(purchase.get("price_paid") or 0) * 100))
+    expected_currency = str(purchase.get("currency") or pricing.CURRENCY).upper()
+    if paid_halalas != expected_halalas or str(paid_currency).upper() != expected_currency:
+        logger.error(
+            f"🚫 Payment {moyasar_payment_id} paid {paid_halalas} {paid_currency} but purchase "
+            f"{purchase_id} costs {expected_halalas} {expected_currency}. Refusing to unlock."
+        )
+        return {"matched": True, "amount_mismatch": True, "purchase": purchase}
+
+    updates = {
+        "payment_status": PAID,
+        "paid_at": _iso(_now()),
+        "payment_reference": moyasar_payment_id,
+        "payment_provider": "moyasar",
+    }
+    if purchase.get("tier") == "premium":
+        updates["fulfillment_status"] = "pending"
+
+    updated = (
+        admin.table("linkedin_purchases").update(updates)
+        .eq("id", purchase_id).eq("payment_status", "pending")
+        .execute().data or []
+    )
+    if not updated:
+        logger.info(f"↩️ LinkedIn purchase {purchase_id} was confirmed concurrently.")
+        return {"matched": True, "already_paid": True, "purchase": purchase}
+
+    purchase = updated[0]
+    logger.info(
+        f"💳 LinkedIn {purchase['tier']} purchase {purchase_id} confirmed paid "
+        f"({moyasar_payment_id}, {paid_halalas} {paid_currency})."
+    )
+    if purchase.get("tier") == "premium" and not purchase.get("notified_at"):
+        _notify_premium_async(purchase)
+    return {"matched": True, "already_paid": False, "purchase": purchase}
+
+
 def _mark_failed(reference: str) -> None:
     try:
         (
@@ -542,7 +619,18 @@ def linkedin_overview(user_id: str = Depends(get_current_user_id)) -> dict:
         # Sent even to Free users, who get limit 0 and unlocked false, so the
         # page has one shape to render rather than a special case.
         "essential_quota": get_addon_quota(user_id, LINKEDIN_ESSENTIAL),
-        "gateway": gateway_status(),
+        # Kept under the same key so the frontend shape is unchanged, but it
+        # now answers the only question that matters: is Moyasar configured?
+        # `is_mock` is permanently False — the mock gateway is gone. It gave
+        # the 200 SAR product away for free by auto-confirming payments with
+        # no amount check, and Moyasar's own test keys do the same job
+        # honestly.
+        "gateway": {
+            "available": bool(moyasar_client.config_status()["secret_key_set"]),
+            "provider": "moyasar",
+            "is_mock": False,
+            "mode": moyasar_client.mode(),
+        },
         "has_purchased": any(p["payment_status"] == PAID for p in purchases),
         "purchases": purchases,
         "history": history,
@@ -604,93 +692,48 @@ def linkedin_checkout(
                 },
             )
 
-    # Gateway availability is checked BEFORE a purchase row is created, so a
-    # "payments aren't live yet" state doesn't litter the table with pending
-    # purchases nobody can ever complete.
-    try:
-        gateway = get_gateway()
-    except GatewayUnavailable as e:
-        logger.info(f"LinkedIn checkout attempted while payments are off: {e}")
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail={
-                "code": "payment_gateway_unavailable",
-                "message": "Online payment isn't live yet. It'll be available here shortly.",
-            },
-        )
-
+    # NO GATEWAY LOOKUP ANY MORE. Whether payment is possible is a property
+    # of the Moyasar configuration, reported by /api/v1/payments/catalog and
+    # checked by the checkout page before it mounts the form — the same check
+    # credit packs use. The purchase row is still created first, so an
+    # abandoned checkout stays visible as an unpaid attempt.
     admin = get_admin_client()
     inserted = (
         admin.table("linkedin_purchases")
         .insert({
             "user_id": user_id,
             "tier": tier,
-            "source_cv_id": resume["id"],
+            "source_cv_id": payload.source_cv_id,
             "price_paid": price["price"],
             "currency": price["currency"],
             "payment_status": "pending",
+            "payment_provider": "moyasar",
             "contact_phone": (payload.contact_phone or "").strip() or None,
             "contact_consent": bool(payload.contact_consent),
             "fulfillment_status": "pending" if tier == "premium" else "not_required",
         })
         .execute()
         .data
-        or []
     )
-    if not inserted:
+    purchase = (inserted or [None])[0]
+    if not purchase:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Couldn't start this purchase. Please try again.",
-        )
-    purchase = inserted[0]
-
-    # NOTE: fulfillment_status is set to 'pending' for premium at insert time
-    # so an abandoned premium checkout is still visible as an unpaid attempt;
-    # the admin queue filters on payment_status = paid, so it doesn't show up
-    # as work owed until it's actually been paid for.
-
-    try:
-        intent = gateway.create_payment(
-            amount=price["price"],
-            currency=price["currency"],
-            description=f"Tarshih LinkedIn profile ({tier})",
-            reference_hint=purchase["id"],
-            callback_url=f"{APP_URL}{LINKEDIN_RETURN_PATH}",
-        )
-    except (GatewayUnavailable, GatewayError) as e:
-        _fail_purchase(purchase["id"], reason=str(e))
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail={
-                "code": "payment_gateway_unavailable",
-                "message": "Online payment isn't live yet. It'll be available here shortly.",
-            },
+            detail="Could not start the purchase.",
         )
 
-    admin.table("linkedin_purchases").update({
-        "payment_reference": intent.reference,
-        "payment_provider": intent.provider,
-    }).eq("id", purchase["id"]).execute()
-
-    if intent.auto_confirm:
-        # Mock gateway only. Runs the SAME confirmation the real webhook
-        # runs, server-side, the client is never trusted to say "paid".
-        result = _confirm_paid(intent.reference)
-        confirmed = bool(result.get("matched"))
-        return {
-            "purchase_id": purchase["id"],
-            "status": PAID if confirmed else "pending",
-            "provider": intent.provider,
-            "is_mock": True,
-            "redirect_url": None,
-        }
-
+    # THE CLIENT IS TOLD WHAT TO PAY FOR, NOT WHAT IT COSTS. It gets a
+    # reference slug and the purchase id; the amount is fetched from the
+    # catalog and re-verified server-side against core/pricing.py when the
+    # payment lands. Nothing here trusts a price from the browser — the same
+    # property the old gateway flow had, kept.
+    logger.info(f"🧾 LinkedIn {tier} purchase {purchase['id']} awaiting payment for {user_id}.")
     return {
         "purchase_id": purchase["id"],
-        "status": "pending",
-        "provider": intent.provider,
-        "is_mock": False,
-        "redirect_url": intent.redirect_url,
+        "reference": "linkedin_premium",
+        "amount_sar": price["price"],
+        "currency": price["currency"],
+        "status": "awaiting_payment",
     }
 
 
@@ -704,68 +747,19 @@ def _fail_purchase(purchase_id: str, reason: str) -> None:
         logger.error(f"Couldn't mark purchase {purchase_id} failed: {e}")
 
 
-@router.post("/api/v1/linkedin/payments/webhook", tags=["LinkedIn"])
-async def linkedin_payment_webhook(request: Request) -> dict:
-    """
-    The gateway's own callback, and the ONLY thing that unlocks a generation.
-
-    Not JWT-authenticated (the gateway has no Supabase session), authenticity
-    is proven by the gateway's shared secret inside verify_and_parse_webhook,
-    which fails closed when that secret isn't configured.
-
-    Always answers 200 for events it understands, including duplicates and
-    references that aren't ours (a subscription payment, say), a 4xx/5xx here
-    makes providers retry indefinitely. Real problems (bad signature) do get a
-    4xx, because those should not be silently accepted.
-    """
-    try:
-        payload = await request.json()
-    except Exception:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Webhook body was not JSON.")
-
-    if not isinstance(payload, dict):
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Webhook body was not a JSON object.")
-
-    try:
-        gateway = get_gateway()
-    except GatewayUnavailable:
-        # A webhook arriving while no gateway is configured is either a
-        # misconfiguration or unsolicited. Don't touch anything.
-        logger.warning("Received a payment webhook while PAYMENT_GATEWAY is unset, ignoring.")
-        return {"ok": True, "ignored": True}
-
-    headers = {key.lower(): value for key, value in request.headers.items()}
-
-    try:
-        event = gateway.verify_and_parse_webhook(headers=headers, payload=payload)
-    except WebhookVerificationError as e:
-        logger.error(f"🚫 Rejected a payment webhook: {e}")
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Webhook could not be verified.")
-
-    if event.status == PAID:
-        result = _confirm_paid(
-            event.reference, paid_amount=event.amount, paid_currency=event.currency
-        )
-        if result.get("amount_mismatch") or result.get("currency_mismatch"):
-            # 200, not 4xx: the webhook was authentic and correctly received,
-            # so the provider must not retry it. The refusal is ours, and it
-            # is already logged at ERROR for investigation.
-            return {"ok": True, "rejected": "amount_mismatch"}
-        if not result.get("matched"):
-            # Not a LinkedIn purchase, fine, and not an error.
-            logger.info(f"Payment webhook for {event.reference} matched no LinkedIn purchase, ignoring.")
-            return {"ok": True, "ignored": True}
-        return {"ok": True, "idempotent": bool(result.get("already_paid"))}
-
-    if event.status == FAILED:
-        _mark_failed(event.reference)
-        return {"ok": True}
-
-    # Still pending (authorized but not captured, etc.), nothing to do yet.
-    return {"ok": True, "pending": True}
-
-
-# ─── ROUTES: GENERATING ─────────────────────────────────────────────────────
+# ─── The payment webhook used to live here ──────────────────────────────────
+#
+# It is gone. There is now ONE Moyasar receiver for the whole product — credit
+# packs, subscriptions and this add-on all arrive at
+# POST /api/v1/webhooks/moyasar (core/payments.py), which checks the shared
+# secret in constant time, re-reads the payment from Moyasar's API rather than
+# trusting the body, records it in webhook_events for idempotency, and then
+# calls confirm_premium_purchase() below when a paid payment references
+# linkedin_premium.
+#
+# Two receivers for one provider meant two places to get signature checking,
+# replay protection and amount verification right — and only one of them had
+# the webhook_events ledger.
 
 
 def _require_english_name(user_id: str) -> dict:

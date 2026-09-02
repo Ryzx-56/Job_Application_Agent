@@ -148,7 +148,14 @@ export type LinkedInOverview = {
   essential_quota?: LinkedInQuota;
   /** available=false is the normal state until Moyasar is live: the UI shows
    *  "payment coming soon" rather than a broken buy button. */
-  gateway: { available: boolean; provider: string | null; is_mock: boolean };
+  /** is_mock is permanently false: the mock gateway is gone. `available`
+   *  now means "Moyasar is configured", and `mode` is "test" or "live". */
+  gateway: {
+    available: boolean;
+    provider: string | null;
+    is_mock: boolean;
+    mode?: string;
+  };
   has_purchased: boolean;
   purchases: LinkedInPurchase[];
   history: LinkedInHistoryItem[];
@@ -222,13 +229,21 @@ export async function fetchLinkedInOverview(): Promise<LinkedInOverview> {
   return request<LinkedInOverview>("/api/v1/linkedin/overview");
 }
 
+/** What /linkedin/checkout returns now that the add-on goes through the same
+ *  Moyasar flow as credit packs.
+ *
+ *  There is no redirect_url any more: the buyer is not sent to a hosted
+ *  gateway page, they pay on our own checkout with the Moyasar form, exactly
+ *  like a credit pack. The backend hands back WHAT to pay for — a reference
+ *  slug and the purchase id — and the amount is fetched from
+ *  /api/v1/payments/catalog, so no price ever travels up from the browser. */
 export type CheckoutResult = {
   purchase_id: string;
-  status: "paid" | "pending";
-  provider: string;
-  is_mock: boolean;
-  /** Where to send the buyer to pay, when the gateway is a hosted one. */
-  redirect_url: string | null;
+  /** Always "linkedin_premium". The slug the server prices the payment by. */
+  reference: string;
+  amount_sar: number;
+  currency: string;
+  status: "awaiting_payment";
 };
 
 export async function startLinkedInCheckout(params: {

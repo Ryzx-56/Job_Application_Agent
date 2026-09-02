@@ -993,6 +993,26 @@ async def cancel_subscription_endpoint(user_id: str = Depends(get_current_user_i
     return cancel_subscription(user_id)
 
 
+@app.post("/api/v1/subscription/change-plan", tags=["Credits"])
+def change_plan_route(payload: dict, user_id: str = Depends(get_current_user_id)) -> dict:
+    """
+    Move between Free, Pro and Elite. Takes effect at the NEXT BILLING DATE —
+    no proration. See core/billing.change_plan for why.
+
+    Writes profiles.pending_tier and nothing else, so it is free, reversible
+    (POST /subscription/resume clears it) and cannot take money.
+    """
+    plan = str((payload or {}).get("plan") or "").strip().lower()
+    try:
+        from core.billing import change_plan
+        return change_plan(user_id, plan)
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,
+                            detail={"code": "invalid_plan", "message": str(e)})
+    except LookupError:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Profile not found.")
+
+
 @app.post("/api/v1/subscription/resume", tags=["Credits"])
 async def resume_subscription_endpoint(user_id: str = Depends(get_current_user_id)):
     """Undoes a scheduled cancellation/downgrade."""

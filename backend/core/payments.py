@@ -186,15 +186,18 @@ def record_and_grant(payment: dict, *, source: str) -> dict:
 
     # ── Paid. Grant whatever it bought. ─────────────────────────────────
     if product.credits is None:
-        # The LinkedIn add-on: paid for, but credits are not what was bought.
-        # §7's admin view and the LinkedIn feature read the payments row.
+        # An add-on: paid for, but credits are not what was bought. The
+        # product it unlocks is confirmed by its own module, which owns what
+        # "unlocked" means for it.
         logger.info(
             f"💳 [{source}] Payment {moyasar_id} paid for {reference!r} "
             f"({product.amount_sar} SAR). No credits apply to this product."
         )
+        unlocked = _unlock_addon(reference, metadata, moyasar_id, expected)
         return {
             "ok": True, "paid": True, "reference": reference,
             "credits_granted": None, "already_processed": False,
+            **({"addon": unlocked} if unlocked else {}),
         }
 
     if not user_id:
@@ -253,6 +256,50 @@ def record_and_grant(payment: dict, *, source: str) -> dict:
         "ok": True, "paid": True, "reference": reference,
         "credits_granted": product.credits, "already_processed": False,
     }
+
+
+def _unlock_addon(reference: str, metadata: dict, moyasar_id: str, paid_halalas: int) -> Optional[str]:
+    """
+    Hand a paid add-on to the module that owns it.
+
+    Only LinkedIn Premium today. Kept as a dispatch rather than an inline
+    call so a second add-on does not turn record_and_grant() into a chain of
+    special cases — and imported inside the function because core/linkedin.py
+    imports from this module's neighbours.
+
+    Never raises into the payment path: the money is taken and the payments
+    row is already written, so a failure here is a fulfilment problem to fix
+    by hand, not a reason to tell Moyasar the webhook failed and have it
+    redeliver forever.
+    """
+    if reference != "linkedin_premium":
+        return None
+
+    purchase_id = str(metadata.get("purchase_id") or "").strip()
+    if not purchase_id:
+        logger.error(
+            f"🚨 Payment {moyasar_id} paid for LinkedIn Premium but carries no purchase_id in its "
+            "metadata, so no purchase can be unlocked. Resolve by hand."
+        )
+        return "no_purchase_id"
+
+    try:
+        from core.linkedin import confirm_premium_purchase
+        result = confirm_premium_purchase(
+            purchase_id, moyasar_id, paid_halalas, pricing.CURRENCY
+        )
+    except Exception as e:
+        logger.error(
+            f"🚨 Could not unlock LinkedIn purchase {purchase_id} for paid payment "
+            f"{moyasar_id}: {e}. The money is taken; resolve by hand."
+        )
+        return "unlock_failed"
+
+    if result.get("amount_mismatch"):
+        return "amount_mismatch"
+    if not result.get("matched"):
+        return "no_such_purchase"
+    return "already_paid" if result.get("already_paid") else "unlocked"
 
 
 def _upsert_payment_row(

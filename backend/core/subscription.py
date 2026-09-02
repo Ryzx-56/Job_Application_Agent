@@ -19,8 +19,9 @@
 from fastapi import HTTPException, status
 from loguru import logger
 
+from datetime import datetime, timezone
+
 from core.credits import get_admin_client
-from core.payment_gateway import GatewayUnavailable, get_gateway
 
 
 def activate_paid_subscription(
@@ -128,48 +129,36 @@ def cancel_subscription(user_id: str) -> dict:
 
     # STOP THE REAL CHARGE FIRST.
     #
-    # Ordered deliberately: if the provider-side cancellation fails we raise
-    # here, BEFORE the row is updated. Telling someone their subscription is
-    # cancelled while the card keeps being charged is the worst outcome
-    # available, and scheduling the downgrade first would produce exactly
-    # that whenever the provider call failed.
+    # Ordered deliberately: the renewal is stopped BEFORE the downgrade is
+    # scheduled. Telling someone their subscription is cancelled while their
+    # card keeps being charged is the worst outcome available, and doing it
+    # the other way round produces exactly that whenever the second step
+    # fails.
     #
-    # No subscription id means there is nothing to cancel provider-side —
-    # which is every account today, since no provider issues one yet. That
-    # path is unchanged from before this was wired.
-    provider_subscription_id = profile.get("payment_subscription_id")
-    if provider_subscription_id:
-        try:
-            get_gateway().cancel_subscription(provider_subscription_id)
-            logger.info(
-                f"🛑 Cancelled provider subscription {provider_subscription_id} for user {user_id}."
-            )
-        except GatewayUnavailable as e:
-            logger.error(
-                f"❌ Cannot cancel provider subscription {provider_subscription_id} for user "
-                f"{user_id}: {e}. Refusing to schedule the downgrade — the charge may still be live."
-            )
-            raise HTTPException(
-                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                detail={
-                    "code": "cancellation_unavailable",
-                    "message": "We couldn't cancel your billing just now. Please try again shortly, "
-                               "or contact support so we can stop it manually.",
-                },
-            )
-        except Exception as e:
-            logger.error(
-                f"❌ Provider cancellation failed for subscription {provider_subscription_id}, "
-                f"user {user_id}: {e}. Refusing to schedule the downgrade."
-            )
-            raise HTTPException(
-                status_code=status.HTTP_502_BAD_GATEWAY,
-                detail={
-                    "code": "cancellation_failed",
-                    "message": "We couldn't cancel your billing just now. Please try again shortly, "
-                               "or contact support so we can stop it manually.",
-                },
-            )
+    # There is no provider call here any more. Moyasar has no subscription
+    # object — the schedule lives in OUR subscriptions table and the charge is
+    # made by our own renewal job, so "cancel with the provider" was always a
+    # call to a stub. Stopping the charge means taking the row out of the
+    # job's query, which is what setting status to canceled does.
+    try:
+        admin.table("subscriptions").update({
+            "status": "canceled",
+            "canceled_at": _iso_now(),
+            "next_billing_date": None,
+        }).eq("user_id", user_id).neq("status", "canceled").execute()
+    except Exception as e:
+        logger.error(
+            f"❌ Could not stop renewals for user {user_id}: {e}. Refusing to schedule the "
+            "downgrade — the card could still be charged next cycle."
+        )
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail={
+                "code": "cancellation_unavailable",
+                "message": "We couldn't cancel your billing just now. Please try again shortly, "
+                           "or contact support so we can stop it manually.",
+            },
+        )
 
     # Founding-member price is locked in only while the subscription stays
     # continuously active — clearing it here means a resubscribe later goes
@@ -222,3 +211,7 @@ def resume_subscription(user_id: str) -> dict:
     row = result.data[0] if result.data else None
     logger.info(f"↩️ Cancellation undone for user {user_id}.")
     return row
+
+
+def _iso_now() -> str:
+    return datetime.now(timezone.utc).isoformat()

@@ -271,7 +271,20 @@ def run_due_renewals(limit: int = 200) -> dict:
 
 def _renew_one(admin, sub: dict, now: datetime) -> str:
     user_id = sub["user_id"]
-    reference = pricing.plan_reference_for_tier(sub["plan"])
+
+    # A scheduled plan change is applied HERE, at the renewal, which is what
+    # "takes effect at the next billing date" actually means. profiles
+    # .pending_tier is the existing field for "what this account moves to next
+    # cycle" — reset_credits_if_due() already applies it to the tier and the
+    # credit allowance, so this only has to make sure the CHARGE matches.
+    # Reading it at charge time rather than storing a second copy on the
+    # subscription is what stops the two disagreeing.
+    plan = _pending_plan(admin, user_id) or sub["plan"]
+    if plan == "free":
+        # Downgrading to Free is a cancellation, not a charge.
+        return _end_subscription_at_period_end(admin, sub, now)
+
+    reference = pricing.plan_reference_for_tier(plan)
     product = pricing.get_product(reference or "")
     if product is None:
         logger.error(f"🚫 Subscription {sub['id']} is on plan {sub['plan']!r}, which is not sold.")
@@ -319,7 +332,7 @@ def _renew_one(admin, sub: dict, now: datetime) -> str:
         logger.info(f"↩️ Renewal charge for subscription {sub['id']} came back '{status}'.")
         return _handle_failure(admin, sub, now, reason=f"status={status}")
 
-    return _handle_success(admin, sub, payment, now)
+    return _handle_success(admin, sub, payment, now, plan)
 
 
 def _token_for(admin, sub: dict) -> Optional[dict]:
@@ -336,7 +349,7 @@ def _token_for(admin, sub: dict) -> Optional[dict]:
     return row
 
 
-def _handle_success(admin, sub: dict, payment: dict, now: datetime) -> str:
+def _handle_success(admin, sub: dict, payment: dict, now: datetime, plan: str) -> str:
     """
     Advance the period on Moyasar's SYNCHRONOUS answer, and let the webhook
     reconcile.
@@ -361,6 +374,10 @@ def _handle_success(admin, sub: dict, payment: dict, now: datetime) -> str:
         "next_billing_date": _iso(period_end),
         "failed_charge_count": 0,
         "status": "active",
+        # The plan actually charged for. On a scheduled upgrade or downgrade
+        # this is the new one, so the row stops describing the old plan the
+        # moment the new price is taken.
+        "plan": plan,
     }).eq("id", sub["id"]).execute()
 
     _align_credit_clock(admin, sub["user_id"], period_end)
@@ -487,3 +504,82 @@ def _notify(sub: dict, stage: str, attempts: int, next_try: Optional[datetime]) 
 
 def cron_secret() -> str:
     return (os.getenv("CRON_SECRET", "") or "").strip()
+
+
+# ─── CHANGING PLAN (§5) ─────────────────────────────────────────────────────
+
+
+def _pending_plan(admin, user_id: str) -> Optional[str]:
+    row = (admin.table("profiles").select("pending_tier")
+           .eq("id", user_id).maybe_single().execute().data)
+    return (row or {}).get("pending_tier")
+
+
+def _end_subscription_at_period_end(admin, sub: dict, now: datetime) -> str:
+    """A subscription whose scheduled next plan is Free. Nothing is charged;
+    the row closes and reset_credits_if_due() moves the account down."""
+    admin.table("subscriptions").update({
+        "status": "canceled",
+        "canceled_at": _iso(now),
+        "next_billing_date": None,
+    }).eq("id", sub["id"]).execute()
+    logger.info(
+        f"↩️ Subscription {sub['id']} ({sub['user_id']}) ended at period end — "
+        "scheduled downgrade to Free, nothing charged."
+    )
+    return "canceled"
+
+
+def change_plan(user_id: str, new_plan: str) -> dict:
+    """
+    Move between Free, Pro and Elite. TAKES EFFECT AT THE NEXT BILLING DATE.
+
+    NO PRORATION, deliberately. Moyasar has no subscription object and no
+    proration primitives, so charging or refunding a partial period would mean
+    computing the difference and issuing refunds by hand — arithmetic around
+    money, invented for this one feature. The codebase already has the right
+    mechanism instead: profiles.pending_tier, which reset_credits_if_due()
+    applies at the period boundary along with the correct credit allowance.
+
+    The trade is that an upgrade is not instant. The alternative — charge the
+    new price now and restart the period — silently bins the remainder of a
+    month the customer already paid for, which is worse than waiting.
+
+    Scheduling a change is free and reversible: it writes pending_tier and
+    nothing else, so a customer who changes their mind before the renewal
+    (see resume_subscription) is simply back where they were.
+    """
+    if new_plan not in ("free", "pro", "elite"):
+        raise ValueError(f"change_plan got {new_plan!r}, expected free/pro/elite.")
+
+    admin = get_admin_client()
+    profile = (admin.table("profiles").select("tier, pending_tier")
+               .eq("id", user_id).maybe_single().execute().data)
+    if not profile:
+        raise LookupError("Profile not found.")
+
+    current = profile.get("tier")
+    if new_plan == current and not profile.get("pending_tier"):
+        return {"changed": False, "reason": "already_on_plan", "plan": current}
+
+    sub = _live_subscription(admin, user_id)
+    effective = (sub or {}).get("current_period_end")
+
+    if new_plan == current:
+        # Cancelling a scheduled change rather than making one.
+        admin.table("profiles").update({"pending_tier": None}).eq("id", user_id).execute()
+        logger.info(f"↩️ Scheduled plan change cleared for {user_id}; staying on {current}.")
+        return {"changed": True, "plan": current, "pending_plan": None, "effective_at": effective}
+
+    admin.table("profiles").update({"pending_tier": new_plan}).eq("id", user_id).execute()
+    direction = "upgrade" if _rank(new_plan) > _rank(current) else "downgrade"
+    logger.info(
+        f"🔀 {direction.title()} scheduled for {user_id}: {current} -> {new_plan}, "
+        f"effective {effective or 'at the next renewal'}."
+    )
+    return {"changed": True, "plan": current, "pending_plan": new_plan,
+            "direction": direction, "effective_at": effective}
+
+
+def _rank(tier: Optional[str]) -> int:
+    return {"free": 0, "pro": 1, "elite": 2}.get(tier or "free", 0)

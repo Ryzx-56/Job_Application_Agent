@@ -107,20 +107,15 @@ export default function LinkedInCheckoutPage() {
         contactConsent: isPremium ? consent : false,
       });
 
-      // A hosted gateway hands back somewhere to pay, leave the app.
-      if (result.redirect_url) {
-        window.location.href = result.redirect_url;
-        return;
-      }
-      // Mock gateway: the backend already confirmed it server-side through the
-      // same path the real webhook uses, so the purchase is genuinely paid.
-      if (result.status === "paid") {
-        setPaidPurchaseId(result.purchase_id);
-        return;
-      }
-      // Pending with nowhere to send them: nothing to do here but wait for the
-      // gateway's webhook. Back to the tab, where the purchase will appear.
-      router.push("/dashboard/linkedin");
+      // The add-on now pays through the SAME checkout as a credit pack —
+      // /dashboard/checkout mounts the Moyasar form, and the reference plus
+      // the purchase id are all it needs. The amount comes from the catalog
+      // there, never from this response, so no price travels through the
+      // browser. Unlocking still happens server-side on the webhook.
+      router.push(
+        `/dashboard/checkout?reference=${encodeURIComponent(result.reference)}` +
+        `&purchase=${encodeURIComponent(result.purchase_id)}`
+      );
     } catch (err) {
       const apiError = err as ApiError;
       console.error("startLinkedInCheckout failed:", apiError);
@@ -309,7 +304,11 @@ export default function LinkedInCheckoutPage() {
             </div>
           )}
 
-          {overview?.gateway.is_mock && (
+          {/* The mock gateway is gone — it auto-confirmed payments with no
+              amount check, which gave this 200 SAR product away. Moyasar's
+              own test keys do the same job honestly, and the banner now
+              reflects test MODE rather than a fake provider. */}
+          {overview?.gateway.mode === "test" && (
             <p className="rounded-xl border border-amber-200 bg-amber-50/70 px-4 py-2.5 text-xs text-amber-800">
               {copy.checkout.mockNotice}
             </p>
