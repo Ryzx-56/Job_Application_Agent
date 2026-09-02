@@ -381,7 +381,7 @@ export const legalContent: Record<Lang, Record<LegalDocKey, LegalDoc>> = {
         {
           heading: "A one-person company, built to fix a real problem",
           body: [
-            "Tarshih is built and run by Abdulmalik Hawsawi, an AI engineer based in Jeddah, Saudi Arabia. It isn't a large team or a funded startup. It's one person who kept watching capable people, including friends and classmates, get filtered out by applicant tracking systems before a human ever read their resume, and who wanted to actually fix that instead of just complaining about it.",
+            "Tarshih is built and run by one person in Saudi Arabia: built by a job seeker, for job seekers. It isn't a large team or a funded startup. It's one person who kept watching capable people, including friends and classmates, get filtered out by applicant tracking systems before a human ever read their resume, and who wanted to actually fix that instead of just complaining about it.",
             "That's also why Tarshih isn't fully free. Every tailored resume runs through several AI models behind the scenes, and every one of those calls costs real money, on every plan, including the free one. The free tier doesn't just break even, it's a direct loss on every person who uses it and never upgrades: we pay for those AI calls out of pocket with no revenue coming back. It exists anyway, on purpose, so anyone can genuinely try Tarshih before deciding it's worth paying for. Pro and Elite subscribers are what cover that loss and keep the whole thing, including the free tier, running.",
           ],
         },
@@ -819,7 +819,7 @@ export const legalContent: Record<Lang, Record<LegalDocKey, LegalDoc>> = {
         {
           heading: "شركة من شخص واحد، بُنيت لحل مشكلة حقيقية",
           body: [
-            "ترشيح مبنية ومُدارة من قِبل عبدالملك هوساوي، مهندس ذكاء اصطناعي مقيم في جدة، السعودية. ليست فريقًا كبيرًا ولا شركة ناشئة ممولة، بل شخص واحد ظل يشاهد أشخاصًا أكفاء، من بينهم أصدقاء وزملاء دراسة، يُستبعَدون بواسطة أنظمة تتبع المتقدمين قبل أن تقرأ سيرهم الذاتية عين إنسان، وأراد فعليًا حل هذه المشكلة بدلًا من مجرد الشكوى منها.",
+            "ترشيح مبنية ومُدارة من شخص واحد في السعودية: بناها باحث عن عمل، لمن يبحثون عن عمل. ليست فريقًا كبيرًا ولا شركة ناشئة ممولة، بل شخص واحد ظل يشاهد أشخاصًا أكفاء، من بينهم أصدقاء وزملاء دراسة، يُستبعَدون بواسطة أنظمة تتبع المتقدمين قبل أن تقرأ سيرهم الذاتية عين إنسان، وأراد فعليًا حل هذه المشكلة بدلًا من مجرد الشكوى منها.",
             "هذا أيضًا سبب عدم كون ترشيح مجانية بالكامل. كل سيرة ذاتية مخصصة تمرّ عبر عدة نماذج ذكاء اصطناعي خلف الكواليس، وكل استدعاء من هذه الاستدعاءات يكلّف مالًا حقيقيًا، في كل فئة، بما فيها الفئة المجانية. الفئة المجانية لا تكتفي بعدم تحقيق ربح، بل هي خسارة مباشرة على كل شخص يستخدمها ولا يشترك لاحقًا: نحن ندفع تكلفة تلك الاستدعاءات من جيبنا دون أي إيراد مقابل. ومع ذلك تبقى موجودة عن قصد، ليتمكن أي شخص من تجربة ترشيح فعليًا قبل أن يقرر أنها تستحق الدفع. مشتركو برو والنخبة هم من يغطون تلك الخسارة ويبقون كل شيء، بما في ذلك الفئة المجانية، قائمًا.",
           ],
         },
