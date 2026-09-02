@@ -790,7 +790,13 @@ async def run_renewals(request: Request) -> dict:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN,
                             detail="Not authorised.")
 
-    return billing.run_due_renewals()
+    # Two jobs, one schedule. Reconciliation is a safety net for payments
+    # that stopped moving (§8) and only matters when BOTH the callback and
+    # the webhook missed, so daily is the right cadence for it and there is
+    # no reason to pay for a second cron.
+    renewals = billing.run_due_renewals()
+    reconciled = billing.reconcile_stale_payments()
+    return {"renewals": renewals, "reconciled": reconciled}
 
 
 # ─── THE SAVED CARD (§5) ────────────────────────────────────────────────────

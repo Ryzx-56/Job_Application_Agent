@@ -583,3 +583,94 @@ def change_plan(user_id: str, new_plan: str) -> dict:
 
 def _rank(tier: Optional[str]) -> int:
     return {"free": 0, "pro": 1, "elite": 2}.get(tier or "free", 0)
+
+
+# ─── RECONCILING STALE PAYMENTS (§8) ────────────────────────────────────────
+#
+# A payment can be left sitting at `initiated` with nothing ever resolving it.
+# The usual way in is 3-D Secure: the buyer is handed to their bank, closes
+# the tab, and never comes back — so the callback-page verify never runs. That
+# alone is fine, because the webhook is the authority. The dangling case is
+# when BOTH miss: a webhook that was never delivered, or one that failed
+# every retry while our service was down.
+#
+# The row then says `initiated` forever. If the charge actually succeeded,
+# the customer has paid and has nothing to show for it, and nobody finds out
+# because there is no error anywhere — just a row that stopped moving.
+#
+# This asks Moyasar what really happened and feeds the answer through the
+# same record_and_grant() everything else uses, so a payment that turns out
+# to have succeeded grants exactly once, whoever gets there first.
+
+# Younger than this and the normal paths are still in play — the buyer may
+# literally be on the 3-D Secure screen right now, and asking mid-flow would
+# just see `initiated` again.
+STALE_AFTER_MINUTES = 20
+
+# Older than this and Moyasar's own record is the place to look, not an
+# automated sweep. An abandoned payment this old is not going to resolve
+# itself, and re-reading thousands of them daily is pointless load.
+ABANDON_AFTER_DAYS = 7
+
+_UNRESOLVED_STATUSES = ("initiated", "authorized")
+
+
+def reconcile_stale_payments(limit: int = 100) -> dict:
+    """
+    Settle payments that stopped moving. Safe to run repeatedly.
+
+    Idempotent for the same reason everything else here is: it does not
+    decide anything itself, it re-reads from Moyasar and hands the result to
+    record_and_grant(), which claims the credit grant on the payments row.
+    """
+    admin = get_admin_client()
+    now = _now()
+    window_end = _iso(now - timedelta(minutes=STALE_AFTER_MINUTES))
+    window_start = _iso(now - timedelta(days=ABANDON_AFTER_DAYS))
+
+    stale = (admin.table("payments").select("*")
+             .in_("status", list(_UNRESOLVED_STATUSES))
+             .lte("created_at", window_end)
+             .gte("created_at", window_start)
+             .limit(limit).execute().data or [])
+
+    summary = {"checked": len(stale), "settled_paid": 0, "settled_failed": 0,
+               "still_pending": 0, "unreachable": 0}
+    if not stale:
+        return summary
+
+    logger.info(f"🔎 Reconciling {len(stale)} payment(s) that stopped moving.")
+
+    for row in stale:
+        payment_id = row.get("moyasar_payment_id")
+        try:
+            payment = moyasar_client.get_payment(payment_id)
+        except moyasar_client.MoyasarUnreachable as e:
+            # Unknown, not failed. Leave it; the next run asks again.
+            summary["unreachable"] += 1
+            logger.warning(f"⏳ Could not re-read stale payment {payment_id}: {e}")
+            continue
+        except Exception as e:
+            summary["unreachable"] += 1
+            logger.error(f"🚫 Could not re-read stale payment {payment_id}: {e}")
+            continue
+
+        status = str(payment.get("status") or "").lower()
+        if status in _UNRESOLVED_STATUSES:
+            summary["still_pending"] += 1
+            continue
+
+        result = record_and_grant(payment, source="reconcile")
+        if result.get("paid"):
+            summary["settled_paid"] += 1
+            logger.warning(
+                f"⚠️ Payment {payment_id} was PAID but had been sitting at "
+                f"'{row.get('status')}' — neither the callback nor a webhook resolved it. "
+                "Settled now; check whether webhook delivery is healthy."
+            )
+        else:
+            summary["settled_failed"] += 1
+            logger.info(f"↩️ Stale payment {payment_id} resolved as '{status}'.")
+
+    logger.info(f"🔎 Reconciliation finished: {summary}")
+    return summary
