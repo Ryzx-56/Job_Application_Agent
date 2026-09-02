@@ -82,7 +82,7 @@ jobs:
       # change behaviour on a workflow that writes to production.
       - name: Install the Supabase CLI
         if: steps.guard.outputs.available == 'true'
-        uses: supabase/setup-cli@v1
+        uses: supabase/setup-cli@v3
         with:
           version: 2.109.1
 
