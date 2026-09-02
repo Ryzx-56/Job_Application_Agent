@@ -3,7 +3,7 @@
 # Read-only aggregates behind the admin Analytics, User Management and
 # Pipeline Health pages. Every query runs through a SECURITY DEFINER SQL
 # function granted to service_role only (see
-# supabase/migrations/005_payment_events.sql) — PostgREST can't reach
+# the migrations under supabase/migrations/) — PostgREST can't reach
 # auth.users or aggregate across tables the way these need to.
 #
 # Every route here is gated by get_current_admin_user_id, which checks
@@ -15,6 +15,7 @@ from loguru import logger
 
 from core.auth import get_current_admin_user_id
 from core.credits import get_admin_client
+from core import pricing as pricing_catalog
 from core.entitlements import ADDON_CAPS
 
 router = APIRouter()
@@ -227,15 +228,20 @@ def _linkedin_revenue() -> dict:
     return result
 
 
-def _money_from_usd(usd) -> dict:
-    """For figures that genuinely arrive in USD, i.e. the payment_events ledger
-    rows written before SAR became the unit. Converts, then hands back the same
-    shape as _money."""
+def _money_from_halalas(halalas) -> dict:
+    """The payments ledger stores integer HALALAS — 100 to the riyal, Moyasar's
+    own unit — so revenue arrives as a whole number and is divided here rather
+    than converted between currencies.
+
+    This replaced _money_from_usd, which existed only because the retired
+    payment_events table stored amount_usd: a unit this product has never
+    charged in, so every riyal figure on the admin pages was a conversion of a
+    conversion."""
     try:
-        value = float(usd or 0)
+        value = int(halalas or 0)
     except (TypeError, ValueError):
-        value = 0.0
-    return _money(value * USD_TO_SAR)
+        value = 0
+    return _money(value / 100)
 
 
 @router.get("/api/v1/admin/analytics", tags=["Admin"])
@@ -244,23 +250,23 @@ def get_analytics(admin_user_id: str = Depends(get_current_admin_user_id)) -> di
     Everything the Analytics page shows, in one round trip.
 
     `payments_wired` is the important field: it's False until the first
-    payment_events row exists, and the UI uses it to label revenue and
+    payments row exists, and the UI uses it to label revenue and
     pack/subscription-history tiles as awaiting the payment integration
     instead of presenting a real-looking $0.00. Those figures aren't
     missing because the page is unfinished — until Moyasar writes to
-    payment_events there is genuinely no data to derive them from.
+    payments there is genuinely no data to derive them from.
     """
     platform = _first_row("admin_platform_stats") or {}
     tiers = _rpc("admin_tier_counts") or []
     payments = _first_row("admin_payment_stats") or {}
     by_product = _rpc("admin_payment_by_product") or []
 
-    total_payment_events = int(payments.get("total_events") or 0)
+    total_payments = int(payments.get("total_payments") or 0)
 
     # ── Estimated monthly revenue per tier ──────────────────────────────
     #
     # This is a PROJECTION from who is currently subscribed at what price,
-    # not a measurement of money received — that needs payment_events. It's
+    # not a measurement of money received — that needs payments. It's
     # still worth showing because it's the one revenue figure that IS
     # knowable today, and it's the number that actually matters
     # operationally (current MRR).
@@ -334,13 +340,25 @@ def get_analytics(admin_user_id: str = Depends(get_current_admin_user_id)) -> di
         })
 
     # ── Packs ───────────────────────────────────────────────────────────
-    # Sales counts and revenue need payment_events; the catalogue (price,
-    # credits) is known now, so the table renders in full with the sold
-    # columns pending rather than the whole panel being empty.
+    # Sales counts and revenue come from the payments ledger; the catalogue
+    # (price, credits) is known regardless, so the table renders in full with
+    # the sold columns at zero rather than the whole panel being empty.
+    #
+    # KEYED BY PACK SLUG, NOT BY REFERENCE. The ledger groups by
+    # payments.reference ("starter_pack"), while PACK_PRICING is keyed by the
+    # slug the rest of the product uses ("starter"). core/pricing.py holds the
+    # mapping between them, so it is read rather than reconstructed here —
+    # guessing at it by trimming "_pack" would break the moment a reference is
+    # named differently.
+    _slug_for_reference = {
+        prod.reference: prod.pack_slug
+        for prod in pricing_catalog.CATALOG.values()
+        if prod.pack_slug
+    }
     sold_by_slug = {
-        r.get("product_slug"): r
+        _slug_for_reference.get(r.get("product_slug")): r
         for r in by_product
-        if r.get("kind") == "pack"
+        if r.get("kind") == "credit_pack"
     }
     pack_rows = []
     packs_revenue_all = 0.0
@@ -349,9 +367,8 @@ def get_analytics(admin_user_id: str = Depends(get_current_admin_user_id)) -> di
         sold = sold_by_slug.get(slug, {})
         ever = int(sold.get("count_ever") or 0)
         month = int(sold.get("count_month") or 0)
-        # payment_events records revenue in USD; convert to SAR to keep one unit
-        # across the whole response.
-        revenue = float(sold.get("revenue_usd") or 0) * USD_TO_SAR
+        # The ledger stores halalas; SAR keeps one unit across the response.
+        revenue = float(sold.get("revenue_halalas") or 0) / 100
         unit_cost = worst_case_cost_sar(pricing["credits"])
         cost = ever * unit_cost
 
@@ -413,8 +430,8 @@ def get_analytics(admin_user_id: str = Depends(get_current_admin_user_id)) -> di
         "founding_members": platform.get("founding_members"),
 
         # current_count / active_count are derivable from profiles today.
-        # ever_count and month_count come from payment_events and stay 0
-        # until it's populated — profiles.tier is a snapshot, so a user who
+        # ever_count and month_count come from the payments ledger and stay 0
+        # until it has rows — profiles.tier is a snapshot, so a user who
         # subscribed and cancelled is indistinguishable from one who never
         # did.
         "tiers": tier_rows,
@@ -450,13 +467,19 @@ def get_analytics(admin_user_id: str = Depends(get_current_admin_user_id)) -> di
             "this_month_estimated": _money(estimated_mrr),
         },
 
-        "payments_wired": total_payment_events > 0,
+        "payments_wired": total_payments > 0,
         "revenue": {
-            # The ledger stores USD, so these two convert rather than being
-            # taken as riyals. See _money_from_usd.
-            "all_time": _money_from_usd(payments.get("revenue_all_time_usd")),
-            "this_month": _money_from_usd(payments.get("revenue_this_month_usd")),
+            # Halalas in, riyals out. Refunded and failed payments are already
+            # excluded by the SQL — a refund is a status change on the row, not
+            # a negative row, so net revenue is a filter rather than a signed
+            # sum. See the migration that retired payment_events.
+            "all_time": _money_from_halalas(payments.get("revenue_all_time_halalas")),
+            "this_month": _money_from_halalas(payments.get("revenue_this_month_halalas")),
         },
+        # Neither of these was expressible before: payment_events only ever
+        # intended to hold successes, so a refund or a decline left no trace.
+        "refunded_ever": payments.get("refunded_ever") or 0,
+        "failed_ever": payments.get("failed_ever") or 0,
         "subscriptions": {
             "ever": payments.get("subs_ever") or 0,
             "this_month": payments.get("subs_this_month") or 0,
@@ -471,7 +494,7 @@ def get_analytics(admin_user_id: str = Depends(get_current_admin_user_id)) -> di
                 "product_slug": row.get("product_slug"),
                 "count_ever": row.get("count_ever"),
                 "count_month": row.get("count_month"),
-                "revenue": _money_from_usd(row.get("revenue_usd")),
+                "revenue": _money_from_halalas(row.get("revenue_halalas")),
             }
             for row in by_product
         ],
