@@ -101,6 +101,98 @@ jobs:
               ;;
           esac
 
+      # ── What shape is the connection string, actually? ────────────────
+      # "Failed to connect" from the CLI is a wrapper message; it does not say
+      # whether the URL even parsed, whether the username is the one the
+      # pooler requires, or whether an unencoded character in the password
+      # silently truncated the host. This answers all three BEFORE the CLI
+      # runs, so a failure downstream can be attributed instead of guessed at.
+      #
+      # NOTHING SECRET IS PRINTED. The password is never echoed, and the
+      # characters inside it are reported only as a COUNT of how many would
+      # need percent-encoding — this repository is public and annotations are
+      # world-readable.
+      - name: Inspect the connection string shape
+        continue-on-error: true
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: |
+          python3 - <<'PY'
+          import os, re, sys
+          from urllib.parse import urlsplit, unquote
+
+          raw = os.environ.get("SUPABASE_DB_URL", "")
+          url = raw.strip().strip('\r\n\t')
+          notes = []
+
+          if raw != url:
+              notes.append(f"WHITESPACE: the secret has {len(raw)-len(url)} stray character(s) around it "
+                           "(a pasted value usually picks up a trailing newline). The job trims it, "
+                           "but fix the secret.")
+
+          # An unencoded '@' inside the password is the classic silent
+          # breakage: urlsplit splits on the LAST '@', so the host becomes
+          # whatever followed the real one and the error looks like DNS.
+          at = url.count("@")
+          if at != 1:
+              notes.append(f"AT-SIGNS: found {at} '@' in the URL, expected exactly 1. "
+                           "More than one means the password contains an unencoded '@', which moves "
+                           "where the host starts and makes this look like a connectivity problem.")
+
+          try:
+              u = urlsplit(url)
+          except Exception as e:
+              print(f"::error title=Connection string does not parse::{e}")
+              sys.exit(0)
+
+          host, port, user = u.hostname, u.port, u.username or ""
+          db = (u.path or "").lstrip("/")
+
+          print(f"scheme   : {u.scheme}")
+          print(f"host     : {host}")
+          print(f"port     : {port}")
+          print(f"database : {db}")
+
+          # ── Username: the pooler needs postgres.<project-ref> ───────────
+          pooler = bool(host and "pooler.supabase.com" in host)
+          tenant = bool(re.fullmatch(r"postgres\.[a-z0-9]{16,}", user or ""))
+          print(f"username : {'postgres.<ref> (correct for the pooler)' if tenant else repr(user)}")
+          if pooler and not tenant:
+              notes.append("USERNAME: the host is the pooler but the username is not "
+                           "postgres.<project-ref>. The pooler routes by tenant embedded in the "
+                           "username, so a bare 'postgres' is rejected — usually as "
+                           "'Tenant or user not found', which reads like a credentials problem.")
+          if not pooler and tenant:
+              notes.append("USERNAME: username is postgres.<ref> but the host is not the pooler. "
+                           "The direct host expects a bare 'postgres'.")
+
+          # ── Port: session vs transaction mode ───────────────────────────
+          if pooler and port == 6543:
+              notes.append("PORT: 6543 is TRANSACTION mode, which cannot run DDL. "
+                           "Migrations need 5432 (session mode).")
+          elif pooler and port != 5432:
+              notes.append(f"PORT: {port} is unexpected for the session pooler (expected 5432).")
+
+          # ── Password: only a count, never the value ─────────────────────
+          pw = u.password or ""
+          decoded = unquote(pw)
+          reserved = sum(1 for c in decoded if c in "@/:?#[]% ")
+          print(f"password : {len(decoded)} chars, {reserved} of which require percent-encoding")
+          if reserved and pw == decoded:
+              notes.append(f"PASSWORD: {reserved} character(s) need percent-encoding and the value "
+                           "appears not to be encoded (it is unchanged by unquote). Re-copy the "
+                           "string from the Supabase dashboard, which encodes it for you, or encode "
+                           "manually: @ -> %40, / -> %2F, : -> %3A, # -> %23, ? -> %3F, % -> %25.")
+
+          if notes:
+              joined = "%0A".join("- " + n for n in notes)
+              print(f"::warning title=Connection string has {len(notes)} problem(s)::{joined}")
+          else:
+              print("::notice title=Connection string shape looks correct::"
+                    "Session pooler host, postgres.<ref> username, port 5432, password encoded, "
+                    "no stray whitespace. A failure after this is not the URL's shape.")
+          PY
+
       # Pinned to the version this workflow was written and tested against.
       - name: Install the Supabase CLI
         uses: supabase/setup-cli@v1
@@ -133,7 +225,7 @@ jobs:
           # string that would otherwise print in the clear.
           DB_URL=$(printf '%s' "$SUPABASE_DB_URL" | tr -d '\r\n\t' | sed -e 's/^ *//' -e 's/ *$//')
           echo "::add-mask::$DB_URL"
-          supabase migration list --db-url "$DB_URL" 2>&1 | tee /tmp/before.log
+          supabase migration list --debug --db-url "$DB_URL" 2>&1 | tee /tmp/before.log
 
       # ── Why the output is re-emitted as ::error:: ──────────────────────
       # A failing step annotates the run with a bare "Process completed with
@@ -163,7 +255,7 @@ jobs:
           # string that would otherwise print in the clear.
           DB_URL=$(printf '%s' "$SUPABASE_DB_URL" | tr -d '\r\n\t' | sed -e 's/^ *//' -e 's/ *$//')
           echo "::add-mask::$DB_URL"
-          if ! supabase db push --db-url "$DB_URL" 2>&1 | tee /tmp/push.log; then
+          if ! supabase db push --debug --db-url "$DB_URL" 2>&1 | tee /tmp/push.log; then
             # Annotations are single-line: %0A is the encoding for a newline,
             # and a literal "::" would terminate the workflow command early.
             MSG=$(sed -E \
@@ -197,7 +289,7 @@ jobs:
           # string that would otherwise print in the clear.
           DB_URL=$(printf '%s' "$SUPABASE_DB_URL" | tr -d '\r\n\t' | sed -e 's/^ *//' -e 's/ *$//')
           echo "::add-mask::$DB_URL"
-          supabase migration list --db-url "$DB_URL" 2>&1 | tee /tmp/after.log
+          supabase migration list --debug --db-url "$DB_URL" 2>&1 | tee /tmp/after.log
           # Which migrations actually landed, as an annotation — the single
           # most useful fact after a partial or failed deploy.
           MSG=$(sed -E -e 's#(postgres(ql)?://)[^[:space:]]*#\1REDACTED#g' -e 's#::#;;#g' \
