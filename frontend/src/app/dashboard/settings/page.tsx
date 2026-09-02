@@ -8,6 +8,13 @@ import { DashboardButton } from "@/components/dashboard";
 import { createClient } from "@/lib/supabase/client";
 import { passwordErrorKey } from "@/lib/auth-errors";
 import { fetchCredits, Tier } from "@/lib/supabase/credits";
+import {
+  fetchSavedCard,
+  removeSavedCard,
+  resumeSubscription,
+  type SavedCard,
+} from "@/lib/subscription";
+import { formatMediumDate } from "@/lib/pricing";
 import { updateLocation } from "@/lib/supabase/location";
 import { fetchProfileNames, updateProfileNames, fetchAdminStatus, fetchBadges } from "@/lib/supabase/profile-names";
 import { isPasswordBreached } from "@/lib/pwned-password";
@@ -23,6 +30,9 @@ const TIER_LABEL: Record<Tier, { en: string; ar: string }> = {
   elite: { en: "Elite", ar: "إيليت" },
 };
 
+const PLAN_LABEL_EN: Record<string, string> = { free: "Free", pro: "Pro", elite: "Elite" };
+const PLAN_LABEL_AR: Record<string, string> = { free: "المجانية", pro: "برو", elite: "إيليت" };
+
 export default function SettingsPage() {
   const { t, lang, setLang } = useLang();
   const { user } = useAuth();
@@ -30,6 +40,13 @@ export default function SettingsPage() {
   const isAr = lang === "ar";
   const [languageJustSaved, setLanguageJustSaved] = useState(false);
   const [tier, setTier] = useState<Tier | null>(null);
+  // Billing state (§5). pendingTier is what the account switches to at the
+  // next renewal; resetAt is when that happens.
+  const [pendingTier, setPendingTier] = useState<Tier | null>(null);
+  const [resetAt, setResetAt] = useState<string | null>(null);
+  const [card, setCard] = useState<SavedCard | null>(null);
+  const [billingBusy, setBillingBusy] = useState(false);
+  const [billingError, setBillingError] = useState<string | null>(null);
   // Drives the Admin badge here. The Admin *nav link* lives in the sidebar
   // (see useNavItems in components/dashboard.tsx). Both are convenience
   // only, never a security boundary: the admin endpoints check
@@ -63,10 +80,22 @@ export default function SettingsPage() {
     [countryIso, isAr]
   );
 
+  // The saved card, for the billing section. Failing to load it must not
+  // break settings — the section simply does not render.
+  useEffect(() => {
+    let cancelled = false;
+    fetchSavedCard()
+      .then((c) => { if (!cancelled) setCard(c); })
+      .catch(() => { if (!cancelled) setCard(null); });
+    return () => { cancelled = true; };
+  }, []);
+
   useEffect(() => {
     fetchCredits()
       .then((c) => {
         setTier(c.tier);
+        setPendingTier(c.pendingTier);
+        setResetAt(c.creditsResetAt);
         setIsFoundingMember(c.isFoundingMember);
         setFoundingMemberNumber(c.foundingMemberNumber);
         if (!c.location) return;
@@ -383,17 +412,130 @@ export default function SettingsPage() {
         )}
       </section>
 
-      {/* Subscription */}
-      <section className="flex items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-7">
-        <div>
-          <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500">{copy.planSection}</h2>
-          <p className="mt-1.5 text-sm text-slate-700">
-            {copy.planLabel}: <span className="font-medium text-slate-900">{planDisplayName}</span>
-          </p>
+      {/* Subscription + billing (§5) */}
+      <section className="space-y-5 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-7">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500">{copy.planSection}</h2>
+            <p className="mt-1.5 text-sm text-slate-700">
+              {copy.planLabel}: <span className="font-medium text-slate-900">{planDisplayName}</span>
+            </p>
+          </div>
+          <DashboardButton as={Link} href="/dashboard/upgrade" variant="outline" size="sm">
+            {copy.changePlan}
+          </DashboardButton>
         </div>
-        <DashboardButton as={Link} href="/dashboard/upgrade" variant="outline" size="sm">
-          {copy.changePlan}
-        </DashboardButton>
+
+        {/* A SCHEDULED CHANGE, and the way out of it. pending_tier is set by
+            cancelling or by changing plan; either way nothing has been
+            charged yet and undoing it costs nothing, so the way back is
+            offered right next to the statement rather than buried. */}
+        {pendingTier && (
+          <div className="rounded-xl border border-amber-200 bg-amber-50/70 p-4">
+            <p className="text-sm leading-relaxed text-amber-900">
+              {isAr
+                ? `ستتحول خطتك إلى ${PLAN_LABEL_AR[pendingTier] ?? pendingTier}${
+                    resetAt ? ` في ${formatMediumDate(resetAt, lang)}` : ""
+                  }. حتى ذلك الحين لا يتغير شيء.`
+                : `Your plan switches to ${PLAN_LABEL_EN[pendingTier] ?? pendingTier}${
+                    resetAt ? ` on ${formatMediumDate(resetAt, lang)}` : ""
+                  }. Nothing changes until then.`}
+            </p>
+            <button
+              type="button"
+              disabled={billingBusy}
+              onClick={async () => {
+                setBillingBusy(true);
+                setBillingError(null);
+                try {
+                  await resumeSubscription();
+                  setPendingTier(null);
+                } catch (err) {
+                  setBillingError(
+                    isAr ? "تعذّر التراجع عن التغيير. حاول مرة أخرى." : "Couldn't undo that. Please try again."
+                  );
+                } finally {
+                  setBillingBusy(false);
+                }
+              }}
+              className="mt-2 rounded text-sm font-medium text-amber-900 underline underline-offset-4 disabled:opacity-60 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-700"
+            >
+              {isAr ? "التراجع والبقاء على الخطة الحالية" : "Undo and stay on my current plan"}
+            </button>
+          </div>
+        )}
+
+        {/* The saved card. Only rendered when there IS one — a Free user who
+            has never subscribed should not be shown an empty payment slot. */}
+        {card?.card && (
+          <div className="border-t border-slate-100 pt-5">
+            <h3 className="text-sm font-semibold uppercase tracking-wide text-slate-500">
+              {isAr ? "طريقة الدفع" : "Payment method"}
+            </h3>
+            <div className="mt-2.5 flex flex-wrap items-center justify-between gap-3">
+              <p className="text-sm text-slate-700">
+                {/* dir=ltr: a card number reads left-to-right in both
+                    languages, and the bullets and digits scramble under RTL. */}
+                <span dir="ltr" className="font-medium text-slate-900">
+                  {(card.card.brand ?? "Card").replace(/^\w/, (c) => c.toUpperCase())} ••••{" "}
+                  {card.card.last_four ?? "????"}
+                </span>
+                {card.card.expiry_month && card.card.expiry_year && (
+                  <span dir="ltr" className="ms-2 text-slate-500">
+                    {card.card.expiry_month}/{card.card.expiry_year}
+                  </span>
+                )}
+              </p>
+
+              <button
+                type="button"
+                disabled={billingBusy || !card.removable}
+                title={
+                  card.removable
+                    ? undefined
+                    : isAr
+                      ? "هذه البطاقة تدفع اشتراكك الحالي."
+                      : "This card is paying for your subscription."
+                }
+                onClick={async () => {
+                  setBillingBusy(true);
+                  setBillingError(null);
+                  try {
+                    await removeSavedCard();
+                    setCard({ card: null, removable: true });
+                  } catch (err) {
+                    setBillingError(
+                      err instanceof Error
+                        ? err.message
+                        : isAr ? "تعذّر حذف البطاقة." : "Couldn't remove the card."
+                    );
+                  } finally {
+                    setBillingBusy(false);
+                  }
+                }}
+                className="rounded text-sm font-medium text-slate-700 underline underline-offset-4 disabled:cursor-not-allowed disabled:text-slate-400 disabled:no-underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-900"
+              >
+                {isAr ? "حذف البطاقة" : "Remove card"}
+              </button>
+            </div>
+
+            {/* THE GUARD, EXPLAINED. Removing the card under a live
+                subscription does not stop the subscription — it makes the
+                next renewal fail and walks the customer through dunning for a
+                downgrade they never chose. */}
+            {!card.removable && (
+              <p className="mt-2 text-xs leading-relaxed text-slate-500">
+                {isAr
+                  ? "هذه البطاقة تُستخدم لتجديد اشتراكك. ألغِ الاشتراك أولًا، ثم يمكنك حذفها."
+                  : "This card renews your subscription. Cancel the subscription first, then it can be removed."}
+              </p>
+            )}
+          </div>
+        )}
+
+        {billingError && (
+          <p role="alert" className="text-sm text-red-700">{billingError}</p>
+        )}
       </section>
 
       {/* Language */}

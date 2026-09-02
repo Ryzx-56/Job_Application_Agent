@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { AlertCircle, ArrowLeft, ArrowRight, Clock, Loader2, Lock } from "lucide-react";
+import { AlertCircle, ArrowLeft, ArrowRight, Loader2, Lock } from "lucide-react";
 import { useLang } from "@/lib/language";
 import { PACK_REFERENCE, PLAN_REFERENCE, formatSar, usdApprox } from "@/lib/pricing";
 import {
@@ -56,7 +56,9 @@ export default function CheckoutPage() {
     : plan === "pro" || plan === "elite"
       ? PLAN_REFERENCE[plan]
       : directReference || null;
-  // Subscriptions are §5. Until then this page sells packs only.
+  // A plan needs the card SAVED as well as charged, so the same first
+  // payment can be renewed next month. Everything else about the flow is
+  // identical to a credit pack.
   const isSubscription = reference === PLAN_REFERENCE.pro || reference === PLAN_REFERENCE.elite;
 
   const [product, setProduct] = useState<PaymentProduct | null>(null);
@@ -74,7 +76,7 @@ export default function CheckoutPage() {
 
   /* ── Load the price list ─────────────────────────────────────────── */
   useEffect(() => {
-    if (!reference || isSubscription) {
+    if (!reference) {
       setLoading(false);
       return;
     }
@@ -135,9 +137,12 @@ export default function CheckoutPage() {
           ...(purchaseId ? { purchase_id: purchaseId } : {}),
         },
         lang,
-        // A credit-pack buyer did not ask us to keep their card. Saving one
-        // is §5's subscribe flow, where it is the point of the transaction.
-        saveCard: false,
+        // A SUBSCRIPTION SAVES THE CARD; a one-off purchase does not.
+        // Keeping a credit-pack buyer's card is something they never asked
+        // for, and for a plan it is the point of the transaction — without a
+        // token there is nothing to charge next month, and the subscription
+        // would silently lapse after one period.
+        saveCard: isSubscription,
         onFailure: () => {
           setError(
             isAr
@@ -155,7 +160,7 @@ export default function CheckoutPage() {
           : "The payment form couldn't load. Check your connection and refresh."
       );
     }
-  }, [product, isAr, lang, purchaseId]);
+  }, [product, isAr, lang, purchaseId, isSubscription]);
 
   useEffect(() => {
     void mountForm();
@@ -171,33 +176,6 @@ export default function CheckoutPage() {
             : "Nothing selected to buy. Choose something from the pricing page."}
         </Notice>
         <BackLink isAr={isAr} Arrow={BackArrow} />
-      </Shell>
-    );
-  }
-
-  /* ── Subscriptions: not this page's job yet ──────────────────────── */
-  if (isSubscription) {
-    return (
-      <Shell dir={dir}>
-        <div className="rounded-2xl border border-slate-200 bg-white p-6 sm:p-8">
-          <span className="grid size-11 place-items-center rounded-full bg-slate-100 text-slate-600">
-            <Clock className="size-5" aria-hidden />
-          </span>
-          <h1 className="mt-4 text-lg font-semibold text-slate-900">
-            {isAr ? "الاشتراكات الشهرية قريبًا" : "Monthly plans are coming soon"}
-          </h1>
-          <p className="mt-2 text-sm leading-relaxed text-slate-600">
-            {isAr
-              ? "الاشتراك الشهري يتطلب حفظ البطاقة للتجديد التلقائي، وهذا الجزء قيد الإعداد. باقات النقاط متاحة الآن للشراء لمرة واحدة."
-              : "A monthly plan needs your card saved for automatic renewal, and that part is still being set up. Credit packs are available now as a one-time purchase."}
-          </p>
-          <Link
-            href="/dashboard/upgrade"
-            className="mt-5 inline-flex items-center rounded-lg bg-slate-900 px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-slate-800 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-900"
-          >
-            {isAr ? "عرض باقات النقاط" : "See credit packs"}
-          </Link>
-        </div>
       </Shell>
     );
   }
@@ -259,8 +237,18 @@ export default function CheckoutPage() {
                 </dd>
               </div>
             )}
+            {isSubscription && (
+              <div className="flex items-baseline justify-between gap-3">
+                <dt className="text-slate-600">{isAr ? "التجديد" : "Renews"}</dt>
+                <dd className="text-end font-medium text-slate-900">
+                  {isAr ? "شهريًا، ويمكن الإلغاء في أي وقت" : "Monthly, cancel any time"}
+                </dd>
+              </div>
+            )}
             <div className="flex items-baseline justify-between gap-3 border-t border-slate-100 pt-2">
-              <dt className="text-slate-600">{isAr ? "الإجمالي" : "Total"}</dt>
+              <dt className="text-slate-600">
+                {isSubscription ? (isAr ? "المبلغ الشهري" : "Monthly") : isAr ? "الإجمالي" : "Total"}
+              </dt>
               <dd className="text-end">
                 <span className="text-base font-semibold text-slate-900">
                   {formatSar(product.amount_sar, lang)}
@@ -297,9 +285,13 @@ export default function CheckoutPage() {
         <p className="mt-4 flex items-start gap-2 text-xs leading-relaxed text-slate-600">
           <Lock className="mt-0.5 size-3.5 shrink-0" aria-hidden />
           <span>
-            {isAr
-              ? "تتم معالجة الدفع عبر ميسر. بيانات بطاقتك لا تمر على خوادمنا ولا نحتفظ بها."
-              : "Payment is processed by Moyasar. Your card details never reach our servers and we don't store them."}
+            {isSubscription
+              ? isAr
+                ? "تتم معالجة الدفع عبر ميسر، وتُحفظ بطاقتك لديهم للتجديد الشهري. بيانات البطاقة لا تمر على خوادمنا."
+                : "Payment is processed by Moyasar, and your card is saved with them for the monthly renewal. Card details never reach our servers."
+              : isAr
+                ? "تتم معالجة الدفع عبر ميسر. بيانات بطاقتك لا تمر على خوادمنا ولا نحتفظ بها."
+                : "Payment is processed by Moyasar. Your card details never reach our servers and we don't store them."}
           </span>
         </p>
       </section>

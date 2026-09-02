@@ -791,3 +791,75 @@ async def run_renewals(request: Request) -> dict:
                             detail="Not authorised.")
 
     return billing.run_due_renewals()
+
+
+# ─── THE SAVED CARD (§5) ────────────────────────────────────────────────────
+
+
+@router.get("/api/v1/payments/card", tags=["Payments"])
+def get_saved_card(user_id: str = Depends(get_current_user_id)) -> dict:
+    """
+    The card on file, for display. Brand, last four and expiry — never a
+    token id, which is a bearer credential for charging that card and has no
+    business in a browser.
+    """
+    admin = get_admin_client()
+    row = (admin.table("payment_tokens")
+           .select("id, card_brand, card_last_four, card_expiry_month, card_expiry_year, status")
+           .eq("user_id", user_id).eq("is_default", True)
+           .maybe_single().execute().data)
+    if not row:
+        return {"card": None, "removable": True}
+
+    live = (admin.table("subscriptions").select("id, status, plan")
+            .eq("user_id", user_id).neq("status", "canceled")
+            .maybe_single().execute().data)
+
+    return {
+        "card": {
+            "brand": row.get("card_brand"),
+            "last_four": row.get("card_last_four"),
+            "expiry_month": row.get("card_expiry_month"),
+            "expiry_year": row.get("card_expiry_year"),
+            "status": row.get("status"),
+        },
+        # The guard, reported rather than only enforced — a button that
+        # explains why it is disabled beats one that fails when pressed.
+        "removable": live is None,
+        "in_use_by": ({"plan": live.get("plan"), "status": live.get("status")} if live else None),
+    }
+
+
+@router.delete("/api/v1/payments/card", tags=["Payments"])
+def remove_saved_card(user_id: str = Depends(get_current_user_id)) -> dict:
+    """
+    Forget the saved card.
+
+    REFUSED WHILE A SUBSCRIPTION DEPENDS ON IT. Removing the only card under
+    a live subscription does not stop the subscription — it makes the next
+    renewal fail, walks the customer through the whole dunning schedule, and
+    downgrades them for non-payment they never chose. Cancelling first is the
+    honest path, and the 409 says so.
+
+    The row is deleted rather than marked inactive: the point of the action
+    is that we stop holding it.
+    """
+    admin = get_admin_client()
+    live = (admin.table("subscriptions").select("id, plan, status")
+            .eq("user_id", user_id).neq("status", "canceled")
+            .maybe_single().execute().data)
+    if live:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "code": "card_in_use",
+                "message": "This card is paying for your subscription. Cancel the subscription "
+                           "first, then the card can be removed.",
+                "plan": live.get("plan"),
+            },
+        )
+
+    removed = (admin.table("payment_tokens").delete()
+               .eq("user_id", user_id).execute().data or [])
+    logger.info(f"🗑️ Removed {len(removed)} saved card(s) for user {user_id}.")
+    return {"removed": len(removed)}

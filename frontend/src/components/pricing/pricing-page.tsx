@@ -253,6 +253,26 @@ export function PricingPage() {
     }
   }
 
+  async function handleSwitchPlan(target: Tier) {
+    setBusy(true);
+    setActionError(null);
+    try {
+      const { changePlan } = await import("@/lib/subscription");
+      const result = await changePlan(target as "free" | "pro" | "elite");
+      setPendingTier((result.pending_plan as Tier) ?? null);
+    } catch (err) {
+      console.error("changePlan failed:", err);
+      // Same shape as the cancel/undo handlers either side of this one.
+      setActionError(
+        err instanceof Error
+          ? err.message
+          : isAr ? "حدث خطأ ما. حاول مرة أخرى." : "Something went wrong. Please try again."
+      );
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function handleUndo() {
     setBusy(true);
     setActionError(null);
@@ -340,6 +360,11 @@ export function PricingPage() {
                 const isDowngradeTarget =
                   showTierState && planSlug === "free" && tier !== "free" && !hasPendingChange;
                 const isUpgrade = showTierState && TIER_RANK[planSlug] > TIER_RANK[tier as Tier];
+                // Already paying: they have a card and a live period, so any
+                // move between paid plans is a scheduled switch, not a sale.
+                const isSubscriber = showTierState && tier !== "free";
+                const isPlanSwitch =
+                  isSubscriber && !isCurrent && !hasPendingChange && planSlug !== "free";
 
                 return (
                   <div
@@ -467,7 +492,16 @@ export function PricingPage() {
                         </button>
                       )}
 
-                      {isUpgrade && (
+                      {/* TWO DIFFERENT ACTIONS THAT LOOK THE SAME.
+                          Somebody on Free has no card on file, so moving up
+                          means paying: checkout, which saves the card for the
+                          renewal. Somebody already subscribed HAS a card and
+                          a live billing period — sending them through
+                          checkout would charge them a second time and start a
+                          second subscription. For them the move is scheduled
+                          against the period they already paid for, takes
+                          effect at the next renewal, and costs nothing now. */}
+                      {isUpgrade && !isSubscriber && (
                         <Link
                           href={`/dashboard/checkout?plan=${plan.slug}`}
                           className="inline-flex h-11 w-full items-center justify-center rounded-[0.3rem] px-5 text-[0.9375rem] font-semibold"
@@ -475,6 +509,25 @@ export function PricingPage() {
                         >
                           {plan.cta}
                         </Link>
+                      )}
+
+                      {isPlanSwitch && (
+                        <div className="space-y-1.5">
+                          <button
+                            type="button"
+                            disabled={busy}
+                            onClick={() => handleSwitchPlan(planSlug)}
+                            className="inline-flex h-11 w-full items-center justify-center rounded-[0.3rem] px-5 text-[0.9375rem] font-semibold disabled:opacity-60"
+                            style={{ backgroundColor: "var(--accent)", color: "#ffffff" }}
+                          >
+                            {plan.cta}
+                          </button>
+                          <p className="t-meta" style={{ color: "var(--ink-3)" }}>
+                            {isAr
+                              ? "يبدأ مع التجديد القادم — لا يوجد خصم الآن."
+                              : "Starts at your next renewal — nothing is charged now."}
+                          </p>
+                        </div>
                       )}
                     </div>
 
