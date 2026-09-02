@@ -61,7 +61,7 @@ jobs:
 
     steps:
       - name: Check out the PR
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       # Read through `env:` rather than interpolated into the script body --
       # `${{ secrets.X }}` is substituted textually before bash sees it, so a
