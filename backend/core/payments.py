@@ -29,10 +29,11 @@
 # THE WEBHOOK IS THE SOURCE OF TRUTH, not the callback page. The callback
 # route exists so the buyer sees an answer immediately; if it never runs,
 # the webhook still grants the credits.
-import threading
+import hmac
+import json
 from typing import Any, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from loguru import logger
 
 from core import moyasar_client
@@ -414,3 +415,278 @@ def verify_payment(
         "code": result.get("code"),
         "credits_granted": None,
     }
+
+
+# ─── WEBHOOKS (§4) ──────────────────────────────────────────────────────────
+#
+# Moyasar's own callback, and the AUTHORITATIVE path. The callback page in §3
+# is a courtesy for the buyer who comes back; this is what fires whether or
+# not they do, and it is what makes a payment on a phone that got lost in a
+# 3-D Secure redirect still deliver its credits.
+#
+# ANSWER 200 FOR ANYTHING AUTHENTIC. Moyasar retries on a non-2xx, so a 4xx or
+# 5xx for an event we simply don't act on turns into an indefinite retry loop.
+# Non-2xx is reserved for two cases: the request could not be proven to come
+# from Moyasar (403), and a genuine transient failure on our side that a
+# retry could fix (503) — those we WANT retried.
+
+# Event types this backend acts on. Anything else is recorded and acknowledged.
+_EVENT_PAID = "payment_paid"
+_EVENT_FAILED = "payment_failed"
+
+
+def _webhook_event_id(payload: dict) -> str:
+    """
+    The idempotency key for a delivery.
+
+    Moyasar's documented webhook envelope carries a top-level `id`, and that
+    is what this uses. It falls back to a composite of type + data.id +
+    created_at when `id` is absent, because the brief for this work flagged
+    that their payload does not guarantee a clean event id in every case, and
+    an idempotency key that can be empty is not an idempotency key — two
+    unrelated deliveries would collide on "" and the second would be silently
+    dropped as a duplicate.
+
+    ⚠️ NEEDS CONFIRMING AGAINST A REAL TEST-MODE DELIVERY. This shape comes
+    from Moyasar's published webhook reference, not from a captured payload —
+    nobody has been able to fire one yet, because payments are not switched on
+    (PAYMENT_GATEWAY is unset). `_log_envelope_shape` below prints the actual
+    top-level keys of the first deliveries precisely so this can be checked
+    against reality rather than left as an assumption.
+    """
+    event_id = str(payload.get("id") or "").strip()
+    if event_id:
+        return event_id
+
+    data = payload.get("data") if isinstance(payload.get("data"), dict) else {}
+    composite = ":".join([
+        str(payload.get("type") or "unknown"),
+        str(data.get("id") or "no-payment-id"),
+        str(payload.get("created_at") or ""),
+    ])
+    logger.warning(
+        f"⚠️ Moyasar webhook had no top-level 'id'; falling back to the composite key "
+        f"{composite!r}. Confirm the real envelope shape and simplify this."
+    )
+    return composite
+
+
+def _log_envelope_shape(payload: dict) -> None:
+    """Records the envelope's top-level keys, so the first real delivery
+    settles what the payload actually looks like without anyone having to
+    catch it live. Keys only — the values carry the secret and the card
+    details."""
+    data = payload.get("data") if isinstance(payload.get("data"), dict) else {}
+    logger.info(
+        f"📨 Moyasar webhook envelope keys: {sorted(payload.keys())} "
+        f"| data keys: {sorted(data.keys())}"
+    )
+
+
+def _secret_matches(payload: dict) -> bool:
+    """
+    Proves the delivery came from Moyasar.
+
+    Moyasar authenticates webhooks with a shared secret echoed in the body's
+    `secret_token`, not an HMAC over the raw bytes — so there is no need to
+    preserve the exact request bytes here, unlike a signature scheme.
+
+    compare_digest, not ==, so a wrong secret cannot be recovered a character
+    at a time from response timing. Fails closed when the secret is unset: an
+    unverifiable webhook is an unauthenticated request to hand out credits.
+    """
+    configured = moyasar_client.webhook_secret()
+    if not configured:
+        logger.error("🚫 MOYASAR_WEBHOOK_SECRET is not set — refusing every webhook.")
+        return False
+    presented = str(payload.get("secret_token") or "")
+    return bool(presented) and hmac.compare_digest(presented, configured)
+
+
+def _claim_event(admin, event_id: str, event_type: str, payload: dict) -> str:
+    """
+    Record the delivery and decide whether it still needs work.
+
+    Returns "new" (process it), "in_flight" (a previous attempt recorded it
+    but never finished — process it again), or "done" (already processed,
+    acknowledge and stop).
+
+    THE DISTINCTION BETWEEN in_flight AND done IS THE WHOLE POINT. Recording
+    the event first is what makes a retry safe, but if "already recorded"
+    alone meant "already handled", then a delivery that crashed midway — or
+    one whose payment lookup timed out and returned 503 on purpose — would be
+    acknowledged as complete on Moyasar's retry and never processed at all.
+    `processed_at` is what separates the two.
+    """
+    existing = (
+        admin.table("webhook_events")
+        .select("id, processed_at")
+        .eq("moyasar_event_id", event_id)
+        .maybe_single()
+        .execute()
+        .data
+    )
+    if existing:
+        return "done" if existing.get("processed_at") else "in_flight"
+
+    try:
+        admin.table("webhook_events").insert({
+            "moyasar_event_id": event_id,
+            "event_type": event_type,
+            "payload": payload,
+        }).execute()
+        return "new"
+    except Exception as e:
+        # A UNIQUE violation here means a concurrent delivery of the same
+        # event won the race — which is exactly what the constraint is for.
+        # Treat it as in-flight rather than failing: the loser re-reads state
+        # from Moyasar anyway, and record_and_grant() grants only once.
+        logger.info(f"↩️ webhook_events insert for {event_id} conflicted ({e}); treating as in-flight.")
+        return "in_flight"
+
+
+def _mark_processed(admin, event_id: str) -> None:
+    try:
+        admin.table("webhook_events").update(
+            {"processed_at": _utcnow_iso()}
+        ).eq("moyasar_event_id", event_id).execute()
+    except Exception as e:
+        # Not fatal. The work is done; the worst case is that a retry redoes
+        # it, and record_and_grant() is idempotent by design.
+        logger.error(f"❌ Could not mark webhook {event_id} processed: {e}")
+
+
+def _utcnow_iso() -> str:
+    from datetime import datetime, timezone
+    return datetime.now(timezone.utc).isoformat()
+
+
+def _handle_subscription_event(admin, payment: dict, product) -> dict:
+    """
+    A plan payment. Records it, grants NOTHING, and says so.
+
+    §5 owns turning this into an active subscription — the card token, the
+    billing period, the dunning schedule. Granting the plan's credits here
+    without any of that would give someone a month of Pro with nothing
+    scheduling their renewal or their downgrade.
+
+    It should not be reachable yet: /dashboard/checkout refuses plan purchases
+    for exactly this reason. If this fires, someone has a route we did not
+    expect, which is worth knowing about loudly.
+    """
+    logger.error(
+        f"🚨 Subscription payment {payment.get('id')} received for {product.reference!r}, but "
+        "subscription activation is not built yet (§5). The payment is RECORDED and the money "
+        "is taken — no plan has been activated and no credits granted. Resolve by hand."
+    )
+    _upsert_payment_row(
+        admin,
+        moyasar_id=str(payment.get("id")),
+        user_id=(_extract_metadata(payment).get("user_id") or None),
+        payment_type=product.payment_type,
+        reference=product.reference,
+        amount=product.amount_halalas,
+        currency=pricing.CURRENCY,
+        payment_status=str(payment.get("status") or "initiated").lower(),
+        raw=payment,
+    )
+    return {"ok": True, "recorded": True, "subscription_pending": True}
+
+
+@router.post("/api/v1/webhooks/moyasar", tags=["Payments"])
+async def moyasar_webhook(request: Request) -> dict:
+    """
+    Moyasar's payment callback.
+
+    NOT JWT-authenticated — Moyasar has no Supabase session. Authenticity is
+    the shared secret in the body, checked in constant time.
+
+    THE BODY IS NOT TRUSTED FOR ANYTHING BUT ROUTING. Knowing the secret
+    proves the delivery is Moyasar's; it does not make the amounts in it true.
+    Every figure that decides whether credits are granted is re-read from
+    GET /payments/{id}, so a replayed or edited body cannot grant anything
+    that Moyasar's own record does not support.
+    """
+    try:
+        payload = await request.json()
+    except Exception:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,
+                            detail="Webhook body was not JSON.")
+    if not isinstance(payload, dict):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,
+                            detail="Webhook body was not a JSON object.")
+
+    if not _secret_matches(payload):
+        # 403 and no detail: an unverified caller learns nothing about why.
+        logger.error("🚫 Rejected a Moyasar webhook: secret_token did not match.")
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN,
+                            detail="Webhook could not be verified.")
+
+    _log_envelope_shape(payload)
+    event_type = str(payload.get("type") or "").strip() or "unknown"
+    event_id = _webhook_event_id(payload)
+    data = payload.get("data") if isinstance(payload.get("data"), dict) else {}
+    payment_id = str(data.get("id") or "").strip()
+
+    admin = get_admin_client()
+    state = _claim_event(admin, event_id, event_type, payload)
+    if state == "done":
+        logger.info(f"↩️ Moyasar webhook {event_id} ({event_type}) already processed, acknowledging.")
+        return {"ok": True, "idempotent": True}
+
+    logger.info(
+        f"📨 Moyasar webhook {event_id} type={event_type} payment={payment_id or '-'} "
+        f"({'retry of an unfinished delivery' if state == 'in_flight' else 'new'})"
+    )
+
+    # ── Events we don't act on ──────────────────────────────────────────
+    if event_type not in (_EVENT_PAID, _EVENT_FAILED):
+        logger.info(f"📨 Moyasar webhook {event_id}: '{event_type}' needs no action here.")
+        _mark_processed(admin, event_id)
+        return {"ok": True, "ignored": True, "event_type": event_type}
+
+    if not payment_id:
+        logger.error(f"🚫 Moyasar webhook {event_id} ({event_type}) carries no data.id — nothing to look up.")
+        _mark_processed(admin, event_id)
+        return {"ok": True, "ignored": True, "reason": "no_payment_id"}
+
+    # ── Re-read the payment from Moyasar ────────────────────────────────
+    try:
+        payment = moyasar_client.get_payment(payment_id)
+    except moyasar_client.MoyasarUnreachable as e:
+        # DELIBERATELY a 5xx: we could not establish what happened, and
+        # Moyasar's retry is the recovery mechanism. The event row stays
+        # unprocessed so that retry does real work instead of being
+        # acknowledged as a duplicate.
+        logger.warning(f"⏳ Could not reach Moyasar to verify {payment_id} for webhook {event_id}: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail={"code": "verification_unavailable",
+                    "message": "Could not verify the payment; please retry."},
+        )
+    except (moyasar_client.MoyasarError, moyasar_client.MoyasarConfigError) as e:
+        # A definite refusal (unknown id, bad key). Retrying will not change
+        # it, so acknowledge and leave it logged rather than looping forever.
+        logger.error(f"🚫 Moyasar rejected a lookup of {payment_id} for webhook {event_id}: {e}")
+        _mark_processed(admin, event_id)
+        return {"ok": True, "ignored": True, "reason": "lookup_failed"}
+
+    # ── Route on what was bought ────────────────────────────────────────
+    reference = str(_extract_metadata(payment).get("reference") or "").strip()
+    product = pricing.get_product(reference)
+
+    if product is not None and product.kind == "plan":
+        result = _handle_subscription_event(admin, payment, product)
+    else:
+        result = record_and_grant(payment, source="webhook")
+
+    _mark_processed(admin, event_id)
+    logger.info(
+        f"📨 Moyasar webhook {event_id} handled: type={event_type} payment={payment_id} "
+        f"reference={reference or '-'} outcome={result.get('code') or ('paid' if result.get('paid') else 'recorded')}"
+    )
+    # 200 even when we refused to grant. The delivery was authentic and fully
+    # handled; the refusal is ours and is already logged at ERROR. A non-2xx
+    # would make Moyasar redeliver something that will be refused identically
+    # every time.
+    return {"ok": True, "event_type": event_type, "result": result}
