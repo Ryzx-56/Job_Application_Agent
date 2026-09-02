@@ -1,0 +1,109 @@
+# The daily subscription renewal run (§5 of the Moyasar billing brief).
+#
+# ─── WHY GITHUB ACTIONS AND NOT A SCHEDULER IN THE BACKEND ─────────────────
+#
+# The backend runs on Render's FREE tier, which spins the service down when
+# it is idle. An in-process scheduler (APScheduler and friends) is therefore
+# not running for most of any given day and would miss most renewals — the
+# one job that must not be missed. Render's own Cron Jobs are a paid service
+# type. GitHub Actions is already this repository's automation, costs
+# nothing, holds the secrets, and its request is what WAKES the service, so
+# the trigger and the wake-up are the same action.
+#
+# The endpoint does the work; this file only decides when. That keeps the
+# billing logic testable in the backend rather than trapped in YAML.
+
+name: Subscription renewals
+
+on:
+  schedule:
+    # 02:00 UTC = 05:00 Riyadh. Deliberately outside business hours: a
+    # renewal run wakes a spun-down free-tier service and holds it for the
+    # duration, and the first request after a spin-down is slow.
+    - cron: "0 2 * * *"
+  workflow_dispatch:
+
+concurrency:
+  # Never two runs at once. The charge itself is idempotent (Moyasar's
+  # given_id is derived from the subscription and the period), but a single
+  # run is simpler to read in the logs and cannot half-interleave.
+  group: billing-renewals
+  cancel-in-progress: false
+
+jobs:
+  renew:
+    name: Charge subscriptions that are due
+    runs-on: ubuntu-latest
+    steps:
+      # Read through env: rather than interpolated into the script body.
+      # ${{ secrets.X }} is substituted textually before bash sees it, so a
+      # value with shell metacharacters would be parsed as code.
+      - name: Fail early if the secrets are missing
+        env:
+          API: ${{ secrets.BACKEND_URL }}
+          CRON: ${{ secrets.CRON_SECRET }}
+        run: |
+          MISSING=""
+          [ -z "$API" ]  && MISSING="$MISSING BACKEND_URL"
+          [ -z "$CRON" ] && MISSING="$MISSING CRON_SECRET"
+          if [ -n "$MISSING" ]; then
+            echo "::error title=Missing repository secret(s)::$MISSING. BACKEND_URL is the Render service base URL (https://..., no trailing slash). CRON_SECRET must match the backend's CRON_SECRET environment variable exactly."
+            exit 1
+          fi
+          case "$API" in
+            https://*) ;;
+            *) echo "::error title=BACKEND_URL must be https::The cron secret is sent as a request header; over plain http it would travel in the clear."; exit 1 ;;
+          esac
+
+      - name: Run the renewals
+        env:
+          API: ${{ secrets.BACKEND_URL }}
+          CRON: ${{ secrets.CRON_SECRET }}
+        run: |
+          set -o pipefail
+
+          # --max-time 600: the free tier can take ~60s to wake, and a run
+          # with many due subscriptions makes one Moyasar call each. Retries
+          # are for the WAKE-UP only (connection refused while the service
+          # starts), never for a completed run — re-posting a finished run
+          # would be a second pass over the same subscriptions. That is safe
+          # by construction (given_id) but pointless and noisy.
+          HTTP=$(curl -sS -X POST \
+                   -H "X-Cron-Secret: $CRON" \
+                   -H "Content-Type: application/json" \
+                   --connect-timeout 90 --max-time 600 \
+                   --retry 3 --retry-connrefused --retry-delay 20 \
+                   -o /tmp/renewals.json -w '%{http_code}' \
+                   "${API%/}/api/v1/billing/run-renewals") || true
+
+          BODY=$(cat /tmp/renewals.json 2>/dev/null || echo '{}')
+          echo "HTTP $HTTP"
+          echo "$BODY"
+
+          {
+            echo "## Subscription renewals"
+            echo ""
+            echo "HTTP \`$HTTP\`"
+            echo ""
+            echo '```json'
+            echo "$BODY"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          if [ "$HTTP" != "200" ]; then
+            # The body is the backend's own error and carries no secret —
+            # the cron secret is only ever a request header.
+            echo "::error title=Renewal run failed (HTTP $HTTP)::$(printf '%s' "$BODY" | head -c 800 | sed ':a;N;$!ba;s/\n/%0A/g')"
+            exit 1
+          fi
+
+          # Surface the counts where they can be read without opening the run.
+          echo "::notice title=Renewal run::$(printf '%s' "$BODY" | head -c 800)"
+
+          # A run that could not charge someone is not a failed run — dunning
+          # is the designed response and the subscription is left in a
+          # correct state. It is still worth a visible warning.
+          FAILED=$(printf '%s' "$BODY" | sed -n 's/.*"failed"[: ]*\([0-9]*\).*/\1/p')
+          if [ -n "$FAILED" ] && [ "$FAILED" != "0" ]; then
+            echo "::warning title=$FAILED subscription(s) failed to charge::Dunning has been applied. See the backend logs for the decline reasons."
+          fi

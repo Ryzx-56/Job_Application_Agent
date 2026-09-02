@@ -563,34 +563,52 @@ def _utcnow_iso() -> str:
 
 def _handle_subscription_event(admin, payment: dict, product) -> dict:
     """
-    A plan payment. Records it, grants NOTHING, and says so.
+    A plan payment: the first one, or a renewal.
 
-    §5 owns turning this into an active subscription — the card token, the
-    billing period, the dunning schedule. Granting the plan's credits here
-    without any of that would give someone a month of Pro with nothing
-    scheduling their renewal or their downgrade.
+    Both go through record_and_grant() for the money and the credits, so the
+    grant is claimed exactly once no matter whether the renewal job or this
+    webhook gets there first. What is different is that a FIRST payment also
+    has to create the subscription — the card token, the period, the tier.
 
-    It should not be reachable yet: /dashboard/checkout refuses plan purchases
-    for exactly this reason. If this fires, someone has a route we did not
-    expect, which is worth knowing about loudly.
+    Told apart by whether a live subscription already exists, not by the
+    event: Moyasar sends the same payment_paid either way, and a renewal that
+    re-ran activation would reset the period and re-claim a founding-member
+    slot.
     """
-    logger.error(
-        f"🚨 Subscription payment {payment.get('id')} received for {product.reference!r}, but "
-        "subscription activation is not built yet (§5). The payment is RECORDED and the money "
-        "is taken — no plan has been activated and no credits granted. Resolve by hand."
+    metadata = _extract_metadata(payment)
+    user_id = str(metadata.get("user_id") or "").strip()
+    result = record_and_grant(payment, source="webhook")
+
+    if not (result.get("ok") and result.get("paid")):
+        return result
+    if not user_id:
+        logger.error(
+            f"🚨 Plan payment {payment.get('id')} is paid but carries no user_id — "
+            "no subscription can be started. Resolve by hand."
+        )
+        return {**result, "subscription": "no_user_id"}
+
+    # Imported here rather than at module scope: core.billing imports
+    # record_and_grant from this module, so a top-level import would be
+    # circular.
+    from core import billing
+
+    existing = (
+        admin.table("subscriptions").select("id, status")
+        .eq("user_id", user_id).neq("status", "canceled")
+        .maybe_single().execute().data
     )
-    _upsert_payment_row(
-        admin,
-        moyasar_id=str(payment.get("id")),
-        user_id=(_extract_metadata(payment).get("user_id") or None),
-        payment_type=product.payment_type,
-        reference=product.reference,
-        amount=product.amount_halalas,
-        currency=pricing.CURRENCY,
-        payment_status=str(payment.get("status") or "initiated").lower(),
-        raw=payment,
-    )
-    return {"ok": True, "recorded": True, "subscription_pending": True}
+    if existing:
+        # A renewal. The job already advanced the period when it charged;
+        # this delivery is the reconciliation, and the grant above is the
+        # only thing it needed to do.
+        logger.info(
+            f"🔁 Renewal payment {payment.get('id')} reconciled for subscription {existing['id']}."
+        )
+        return {**result, "subscription": "renewed"}
+
+    started = billing.start_subscription(user_id, product.reference, payment)
+    return {**result, "subscription": "started" if started else "start_failed"}
 
 
 @router.post("/api/v1/webhooks/moyasar", tags=["Payments"])
@@ -690,3 +708,39 @@ async def moyasar_webhook(request: Request) -> dict:
     # would make Moyasar redeliver something that will be refused identically
     # every time.
     return {"ok": True, "event_type": event_type, "result": result}
+
+
+@router.post("/api/v1/billing/run-renewals", tags=["Payments"])
+async def run_renewals(request: Request) -> dict:
+    """
+    The daily renewal run (§5), triggered by the scheduled workflow in
+    .github/workflows/billing-renewals.yml.
+
+    NOT A USER ROUTE. Authenticated by a shared secret in the
+    X-Cron-Secret header, compared in constant time, failing closed when
+    CRON_SECRET is unset — an unprotected endpoint that charges saved cards
+    is the worst possible thing to leave open.
+
+    WHY AN HTTP ENDPOINT AND NOT A SCHEDULER IN THE PROCESS. This backend
+    runs on Render's free tier and spins down when idle, so an in-process
+    scheduler (APScheduler and friends) simply is not running most of the
+    time and would miss most renewals. Render's own Cron Jobs are a paid
+    service type. GitHub Actions is already this repository's automation
+    (two workflows, with secrets), costs nothing, and its request is what
+    wakes the service — so the trigger and the wake-up are the same action.
+    """
+    from core import billing
+
+    configured = billing.cron_secret()
+    if not configured:
+        logger.error("🚫 CRON_SECRET is not set — refusing to run renewals.")
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                            detail={"code": "cron_not_configured"})
+
+    presented = request.headers.get("x-cron-secret") or ""
+    if not presented or not hmac.compare_digest(presented, configured):
+        logger.error("🚫 Rejected a renewal run: X-Cron-Secret did not match.")
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN,
+                            detail="Not authorised.")
+
+    return billing.run_due_renewals()

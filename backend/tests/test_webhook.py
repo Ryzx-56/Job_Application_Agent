@@ -24,6 +24,7 @@ class FakeQuery:
         self.store, self.table = store, table
         self._payload = None
         self._filters = {}
+        self._neq = {}
         self._op = None
 
     def select(self, *_a, **_k):
@@ -41,6 +42,9 @@ class FakeQuery:
     def eq(self, col, val):
         self._filters[col] = val; return self
 
+    def neq(self, col, val):
+        self._neq[col] = val; return self
+
     def is_(self, col, val):
         self._filters[f"{col}__is"] = val; return self
 
@@ -52,7 +56,12 @@ class FakeQuery:
         key = self._filters.get("moyasar_event_id") or self._filters.get("moyasar_payment_id")
 
         if self._op == "select":
-            return type("R", (), {"data": rows.get(key)})()
+            if key is not None:
+                return type("R", (), {"data": rows.get(key)})()
+            found = [r for r in rows.values()
+                     if all(r.get(k) == v for k, v in self._filters.items())
+                     and all(r.get(k) != v for k, v in self._neq.items())]
+            return type("R", (), {"data": found[0] if found else None})()
 
         if self._op == "insert":
             k = self._payload.get("moyasar_event_id")
@@ -260,19 +269,61 @@ def test_amount_in_the_body_is_ignored(env):
     assert env["admin"].store["payments"]["pay_wh_1"]["amount"] == 900
 
 
-def test_subscription_payment_is_recorded_but_grants_nothing(env, monkeypatch):
-    """§5 owns activation. Granting a plan's credits with no billing period or
-    dunning attached would be a month of Pro that never renews or downgrades."""
+def test_first_plan_payment_grants_and_starts_the_subscription(env, monkeypatch):
+    """Changed by §5. Before recurring billing existed this recorded the
+    payment and granted nothing, because a plan with no billing period
+    attached is a month of Pro that never renews. Now the subscription is
+    created in the same delivery, so granting is correct."""
+    started = {}
     monkeypatch.setattr(payments.moyasar_client, "get_payment", lambda pid: {
         "id": "pay_plan", "status": "paid", "amount": 2900, "currency": "SAR",
         "metadata": {"user_id": "user-abc", "reference": "pro_plan"},
+        "source": {"type": "creditcard", "token": "token_saved", "company": "visa",
+                   "last_four": "4242", "month": "12", "year": "2030"},
     })
+    from core import billing
+    monkeypatch.setattr(billing, "start_subscription",
+                        lambda uid, ref, pay: started.setdefault("args", (uid, ref)) or {"id": "sub-1"})
+
     r = env["client"].post("/api/v1/webhooks/moyasar",
                            json=envelope(id="evt_plan", data={"id": "pay_plan"}))
     assert r.status_code == 200
-    assert r.json()["result"]["subscription_pending"] is True
-    assert env["grants"] == []
+    assert r.json()["result"]["subscription"] == "started"
+    assert started["args"] == ("user-abc", "pro_plan")
+    assert env["grants"] == [("user-abc", 24)]
     assert env["admin"].store["payments"]["pay_plan"]["type"] == pricing.TYPE_SUBSCRIPTION_INITIAL
+
+
+def test_a_plan_payment_with_no_saved_card_is_flagged_not_silently_accepted(env, monkeypatch):
+    """The money is taken but nothing can ever renew it. That has to be
+    visible rather than becoming a subscription that quietly lapses."""
+    monkeypatch.setattr(payments.moyasar_client, "get_payment", lambda pid: {
+        "id": "pay_plan2", "status": "paid", "amount": 2900, "currency": "SAR",
+        "metadata": {"user_id": "user-abc", "reference": "pro_plan"},
+        "source": {"type": "creditcard"},          # no token
+    })
+    r = env["client"].post("/api/v1/webhooks/moyasar",
+                           json=envelope(id="evt_plan2", data={"id": "pay_plan2"}))
+    assert r.status_code == 200
+    assert r.json()["result"]["subscription"] == "start_failed"
+
+
+def test_a_renewal_payment_reconciles_without_restarting_the_subscription(env, monkeypatch):
+    """Moyasar sends the same payment_paid for a first payment and a renewal.
+    Re-running activation on a renewal would reset the period and re-claim a
+    founding-member slot."""
+    env["admin"].store["subscriptions"] = {
+        "sub-1": {"id": "sub-1", "user_id": "user-abc", "status": "active"}
+    }
+    monkeypatch.setattr(payments.moyasar_client, "get_payment", lambda pid: {
+        "id": "pay_renew", "status": "paid", "amount": 2900, "currency": "SAR",
+        "metadata": {"user_id": "user-abc", "reference": "pro_plan"},
+        "source": {"token": "token_saved"},
+    })
+    r = env["client"].post("/api/v1/webhooks/moyasar",
+                           json=envelope(id="evt_renew", data={"id": "pay_renew"}))
+    assert r.status_code == 200
+    assert r.json()["result"]["subscription"] == "renewed"
 
 
 # ─── The idempotency key itself ─────────────────────────────────────────────
