@@ -38,7 +38,7 @@ from loguru import logger
 
 from core import moyasar_client
 from core import pricing
-from core.auth import get_current_user_id
+from core.auth import get_current_admin_user_id, get_current_user_id
 from core.credits import get_admin_client, grant_credits
 from core.rate_limit import RateLimit, enforce
 
@@ -863,3 +863,146 @@ def remove_saved_card(user_id: str = Depends(get_current_user_id)) -> dict:
                .eq("user_id", user_id).execute().data or [])
     logger.info(f"🗑️ Removed {len(removed)} saved card(s) for user {user_id}.")
     return {"removed": len(removed)}
+
+
+# ─── ADMIN: REFUNDS AND THE PAYMENTS LIST (§7) ──────────────────────────────
+#
+# THERE IS NO CUSTOMER-FACING REFUND FLOW, deliberately. Credits and generated
+# documents are delivered the instant a payment clears, so "return the goods"
+# has no meaning here — the refund policy says payment is final once
+# delivered, and the checkout says so before the button. What is left is the
+# genuine cases: a billing error on our side, and a dispute or chargeback.
+# Both are handled by a person, so both live behind the admin check.
+
+
+@router.get("/api/v1/admin/payments", tags=["Admin"])
+def admin_list_payments(
+    limit: int = 100,
+    status_filter: Optional[str] = None,
+    admin_user_id: str = Depends(get_current_admin_user_id),
+) -> dict:
+    """
+    Every payment, newest first, so a billing question can be answered
+    without opening the database.
+
+    Buyer emails are resolved through the same admin lookup the LinkedIn
+    fulfilment queue uses — auth.users is not reachable from PostgREST, which
+    is why neither of them selects it directly.
+    """
+    admin = get_admin_client()
+    query = (admin.table("payments")
+             .select("id, user_id, moyasar_payment_id, type, reference, amount, currency, "
+                     "status, credits_granted, created_at")
+             .order("created_at", desc=True).limit(min(limit, 500)))
+    if status_filter:
+        query = query.eq("status", status_filter)
+    rows = query.execute().data or []
+
+    buyers = {}
+    user_ids = [r["user_id"] for r in rows if r.get("user_id")]
+    if user_ids:
+        try:
+            from core.linkedin_notify import lookup_buyers
+            buyers = lookup_buyers(list(set(user_ids)))
+        except Exception as e:
+            # A missing email is cosmetic; the payment list is still useful.
+            logger.error(f"❌ Could not resolve buyer emails for the payments list: {e}")
+
+    for r in rows:
+        buyer = buyers.get(r.get("user_id")) or {}
+        r["buyer_email"] = buyer.get("email")
+        # Halalas are the stored truth; SAR is derived here so no caller has
+        # to remember the factor of 100.
+        r["amount_sar"] = round((r.get("amount") or 0) / 100, 2)
+
+    return {"payments": rows, "count": len(rows)}
+
+
+@router.post("/api/v1/admin/payments/{payment_id}/refund", tags=["Admin"])
+def admin_refund_payment(
+    payment_id: str,
+    admin_user_id: str = Depends(get_current_admin_user_id),
+) -> dict:
+    """
+    Refund a payment and take back what it bought, as far as that is possible.
+
+    CLAWBACK IS UNSPENT-ONLY. The credits a refunded payment granted may
+    already be gone — a generated CV cannot be un-generated, and the AI calls
+    behind it cost real money that is not coming back either. So the clawback
+    is clamped to the credits still sitting unused, and the number ACTUALLY
+    taken is recorded rather than the number granted, so "refunded 30, clawed
+    back 12" stays legible months later instead of having to be inferred.
+
+    THE REFUND IS ISSUED BEFORE THE CLAWBACK, deliberately. If Moyasar refuses
+    the refund, nothing has been taken from the customer's balance; the other
+    order would remove credits for money that was never returned.
+    """
+    admin = get_admin_client()
+    row = (admin.table("payments").select("*")
+           .eq("moyasar_payment_id", payment_id).maybe_single().execute().data)
+    if not row:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND,
+                            detail={"code": "unknown_payment"})
+
+    if row.get("status") == "refunded":
+        # Idempotent: a double-click must not refund twice, and Moyasar would
+        # refuse the second anyway.
+        return {"ok": True, "already_refunded": True, "payment": row}
+
+    if row.get("status") not in ("paid", "captured"):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={"code": "not_refundable",
+                    "message": f"This payment is '{row.get('status')}', so there is nothing to refund."},
+        )
+
+    try:
+        refunded = moyasar_client.refund_payment(payment_id)
+    except moyasar_client.MoyasarUnreachable as e:
+        # Unknown outcome. Do NOT record a refund or claw anything back — the
+        # money may or may not have moved, and a second attempt can check.
+        logger.warning(f"⏳ Could not reach Moyasar to refund {payment_id}: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail={"code": "refund_unavailable",
+                    "message": "Could not reach Moyasar. Nothing was changed; try again."},
+        )
+    except (moyasar_client.MoyasarError, moyasar_client.MoyasarConfigError) as e:
+        logger.error(f"🚫 Moyasar refused to refund {payment_id}: {e}")
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY,
+                            detail={"code": "refund_refused", "message": str(e)})
+
+    clawed = 0
+    granted = row.get("credits_granted")
+    if granted and row.get("user_id"):
+        try:
+            clawed = int(admin.rpc("clawback_purchased_credits", {
+                "p_user_id": row["user_id"], "p_amount": int(granted)}).execute().data or 0)
+        except Exception as e:
+            # The money is back; the balance is not. Loud, because it needs a
+            # person, and never fatal — reporting the refund as failed after
+            # Moyasar accepted it would be worse.
+            logger.error(
+                f"🚨 Refunded {payment_id} but could NOT claw back credits for "
+                f"{row['user_id']}: {e}. Adjust the balance by hand."
+            )
+
+    admin.table("payments").update({
+        "status": "refunded",
+        # What was actually recovered, not what was granted.
+        "credits_granted": (int(granted) - clawed) if granted else granted,
+        "raw_response": refunded,
+    }).eq("moyasar_payment_id", payment_id).execute()
+
+    logger.info(
+        f"↩️ Admin {admin_user_id} refunded {payment_id} "
+        f"({row.get('amount')} {row.get('currency')}, {row.get('reference')}); "
+        f"clawed back {clawed} of {granted or 0} credit(s)."
+    )
+    return {
+        "ok": True,
+        "payment_id": payment_id,
+        "credits_granted": granted,
+        "credits_clawed_back": clawed,
+        "credits_already_spent": (int(granted) - clawed) if granted else 0,
+    }

@@ -282,7 +282,30 @@ export default function CheckoutPage() {
             {isAr ? "جارٍ تحميل نموذج الدفع" : "Loading the payment form"}
           </div>
         )}
-        <p className="mt-4 flex items-start gap-2 text-xs leading-relaxed text-slate-600">
+        {/* SAID BEFORE THE BUTTON, NOT AFTER. Credits and generated documents
+            are delivered the instant a payment clears, so there is nothing to
+            return — which is exactly why the buyer has to know it while they
+            can still decide, rather than discovering it in the policy
+            afterwards. The Refund Policy page has said "final once delivered"
+            all along; what was missing was saying it at the moment of
+            payment. */}
+        <p className="mt-4 rounded-lg bg-slate-50 px-3 py-2.5 text-xs leading-relaxed text-slate-700">
+          {isSubscription
+            ? isAr
+              ? "المدفوعات نهائية. تُضاف نقاط الشهر فور إتمام العملية، ولا تُسترد قيمة الفترة الحالية عند الإلغاء — يستمر اشتراكك حتى نهايتها ثم يتوقف التجديد."
+              : "Payments are final. Your month's credits are added as soon as the payment clears, and cancelling does not refund the current period — your plan runs to the end of it, then stops renewing."
+            : isAr
+              ? "المدفوعات نهائية. تُضاف النقاط إلى رصيدك فور إتمام العملية، ولذلك لا يمكن استرداد المبلغ بعد الشراء."
+              : "Payments are final. Credits are added to your balance as soon as the payment clears, so purchases can't be refunded once made."}{" "}
+          <Link
+            href="/refund-policy"
+            className="underline underline-offset-2 hover:no-underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-900"
+          >
+            {isAr ? "سياسة الاسترداد" : "Refund policy"}
+          </Link>
+        </p>
+
+        <p className="mt-3 flex items-start gap-2 text-xs leading-relaxed text-slate-600">
           <Lock className="mt-0.5 size-3.5 shrink-0" aria-hidden />
           <span>
             {isSubscription

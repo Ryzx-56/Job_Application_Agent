@@ -10,7 +10,7 @@ const API_URL = process.env.NEXT_PUBLIC_API_URL;
    client-side check here by design.
 ======================================================================== */
 
-async function adminGet<T>(path: string): Promise<T> {
+async function adminGet<T>(path: string, method: "GET" | "POST" = "GET"): Promise<T> {
   const supabase = createClient();
   const {
     data: { session },
@@ -18,6 +18,7 @@ async function adminGet<T>(path: string): Promise<T> {
   if (!session?.access_token) throw new Error("Not authenticated");
 
   const res = await fetch(`${API_URL}${path}`, {
+    method,
     headers: { Authorization: `Bearer ${session.access_token}` },
   });
   if (!res.ok) {
@@ -190,3 +191,51 @@ export const fetchAdminUsers = (q?: string) =>
   adminGet<{ users: AdminUserRow[]; count: number }>(
     `/api/v1/admin/users${q ? `?q=${encodeURIComponent(q)}` : ""}`
   );
+
+/* ── Payments (§7) ────────────────────────────────────────────────────── */
+
+export type AdminPaymentRow = {
+  id: string;
+  user_id: string | null;
+  buyer_email: string | null;
+  moyasar_payment_id: string;
+  type: string;
+  reference: string;
+  /** Halalas — the stored truth. amount_sar is derived for display. */
+  amount: number;
+  amount_sar: number;
+  currency: string;
+  status: string;
+  credits_granted: number | null;
+  created_at: string;
+};
+
+export async function fetchAdminPayments(params?: {
+  status?: string;
+  limit?: number;
+}): Promise<{ payments: AdminPaymentRow[]; count: number }> {
+  const qs = new URLSearchParams();
+  if (params?.status) qs.set("status_filter", params.status);
+  if (params?.limit) qs.set("limit", String(params.limit));
+  const suffix = qs.toString() ? `?${qs}` : "";
+  return adminGet<{ payments: AdminPaymentRow[]; count: number }>(
+    `/api/v1/admin/payments${suffix}`
+  );
+}
+
+export type RefundResult = {
+  ok: boolean;
+  already_refunded?: boolean;
+  credits_granted: number | null;
+  credits_clawed_back: number;
+  credits_already_spent: number;
+};
+
+/** Admin-only. There is no customer-facing refund flow — see the note on the
+ *  route in backend/core/payments.py. */
+export async function refundAdminPayment(moyasarPaymentId: string): Promise<RefundResult> {
+  return adminGet<RefundResult>(
+    `/api/v1/admin/payments/${encodeURIComponent(moyasarPaymentId)}/refund`,
+    "POST"
+  );
+}

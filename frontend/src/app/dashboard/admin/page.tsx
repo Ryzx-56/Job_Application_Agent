@@ -2,7 +2,7 @@
 
 import React from "react";
 import Link from "next/link";
-import { FileText, BarChart3, Users, Activity, ArrowRight, BadgeCheck } from "lucide-react";
+import { Activity, ArrowRight, BadgeCheck, BarChart3, CreditCard, FileText, Users } from "lucide-react";
 import { AdminPage, ADMIN_MONO } from "@/components/admin-ui";
 
 /**
@@ -52,6 +52,15 @@ const TOOLS = [
     accent: "text-[#0A66C2]",
     ring: "group-hover:border-[#0A66C2]/40",
     desc: "The premium LinkedIn queue: who paid for a hand-built profile, how to reach them, and what's still owed.",
+  },
+  {
+    href: "/dashboard/admin/payments",
+    name: "Payments",
+    cmd: "payments",
+    icon: CreditCard,
+    accent: "text-amber-600",
+    ring: "group-hover:border-amber-300",
+    desc: "Every Moyasar payment, and the only place a refund can be issued. There is no customer-facing refund flow.",
   },
   {
     href: "/dashboard/admin/health",

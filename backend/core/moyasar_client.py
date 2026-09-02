@@ -327,6 +327,32 @@ def charge_token(
     )
 
 
+def refund_payment(payment_id: str, amount: Optional[int] = None) -> dict:
+    """
+    POST /payments/{id}/refund — give the money back.
+
+    `amount` in halalas for a partial refund; omitted refunds the whole
+    payment. Moyasar rejects a refund larger than the original, and refunding
+    an already-refunded payment, so those cases surface as MoyasarError rather
+    than needing a pre-check here.
+
+    ADMIN-ONLY UPSTREAM. There is no customer-facing refund flow: the product
+    is delivered the moment it is paid for, so this exists for billing errors
+    and disputes, and the route that calls it is behind the admin check.
+    """
+    payload: dict[str, Any] = {}
+    if amount is not None:
+        payload["amount"] = _validate_amount(amount)
+
+    refunded = _request("POST", f"/payments/{payment_id}/refund", data=payload)
+    logger.info(
+        f"↩️ Refunded Moyasar payment {payment_id} "
+        f"({'full' if amount is None else f'{amount} halalas'}), "
+        f"status={refunded.get('status')}."
+    )
+    return refunded
+
+
 # ─── TOKENS ─────────────────────────────────────────────────────────────────
 
 
