@@ -225,7 +225,24 @@ jobs:
           # string that would otherwise print in the clear.
           DB_URL=$(printf '%s' "$SUPABASE_DB_URL" | tr -d '\r\n\t' | sed -e 's/^ *//' -e 's/ *$//')
           echo "::add-mask::$DB_URL"
-          supabase migration list --debug --db-url "$DB_URL" 2>&1 | tee /tmp/before.log
+          # Emits a failed command's own output as an ::error:: annotation.
+          # The job summary already carries it, but summaries need ADMIN
+          # rights to read through the API, the same as raw logs — so on a
+          # failure the only thing visible to a reader was "Process completed
+          # with exit code 1". Annotations are readable with plain read
+          # access, which is the difference between diagnosing a broken
+          # deploy and having to ask someone with admin to paste the log.
+          # Credentials are stripped first; this repository is public.
+          annotate_failure() {
+            printf '::error title=%s::%s\n' "$1" \
+              "$(sed -E -e 's#(postgres(ql)?://)[^[:space:]]*#\1REDACTED#g' \
+                        -e 's#(:)[^:@/[:space:]]+(@)#\1REDACTED\2#g' "$2" \
+                 | tail -40 | sed ':a;N;$!ba;s/\n/%0A/g')"
+          }
+          if ! supabase migration list --debug --db-url "$DB_URL" 2>&1 | tee /tmp/before.log; then
+            annotate_failure "migration list (before) failed" /tmp/before.log
+            exit 1
+          fi
 
       # ── Why the output is re-emitted as ::error:: ──────────────────────
       # A failing step annotates the run with a bare "Process completed with
@@ -255,7 +272,24 @@ jobs:
           # string that would otherwise print in the clear.
           DB_URL=$(printf '%s' "$SUPABASE_DB_URL" | tr -d '\r\n\t' | sed -e 's/^ *//' -e 's/ *$//')
           echo "::add-mask::$DB_URL"
+          if ! # Emits a failed command's own output as an ::error:: annotation.
+          # The job summary already carries it, but summaries need ADMIN
+          # rights to read through the API, the same as raw logs — so on a
+          # failure the only thing visible to a reader was "Process completed
+          # with exit code 1". Annotations are readable with plain read
+          # access, which is the difference between diagnosing a broken
+          # deploy and having to ask someone with admin to paste the log.
+          # Credentials are stripped first; this repository is public.
+          annotate_failure() {
+            printf '::error title=%s::%s\n' "$1" \
+              "$(sed -E -e 's#(postgres(ql)?://)[^[:space:]]*#\1REDACTED#g' \
+                        -e 's#(:)[^:@/[:space:]]+(@)#\1REDACTED\2#g' "$2" \
+                 | tail -40 | sed ':a;N;$!ba;s/\n/%0A/g')"
+          }
           if ! supabase db push --debug --db-url "$DB_URL" 2>&1 | tee /tmp/push.log; then
+            annotate_failure "db push failed" /tmp/push.log
+            exit 1
+          fi; then
             # Annotations are single-line: %0A is the encoding for a newline,
             # and a literal "::" would terminate the workflow command early.
             MSG=$(sed -E \
@@ -289,7 +323,24 @@ jobs:
           # string that would otherwise print in the clear.
           DB_URL=$(printf '%s' "$SUPABASE_DB_URL" | tr -d '\r\n\t' | sed -e 's/^ *//' -e 's/ *$//')
           echo "::add-mask::$DB_URL"
-          supabase migration list --debug --db-url "$DB_URL" 2>&1 | tee /tmp/after.log
+          # Emits a failed command's own output as an ::error:: annotation.
+          # The job summary already carries it, but summaries need ADMIN
+          # rights to read through the API, the same as raw logs — so on a
+          # failure the only thing visible to a reader was "Process completed
+          # with exit code 1". Annotations are readable with plain read
+          # access, which is the difference between diagnosing a broken
+          # deploy and having to ask someone with admin to paste the log.
+          # Credentials are stripped first; this repository is public.
+          annotate_failure() {
+            printf '::error title=%s::%s\n' "$1" \
+              "$(sed -E -e 's#(postgres(ql)?://)[^[:space:]]*#\1REDACTED#g' \
+                        -e 's#(:)[^:@/[:space:]]+(@)#\1REDACTED\2#g' "$2" \
+                 | tail -40 | sed ':a;N;$!ba;s/\n/%0A/g')"
+          }
+          if ! supabase migration list --debug --db-url "$DB_URL" 2>&1 | tee /tmp/after.log; then
+            annotate_failure "migration list (after) failed" /tmp/after.log
+            exit 1
+          fi
           # Which migrations actually landed, as an annotation — the single
           # most useful fact after a partial or failed deploy.
           MSG=$(sed -E -e 's#(postgres(ql)?://)[^[:space:]]*#\1REDACTED#g' -e 's#::#;;#g' \
