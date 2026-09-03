@@ -43,6 +43,29 @@ const supabase = origin(process.env.NEXT_PUBLIC_SUPABASE_URL);
 const supabaseWs = supabase ? supabase.replace(/^https:/, "wss:") : "";
 const api = origin(process.env.NEXT_PUBLIC_API_URL);
 
+/* Moyasar's hosted card form (lib/payments.ts). THREE directives need it and
+   only three — established by reading moyasar.js 1.19.0, not by guessing:
+
+     script-src   the form bundle itself, served from their CDN
+     style-src    its stylesheet, same CDN. Every image inside that stylesheet
+                  is a data: URI, so img-src needs nothing added.
+     connect-src  its `base_url` — the form fetch()es api.moyasar.com to
+                  create the payment when the buyer submits the card.
+
+   3-D SECURE NEEDS NOTHING HERE. The form hands off with a top-level
+   `window.location.href = payment.source.transaction_url` — not an iframe and
+   not a cross-origin form post — so `frame-src 'none'` and
+   `form-action 'self'` stay exactly as they are. Widening either of those to
+   make a card form work would be giving up real protection for no reason.
+
+   WITHOUT THESE the browser blocks the script before it ever reaches the
+   network, loadMoyasarForm() rejects with "moyasar-script-failed", and
+   checkout shows "The payment form couldn't load" on every attempt — while
+   the CDN answers 200 to anything that isn't a browser, which makes it look
+   like a working URL. */
+const MOYASAR_CDN = "https://cdn.moyasar.com";
+const MOYASAR_API = "https://api.moyasar.com";
+
 const connectSrc = [
   "'self'",
   supabase,
@@ -55,14 +78,17 @@ const connectSrc = [
   "https://www.google-analytics.com",
   "https://region1.google-analytics.com",
   "https://www.googletagmanager.com",
+  // The card form's own API. Without it the buyer fills the card in and the
+  // charge request is blocked at submit.
+  MOYASAR_API,
 ].filter(Boolean);
 
 const csp = [
   "default-src 'self'",
-  "script-src 'self' 'unsafe-inline' https://www.googletagmanager.com",
+  `script-src 'self' 'unsafe-inline' https://www.googletagmanager.com ${MOYASAR_CDN}`,
   // Tailwind and next/font both emit inline <style>; there is no nonce-free
   // way around this one.
-  "style-src 'self' 'unsafe-inline'",
+  `style-src 'self' 'unsafe-inline' ${MOYASAR_CDN}`,
   "img-src 'self' data: https://www.googletagmanager.com https://www.google-analytics.com",
   // next/font/google self-hosts the font files at build time, so no external
   // font origin is needed. data: covers inlined subsets.

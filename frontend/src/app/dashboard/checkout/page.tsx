@@ -156,12 +156,26 @@ export default function CheckoutPage() {
         },
       });
       setFormReady(true);
-    } catch {
+    } catch (err) {
       mountedRef.current = false;
+
+      // THE CAUSE IS NAMED, not folded into one message for all three.
+      // A missing publishable key is a deployment fault that no amount of
+      // refreshing fixes, and telling the buyer to "check your connection"
+      // sends whoever is debugging it after the wrong thing entirely — which
+      // is precisely how a blocked script once got mistaken for an unset key.
+      const cause = err instanceof Error ? err.message : "";
+      // eslint-disable-next-line no-console
+      console.error("[checkout] the card form did not mount:", cause || err);
+
       setError(
-        isAr
-          ? "تعذّر تحميل نموذج الدفع. تحقّق من اتصالك وحدّث الصفحة."
-          : "The payment form couldn't load. Check your connection and refresh."
+        cause === "moyasar-key-missing"
+          ? isAr
+            ? "الدفع غير متاح حاليًا بسبب خطأ في الإعداد لدينا. لم يتم خصم أي مبلغ. حاول لاحقًا أو تواصل معنا."
+            : "Payments are unavailable right now because of a configuration error on our side. Nothing was charged. Try again later or contact us."
+          : isAr
+            ? "تعذّر تحميل نموذج الدفع. تحقّق من اتصالك وحدّث الصفحة."
+            : "The payment form couldn't load. Check your connection and refresh."
       );
     }
   }, [product, isAr, lang, purchaseId, isSubscription]);
