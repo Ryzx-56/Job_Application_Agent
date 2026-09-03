@@ -128,15 +128,19 @@ export function CreditsButton({ creditsRemaining, creditsTotal, lang = "en", upg
 
             <p className="mt-3 text-[11px] leading-relaxed text-slate-400">{copy.note}</p>
 
-            {(isLow || isEmpty) && (
-              <a
-                href={upgradeHref}
-                className="mt-3 flex items-center justify-center gap-1.5 rounded-lg bg-slate-900 px-3 py-2 text-xs font-semibold text-white transition-colors hover:bg-slate-800"
-              >
-                <Sparkles className="size-3.5" aria-hidden />
-                {copy.upgrade}
-              </a>
-            )}
+            {/* ALWAYS SHOWN, not just when the balance is low. Somebody with
+                credits left is not somebody with nothing to buy — they may
+                want a bigger monthly allowance, or a pack before starting a
+                batch of applications. Hiding the only purchase path until
+                they have almost run out means the moment they decide to buy
+                is the one moment it is not on screen. */}
+            <a
+              href={upgradeHref}
+              className="mt-3 flex items-center justify-center gap-1.5 rounded-lg bg-slate-900 px-3 py-2 text-xs font-semibold text-white transition-colors hover:bg-slate-800 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-900"
+            >
+              <Sparkles className="size-3.5" aria-hidden />
+              {copy.upgrade}
+            </a>
           </div>
         </div>
       )}

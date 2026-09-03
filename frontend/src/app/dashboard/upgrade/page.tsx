@@ -7,7 +7,10 @@ import Link from "next/link";
 import { useLang } from "@/lib/language";
 import { fetchLinkedInOverview, LinkedInOverview } from "@/lib/supabase/linkedin";
 import { LinkedInGlyph } from "@/components/linkedin-ui";
-import { formatSar, sarPerCredit, usdApprox } from "@/lib/pricing";
+import { formatSar, formatMediumDate, sarPerCredit, usdApprox } from "@/lib/pricing";
+import { fetchCredits, type Tier } from "@/lib/supabase/credits";
+import { changePlan, resumeSubscription } from "@/lib/subscription";
+import { CancelSubscriptionLink } from "@/components/cancel-subscription";
 
 /**
  * In-dashboard upgrade page. Replaces the old behaviour where an
@@ -46,6 +49,69 @@ export default function UpgradePage() {
       .then(setLinkedinData)
       .catch(() => setLinkedinData(null));
   }, []);
+
+  /* ── WHAT THE READER IS ALREADY PAYING FOR ────────────────────────────
+     This page used to render "Go Pro"/"Go Elite" unconditionally, so an
+     Elite subscriber was invited to buy the plan they were already on —
+     and following that invitation went to checkout, which would have
+     charged them a second time and started a second subscription. The tier
+     is read here so each card can show the customer's actual position. */
+  const [tier, setTier] = useState<Tier | null>(null);
+  const [pendingTier, setPendingTier] = useState<Tier | null>(null);
+  const [resetAt, setResetAt] = useState<string | null>(null);
+  const [tierLoaded, setTierLoaded] = useState(false);
+  const [planBusy, setPlanBusy] = useState(false);
+  const [planError, setPlanError] = useState<string | null>(null);
+
+  useEffect(() => {
+    fetchCredits()
+      .then((c) => {
+        setTier(c.tier);
+        setPendingTier(c.pendingTier);
+        setResetAt(c.creditsResetAt);
+      })
+      .catch((err) => console.error("fetchCredits failed:", err))
+      .finally(() => setTierLoaded(true));
+  }, []);
+
+  /** Move between paid plans WITHOUT a second charge — see the note on the
+   *  switch button below. Schedules only; nothing is taken now. */
+  async function handleSwitchPlan(target: Tier) {
+    setPlanBusy(true);
+    setPlanError(null);
+    try {
+      const result = await changePlan(target as "free" | "pro" | "elite");
+      setPendingTier((result.pending_plan as Tier) ?? null);
+    } catch (err) {
+      setPlanError(
+        err instanceof Error
+          ? err.message
+          : isAr ? "حدث خطأ ما. حاول مرة أخرى." : "Something went wrong. Please try again."
+      );
+    } finally {
+      setPlanBusy(false);
+    }
+  }
+
+  async function handleUndo() {
+    setPlanBusy(true);
+    setPlanError(null);
+    try {
+      await resumeSubscription();
+      setPendingTier(null);
+    } catch (err) {
+      setPlanError(
+        isAr ? "تعذّر التراجع عن التغيير. حاول مرة أخرى." : "Couldn't undo that. Please try again."
+      );
+    } finally {
+      setPlanBusy(false);
+    }
+  }
+
+  /** A plan's display name in the reader's language, from the same pricing
+   *  data the cards render — never a second hardcoded list. */
+  const planName = (slug: string | null) =>
+    pricing.plans.find((p) => p.slug === slug)?.name ?? slug ?? "";
 
   // The LinkedIn tab links here with #linkedin-tiers. A client-side
   // navigation doesn't restore hash scrolling on its own, so do it once the
@@ -106,7 +172,14 @@ export default function UpgradePage() {
           {isAr ? "الاشتراكات" : "Subscriptions"}
         </h2>
         <div className="grid gap-4 sm:grid-cols-2">
-          {paidPlans.map((plan) => (
+          {paidPlans.map((plan) => {
+            const isCurrent = tierLoaded && tier === plan.slug;
+            const isPendingTarget = tierLoaded && pendingTier === plan.slug;
+            // A change is only "pending" if it actually moves somewhere else.
+            const hasPending = tierLoaded && pendingTier !== null && pendingTier !== tier;
+            const isSubscriber = tierLoaded && tier !== null && tier !== "free";
+            const switchDate = resetAt ? formatMediumDate(resetAt, lang) : "";
+            return (
             <div
               key={plan.slug}
               className={`relative flex flex-col rounded-2xl border bg-white shadow-sm transition-shadow hover:shadow-md ${
@@ -172,20 +245,87 @@ export default function UpgradePage() {
                 )}
               </div>
 
-              <Link
-                href={`/dashboard/checkout?plan=${plan.slug}`}
-                className={`mt-5 inline-flex items-center justify-center rounded-lg px-4 py-2.5 text-sm font-medium transition-colors ${
-                  plan.featured
-                    ? "bg-blue-600 text-white hover:bg-blue-500"
-                    : "border border-slate-200 text-slate-700 hover:bg-slate-50"
-                }`}
-              >
-                {plan.cta}
-              </Link>
+              {/* ── WHAT THIS CARD OFFERS DEPENDS ON WHAT YOU ALREADY HAVE ──
+                  Held back until the tier has actually loaded. Rendering the
+                  buy button first and correcting it a moment later would
+                  flash "Go Elite" at an Elite subscriber, which is the exact
+                  thing being fixed. */}
+              {!tierLoaded ? (
+                <div className="mt-5 h-[42px] animate-pulse rounded-lg bg-slate-100 motion-reduce:animate-none" aria-hidden />
+              ) : isCurrent && !hasPending ? (
+                <div className="mt-5">
+                  <p className="text-sm font-semibold text-slate-900">
+                    {isAr ? `مشترك — ${plan.name}` : `Subscribed — ${plan.name}`}
+                  </p>
+                  <div className="mt-1.5">
+                    <CancelSubscriptionLink isAr={isAr} onCancelled={() => setPendingTier("free")} />
+                  </div>
+                </div>
+              ) : isCurrent || isPendingTarget ? (
+                /* Either the plan being left, or the plan being moved to —
+                   both want the same sentence and the same way back. */
+                <div className="mt-5">
+                  <p className="text-sm text-slate-600">
+                    {isAr
+                      ? `ستتحول خطتك إلى ${planName(pendingTier)}${switchDate ? ` في ${switchDate}` : ""}.`
+                      : `Switching to ${planName(pendingTier)}${switchDate ? ` on ${switchDate}` : ""}.`}
+                  </p>
+                  <button
+                    type="button"
+                    onClick={handleUndo}
+                    disabled={planBusy}
+                    className="mt-1.5 rounded text-sm font-medium text-blue-600 underline underline-offset-4 disabled:opacity-60 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600"
+                  >
+                    {isAr ? "التراجع عن التغيير" : "Undo this change"}
+                  </button>
+                </div>
+              ) : isSubscriber ? (
+                /* TWO MOVES THAT LOOK ALIKE AND ARE NOT.
+                   Somebody on Free has no card on file, so moving up means
+                   paying: checkout, which saves the card for the renewal.
+                   Somebody already subscribed HAS a card and a live billing
+                   period — putting them through checkout would charge them
+                   again and open a second subscription. Their move is
+                   scheduled against the period they already paid for. */
+                <div className="mt-5">
+                  <button
+                    type="button"
+                    disabled={planBusy}
+                    onClick={() => handleSwitchPlan(plan.slug as Tier)}
+                    className={`inline-flex w-full items-center justify-center rounded-lg px-4 py-2.5 text-sm font-medium transition-colors disabled:opacity-60 ${
+                      plan.featured
+                        ? "bg-blue-600 text-white hover:bg-blue-500"
+                        : "border border-slate-200 text-slate-700 hover:bg-slate-50"
+                    }`}
+                  >
+                    {isAr ? `التبديل إلى ${plan.name}` : `Switch to ${plan.name}`}
+                  </button>
+                  <p className="mt-1.5 text-xs leading-relaxed text-slate-500">
+                    {isAr
+                      ? "يبدأ مع التجديد القادم — لا يوجد خصم الآن."
+                      : "Starts at your next renewal — nothing is charged now."}
+                  </p>
+                </div>
+              ) : (
+                <Link
+                  href={`/dashboard/checkout?plan=${plan.slug}`}
+                  className={`mt-5 inline-flex items-center justify-center rounded-lg px-4 py-2.5 text-sm font-medium transition-colors ${
+                    plan.featured
+                      ? "bg-blue-600 text-white hover:bg-blue-500"
+                      : "border border-slate-200 text-slate-700 hover:bg-slate-50"
+                  }`}
+                >
+                  {plan.cta}
+                </Link>
+              )}
               </div>
             </div>
-          ))}
+            );
+          })}
         </div>
+        {planError && (
+          <p role="alert" className="text-sm text-red-700">{planError}</p>
+        )}
       </section>
 
       {/* ── Packs ── */}

@@ -22,6 +22,7 @@ import { RoleBadges, BadgeKey } from "@/components/badges";
 import { getCountryList, getCitiesForCountry, formatLocation, parseLocation, OTHER_CITY_VALUE, CountryOption, CityOption } from "@/lib/countries";
 import { SearchableSelect } from "@/components/searchable-select";
 import { LegalModal } from "@/components/legal-modal";
+import { CancelSubscriptionLink } from "@/components/cancel-subscription";
 import { legalContent, LegalDocKey } from "@/lib/legal-content";
 
 const TIER_LABEL: Record<Tier, { en: string; ar: string }> = {
@@ -420,9 +421,31 @@ export default function SettingsPage() {
             <p className="mt-1.5 text-sm text-slate-700">
               {copy.planLabel}: <span className="font-medium text-slate-900">{planDisplayName}</span>
             </p>
+
+            {/* THE WAY OUT, WHERE THE PLAN IS STATED. Somebody looking for
+                how to stop paying looks under "Current plan", not inside a
+                pricing page — and a subscription nobody can find the exit
+                for is one people cancel by emailing, or by charging back.
+                Hidden once a change is already scheduled: the amber block
+                below is then telling them what happens and offering the
+                undo, and a second "cancel" beside it would contradict it. */}
+            {tier && tier !== "free" && !pendingTier && (
+              <div className="mt-2">
+                <CancelSubscriptionLink isAr={isAr} onCancelled={() => setPendingTier("free")} />
+              </div>
+            )}
           </div>
+
+          {/* THE WAY IN. Settings previously offered "Change plan", which
+              reads as an admin toggle rather than somewhere to buy — and it
+              was the only route to payment on this page, so a subscriber who
+              wanted more credits had nothing to click. It says what it does
+              now, and it says it differently depending on whether there is a
+              plan to change. */}
           <DashboardButton as={Link} href="/dashboard/upgrade" variant="outline" size="sm">
-            {copy.changePlan}
+            {tier && tier !== "free"
+              ? isAr ? "تغيير الخطة أو شراء رصيد" : "Change plan or buy credits"
+              : isAr ? "الترقية أو شراء رصيد" : "Upgrade or buy credits"}
           </DashboardButton>
         </div>
 
