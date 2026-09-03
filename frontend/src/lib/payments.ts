@@ -174,6 +174,17 @@ const AR_OVERRIDES: Record<string, string> = {
 };
 
 export type CheckoutFormOptions = {
+  /** A CSS selector for the container.
+   *
+   *  MUST NOT BE AN ID SELECTOR. Moyasar's form rewrites the container's id
+   *  to its own ("mysr-form-form-el") during init and then re-queries the
+   *  selector it was given — so an id selector resolves to null on that
+   *  second lookup, the form throws "Element: null is not a valid element",
+   *  and NO CARD FIELDS EVER RENDER. Verified in a real browser against
+   *  moyasar.js 1.19.0: `#some-id` renders 0 inputs, `.mysr-form` renders 4.
+   *
+   *  Their own documentation uses the class, which is why the class survives
+   *  init untouched. */
   element: string;
   amountHalalas: number;
   currency: string;

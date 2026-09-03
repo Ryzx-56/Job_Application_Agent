@@ -159,11 +159,25 @@ def record_and_grant(payment: dict, *, source: str) -> dict:
         }
 
     # ── Record the attempt, whatever its outcome ────────────────────────
+    #
+    # A PLAN PAYMENT IS EITHER THE FIRST ONE OR A RENEWAL, and the price list
+    # cannot tell them apart — pricing.Product.payment_type always answers
+    # subscription_initial. The renewal job stamps subscription_id into the
+    # charge's metadata, so that is the discriminator, and it works whether
+    # this is reached from the job or from the webhook that follows it.
+    #
+    # Without this every renewal was filed as an initial payment, so the
+    # ledger could not distinguish signups from recurring revenue and the
+    # admin subscription counts were wrong from the first renewal onward.
+    payment_type = product.payment_type
+    if product.kind == "plan" and metadata.get("subscription_id"):
+        payment_type = pricing.TYPE_SUBSCRIPTION_RENEWAL
+
     row = _upsert_payment_row(
         admin,
         moyasar_id=moyasar_id,
         user_id=user_id,
-        payment_type=product.payment_type,
+        payment_type=payment_type,
         reference=reference,
         amount=expected,
         currency=pricing.CURRENCY,
@@ -229,6 +243,28 @@ def record_and_grant(payment: dict, *, source: str) -> dict:
             "ok": True, "paid": True, "reference": reference,
             "credits_granted": (row or {}).get("credits_granted"),
             "already_processed": True,
+        }
+
+    if product.kind == "plan":
+        # A PLAN'S CREDITS ARE NOT GRANTED HERE, and are certainly not
+        # "purchased" credits. The monthly allowance is owned by the
+        # subscription lifecycle: the first payment gets it from the
+        # tier-change trigger when the plan activates, and each renewal gets
+        # it from apply_monthly_allowance(). Granting here as well produced a
+        # double grant on signup and, worse, wrote the monthly allowance into
+        # the never-expiring purchased bucket — so a subscriber accumulated 24
+        # permanent credits a month instead of 24 that refresh.
+        #
+        # credits_granted is still recorded on the row, because it is true and
+        # useful: that payment did buy those credits.
+        logger.info(
+            f"💳 [{source}] Payment {moyasar_id} paid {product.amount_sar} SAR for {reference!r}; "
+            f"{product.credits} monthly credit(s) are applied by the subscription, not here."
+        )
+        return {
+            "ok": True, "paid": True, "reference": reference,
+            "credits_granted": product.credits, "already_processed": False,
+            "payment_type": payment_type,
         }
 
     try:

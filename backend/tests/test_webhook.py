@@ -290,8 +290,17 @@ def test_first_plan_payment_grants_and_starts_the_subscription(env, monkeypatch)
     assert r.status_code == 200
     assert r.json()["result"]["subscription"] == "started"
     assert started["args"] == ("user-abc", "pro_plan")
-    assert env["grants"] == [("user-abc", 24)]
     assert env["admin"].store["payments"]["pay_plan"]["type"] == pricing.TYPE_SUBSCRIPTION_INITIAL
+
+    # The row records what the payment bought...
+    assert r.json()["result"]["credits_granted"] == 24
+    # ...but NOTHING was granted through the purchased-credits path. A plan's
+    # allowance is the subscription's to apply: activation gets it from the
+    # tier-change trigger, renewals from apply_monthly_allowance(). Granting
+    # here as well double-granted on signup AND wrote a MONTHLY allowance into
+    # the never-expiring purchased bucket, so a subscriber accumulated 24
+    # permanent credits every month instead of 24 that refresh.
+    assert env["grants"] == [], "a plan must not grant purchased credits"
 
 
 def test_a_plan_payment_with_no_saved_card_is_flagged_not_silently_accepted(env, monkeypatch):

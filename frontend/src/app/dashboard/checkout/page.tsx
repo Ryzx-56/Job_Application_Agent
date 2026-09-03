@@ -122,7 +122,11 @@ export default function CheckoutPage() {
     try {
       await loadMoyasarForm();
       mountCheckoutForm({
-        element: `#${formHostId}`,
+        // The CLASS, not `#${formHostId}`. Moyasar renames the container's id
+        // during init and then re-queries the selector, so an id selector
+        // resolves to null and the card fields never render at all — the page
+        // would sit on its loading state forever. See mountCheckoutForm.
+        element: ".mysr-form",
         // FROM THE BACKEND CATALOG, never a local constant: this is the exact
         // integer the server will check the payment against.
         amountHalalas: product.amount_halalas,
@@ -274,6 +278,8 @@ export default function CheckoutPage() {
           {isAr ? "بيانات البطاقة" : "Card details"}
         </h2>
         <div className="mt-4" dir="ltr">
+          {/* mysr-form is what Moyasar targets; the id is only here so the
+              node is identifiable in the DOM for debugging. */}
           <div id={formHostId} className="mysr-form" />
         </div>
         {!formReady && !error && (

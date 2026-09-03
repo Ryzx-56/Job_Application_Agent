@@ -157,12 +157,27 @@ def test_not_yet_due_is_left_alone(env):
     assert env["charges"] == []
 
 
-def test_the_given_id_is_tied_to_the_period_being_paid_for(env):
-    """Moyasar's own idempotency key. Two runs racing each other cannot bill
-    the same period twice — the second is answered with the first payment."""
+def test_the_given_id_is_a_uuid_derived_from_the_period(env):
+    """Moyasar's own idempotency key, and it MUST be a valid UUID — their API
+    rejects anything else with a 400, which the renewal job would have read as
+    a declined charge and dunned the subscriber for.
+
+    It still has to be DERIVED, not random: a retry of the same period must
+    produce the same id so Moyasar returns the original payment rather than
+    charging twice."""
+    import uuid as _uuid
+
     make_sub(env["admin"])
     billing.run_due_renewals()
-    assert env["charges"][0]["given_id"] == "sub-sub-1-2026-09-01"
+    given = env["charges"][0]["given_id"]
+
+    _uuid.UUID(given)                      # raises if not a valid UUID
+    assert given == str(_uuid.uuid5(
+        _uuid.NAMESPACE_URL, "tarshih:renewal:sub-1:2026-09-01"))
+
+    # Same period -> same key. Different period -> different key.
+    other = str(_uuid.uuid5(_uuid.NAMESPACE_URL, "tarshih:renewal:sub-1:2026-10-01"))
+    assert given != other
 
 
 # ─── Dunning ────────────────────────────────────────────────────────────────

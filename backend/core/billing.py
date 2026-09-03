@@ -29,6 +29,7 @@
 # it, deliberately, so the two stay on the same date. That is the whole fix;
 # there is no third mechanism reconciling them.
 import os
+import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
@@ -178,14 +179,36 @@ def _upsert_token(admin, user_id: str, token_id: str, source: dict) -> Optional[
     """Store the saved card for display and for charging. Holds no card
     number — a token id and the four fields needed to render
     "Visa •••• 4242"."""
+    # THE EXPIRY IS ON THE TOKEN, NOT ON THE PAYMENT'S SOURCE. Moyasar returns
+    # month and year as null on the payment object even when the card was
+    # saved successfully — verified against their sandbox — so reading them
+    # from `source` stored NULL and the account page showed a card with no
+    # expiry date. The token object carries them.
+    details = {}
+    try:
+        details = moyasar_client.get_token(token_id) or {}
+    except Exception as e:
+        # Non-fatal: the token id is what actually charges the card, and the
+        # expiry is only for display.
+        logger.warning(f"Could not read token {token_id} for its card details: {e}")
+
+    def pick(*keys):
+        for src, key in ((details, k) for k in keys):
+            if src.get(key):
+                return str(src[key])
+        for key in keys:
+            if source.get(key):
+                return str(source[key])
+        return None
+
     payload = {
         "user_id": user_id,
         "moyasar_token_id": token_id,
-        "status": "active",
-        "card_brand": (source.get("company") or source.get("brand") or None),
-        "card_last_four": (source.get("last_four") or source.get("number") or "")[-4:] or None,
-        "card_expiry_month": str(source.get("month") or "") or None,
-        "card_expiry_year": str(source.get("year") or "") or None,
+        "status": (details.get("status") or "active"),
+        "card_brand": pick("brand", "company"),
+        "card_last_four": (pick("last_four") or source.get("number") or "")[-4:] or None,
+        "card_expiry_month": pick("month"),
+        "card_expiry_year": pick("year"),
         "is_default": True,
     }
     try:
@@ -298,9 +321,22 @@ def _renew_one(admin, sub: dict, now: datetime) -> str:
         )
         return _handle_failure(admin, sub, now, reason="no_card")
 
-    # Derived from the period being paid for, so a retry of the SAME period
-    # reuses it while next month's charge gets a new one.
-    given_id = f"sub-{sub['id']}-{str(sub.get('current_period_end') or '')[:10]}"
+    # MUST BE A UUID. Moyasar validates given_id and answers
+    #   400 {"errors": {"given_id": ["The value should be a valid UUID."]}}
+    # for anything else — verified against their sandbox. A readable string
+    # like "sub-<id>-<date>" is rejected, and because the renewal job treats a
+    # 4xx as a declined charge, every renewal would have failed validation and
+    # then walked the subscriber down the entire dunning ladder to
+    # cancellation, for a payment that was never actually attempted.
+    #
+    # uuid5 keeps the property the readable version was for: it is DERIVED
+    # from the subscription and the period, so a retry of the same period
+    # produces the same id and Moyasar returns the original payment instead of
+    # charging twice, while next month's period produces a different one.
+    given_id = str(uuid.uuid5(
+        uuid.NAMESPACE_URL,
+        f"tarshih:renewal:{sub['id']}:{str(sub.get('current_period_end') or '')[:10]}",
+    ))
 
     try:
         payment = moyasar_client.charge_token(
@@ -380,11 +416,24 @@ def _handle_success(admin, sub: dict, payment: dict, now: datetime, plan: str) -
         "plan": plan,
     }).eq("id", sub["id"]).execute()
 
-    _align_credit_clock(admin, sub["user_id"], period_end)
+    # THE PERIOD'S CREDITS. A renewal cannot lean on the tier-change trigger
+    # the way activation does, because the tier does not change when a
+    # subscription renews — so the allowance is applied explicitly. It
+    # REPLACES the monthly portion and keeps the purchased one, and moves
+    # credits_reset_at onto the new period end in the same statement, which is
+    # what stops the billing and credit clocks drifting apart.
+    try:
+        admin.rpc("apply_monthly_allowance", {
+            "p_user_id": sub["user_id"], "p_period_end": _iso(period_end)}).execute()
+    except Exception as e:
+        logger.error(
+            f"🚨 Renewed subscription {sub['id']} but could NOT apply the monthly allowance "
+            f"for {sub['user_id']}: {e}. They have paid; top the balance up by hand."
+        )
 
-    # Records the payments row AND grants the period's credits. Routed through
-    # the same function the webhook uses so whichever arrives second finds the
-    # grant already claimed.
+    # Records the payments row. Does NOT grant — a plan's credits are the
+    # subscription's to apply, and record_and_grant returns early for plans
+    # for exactly that reason.
     record_and_grant(payment, source="renewal")
 
     logger.info(

@@ -307,3 +307,33 @@ def test_free_is_not_purchasable():
     assert pricing.get_product("free") is None
     assert pricing.get_product("free_plan") is None
     assert pricing.expected_amount("nonsense") is None
+
+
+def test_a_renewal_is_recorded_as_a_renewal_not_an_initial_payment(env):
+    """pricing.Product.payment_type always answers subscription_initial for a
+    plan — it has no way to know. The renewal job stamps subscription_id into
+    the charge metadata, and that is what tells them apart.
+
+    Without it every renewal filed as a signup, so the ledger could not
+    separate new subscriptions from recurring revenue."""
+    first = moyasar_payment(id="pay_first", amount=2900,
+                            metadata={"user_id": "user-abc", "reference": "pro_plan"})
+    renewal = moyasar_payment(id="pay_renew", amount=2900,
+                              metadata={"user_id": "user-abc", "reference": "pro_plan",
+                                        "subscription_id": "sub-1"})
+
+    payments.record_and_grant(first, source="webhook")
+    payments.record_and_grant(renewal, source="renewal")
+
+    assert env["store"]["pay_first"]["type"] == pricing.TYPE_SUBSCRIPTION_INITIAL
+    assert env["store"]["pay_renew"]["type"] == pricing.TYPE_SUBSCRIPTION_RENEWAL
+
+
+def test_a_plan_payment_never_grants_purchased_credits(env):
+    """A subscriber's monthly allowance must not land in the never-expiring
+    bucket — that accumulated 24 permanent credits a month."""
+    payments.record_and_grant(
+        moyasar_payment(id="pay_plan", amount=2900,
+                        metadata={"user_id": "user-abc", "reference": "pro_plan"}),
+        source="webhook")
+    assert env["grants"] == []

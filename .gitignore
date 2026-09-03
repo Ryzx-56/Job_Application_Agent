@@ -64,4 +64,8 @@ Job_Application_Agent_Roadmap.docxe
 CLAUDE.md
 CLAUDE.local.md
 .claude/
-prompts/
+prompts/.venv/
+
+# Local Python virtualenv (Linux). Never committed — the Windows JBAA3.11/
+# one above is dead on Linux and was replaced by this.
+.venv/
