@@ -11,6 +11,7 @@ import { formatSar, formatMediumDate, sarPerCredit, usdApprox } from "@/lib/pric
 import { fetchCredits, type Tier } from "@/lib/supabase/credits";
 import { changePlan, resumeSubscription } from "@/lib/subscription";
 import { CancelSubscriptionLink } from "@/components/cancel-subscription";
+import { planCardState, type Viewer } from "@/lib/plan-state";
 
 /**
  * In-dashboard upgrade page. Replaces the old behaviour where an
@@ -108,6 +109,10 @@ export default function UpgradePage() {
     }
   }
 
+  // Null until the tier is known, which is what makes every card render its
+  // placeholder rather than a buy button aimed at an existing subscriber.
+  const viewer: Viewer = tierLoaded && tier !== null ? { tier, pendingTier } : null;
+
   /** A plan's display name in the reader's language, from the same pricing
    *  data the cards render — never a second hardcoded list. */
   const planName = (slug: string | null) =>
@@ -173,11 +178,8 @@ export default function UpgradePage() {
         </h2>
         <div className="grid gap-4 sm:grid-cols-2">
           {paidPlans.map((plan) => {
-            const isCurrent = tierLoaded && tier === plan.slug;
-            const isPendingTarget = tierLoaded && pendingTier === plan.slug;
-            // A change is only "pending" if it actually moves somewhere else.
-            const hasPending = tierLoaded && pendingTier !== null && pendingTier !== tier;
-            const isSubscriber = tierLoaded && tier !== null && tier !== "free";
+            // ONE SHARED RULE with /pricing — see lib/plan-state.ts.
+            const state = planCardState(plan.slug as Tier, viewer);
             const switchDate = resetAt ? formatMediumDate(resetAt, lang) : "";
             return (
             <div
@@ -250,9 +252,9 @@ export default function UpgradePage() {
                   buy button first and correcting it a moment later would
                   flash "Go Elite" at an Elite subscriber, which is the exact
                   thing being fixed. */}
-              {!tierLoaded ? (
+              {state.kind === "unknown" ? (
                 <div className="mt-5 h-[42px] animate-pulse rounded-lg bg-slate-100 motion-reduce:animate-none" aria-hidden />
-              ) : isCurrent && !hasPending ? (
+              ) : state.kind === "subscribed" ? (
                 <div className="mt-5">
                   <p className="text-sm font-semibold text-slate-900">
                     {isAr ? `مشترك — ${plan.name}` : `Subscribed — ${plan.name}`}
@@ -261,7 +263,7 @@ export default function UpgradePage() {
                     <CancelSubscriptionLink isAr={isAr} onCancelled={() => setPendingTier("free")} />
                   </div>
                 </div>
-              ) : isCurrent || isPendingTarget ? (
+              ) : state.kind === "leaving" || state.kind === "arriving" ? (
                 /* Either the plan being left, or the plan being moved to —
                    both want the same sentence and the same way back. */
                 <div className="mt-5">
@@ -279,7 +281,7 @@ export default function UpgradePage() {
                     {isAr ? "التراجع عن التغيير" : "Undo this change"}
                   </button>
                 </div>
-              ) : isSubscriber ? (
+              ) : state.kind === "switch" ? (
                 /* TWO MOVES THAT LOOK ALIKE AND ARE NOT.
                    Somebody on Free has no card on file, so moving up means
                    paying: checkout, which saves the card for the renewal.

@@ -498,8 +498,15 @@ def _cancel_for_nonpayment(admin, sub: dict, attempts: int, reason: str) -> str:
         # in reset_credits_if_due() already knows how to move someone to Free
         # and re-grant the right allowance. Setting tier directly here would
         # bypass it and leave the credit totals wrong.
+        # locked_price is cleared HERE TOO, matching the voluntary cancel in
+        # core/subscription.py. The founding-member price holds only while a
+        # subscription stays continuously active, and there is no reading of
+        # that rule under which stopping payment qualifies. Clearing it on the
+        # honest path and not this one meant non-payment kept the discount
+        # that cancelling politely gave up — the cheapest way to keep the
+        # founding rate was to let the card fail.
         admin.table("profiles").update(
-            {"pending_tier": "free", "subscription_status": "inactive"}
+            {"pending_tier": "free", "subscription_status": "inactive", "locked_price": None}
         ).eq("id", sub["user_id"]).execute()
     except Exception as e:
         logger.error(f"❌ Could not schedule the downgrade for {sub['user_id']}: {e}")

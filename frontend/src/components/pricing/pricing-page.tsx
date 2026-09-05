@@ -14,6 +14,7 @@ import { useAuth } from "@/lib/auth";
 // most visitors read signed out. See the note in lib/auth.ts.
 import type { Tier } from "@/lib/supabase/credits";
 import { cancelSubscription, resumeSubscription } from "@/lib/subscription";
+import { planCardState, type Viewer } from "@/lib/plan-state";
 import { SiteHeader, SiteFooter } from "@/components/landing/site-chrome";
 import { FaqList, FaqJsonLd, useFaqItems, FinalCta } from "@/components/landing/faq-cta";
 import { trackCta, useSectionView } from "@/lib/track";
@@ -48,9 +49,6 @@ import { trackCta, useSectionView } from "@/lib/track";
    FOUNDING MEMBER IS A BADGE, NOT A DISCOUNT. There is no second price
    anywhere on this page, no strikethrough, and no "was X SAR" anchor.
 ======================================================================== */
-
-/** Plan order for comparing what a signed-in reader already has. */
-const TIER_RANK: Record<Tier, number> = { free: 0, pro: 1, elite: 2 };
 
 /* ── the confirm step, moved across verbatim ─────────────────────────────
    Same two actions it always guarded: cancel a subscription, or switch down
@@ -286,6 +284,10 @@ export function PricingPage() {
     }
   }
 
+  // Signed out, or the tier has not arrived: the cards fall back to the
+  // ordinary marketing call to action.
+  const viewer: Viewer = isLoggedIn && tierLoaded && tier !== null ? { tier, pendingTier } : null;
+
   const resetDateLabel = resetAt ? formatShortDate(resetAt, lang) : "";
 
   const PENDING_TIER_LABEL: Record<Tier, string> = {
@@ -354,17 +356,11 @@ export function PricingPage() {
             >
               {t.pricing.plans.map((plan) => {
                 const planSlug = plan.slug as Tier;
-                const showTierState = isLoggedIn && tierLoaded && tier !== null;
-                const isCurrent = showTierState && tier === planSlug;
-                const hasPendingChange = showTierState && pendingTier !== null;
-                const isDowngradeTarget =
-                  showTierState && planSlug === "free" && tier !== "free" && !hasPendingChange;
-                const isUpgrade = showTierState && TIER_RANK[planSlug] > TIER_RANK[tier as Tier];
-                // Already paying: they have a card and a live period, so any
-                // move between paid plans is a scheduled switch, not a sale.
-                const isSubscriber = showTierState && tier !== "free";
-                const isPlanSwitch =
-                  isSubscriber && !isCurrent && !hasPendingChange && planSlug !== "free";
+                // ONE SHARED RULE with /dashboard/upgrade — see
+                // lib/plan-state.ts. A signed-out reader is "unknown" here,
+                // which is what keeps the plain marketing CTA on this page.
+                const state = planCardState(planSlug, viewer);
+                const showTierState = state.kind !== "unknown";
 
                 return (
                   <div
@@ -385,7 +381,7 @@ export function PricingPage() {
                       <h3 className="t-title font-semibold" style={{ color: "var(--ink-1)" }}>
                         {plan.name}
                       </h3>
-                      {isCurrent && planSlug !== "free" && !hasPendingChange && (
+                      {state.kind === "subscribed" && (
                         <span className="t-meta font-medium" style={{ color: "var(--accent-quiet)" }}>
                           {ui.subscribed}
                         </span>
@@ -443,11 +439,11 @@ export function PricingPage() {
                         </Link>
                       )}
 
-                      {isCurrent && planSlug === "free" && (
+                      {state.kind === "current-free" && (
                         <p className="t-meta" style={{ color: "var(--ink-3)" }}>{ui.currentPlan}</p>
                       )}
 
-                      {isCurrent && planSlug !== "free" && !hasPendingChange && (
+                      {state.kind === "subscribed" && (
                         <button
                           type="button"
                           onClick={() => {
@@ -461,7 +457,7 @@ export function PricingPage() {
                         </button>
                       )}
 
-                      {isCurrent && planSlug !== "free" && hasPendingChange && (
+                      {(state.kind === "leaving" || state.kind === "arriving") && (
                         <div className="space-y-1.5">
                           <p className="t-meta" style={{ color: "var(--ink-3)" }}>
                             {ui.switchesOn(PENDING_TIER_LABEL[pendingTier as Tier], resetDateLabel)}
@@ -478,7 +474,7 @@ export function PricingPage() {
                         </div>
                       )}
 
-                      {isDowngradeTarget && (
+                      {state.kind === "downgrade-to-free" && (
                         <button
                           type="button"
                           onClick={() => {
@@ -501,7 +497,7 @@ export function PricingPage() {
                           second subscription. For them the move is scheduled
                           against the period they already paid for, takes
                           effect at the next renewal, and costs nothing now. */}
-                      {isUpgrade && !isSubscriber && (
+                      {state.kind === "buy" && planSlug !== "free" && (
                         <Link
                           href={`/dashboard/checkout?plan=${plan.slug}`}
                           className="inline-flex h-11 w-full items-center justify-center rounded-[0.3rem] px-5 text-[0.9375rem] font-semibold"
@@ -511,7 +507,7 @@ export function PricingPage() {
                         </Link>
                       )}
 
-                      {isPlanSwitch && (
+                      {state.kind === "switch" && (
                         <div className="space-y-1.5">
                           <button
                             type="button"

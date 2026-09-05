@@ -155,7 +155,14 @@ begin
         raise exception 'identity pepper is missing';
     end if;
 
-    return encode(hmac(v_norm, v_pepper, 'sha256'), 'hex');
+    -- convert_to(), NOT the bare text. pgcrypto declares exactly two hmac
+    -- overloads -- hmac(text, text, text) and hmac(bytea, bytea, text) --
+    -- and no mixed one. Passing a text message with a bytea key matches
+    -- neither and fails at RUNTIME, inside this function, with
+    -- "function hmac(text, bytea, unknown) does not exist". The pepper is
+    -- bytea because that is what gen_random_bytes() returns, so the message
+    -- is the side that has to be converted.
+    return encode(hmac(convert_to(v_norm, 'utf8'), v_pepper, 'sha256'), 'hex');
 end;
 $$;
 
