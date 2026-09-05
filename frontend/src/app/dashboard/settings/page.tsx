@@ -23,6 +23,7 @@ import { getCountryList, getCitiesForCountry, formatLocation, parseLocation, OTH
 import { SearchableSelect } from "@/components/searchable-select";
 import { LegalModal } from "@/components/legal-modal";
 import { CancelSubscriptionLink } from "@/components/cancel-subscription";
+import { DeleteAccountSection } from "@/components/delete-account";
 import { legalContent, LegalDocKey } from "@/lib/legal-content";
 
 const TIER_LABEL: Record<Tier, { en: string; ar: string }> = {
@@ -672,6 +673,13 @@ export default function SettingsPage() {
           <p className="mt-2.5 text-sm text-emerald-600">{isAr ? "تم حفظ الموقع" : "Location saved"}</p>
         )}
       </section>
+
+      {/* LAST ON THE PAGE, ON PURPOSE. The one irreversible control here
+          should never sit next to a routine one — a mis-aimed tap on a
+          crowded phone screen is how "Save location" becomes "Delete
+          account". Below Location, after everything else, with nothing
+          under it. */}
+      <DeleteAccountSection isAr={isAr} hasSubscription={!!tier && tier !== "free"} />
 
       {/* Legal — compact links only, not the full marketing footer. See
           note below on why this lives here and not on every dashboard page. */}

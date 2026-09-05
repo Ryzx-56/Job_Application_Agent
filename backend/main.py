@@ -45,6 +45,7 @@ from core.job_search import router as job_search_router
 # the callback route and the webhook both call, so the two can never drift.
 # See core/payments.py.
 from core.payments import router as payments_router
+from core.account import router as account_router
 from core.profile_names import (
     router as profile_names_router,
     get_profile_names,
@@ -107,6 +108,7 @@ app.include_router(linkedin_router)
 app.include_router(interview_router)
 app.include_router(job_search_router)
 app.include_router(payments_router)
+app.include_router(account_router)
 
 OUTPUT_DIR = "outputs"
 
