@@ -96,6 +96,10 @@ class ManualCVRequest(BaseModel):
     additional_info: Optional[str] = ""
     job_description: str
     cv_language: Optional[str] = "en"  # "en" or "ar" — output language for the generated CV/cover letter
+    # The language the dashboard is being READ in, which is not necessarily
+    # the CV's. Only the match score and its recommendation follow it; the CV,
+    # the cover letter and the portfolio section all follow cv_language.
+    ui_language: Optional[str] = "en"
     template_id: Optional[str] = None  # which of the 11 CV templates to render with — see utils/template_registry.py
     # Explicit "generate anyway" opt-in when profiles.name_ar / name_en for
     # the chosen output language is still empty. See apply_candidate_names()

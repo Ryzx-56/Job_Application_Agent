@@ -104,6 +104,14 @@ class AgentState(TypedDict):
     # tailoring_engine / document_generator translate as needed.
     cv_language:                str
 
+    # The language the USER IS READING THE DASHBOARD IN. Distinct from
+    # cv_language on purpose: someone browsing in Arabic may well be
+    # generating an English CV for an English-speaking employer, and the
+    # feedback about that CV should still reach them in Arabic. Only the
+    # match score's prose follows this; the CV and cover letter follow
+    # cv_language, and so does the portfolio section.
+    ui_language:                str
+
     # Which of the 11 CV templates to render with (see
     # utils/template_registry.py). No graph node reads or writes this — it
     # rides through state untouched from make_initial_state() all the way

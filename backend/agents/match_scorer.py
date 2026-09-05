@@ -136,7 +136,16 @@ def run_match_scorer(state: AgentState) -> AgentState:
         if isinstance(category, list):
             current_skills.extend(category)
 
-    is_arabic = str(state.get("cv_language", "en")).lower().startswith("ar")
+    # THE READER'S LANGUAGE, NOT THE DOCUMENT'S. The match score and its
+    # recommendation are feedback addressed to the person looking at the
+    # dashboard, so they follow the interface. Somebody browsing in Arabic is
+    # very often producing an English CV for an English-speaking employer, and
+    # getting English advice about it in an otherwise Arabic dashboard was the
+    # reported problem. Falls back to cv_language for records generated before
+    # ui_language was sent, which is the old behaviour.
+    is_arabic = str(
+        state.get("ui_language") or state.get("cv_language", "en")
+    ).lower().startswith("ar")
 
     prompt = MATCH_SCORER_PROMPT.format(
         ats_score=ats_score,
@@ -164,7 +173,10 @@ def run_match_scorer(state: AgentState) -> AgentState:
     # and Arabic costs roughly 2-3x the tokens. At a flat 2500 an Arabic
     # run could truncate, fall into the except below, and report a 0% match
     # score on an otherwise perfectly good CV.
-    budget = 5000 if str(state.get("cv_language", "en")).lower().startswith("ar") else 2500
+    # is_arabic, not cv_language: the extra headroom is needed because the
+    # OUTPUT is Arabic, and after the change above that is decided by the
+    # interface language.
+    budget = 5000 if is_arabic else 2500
 
     try:
         raw = generate_claude_text(prompt, max_tokens=budget, max_tokens_ceiling=12000)

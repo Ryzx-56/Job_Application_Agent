@@ -1027,6 +1027,10 @@ async def optimize_application(
     job_description: str = Form(...),
     additional_info: str = Form(""),
     cv_language: str = Form("en"),
+    # The language the DASHBOARD is being read in, which is not
+    # necessarily the language of the CV being produced. Only the
+    # match score and its recommendation follow it — see match_scorer.
+    ui_language: str = Form("en"),
     template_id: str = Form(DEFAULT_TEMPLATE_ID),
     # Explicit "generate anyway" escape hatch — see apply_candidate_names.
     allow_name_fallback: bool = Form(False),
@@ -1044,6 +1048,7 @@ async def optimize_application(
     initial_state["user_id"] = user_id
     initial_state["additional_info"] = additional_info or ""
     initial_state["cv_language"] = normalize_cv_language(cv_language)
+    initial_state["ui_language"] = "ar" if str(ui_language).lower().startswith("ar") else "en"
     # Local image extraction from the bytes already in memory — no second
     # read of the upload, and no vision call. See read_uploaded_photo.
     initial_state["candidate_photo"] = read_uploaded_photo(cv_bytes, template_id)
@@ -1102,6 +1107,10 @@ async def optimize_application_stream(
     job_description: str = Form(...),
     additional_info: str = Form(""),
     cv_language: str = Form("en"),
+    # The language the DASHBOARD is being read in, which is not
+    # necessarily the language of the CV being produced. Only the
+    # match score and its recommendation follow it — see match_scorer.
+    ui_language: str = Form("en"),
     template_id: str = Form(DEFAULT_TEMPLATE_ID),
     # Explicit "generate anyway" escape hatch — see apply_candidate_names.
     allow_name_fallback: bool = Form(False),
@@ -1129,6 +1138,7 @@ async def optimize_application_stream(
     initial_state["user_id"] = user_id
     initial_state["additional_info"] = additional_info or ""
     initial_state["cv_language"] = normalize_cv_language(cv_language)
+    initial_state["ui_language"] = "ar" if str(ui_language).lower().startswith("ar") else "en"
     # Local image extraction from the bytes already in memory — no second
     # read of the upload, and no vision call. See read_uploaded_photo.
     initial_state["candidate_photo"] = read_uploaded_photo(cv_bytes, template_id)
@@ -1162,7 +1172,7 @@ async def optimize_manual_application_stream(
     enforce(GENERATION, user_id)
     logger.info("🚀 API Gateway received a STREAMING manual optimization request.")
 
-    manual_data = payload.model_dump(exclude={"job_description", "additional_info", "cv_language", "template_id", "allow_name_fallback"})
+    manual_data = payload.model_dump(exclude={"job_description", "additional_info", "cv_language", "ui_language", "template_id", "allow_name_fallback"})
     final_jd_text = payload.job_description or SHORT_SAMPLE_JD
 
     initial_state = make_initial_state("", final_jd_text, template_id=getattr(payload, "template_id", None))
@@ -1171,6 +1181,7 @@ async def optimize_manual_application_stream(
     initial_state["manual_cv_data"] = manual_data
     initial_state["additional_info"] = payload.additional_info or ""
     initial_state["cv_language"] = normalize_cv_language(payload.cv_language or "en")
+    initial_state["ui_language"] = "ar" if str(payload.ui_language or "en").lower().startswith("ar") else "en"
 
     # Name check BEFORE credits — being asked for your name costs nothing.
     apply_candidate_names(initial_state, user_id, bool(payload.allow_name_fallback))
@@ -1203,7 +1214,7 @@ async def optimize_manual_application(
     enforce(GENERATION, user_id)
     logger.info("🚀 API Gateway received a MANUAL CV optimization request.")
 
-    manual_data = payload.model_dump(exclude={"job_description", "additional_info", "cv_language", "template_id", "allow_name_fallback"})
+    manual_data = payload.model_dump(exclude={"job_description", "additional_info", "cv_language", "ui_language", "template_id", "allow_name_fallback"})
     final_jd_text = payload.job_description or SHORT_SAMPLE_JD
 
     initial_state = make_initial_state("", final_jd_text, template_id=getattr(payload, "template_id", None))
@@ -1212,6 +1223,7 @@ async def optimize_manual_application(
     initial_state["manual_cv_data"] = manual_data
     initial_state["additional_info"] = payload.additional_info or ""
     initial_state["cv_language"] = normalize_cv_language(payload.cv_language or "en")
+    initial_state["ui_language"] = "ar" if str(payload.ui_language or "en").lower().startswith("ar") else "en"
 
     # Name check BEFORE credits — being asked for your name costs nothing.
     apply_candidate_names(initial_state, user_id, bool(payload.allow_name_fallback))

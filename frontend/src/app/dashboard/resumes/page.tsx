@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { ChevronDown, ChevronUp, ChevronLeft, ChevronRight, FileText, FileType2, Mail, Loader2, AlertCircle, Trash2, Briefcase, ExternalLink } from "lucide-react";
 import { useLang } from "@/lib/language";
 import { EmptyState, ScoreRing, ScoreBar, FileResultCard } from "@/components/dashboard";
@@ -60,6 +60,26 @@ function LanguageBadge({ cvLanguage, copy }: { cvLanguage: "en" | "ar"; copy: an
    role as metadata, which is what it is. Renders nothing at zero — "0 jobs"
    is noise on every older row that predates job search.
 ======================================================================== */
+/** One score, label above the number.
+ *
+ *  These were table columns. Out of a table they need their own label, and
+ *  the label has to sit with the number rather than in a header row far
+ *  away — that is the whole reason the old layout needed 720px it did not
+ *  have. tabular-nums so a column of cards keeps its digits aligned. */
+function Stat({ label, value }: { label: string; value: number | null }) {
+  return (
+    <span className="text-end">
+      <span className="block text-[10px] font-medium uppercase tracking-wide text-slate-500">
+        {label}
+      </span>
+      <span className="block text-sm font-semibold tabular-nums text-slate-900">
+        {value === null || value === undefined ? "—" : `${value}%`}
+      </span>
+    </span>
+  );
+}
+
+
 function JobCount({ count, copy }: { count: number; copy: any }) {
   if (count <= 0) return null;
   return (
@@ -455,21 +475,22 @@ export default function MyResumesPage() {
         <EmptyState icon={FileText} title={copy.emptyTitle} body={copy.emptyBody} ctaLabel={copy.emptyCta} ctaHref="/dashboard" />
       ) : (
         <>
-          {/* ── MOBILE (below md): one card per resume ──────────────────────
-              The table below is eight columns wide and cannot be made to fit
-              375px by any amount of squeezing — it used to sit in a plain
-              `overflow-hidden` container, so on a phone the last columns
-              (job match, details, delete) were simply CLIPPED AND
-              UNREACHABLE: no scrollbar, no way to reach them, no way to
-              delete a resume.
+          {/* ── ONE LIST, EVERY WIDTH ──────────────────────────────────────
+              There used to be two of these: a card list under md and an
+              eight-column table above it, each with its own markup for the
+              same eight fields. Both were wrong. The table carried
+              min-w-[720px] inside a dashboard whose content column is
+              narrower than that once the sidebar is out, so it scrolled
+              sideways on a laptop and clipped on a phone, and the two
+              implementations had already drifted apart in what they showed.
 
-              Adding overflow-x-auto alone would have made them reachable but
-              still meant sideways-scrolling a data table on the device most
-              of these users are on. Cards remove the problem instead of
-              making it scrollable: every field is visible, the whole card is
-              the expand target, and the delete control has a real 36px hit
-              area. The table is kept for the widths it actually suits. */}
-          <ul className="space-y-3 md:hidden">
+              A saved CV is not tabular data anyone scans down a column of —
+              it is a list of things with a name, a couple of scores and two
+              actions. So it is a list, and it reflows instead of switching
+              layouts: the header row wraps its own parts, the scores sit
+              beside the title when there is room and beneath it when there
+              is not, and nothing anywhere scrolls horizontally. */}
+          <ul className="space-y-3">
             {resumes.map((resume) => {
               const isExpanded = expandedId === resume.id;
               const isDeleting = deletingId === resume.id;
@@ -479,35 +500,50 @@ export default function MyResumesPage() {
                   key={resume.id}
                   className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm"
                 >
-                  <div className="flex items-start gap-2 p-4">
+                  <div className="flex items-start gap-3 p-4 sm:p-5">
+                    {/* The whole identity block is the expand target, so the
+                        hit area is the card rather than a small chevron. */}
                     <button
                       type="button"
                       onClick={() => setExpandedId(isExpanded ? null : resume.id)}
                       aria-expanded={isExpanded}
-                      className="min-w-0 flex-1 text-start focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600"
+                      className="min-w-0 flex-1 rounded text-start focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600"
                     >
-                      <p className="truncate font-medium text-slate-900">
-                        {resume.role || copy.untitledRole}
-                      </p>
-                      <p className="mt-0.5 truncate text-sm text-slate-600">
-                        {resume.company || copy.unknownCompany}
-                      </p>
-                      <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1.5">
+                      <div className="flex flex-wrap items-baseline gap-x-4 gap-y-1.5">
+                        {/* min-w forces the scores onto their own line
+                            rather than letting them squeeze the job title
+                            down to a few characters — which is what a phone
+                            width does otherwise. Content decides the wrap;
+                            there is no breakpoint here. */}
+                        <p className="min-w-[14rem] flex-1 truncate font-medium text-slate-900">
+                          {resume.role || copy.untitledRole}
+                        </p>
+                        {/* Right-aligned beside the title on a wide card,
+                            wrapped underneath it on a narrow one. No
+                            breakpoint decides this; the content does. */}
+                        <div className="flex shrink-0 items-baseline gap-4">
+                          <Stat label={copy.columns.score} value={resume.ats_score} />
+                          <Stat label={copy.columns.match} value={resume.job_match_score} />
+                        </div>
+                      </div>
+
+                      <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1.5 text-sm text-slate-600">
+                        {/* No middot separators. In a wrapping row they
+                            strand themselves at the end of a line with
+                            nothing after them, which is what a bullet
+                            between two wrapped items always does. The gap
+                            separates these perfectly well. */}
+                        <span className="min-w-0 truncate">
+                          {resume.company || copy.unknownCompany}
+                        </span>
+                        <span className="whitespace-nowrap text-slate-500">
+                          {formatDate(resume.created_at, lang)}
+                        </span>
                         <LanguageBadge cvLanguage={resume.cv_language} copy={copy} />
-                        <span className="text-xs text-slate-500">{formatDate(resume.created_at, lang)}</span>
                         <JobCount count={jobCount} copy={copy} />
                       </div>
-                      <div className="mt-2.5 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-slate-500">
-                        <span>
-                          {copy.columns.score}{" "}
-                          <span className="font-semibold text-slate-800">{resume.ats_score}%</span>
-                        </span>
-                        <span>
-                          {copy.columns.match}{" "}
-                          <span className="font-semibold text-slate-800">{resume.job_match_score}%</span>
-                        </span>
-                      </div>
                     </button>
+
                     <DeleteButton onClick={() => handleDelete(resume)} isDeleting={isDeleting} lang={lang} />
                   </div>
 
@@ -515,7 +551,7 @@ export default function MyResumesPage() {
                     type="button"
                     onClick={() => setExpandedId(isExpanded ? null : resume.id)}
                     aria-expanded={isExpanded}
-                    className="flex w-full items-center justify-center gap-1.5 border-t border-slate-100 bg-slate-50/60 px-4 py-2.5 text-xs font-medium text-blue-600 hover:bg-slate-100/60 focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-blue-600"
+                    className="flex w-full items-center justify-center gap-1.5 border-t border-slate-100 bg-slate-50/60 px-4 py-2.5 text-xs font-medium text-blue-700 hover:bg-slate-100/60 focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-blue-600"
                   >
                     {isExpanded ? copy.hideDetails : copy.viewDetails}
                     {isExpanded ? (
@@ -532,96 +568,6 @@ export default function MyResumesPage() {
               );
             })}
           </ul>
-
-          {/* ── md AND UP: the table ────────────────────────────────────────
-              overflow-x-auto rather than overflow-hidden so that if a long
-              role or company name pushes the eight columns past the
-              container, the row scrolls instead of being clipped away
-              unreachably. min-w keeps the columns from crushing together
-              just above the breakpoint. */}
-          <div className="hidden overflow-x-auto rounded-2xl border border-slate-200 bg-white shadow-sm md:block">
-            <table className="w-full min-w-[720px] text-start text-sm">
-              <thead>
-                <tr className="border-b border-slate-200 bg-slate-50 text-xs font-medium uppercase tracking-wide text-slate-500">
-                  <th className="px-5 py-3 text-start font-medium">{copy.columns.role}</th>
-                  <th className="px-5 py-3 text-start font-medium">{copy.columns.company}</th>
-                  <th className="px-5 py-3 text-start font-medium">{copy.columns.date}</th>
-                  <th className="px-5 py-3 text-start font-medium">{copy.columns.language}</th>
-                  <th className="px-5 py-3 text-start font-medium">{copy.columns.score}</th>
-                  <th className="px-5 py-3 text-start font-medium">{copy.columns.match}</th>
-                  <th className="px-5 py-3 text-end font-medium">{copy.columns.download}</th>
-                  <th className="px-5 py-3 text-end font-medium" />
-                </tr>
-              </thead>
-              <tbody>
-                {resumes.map((resume) => {
-                  const isExpanded = expandedId === resume.id;
-                  const isDeleting = deletingId === resume.id;
-                  return (
-                    <React.Fragment key={resume.id}>
-                      <tr className="border-b border-slate-100 last:border-0 hover:bg-slate-50/60">
-                        <td className="px-5 py-3.5">
-                          <button
-                            type="button"
-                            onClick={() => setExpandedId(isExpanded ? null : resume.id)}
-                            aria-expanded={isExpanded}
-                            className="flex items-center gap-1.5 font-medium text-slate-900 hover:text-blue-600 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600"
-                          >
-                            {resume.role || copy.untitledRole}
-                            {isExpanded ? (
-                              <ChevronUp className="size-3.5 shrink-0 text-slate-400" aria-hidden />
-                            ) : (
-                              <ChevronDown className="size-3.5 shrink-0 text-slate-400" aria-hidden />
-                            )}
-                          </button>
-                          {/* Sits under the role rather than in a ninth
-                              column — the table is already at the width it
-                              can carry. */}
-                          <div className="mt-1">
-                            <JobCount count={(resume.similar_jobs ?? []).length} copy={copy} />
-                          </div>
-                        </td>
-                        <td className="px-5 py-3.5 text-slate-600">{resume.company || copy.unknownCompany}</td>
-                        {/* The short cells below hold their content on one
-                            line, so the horizontal space goes to role and
-                            company instead of a three-line wrapped date. */}
-                        <td className="whitespace-nowrap px-5 py-3.5 text-slate-500">{formatDate(resume.created_at, lang)}</td>
-                        <td className="px-5 py-3.5">
-                          <LanguageBadge cvLanguage={resume.cv_language} copy={copy} />
-                        </td>
-                        <td className="whitespace-nowrap px-5 py-3.5 text-slate-600">{resume.ats_score}%</td>
-                        <td className="whitespace-nowrap px-5 py-3.5 text-slate-600">{resume.job_match_score}%</td>
-                        <td className="whitespace-nowrap px-5 py-3.5 text-end">
-                          <button
-                            type="button"
-                            onClick={() => setExpandedId(isExpanded ? null : resume.id)}
-                            aria-expanded={isExpanded}
-                            className="ms-auto text-xs font-medium text-blue-600 hover:text-blue-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600"
-                          >
-                            {isExpanded ? copy.hideDetails : copy.viewDetails}
-                          </button>
-                        </td>
-                        <td className="px-5 py-3.5 text-end">
-                          <DeleteButton
-                            onClick={() => handleDelete(resume)}
-                            isDeleting={isDeleting}
-                            lang={lang}
-                          />
-                        </td>
-                      </tr>
-                      {isExpanded && (
-                        <tr>
-                          <td colSpan={8} className="p-0">
-                            <ResumeDetail resume={resume} lang={lang} copy={copy} generateCopy={generateCopy} />
-                          </td>
-                        </tr>
-                      )}
-                    </React.Fragment>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
 
           {totalPages > 1 && (
             <div className="flex items-center justify-between px-1 text-sm text-slate-500">

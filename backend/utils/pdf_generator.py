@@ -146,6 +146,58 @@ else:
     logger.warning(f"Arabic font asset missing at: {_ARABIC_FONT_REGULAR} (cover letter Arabic will fall back to Helvetica)")
 
 
+# Arabic in its logical form. Presentation forms (FB50-FEFF) are included so
+# the check still works on text that has already been through the reshaper.
+_ARABIC_CHAR_RE = re.compile(
+    r"[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\uFB50-\uFDFF\uFE70-\uFEFF]"
+)
+_ARABIC_RUN_RE = re.compile(
+    r"[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\uFB50-\uFDFF\uFE70-\uFEFF]+"
+)
+
+
+def _has_arabic(text: str) -> bool:
+    return bool(text) and bool(_ARABIC_CHAR_RE.search(text))
+
+
+def _mixed_script(text: str, bold: bool = False) -> str:
+    """
+    Escape a string for Paragraph(), switching FONT for any Arabic inside it.
+
+    THIS IS WHY COVER LETTERS HAD BLACK SQUARES IN THEM. An English letter
+    styles its paragraphs in Helvetica, which is a core PDF font with no
+    Arabic glyphs and no way to encode those code points at all. Handed
+    Arabic, ReportLab silently substitutes ZapfDingbats, whose glyph for
+    every one of those slots is a filled black square — so a candidate
+    applying to an Arabic-titled posting with an English CV got
+
+        RE: Application for ■■■■ ■■■■■■
+
+    and a company line of solid blocks. Nothing was redacted and no
+    placeholder went unfilled; the text was there the whole time and could
+    not be drawn. Reproduced end to end, then fixed here.
+
+    Arabic runs are shaped and wrapped in the embedded Arabic face; the rest
+    of the string keeps the paragraph's own font. Detection runs BEFORE
+    shaping, on logical text.
+    """
+    if not text:
+        return ""
+    if not _has_arabic(text) or not _ARABIC_REPORTLAB_FONT_REGISTERED:
+        return _xml_escape(text)
+
+    font = _ARABIC_FONT_NAME_BOLD if bold else _ARABIC_FONT_NAME
+    out, cursor = [], 0
+    for match in _ARABIC_RUN_RE.finditer(text):
+        if match.start() > cursor:
+            out.append(_xml_escape(text[cursor:match.start()]))
+        out.append(f'<font name="{font}">{_xml_escape(_shape_arabic(match.group()))}</font>')
+        cursor = match.end()
+    if cursor < len(text):
+        out.append(_xml_escape(text[cursor:]))
+    return "".join(out)
+
+
 def _shape_arabic(text: str) -> str:
     """
     ReportLab draws Unicode glyphs left-to-right in logical order and does
@@ -431,9 +483,11 @@ def render_cover_letter_pdf(state: dict, output_path: str) -> str:
     # read the parsed name (or the profile name) directly on its own.
     name = resolve_candidate_name(state) or ("اسم المتقدم" if is_arabic else "Candidate Name")
 
-    sender_block = [Paragraph(f"<b>{body(name)}</b>", styles['CL_Bold'])]
+    sender_block = [Paragraph(f"<b>{body(name) if is_arabic else _mixed_script(name, bold=True)}</b>", styles['CL_Bold'])]
     if personal.get("location"):
-        sender_block.append(Paragraph(body(personal["location"]), styles['CL_Body']))
+        sender_block.append(Paragraph(
+            body(personal["location"]) if is_arabic else _mixed_script(personal["location"]),
+            styles['CL_Body']))
     if personal.get("email"):
         # Identifiers stay LTR and unshaped even inside an Arabic letter -
         # same rule the CV path enforces for email/LinkedIn/GitHub.
@@ -466,20 +520,41 @@ def render_cover_letter_pdf(state: dict, output_path: str) -> str:
 
     company = wf.get("company")
     job_title = wf.get("job_title")
-    hiring_team_label = "فريق التوظيف" if is_arabic else "Hiring Team"
-    story.append(Paragraph(body(hiring_team_label), styles['CL_Body']))
+    # NO STANDALONE "Hiring Team" HEADING. It sat directly above a greeting
+    # that said "Dear Hiring Team," — the same words twice, three lines
+    # apart, which is not how anyone writes a letter. The recipient block is
+    # the company; the greeting below addresses the people.
     if company:
         # Company names are usually proper nouns/Latin script even in an
         # Arabic letter - shaping is a harmless no-op on non-Arabic text.
-        story.append(Paragraph(body(company) if is_arabic else _xml_escape(company), styles['CL_Body']))
+        story.append(Paragraph(
+            body(company) if is_arabic else _mixed_script(company), styles['CL_Body']))
     story.append(Spacer(1, 15))
     if job_title:
-        re_label = f"الموضوع: التقديم على وظيفة {job_title}" if is_arabic else f"RE: Application for {job_title}"
-        story.append(Paragraph(f"<b>{body(re_label)}</b>", styles['CL_Bold']))
+        if is_arabic:
+            re_markup = body(f"الموضوع: التقديم على وظيفة {job_title}")
+        else:
+            re_markup = _xml_escape("RE: Application for ") + _mixed_script(job_title, bold=True)
+        story.append(Paragraph(f"<b>{re_markup}</b>", styles['CL_Bold']))
         story.append(Spacer(1, 15))
 
-    dear_label = "السادة فريق التوظيف المحترمين،" if is_arabic else "Dear Hiring Team,"
-    story.append(Paragraph(body(dear_label), styles['CL_Body']))
+    # ADDRESSED TO SOMEBODY, not to a category. "Dear Hiring Team," is the
+    # single most recognisable machine-written opening there is: it is what a
+    # letter says when nothing about the reader is known. The company name is
+    # known, so the letter uses it.
+    #
+    # The Arabic is not a translation of the English line. "السادة / X
+    # المحترمين" is the ordinary opening of a formal Saudi business letter,
+    # which is what an Arabic-speaking applicant would actually write.
+    if is_arabic:
+        dear_markup = body(
+            f"السادة / {company} المحترمين،" if company else "سعادة مسؤول التوظيف المحترم،"
+        )
+    elif company:
+        dear_markup = _mixed_script(f"Dear {company} hiring team,")
+    else:
+        dear_markup = _xml_escape("Dear Hiring Manager,")
+    story.append(Paragraph(dear_markup, styles['CL_Body']))
     story.append(Spacer(1, 10))
 
     letter_text = state.get("cover_letter_text") or ""

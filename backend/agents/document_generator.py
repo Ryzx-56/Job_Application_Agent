@@ -17,15 +17,33 @@ Tone guidance from JD: {culture_signals}
   - If culture is 'research / academic': lead with curiosity and depth
 
 Structure (3 paragraphs only, body text ONLY — see HARD RULES below):
-  Paragraph 1: Why THIS company specifically. Use the company name.
-               Reference something real about them if possible.
-  Paragraph 2: 2 specific achievements from FACTS_JSON that
-               directly answer the JD requirements.
-  Paragraph 3: Short, confident close. No 'I look forward to hearing'.
+  Paragraph 1: Open on the CANDIDATE'S OWN WORK, not on praise for the company.
+               The one thing they have actually done that matters most for this
+               role, stated concretely enough that it could not appear in
+               anyone else's letter. Name the company by name somewhere in this
+               paragraph, tying that work to what the JD says the role needs —
+               naming them is specificity, complimenting them is filler.
+  Paragraph 2: Two specific achievements from FACTS_JSON that answer
+               requirements the JD actually states. Name the requirement, then
+               the evidence for it.
+  Paragraph 3: Short, plain close. Ask for the conversation once, without
+               ceremony. No 'I look forward to hearing'.
 
 HARD RULES:
-  - Never start with 'I am writing to express my interest' (or the equivalent stock opening in whatever
-    language you're writing in)
+  - NO COMPANY FLATTERY, AND NOTHING INVENTED ABOUT THE EMPLOYER. Never praise their mission,
+    values, culture, innovation, reputation, growth or "commitment to" anything. You know nothing
+    about this company beyond what the job description says, so any such sentence is either
+    fabricated or filler, and it is the single most recognisable line in a machine-written cover
+    letter. Naming the company is REQUIRED and is not flattery: say who they are and what the JD
+    says the role involves. Any claim about what they are like, believe in, or are known for is
+    not available to you and must not appear.
+  - DO NOT RESTATE THE CV. It is attached and the reader has it. The letter exists to make one
+    argument the CV cannot make on its own.
+  - BANNED OPENINGS AND PHRASES, and their equivalents in whatever language you are writing in:
+    'I am writing to', 'I am excited to apply', 'I was thrilled/excited to see', 'As a [role] with
+    N years of experience', 'I believe I would be a great fit', 'I am confident that my skills',
+    'my background aligns with', 'resonates with', 'proven track record', 'uniquely positioned',
+    'I would welcome the opportunity', 'Thank you for considering my application'.
   - Never use the phrase 'passion for' (or its equivalent)
   - Never write more than 3 paragraphs
   - Every achievement mentioned must come from FACTS_JSON

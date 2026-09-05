@@ -265,13 +265,18 @@ function buildUploadFormData(
   // Explicit opt-in to the legacy name path — only ever true when the user
   // clicked "Generate without it" on the name prompt. See
   // apply_candidate_names() in backend/main.py.
-  allowNameFallback = false
+  allowNameFallback = false,
+  uiLanguage: "en" | "ar" = "en"
 ): FormData {
   const formData = new FormData();
   formData.append("cv", cv);
   formData.append("job_description", jobDescription);
   formData.append("additional_info", additionalInfo);
   formData.append("cv_language", cvLanguage);
+  // The language the dashboard is being READ in. Only the match score and
+  // its recommendation follow it — the CV, the cover letter and the
+  // portfolio section all stay in cv_language.
+  formData.append("ui_language", uiLanguage);
   formData.append("template_id", templateId);
   formData.append("allow_name_fallback", String(allowNameFallback));
   return formData;
@@ -300,7 +305,8 @@ function buildManualPayload(
   cvLanguage: "en" | "ar",
   templateId: string,
   // See buildUploadFormData's note — same explicit legacy-path opt-in.
-  allowNameFallback = false
+  allowNameFallback = false,
+  uiLanguage: "en" | "ar" = "en"
 ) {
   return {
     personal: {
@@ -381,6 +387,7 @@ function buildManualPayload(
     job_description: jobDescription,
     additional_info: additionalInfo || "",
     cv_language: cvLanguage,
+    ui_language: uiLanguage,
     template_id: templateId,
     allow_name_fallback: allowNameFallback,
   };
@@ -642,13 +649,13 @@ export default function DashboardHomePage() {
         cvMode === "upload"
           ? await runOptimizeStream(
               `${API_URL}/api/v1/optimize/stream`,
-              buildUploadFormData(cvFile!, jobDescription, additionalInfo, cvLanguage, templateId, allowNameFallback),
+              buildUploadFormData(cvFile!, jobDescription, additionalInfo, cvLanguage, templateId, allowNameFallback, lang),
               token
             )
           : await runOptimizeStream(
               `${API_URL}/api/v1/optimize-manual/stream`,
               JSON.stringify(
-                buildManualPayload(manualData, jobDescription, additionalInfo, cvLanguage, templateId, allowNameFallback)
+                buildManualPayload(manualData, jobDescription, additionalInfo, cvLanguage, templateId, allowNameFallback, lang)
               ),
               token
             );
