@@ -74,10 +74,20 @@ const connectSrc = [
   // Breached-password check (lib/pwned-password.ts). Without this the check is
   // blocked and fails open, silently — see that file's header.
   "https://api.pwnedpasswords.com",
-  // GA4 beacons, including the regional collection endpoints.
+  // GA4 beacons. ALL FIVE HOSTS ARE REQUIRED, not just the obvious two:
+  // gtag fans a single page_view out across several origins and the ones
+  // missing here were being blocked silently, so the numbers in the GA
+  // console were under-counting rather than showing an error anywhere.
+  // Confirmed from real CSP violation reports in the browser console.
   "https://www.google-analytics.com",
   "https://region1.google-analytics.com",
   "https://www.googletagmanager.com",
+  // The endpoint gtag actually posts the measurement payload to.
+  "https://analytics.google.com",
+  // Google Signals / cross-device measurement.
+  "https://stats.g.doubleclick.net",
+  // gtag's own redirect-based collection hop.
+  "https://www.google.com",
   // The card form's own API. Without it the buyer fills the card in and the
   // charge request is blocked at submit.
   MOYASAR_API,
