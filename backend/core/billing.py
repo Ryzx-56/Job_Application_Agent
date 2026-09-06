@@ -36,7 +36,7 @@ from typing import Optional
 from loguru import logger
 
 from core import moyasar_client, pricing
-from core.credits import get_admin_client
+from core.credits import get_admin_client, maybe_row
 from core.payments import record_and_grant
 
 # ─── DUNNING SCHEDULE ───────────────────────────────────────────────────────
@@ -226,9 +226,9 @@ def _upsert_token(admin, user_id: str, token_id: str, source: dict) -> Optional[
 
 
 def _live_subscription(admin, user_id: str) -> Optional[dict]:
-    return (admin.table("subscriptions").select("*")
+    return (maybe_row(admin.table("subscriptions").select("*")
             .eq("user_id", user_id).neq("status", "canceled")
-            .maybe_single().execute().data)
+            .maybe_single().execute()))
 
 
 def _align_credit_clock(admin, user_id: str, period_end: datetime) -> None:
@@ -378,8 +378,8 @@ def _token_for(admin, sub: dict) -> Optional[dict]:
     token_id = sub.get("payment_token_id")
     if not token_id:
         return None
-    row = (admin.table("payment_tokens").select("*")
-           .eq("id", token_id).maybe_single().execute().data)
+    row = (maybe_row(admin.table("payment_tokens").select("*")
+           .eq("id", token_id).maybe_single().execute()))
     if not row or row.get("status") != "active":
         return None
     return row
@@ -566,8 +566,8 @@ def cron_secret() -> str:
 
 
 def _pending_plan(admin, user_id: str) -> Optional[str]:
-    row = (admin.table("profiles").select("pending_tier")
-           .eq("id", user_id).maybe_single().execute().data)
+    row = (maybe_row(admin.table("profiles").select("pending_tier")
+           .eq("id", user_id).maybe_single().execute()))
     return (row or {}).get("pending_tier")
 
 
@@ -609,8 +609,8 @@ def change_plan(user_id: str, new_plan: str) -> dict:
         raise ValueError(f"change_plan got {new_plan!r}, expected free/pro/elite.")
 
     admin = get_admin_client()
-    profile = (admin.table("profiles").select("tier, pending_tier")
-               .eq("id", user_id).maybe_single().execute().data)
+    profile = (maybe_row(admin.table("profiles").select("tier, pending_tier")
+               .eq("id", user_id).maybe_single().execute()))
     if not profile:
         raise LookupError("Profile not found.")
 

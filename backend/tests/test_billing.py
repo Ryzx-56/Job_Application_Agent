@@ -27,7 +27,13 @@ class FakeTable:
     def lte(self, c, v): self._lte[c] = v; return self
     def in_(self, c, vals): self._in[c] = list(vals); return self
     def limit(self, n): self._limit = n; return self
-    def maybe_single(self): return self
+    def maybe_single(self):
+        # See the note in tests/test_webhook.py: postgrest returns None from
+        # execute() itself for zero rows, so a fake that always hands back a
+        # response object lets `.maybe_single().execute().data` pass here and
+        # raise AttributeError in production.
+        self._single = True
+        return self
 
     def _rows(self):
         out = []

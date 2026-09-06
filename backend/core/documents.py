@@ -30,7 +30,7 @@ from core.auth import (
     get_current_admin_user_id_query_or_header,
     get_current_admin_user_id,
 )
-from core.credits import get_admin_client
+from core.credits import get_admin_client, maybe_row
 from utils.pdf_generator import render_cv_pdf, render_cover_letter_pdf
 from utils.docx_generator import generate_cv_docx
 
@@ -61,12 +61,11 @@ _DOC_TYPES = {
 def _fetch_resume(resume_id: str) -> dict:
     admin = get_admin_client()
     row = (
-        admin.table("resumes")
+        maybe_row(admin.table("resumes")
         .select("id, user_id, generation_snapshot, role, company, created_at, is_archived")
         .eq("id", resume_id)
         .maybe_single()
-        .execute()
-        .data
+        .execute())
     )
     if not row:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Resume not found.")

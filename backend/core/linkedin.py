@@ -34,7 +34,7 @@ from agents.linkedin_generator import (
 )
 from core.auth import get_current_admin_user_id, get_current_user_id, read_admin_flag
 from core import moyasar_client, pricing
-from core.credits import get_admin_client
+from core.credits import get_admin_client, maybe_row
 from core.entitlements import (
     LINKEDIN_ESSENTIAL,
     consume_addon_quota,
@@ -132,13 +132,12 @@ def _fetch_purchase(purchase_id: str, user_id: str) -> dict:
     core/documents.py's ownership check.
     """
     row = (
-        get_admin_client()
+        maybe_row(get_admin_client()
         .table("linkedin_purchases")
         .select("*")
         .eq("id", _require_uuid(purchase_id, "Purchase"))
         .maybe_single()
-        .execute()
-        .data
+        .execute())
     )
     if not row or row.get("user_id") != user_id:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Purchase not found.")
@@ -149,13 +148,12 @@ def _fetch_resume(resume_id: str, user_id: str) -> dict:
     """One of the caller's own CVs, with the structured data a generation
     needs. Ownership-checked the same way."""
     row = (
-        get_admin_client()
+        maybe_row(get_admin_client()
         .table("resumes")
         .select("id, user_id, role, company, cv_language, generation_snapshot, created_at")
         .eq("id", _require_uuid(resume_id, "CV"))
         .maybe_single()
-        .execute()
-        .data
+        .execute())
     )
     if not row or row.get("user_id") != user_id:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="CV not found.")
@@ -278,12 +276,11 @@ def _confirm_paid(reference: str, *, paid_amount: float | None = None,
     """
     admin = get_admin_client()
     purchase = (
-        admin.table("linkedin_purchases")
+        maybe_row(admin.table("linkedin_purchases")
         .select("*")
         .eq("payment_reference", reference)
         .maybe_single()
-        .execute()
-        .data
+        .execute())
     )
     if not purchase:
         return {"matched": False}
@@ -370,8 +367,8 @@ def confirm_premium_purchase(purchase_id: str, moyasar_payment_id: str,
     """
     admin = get_admin_client()
     purchase = (
-        admin.table("linkedin_purchases").select("*")
-        .eq("id", purchase_id).maybe_single().execute().data
+        maybe_row(admin.table("linkedin_purchases").select("*")
+        .eq("id", purchase_id).maybe_single().execute())
     )
     if not purchase:
         logger.error(f"🚫 Payment {moyasar_payment_id} names purchase {purchase_id}, which does not exist.")
@@ -1046,25 +1043,23 @@ def get_linkedin_generation(
     """One past generation's full content, for the caller only. This is what
     makes leaving and coming back non-destructive (§6)."""
     row = (
-        get_admin_client()
+        maybe_row(get_admin_client()
         .table("linkedin_generations")
         .select("id, purchase_id, user_id, status, generated_content, created_at")
         .eq("id", _require_uuid(generation_id, "Generation"))
         .maybe_single()
-        .execute()
-        .data
+        .execute())
     )
     if not row or row.get("user_id") != user_id:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Generation not found.")
 
     purchase = (
-        get_admin_client()
+        maybe_row(get_admin_client()
         .table("linkedin_purchases")
         .select("id, tier, source_cv_id, created_at")
         .eq("id", row["purchase_id"])
         .maybe_single()
-        .execute()
-        .data
+        .execute())
     ) or {}
     cv = _cv_labels(user_id, [purchase.get("source_cv_id")]).get(purchase.get("source_cv_id") or "")
 

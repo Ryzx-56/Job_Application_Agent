@@ -17,6 +17,7 @@ from core import billing, payments
 class Q:
     def __init__(self, store, name):
         self.store, self.name, self.op, self.f = store, name, None, {}
+        self._single = False
         self.inv, self._lte, self._gte = {}, {}, {}
     def select(self, *a, **k): self.op = "select"; return self
     def update(self, p): self.op, self.p = "update", p; return self
@@ -27,7 +28,13 @@ class Q:
     def lte(self, c, v): self._lte[c] = v; return self
     def gte(self, c, v): self._gte[c] = v; return self
     def limit(self, n): return self
-    def maybe_single(self): return self
+    def maybe_single(self):
+        # See the note in tests/test_webhook.py: postgrest returns None from
+        # execute() itself for zero rows, so a fake that always hands back a
+        # response object lets `.maybe_single().execute().data` pass here and
+        # raise AttributeError in production.
+        self._single = True
+        return self
     def _rows(self):
         out = []
         for r in self.store.setdefault(self.name, {}).values():
@@ -42,6 +49,8 @@ class Q:
         rows = self.store.setdefault(self.name, {})
         if self.op == "select":
             found = self._rows()
+            if self._single:
+                return type("R", (), {"data": found[0]})() if found else None
             return type("R", (), {"data": found})()
         if self.op == "upsert":
             k = self.p["moyasar_payment_id"]

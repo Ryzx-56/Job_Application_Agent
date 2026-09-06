@@ -21,7 +21,7 @@ from loguru import logger
 
 from datetime import datetime, timezone
 
-from core.credits import get_admin_client
+from core.credits import get_admin_client, maybe_row
 
 
 def activate_paid_subscription(
@@ -111,12 +111,11 @@ def cancel_subscription(user_id: str) -> dict:
     # like this code already assumed. Same fix applied everywhere else in
     # this file and in core/credits.py.
     profile = (
-        admin.table("profiles")
+        maybe_row(admin.table("profiles")
         .select("tier, pending_tier, credits_reset_at, payment_subscription_id")
         .eq("id", user_id)
         .maybe_single()
-        .execute()
-        .data
+        .execute())
     )
     if not profile:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Profile not found.")
@@ -191,7 +190,7 @@ def resume_subscription(user_id: str) -> dict:
     admin = get_admin_client()
 
     # Same .single() -> .maybe_single() fix as cancel_subscription above.
-    profile = admin.table("profiles").select("pending_tier").eq("id", user_id).maybe_single().execute().data
+    profile = maybe_row(admin.table("profiles").select("pending_tier").eq("id", user_id).maybe_single().execute())
     if not profile:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Profile not found.")
 

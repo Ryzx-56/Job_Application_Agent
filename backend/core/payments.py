@@ -39,7 +39,7 @@ from loguru import logger
 from core import moyasar_client
 from core import pricing
 from core.auth import get_current_admin_user_id, get_current_user_id
-from core.credits import get_admin_client, grant_credits
+from core.credits import get_admin_client, grant_credits, maybe_row
 from core.rate_limit import RateLimit, enforce
 
 router = APIRouter()
@@ -621,12 +621,11 @@ def _claim_event(admin, event_id: str, event_type: str, payload: dict) -> str:
     `processed_at` is what separates the two.
     """
     existing = (
-        admin.table("webhook_events")
+        maybe_row(admin.table("webhook_events")
         .select("id, processed_at")
         .eq("moyasar_event_id", event_id)
         .maybe_single()
-        .execute()
-        .data
+        .execute())
     )
     if existing:
         return "done" if existing.get("processed_at") else "in_flight"
@@ -696,9 +695,9 @@ def _handle_subscription_event(admin, payment: dict, product) -> dict:
     from core import billing
 
     existing = (
-        admin.table("subscriptions").select("id, status")
+        maybe_row(admin.table("subscriptions").select("id, status")
         .eq("user_id", user_id).neq("status", "canceled")
-        .maybe_single().execute().data
+        .maybe_single().execute())
     )
     if existing:
         # A renewal. The job already advanced the period when it charged;
@@ -865,16 +864,16 @@ def get_saved_card(user_id: str = Depends(get_current_user_id)) -> dict:
     business in a browser.
     """
     admin = get_admin_client()
-    row = (admin.table("payment_tokens")
+    row = (maybe_row(admin.table("payment_tokens")
            .select("id, card_brand, card_last_four, card_expiry_month, card_expiry_year, status")
            .eq("user_id", user_id).eq("is_default", True)
-           .maybe_single().execute().data)
+           .maybe_single().execute()))
     if not row:
         return {"card": None, "removable": True}
 
-    live = (admin.table("subscriptions").select("id, status, plan")
+    live = (maybe_row(admin.table("subscriptions").select("id, status, plan")
             .eq("user_id", user_id).neq("status", "canceled")
-            .maybe_single().execute().data)
+            .maybe_single().execute()))
 
     return {
         "card": {
@@ -906,9 +905,9 @@ def remove_saved_card(user_id: str = Depends(get_current_user_id)) -> dict:
     is that we stop holding it.
     """
     admin = get_admin_client()
-    live = (admin.table("subscriptions").select("id, plan, status")
+    live = (maybe_row(admin.table("subscriptions").select("id, plan, status")
             .eq("user_id", user_id).neq("status", "canceled")
-            .maybe_single().execute().data)
+            .maybe_single().execute()))
     if live:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
@@ -999,8 +998,8 @@ def admin_refund_payment(
     order would remove credits for money that was never returned.
     """
     admin = get_admin_client()
-    row = (admin.table("payments").select("*")
-           .eq("moyasar_payment_id", payment_id).maybe_single().execute().data)
+    row = (maybe_row(admin.table("payments").select("*")
+           .eq("moyasar_payment_id", payment_id).maybe_single().execute()))
     if not row:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND,
                             detail={"code": "unknown_payment"})

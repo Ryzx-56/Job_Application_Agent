@@ -26,6 +26,7 @@ class FakeQuery:
         self._filters = {}
         self._neq = {}
         self._op = None
+        self._single = False
 
     def select(self, *_a, **_k):
         self._op = "select"; return self
@@ -49,19 +50,39 @@ class FakeQuery:
         self._filters[f"{col}__is"] = val; return self
 
     def maybe_single(self):
+        # MODELS THE REAL CLIENT, WHICH IS THE WHOLE POINT OF A FAKE.
+        # postgrest's SyncMaybeSingleRequestBuilder.execute() returns None
+        # ITSELF when nothing matched — not a response whose .data is None:
+        #
+        #     if len(parsed.data) == 0:
+        #         return None
+        #
+        # This fake used to hand back a response object either way, so
+        # `.maybe_single().execute().data` worked here and raised
+        # AttributeError in production. Every webhook 500'd on that line, no
+        # webhook_events row was ever written, and the tests were green
+        # throughout. A fake that is more forgiving than the library it stands
+        # in for does not test the code, it tests the fake.
+        self._single = True
         return self
 
     def execute(self):
         rows = self.store.setdefault(self.table, {})
         key = self._filters.get("moyasar_event_id") or self._filters.get("moyasar_payment_id")
 
+        def single(row):
+            """None for zero rows, exactly as postgrest does."""
+            if getattr(self, "_single", False) and row is None:
+                return None
+            return type("R", (), {"data": row})()
+
         if self._op == "select":
             if key is not None:
-                return type("R", (), {"data": rows.get(key)})()
+                return single(rows.get(key))
             found = [r for r in rows.values()
                      if all(r.get(k) == v for k, v in self._filters.items())
                      and all(r.get(k) != v for k, v in self._neq.items())]
-            return type("R", (), {"data": found[0] if found else None})()
+            return single(found[0] if found else None)
 
         if self._op == "insert":
             k = self._payload.get("moyasar_event_id")

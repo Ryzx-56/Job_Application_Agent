@@ -24,7 +24,13 @@ class Q:
     def eq(self, c, v): self.f[c] = v; return self
     def order(self, *a, **k): return self
     def limit(self, n): return self
-    def maybe_single(self): return self
+    def maybe_single(self):
+        # See the note in tests/test_webhook.py: postgrest returns None from
+        # execute() itself for zero rows, so a fake that always hands back a
+        # response object lets `.maybe_single().execute().data` pass here and
+        # raise AttributeError in production.
+        self._single = True
+        return self
     def execute(self):
         rows = [r for r in self.store[self.name].values()
                 if all(r.get(k) == v for k, v in self.f.items())]

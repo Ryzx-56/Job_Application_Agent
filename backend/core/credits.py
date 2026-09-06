@@ -48,6 +48,32 @@ TIER_CREDITS = {"free": 3, "pro": 24, "elite": 80}
 
 
 @lru_cache(maxsize=1)
+def maybe_row(result):
+    """
+    The row from a `.maybe_single().execute()`, or None.
+
+    READ THIS BEFORE WRITING `.maybe_single().execute().data` AGAIN.
+    `execute()` on a maybe_single builder does not return a response object
+    with an empty `.data` when nothing matched — it returns None itself:
+
+        if len(parsed.data) == 0:
+            return None            # postgrest/_sync/request_builder.py
+
+    So `.maybe_single().execute().data` raises AttributeError on zero rows,
+    which surfaces as a 500 rather than as the "no such row" the calling code
+    is invariably written to expect. Several call sites in this codebase carry
+    comments saying "maybe_single() returns None for zero rows" — the belief
+    was right, it was just one level off.
+
+    The webhook receiver is what made this expensive: _claim_event looked for
+    an existing webhook_events row, found none (the table was empty), and
+    raised. Every delivery 500'd, so no row was ever inserted, so the table
+    stayed empty, so the next delivery 500'd too. The table could never take
+    its first row and no webhook ever ran, from the first day.
+    """
+    return result.data if result is not None else None
+
+
 def get_admin_client() -> Client:
     """
     Cached Supabase client authenticated with the service_role key.
@@ -127,12 +153,11 @@ def reserve_credits(user_id: str, cv_language: str) -> ReservedCredits:
         # clear message below. .maybe_single() returns None for zero rows
         # like this code already assumed.
         profile = (
-            admin.table("profiles")
+            maybe_row(admin.table("profiles")
             .select("credits_remaining, tier")
             .eq("id", user_id)
             .maybe_single()
-            .execute()
-            .data
+            .execute())
         )
         remaining = profile["credits_remaining"] if profile else 0
         tier = profile["tier"] if profile else "free"
@@ -313,12 +338,11 @@ def get_credits(user_id: str) -> dict:
     # profile row previously crashed with an unhandled 500 instead of
     # reaching the "if not profile" 404 handling right below.
     profile = (
-        admin.table("profiles")
+        maybe_row(admin.table("profiles")
         .select("tier, credits_remaining, credits_total, pending_tier, credits_reset_at")
         .eq("id", user_id)
         .maybe_single()
-        .execute()
-        .data
+        .execute())
     )
     if not profile:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Profile not found.")
