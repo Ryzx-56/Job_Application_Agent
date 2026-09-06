@@ -214,7 +214,31 @@ export function mountCheckoutForm(options: CheckoutFormOptions): void {
 
   const isAr = options.lang === "ar";
 
-  window.Moyasar.init({
+  /* AN OPTIONAL KEY IS OMITTED, NEVER SET TO undefined.
+   *
+   * This is not style. `on_completed: undefined` is not the same as no
+   * `on_completed` at all: moyasar.js validates the key when it is PRESENT,
+   * and an undefined value fails that validation with
+   *
+   *     Error: Invalid handler undefined
+   *
+   * thrown from inside the promise chain that runs AFTER the payment has
+   * already been created. POST /v1/payments returns 201, the payment exists
+   * at Moyasar, and then the success handler throws into the same catch that
+   * handles a dropped connection — which renders "Network Error" and calls
+   * on_failure. The buyer is told the payment did not go through while a real
+   * payment sits at Moyasar in `initiated`, and the 3-D Secure redirect that
+   * should have followed never happens.
+   *
+   * It cost a full misdiagnosis: the symptom is indistinguishable from a
+   * blocked request unless you read the console.log() in moyasar.js's
+   * catch-all branch, which is the only place the real exception surfaces.
+   * Verified on the live origin: identical config, on_completed present ->
+   * full 3DS flow; absent-but-declared -> 201 then "Network Error".
+   *
+   * The same shape applies to every optional key below, so none of them are
+   * passed unless they have a real value. */
+  const config: Record<string, unknown> = {
     element: options.element,
     amount: options.amountHalalas,
     currency: options.currency,
@@ -228,15 +252,18 @@ export function mountCheckoutForm(options: CheckoutFormOptions): void {
     // here will reach for.
     supported_networks: ["mada", "visa", "mastercard"],
     language: isAr ? "ar" : "en",
-    translations: isAr ? { ar: AR_OVERRIDES } : undefined,
     // Carried through Moyasar and echoed back on the payment object and every
     // webhook. THE BACKEND PRICES THE PAYMENT FROM `reference`, so this is
     // the only thing that decides what was bought.
     metadata: options.metadata,
-    credit_card: options.saveCard ? { save_card: true } : undefined,
-    on_completed: options.onCompleted,
-    on_failure: options.onFailure,
-  });
+  };
+
+  if (isAr) config.translations = { ar: AR_OVERRIDES };
+  if (options.saveCard) config.credit_card = { save_card: true };
+  if (options.onCompleted) config.on_completed = options.onCompleted;
+  if (options.onFailure) config.on_failure = options.onFailure;
+
+  window.Moyasar.init(config);
 }
 
 export const MOYASAR_FORM_VERSION = MOYASAR_VERSION;
