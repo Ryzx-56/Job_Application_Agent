@@ -170,3 +170,135 @@ def test_every_ordering_grants_exactly_once(env, sequence):
     for source in sequence:
         payments.record_and_grant(dict(PAID), source=source)
     assert env["grants"] == [("u1", 5)], f"{sequence} granted {len(env['grants'])} times"
+
+
+# ─── Paid, but nobody ever got anything (pass 2) ────────────────────────────
+#
+# The case that actually happened: the checkout form did not stamp user_id
+# onto the payment, so record_and_grant recorded a correct `paid` row and
+# returned no_user_id before the claim. Status right, money in, credits never
+# issued — and invisible to the original sweep, which only looks at rows whose
+# STATUS is unresolved.
+
+
+def paid_ungranted_row(created, pid="pay_p", user_id="u1"):
+    return {"moyasar_payment_id": pid, "user_id": user_id, "type": "credit_pack",
+            "reference": "starter_pack", "amount": 900, "currency": "SAR",
+            "status": "paid", "credits_granted": None,
+            "created_at": billing._iso(created)}
+
+
+def test_a_paid_row_that_never_granted_is_settled(env, monkeypatch):
+    env["store"]["payments"]["pay_p"] = paid_ungranted_row(NOW - timedelta(hours=1))
+    monkeypatch.setattr(billing.moyasar_client, "get_payment", lambda pid: {
+        "id": "pay_p", "status": "paid", "amount": 900, "currency": "SAR",
+        "metadata": {"user_id": "u1", "reference": "starter_pack"},
+    })
+    monkeypatch.setattr(billing.moyasar_client, "list_payments",
+                        lambda **k: {"payments": [], "meta": {}})
+
+    summary = billing.reconcile_stale_payments()
+    assert summary["ungranted_fixed"] == 1
+    assert env["grants"] == [("u1", 5)], "the buyer finally gets the pack they paid for"
+
+
+def test_a_paid_row_with_no_owner_is_flagged_not_guessed(env, monkeypatch):
+    """A payment naming nobody must not have an owner invented for it."""
+    env["store"]["payments"]["pay_p"] = paid_ungranted_row(NOW - timedelta(hours=1))
+    monkeypatch.setattr(billing.moyasar_client, "get_payment", lambda pid: {
+        "id": "pay_p", "status": "paid", "amount": 900, "currency": "SAR",
+        "metadata": {"reference": "starter_pack"},          # no user_id
+    })
+    monkeypatch.setattr(billing.moyasar_client, "list_payments",
+                        lambda **k: {"payments": [], "meta": {}})
+
+    summary = billing.reconcile_stale_payments()
+    assert summary["unattributable"] == 1
+    assert summary["ungranted_fixed"] == 0
+    assert env["grants"] == []
+
+
+def test_settling_an_ungranted_row_twice_grants_once(env, monkeypatch):
+    env["store"]["payments"]["pay_p"] = paid_ungranted_row(NOW - timedelta(hours=1))
+    monkeypatch.setattr(billing.moyasar_client, "get_payment", lambda pid: {
+        "id": "pay_p", "status": "paid", "amount": 900, "currency": "SAR",
+        "metadata": {"user_id": "u1", "reference": "starter_pack"},
+    })
+    monkeypatch.setattr(billing.moyasar_client, "list_payments",
+                        lambda **k: {"payments": [], "meta": {}})
+    billing.reconcile_stale_payments()
+    billing.reconcile_stale_payments()
+    assert env["grants"] == [("u1", 5)], "granted once, not twice"
+
+
+# ─── Paid at Moyasar, unknown to us entirely (pass 3) ───────────────────────
+#
+# No webhook (a wrong MOYASAR_WEBHOOK_SECRET 403s every delivery) and no
+# callback. There is no local row at all, so nothing that scans our own table
+# can ever find it. This is the only path that can.
+
+
+def remote_payment(pid="pay_r", status="paid", user_id="u1", created=None):
+    return {"id": pid, "status": status, "amount": 900, "currency": "SAR",
+            "created_at": billing._iso(created or (NOW - timedelta(hours=1))),
+            "metadata": {"user_id": user_id, "reference": "starter_pack"}}
+
+
+def test_a_payment_we_never_heard_about_is_found_and_granted(env, monkeypatch):
+    monkeypatch.setattr(billing.moyasar_client, "list_payments",
+                        lambda **k: {"payments": [remote_payment()], "meta": {"next_page": None}})
+
+    summary = billing.reconcile_stale_payments()
+    assert summary["orphans_found"] == 1
+    assert summary["orphans_granted"] == 1
+    assert env["grants"] == [("u1", 5)]
+    assert env["store"]["payments"]["pay_r"]["status"] == "paid", "and it is now on the ledger"
+
+
+def test_the_remote_sweep_ignores_payments_we_already_have(env, monkeypatch):
+    env["store"]["payments"]["pay_r"] = {**paid_ungranted_row(NOW - timedelta(hours=1), pid="pay_r"),
+                                         "credits_granted": 5}
+    monkeypatch.setattr(billing.moyasar_client, "list_payments",
+                        lambda **k: {"payments": [remote_payment()], "meta": {"next_page": None}})
+    monkeypatch.setattr(billing.moyasar_client, "get_payment", lambda pid: remote_payment())
+
+    summary = billing.reconcile_stale_payments()
+    assert summary["orphans_found"] == 0
+    assert env["grants"] == [], "already granted, so nothing is issued again"
+
+
+def test_the_remote_sweep_ignores_unpaid_and_ancient_payments(env, monkeypatch):
+    monkeypatch.setattr(billing.moyasar_client, "list_payments", lambda **k: {
+        "payments": [
+            remote_payment(pid="pay_f", status="failed"),
+            remote_payment(pid="pay_old", created=NOW - timedelta(days=30)),
+        ],
+        "meta": {"next_page": None},
+    })
+    summary = billing.reconcile_stale_payments()
+    assert summary["orphans_found"] == 0
+    assert env["grants"] == []
+
+
+def test_the_remote_sweep_cannot_loop_forever(env, monkeypatch):
+    """A pager that always claims there is a next page must still terminate."""
+    calls = []
+    def always_more(**k):
+        calls.append(k.get("page"))
+        return {"payments": [remote_payment(pid=f"pay_{k.get('page')}")],
+                "meta": {"next_page": 999}}
+    monkeypatch.setattr(billing.moyasar_client, "list_payments", always_more)
+
+    billing.reconcile_stale_payments()
+    assert len(calls) <= billing.MAX_REMOTE_PAGES
+
+
+def test_a_failing_remote_sweep_does_not_break_the_run(env, monkeypatch):
+    """It shares a cron with renewals; it must never take them down."""
+    def boom(**k):
+        raise billing.moyasar_client.MoyasarUnreachable("timeout")
+    monkeypatch.setattr(billing.moyasar_client, "list_payments", boom)
+
+    summary = billing.reconcile_stale_payments()
+    assert summary["remote_sweep"] == "failed"
+    assert summary["checked"] == 0

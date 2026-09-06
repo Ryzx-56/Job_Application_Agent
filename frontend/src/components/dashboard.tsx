@@ -19,6 +19,7 @@ import {
   Shield,
   MessagesSquare,
   Search,
+  CreditCard,
 } from "lucide-react";
 // lucide-react v1 has no brand icons, so the LinkedIn mark is our own glyph.
 import { LinkedInGlyph } from "@/components/linkedin-ui";
@@ -451,6 +452,11 @@ function useNavItems(isAdmin = false) {
     // The LinkedIn add-on. Sits directly above Settings, under My Resumes,
     // because it's something you do with a CV you've already made.
     { href: "/dashboard/linkedin", label: t.dashboard.sidebar.linkedin, icon: LinkedInGlyph },
+    // Plans and credit packs. Sits above Settings because it is a thing you
+    // come here to DO, not an account preference — and because the only other
+    // routes to it were a button inside Settings and the credits popover,
+    // neither of which is somewhere you look when you want to compare plans.
+    { href: "/dashboard/upgrade", label: t.dashboard.sidebar.pricing, icon: CreditCard },
     { href: "/dashboard/settings", label: t.dashboard.sidebar.settings, icon: Settings },
     // Sits directly under Settings, and only for admins. Hiding it is
     // convenience, not access control — every /api/v1/admin/* route

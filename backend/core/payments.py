@@ -60,7 +60,7 @@ def _extract_metadata(payment: dict) -> dict:
     return meta if isinstance(meta, dict) else {}
 
 
-def record_and_grant(payment: dict, *, source: str) -> dict:
+def record_and_grant(payment: dict, *, source: str, fallback_user_id: str | None = None) -> dict:
     """
     Record a Moyasar payment and grant whatever it bought. THE shared entry
     point — the verify route below and the §4 webhook both call this and
@@ -72,6 +72,15 @@ def record_and_grant(payment: dict, *, source: str) -> dict:
     fetched payment is Moyasar's own answer. (§4 does exactly this.)
 
     `source` is "callback" or "webhook", for the log line only.
+
+    `fallback_user_id` is the AUTHENTICATED caller, used only when the payment
+    itself names nobody. The metadata is the primary source because the
+    webhook arrives with no session at all, but a payment created before the
+    frontend started stamping user_id has no owner in it, and refusing those
+    means a buyer who was genuinely charged never gets what they paid for.
+    A verified JWT is a better witness than client-supplied metadata anyway,
+    so where the two disagree the caller rejects the request outright before
+    reaching here (see verify_payment's ownership check).
 
     Idempotency has two layers, and both are needed:
 
@@ -97,6 +106,13 @@ def record_and_grant(payment: dict, *, source: str) -> dict:
     metadata = _extract_metadata(payment)
     reference = str(metadata.get("reference") or "").strip()
     user_id = str(metadata.get("user_id") or "").strip() or None
+    if not user_id and fallback_user_id:
+        user_id = str(fallback_user_id).strip() or None
+        logger.warning(
+            f"⚠️ [{source}] Payment {moyasar_id} carries no user_id in its metadata; "
+            f"attributing it to the authenticated caller {user_id}. This payment was "
+            "created before the checkout form stamped the buyer onto it."
+        )
 
     amount = payment.get("amount")
     currency = str(payment.get("currency") or "").upper()
@@ -475,7 +491,10 @@ def verify_payment(
             detail={"code": "payment_not_found", "message": "We couldn't find that payment."},
         )
 
-    result = record_and_grant(payment, source="callback")
+    # The JWT is passed as the fallback owner: this route is the one place we
+    # know who is asking, and a payment with no owner in its metadata is
+    # otherwise unrecoverable.
+    result = record_and_grant(payment, source="callback", fallback_user_id=user_id)
 
     # Shape chosen for the callback page: one status it can switch on, plus
     # enough to name what was bought.

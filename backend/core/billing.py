@@ -670,6 +670,17 @@ ABANDON_AFTER_DAYS = 7
 
 _UNRESOLVED_STATUSES = ("initiated", "authorized")
 
+# Mirrors core.payments._PAID_STATUSES. Imported rather than retyped so the
+# two cannot drift — this file deciding "paid" differently from the module
+# that grants credits is exactly the class of bug this codebase keeps hitting.
+from core.payments import _PAID_STATUSES as _SETTLED_STATUSES  # noqa: E402
+
+# A sweep of Moyasar's own list is bounded: a broken or unexpected pager must
+# not be able to spin. The sandbox ignores per_page and reports total_pages 1
+# while still returning everything, so `next_page` is the signal that is
+# actually trustworthy, and this is the backstop behind it.
+MAX_REMOTE_PAGES = 5
+
 
 def reconcile_stale_payments(limit: int = 100) -> dict:
     """
@@ -691,11 +702,13 @@ def reconcile_stale_payments(limit: int = 100) -> dict:
              .limit(limit).execute().data or [])
 
     summary = {"checked": len(stale), "settled_paid": 0, "settled_failed": 0,
-               "still_pending": 0, "unreachable": 0}
-    if not stale:
-        return summary
+               "still_pending": 0, "unreachable": 0,
+               # Pass 2 and 3, below.
+               "ungranted_fixed": 0, "unattributable": 0,
+               "orphans_found": 0, "orphans_granted": 0, "remote_sweep": "skipped"}
 
-    logger.info(f"🔎 Reconciling {len(stale)} payment(s) that stopped moving.")
+    if stale:
+        logger.info(f"🔎 Reconciling {len(stale)} payment(s) that stopped moving.")
 
     for row in stale:
         payment_id = row.get("moyasar_payment_id")
@@ -728,5 +741,138 @@ def reconcile_stale_payments(limit: int = 100) -> dict:
             summary["settled_failed"] += 1
             logger.info(f"↩️ Stale payment {payment_id} resolved as '{status}'.")
 
+    _settle_paid_but_ungranted(admin, window_start, limit, summary)
+    _sweep_moyasar_for_unknown_payments(admin, window_start, summary)
+
     logger.info(f"🔎 Reconciliation finished: {summary}")
     return summary
+
+
+def _settle_paid_but_ungranted(admin, window_start: str, limit: int, summary: dict) -> None:
+    """
+    PASS 2 — rows we know are paid but never handed anything over.
+
+    The first pass only looks at rows whose STATUS stopped moving. It cannot
+    see a row that is correctly marked paid and simply never granted, which is
+    what happens whenever record_and_grant records the payment and then bails
+    before the claim — a payment carrying no user_id being the case that
+    actually occurred. The money is in, the row says so, and the customer has
+    nothing.
+
+    Re-running record_and_grant is safe: the claim on `credits_granted IS
+    NULL` is what stops a second grant, and these rows are precisely the ones
+    where that column is still NULL because no grant ever happened.
+    """
+    try:
+        rows = (admin.table("payments").select("*")
+                .in_("status", list(_SETTLED_STATUSES))
+                .is_("credits_granted", "null")
+                .gte("created_at", window_start)
+                .limit(limit).execute().data or [])
+    except Exception as e:
+        logger.error(f"🚫 Could not query paid-but-ungranted payments: {e}")
+        return
+
+    if not rows:
+        return
+    logger.warning(
+        f"⚠️ {len(rows)} payment(s) are marked paid but were never granted. Settling."
+    )
+
+    for row in rows:
+        payment_id = row.get("moyasar_payment_id")
+        try:
+            payment = moyasar_client.get_payment(payment_id)
+        except Exception as e:
+            summary["unreachable"] += 1
+            logger.error(f"🚫 Could not re-read ungranted payment {payment_id}: {e}")
+            continue
+
+        result = record_and_grant(payment, source="reconcile-ungranted")
+        if result.get("credits_granted"):
+            summary["ungranted_fixed"] += 1
+            logger.warning(
+                f"✅ Payment {payment_id} was paid but ungranted; credits have now been issued."
+            )
+        elif result.get("code") == "no_user_id":
+            # Nothing to be done automatically: the payment names nobody, and
+            # guessing an owner is not a thing a billing job may do.
+            summary["unattributable"] += 1
+            logger.error(
+                f"🚨 Payment {payment_id} is PAID but carries no user_id — a human has to "
+                "decide who it belongs to. The buyer can also recover it themselves by "
+                "reopening /payment/callback?id=<id>, which attributes it to their session."
+            )
+
+
+def _sweep_moyasar_for_unknown_payments(admin, window_start: str, summary: dict) -> None:
+    """
+    PASS 3 — paid payments MOYASAR knows about and we do not.
+
+    Every other recovery path in this integration starts from an id we already
+    hold. If the webhook never delivers (a wrong MOYASAR_WEBHOOK_SECRET makes
+    every delivery 403 until Moyasar gives up) and the buyer never returns to
+    the callback, a paid payment leaves no trace on our side, and no scan of
+    our own table can find it. This asks Moyasar directly.
+
+    Bounded, deduplicated, and it grants through the same record_and_grant
+    claim as everything else, so it cannot double-grant a payment another path
+    already settled.
+    """
+    cutoff = _parse(window_start)
+    try:
+        known = {
+            str(r.get("moyasar_payment_id"))
+            for r in (admin.table("payments").select("moyasar_payment_id")
+                      .gte("created_at", window_start).limit(1000).execute().data or [])
+        }
+    except Exception as e:
+        logger.error(f"🚫 Could not list known payment ids: {e}")
+        return
+
+    seen: set[str] = set()
+    page = 1
+    try:
+        while page <= MAX_REMOTE_PAGES:
+            batch = moyasar_client.list_payments(page=page)
+            payments = batch.get("payments") or []
+            if not payments:
+                break
+
+            for payment in payments:
+                pid = str(payment.get("id") or "")
+                if not pid or pid in seen:
+                    continue
+                seen.add(pid)
+
+                if str(payment.get("status") or "").lower() not in _SETTLED_STATUSES:
+                    continue
+                created = _parse(payment.get("created_at"))
+                if cutoff and created and created < cutoff:
+                    # Older than the sweep window. The list is newest-first, so
+                    # everything past here is older still.
+                    page = MAX_REMOTE_PAGES + 1
+                    break
+                if pid in known:
+                    continue
+
+                summary["orphans_found"] += 1
+                logger.error(
+                    f"🚨 Moyasar has a PAID payment {pid} that never reached this backend — "
+                    "no webhook and no callback. Recording and settling it now. Check webhook "
+                    "delivery health."
+                )
+                result = record_and_grant(payment, source="reconcile-remote")
+                if result.get("credits_granted"):
+                    summary["orphans_granted"] += 1
+                elif result.get("code") == "no_user_id":
+                    summary["unattributable"] += 1
+
+            if not (batch.get("meta") or {}).get("next_page"):
+                break
+            page += 1
+        summary["remote_sweep"] = "ok"
+    except Exception as e:
+        # Never let this break the renewals run it shares a cron with.
+        summary["remote_sweep"] = "failed"
+        logger.error(f"🚫 Moyasar-side reconciliation sweep failed: {e}")

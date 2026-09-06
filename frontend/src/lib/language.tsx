@@ -981,6 +981,10 @@ export const content = {
         // Sits between My Resumes and Settings — the LinkedIn add-on is
         // something you do AFTER making a CV, so it reads in that order.
         linkedin: "LinkedIn",
+        // Above Settings: the plans and credit packs. Named for what the page
+        // shows rather than for the action, so it reads the same to someone
+        // comparing plans and someone topping up.
+        pricing: "Pricing",
         settings: "Settings",
         admin: "Admin",
         logout: "Log out",
@@ -2428,6 +2432,7 @@ export const content = {
         interview: "التحضير للمقابلة",
         jobSearch: "البحث عن وظائف",
         linkedin: "لينكدإن",
+        pricing: "الأسعار",
         settings: "الإعدادات",
         admin: "الإدارة",
         logout: "تسجيل الخروج",

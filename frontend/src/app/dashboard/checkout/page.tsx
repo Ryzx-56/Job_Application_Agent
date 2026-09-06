@@ -121,7 +121,7 @@ export default function CheckoutPage() {
 
     try {
       await loadMoyasarForm();
-      mountCheckoutForm({
+      await mountCheckoutForm({
         // The CLASS, not `#${formHostId}`. Moyasar renames the container's id
         // during init and then re-queries the selector, so an id selector
         // resolves to null and the card fields never render at all — the page
@@ -169,7 +169,7 @@ export default function CheckoutPage() {
       console.error("[checkout] the card form did not mount:", cause || err);
 
       setError(
-        cause === "moyasar-key-missing"
+        cause === "moyasar-key-missing" || cause === "payment-user-unknown"
           ? isAr
             ? "الدفع غير متاح حاليًا بسبب خطأ في الإعداد لدينا. لم يتم خصم أي مبلغ. حاول لاحقًا أو تواصل معنا."
             : "Payments are unavailable right now because of a configuration error on our side. Nothing was charged. Try again later or contact us."

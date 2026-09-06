@@ -64,6 +64,16 @@ async function accessToken(): Promise<string> {
   return session.access_token;
 }
 
+/** The signed-in user's id, for stamping onto a payment's metadata. */
+async function currentUserId(): Promise<string> {
+  const supabase = createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user?.id) throw new Error("payment-user-unknown");
+  return user.id;
+}
+
 async function request<T>(path: string, init?: RequestInit & { auth?: boolean }): Promise<T> {
   const headers: Record<string, string> = { "Content-Type": "application/json" };
   if (init?.auth !== false) headers.Authorization = `Bearer ${await accessToken()}`;
@@ -206,11 +216,28 @@ export type CheckoutFormOptions = {
  * `amountHalalas` must come from the backend catalog, never from a local
  * constant — see the header note.
  */
-export function mountCheckoutForm(options: CheckoutFormOptions): void {
+export async function mountCheckoutForm(options: CheckoutFormOptions): Promise<void> {
   if (!window.Moyasar) throw new Error("moyasar-not-loaded");
 
   const publishableKey = process.env.NEXT_PUBLIC_MOYASAR_PUBLISHABLE_KEY;
   if (!publishableKey) throw new Error("moyasar-key-missing");
+
+  /* WHO IS BUYING, RESOLVED HERE RATHER THAN ASKED OF THE CALLER.
+   *
+   * record_and_grant() reads the buyer from the PAYMENT'S METADATA and from
+   * nowhere else, because the webhook that grants the credits arrives with no
+   * session attached — Moyasar is not logged in as anybody. The checkout page
+   * never stamped one, so every real purchase reached the backend as a paid
+   * payment belonging to nobody, was recorded with credits_granted NULL, and
+   * returned "no_user_id". The buyer was charged and told the payment did not
+   * go through. Confirmed against a real paid payment whose metadata read
+   * exactly {"reference": "best_value_pack"}.
+   *
+   * Resolved inside this function, not passed in, so that a second caller
+   * cannot reintroduce the same bug by forgetting the field. Throwing when it
+   * is unknown is deliberate: a form that cannot say who is paying must not
+   * be able to take money. */
+  const buyerId = await currentUserId();
 
   const isAr = options.lang === "ar";
 
@@ -255,7 +282,10 @@ export function mountCheckoutForm(options: CheckoutFormOptions): void {
     // Carried through Moyasar and echoed back on the payment object and every
     // webhook. THE BACKEND PRICES THE PAYMENT FROM `reference`, so this is
     // the only thing that decides what was bought.
-    metadata: options.metadata,
+    // user_id is stamped here and cannot be overridden by the caller's
+    // metadata — the value that decides who gets the credits comes from the
+    // session, not from whatever a page happened to pass in.
+    metadata: { ...options.metadata, user_id: buyerId },
   };
 
   if (isAr) config.translations = { ar: AR_OVERRIDES };

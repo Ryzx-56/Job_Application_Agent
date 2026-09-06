@@ -292,6 +292,30 @@ def get_payment(payment_id: str) -> dict:
     return _request("GET", f"/payments/{payment_id}", timeout=_READ_TIMEOUT_SECONDS)
 
 
+def list_payments(*, page: int = 1, per_page: int = 50) -> dict:
+    """
+    GET /payments — Moyasar's own list, newest first.
+
+    THE ONLY WAY TO FIND A PAYMENT WE NEVER HEARD ABOUT. Everything else in
+    this integration is driven by an id we already hold: a webhook delivery,
+    a callback the buyer returned through, or a row already in our table. If
+    the webhook never arrives AND the buyer never comes back to the callback,
+    a paid payment leaves no trace on our side at all, and no amount of
+    scanning our own database will surface it. This is the query that does.
+
+    Returns Moyasar's envelope unchanged: {"payments": [...], "meta": {...}}.
+    Naturally scoped to the current mode, because the secret key decides
+    which set of payments exists.
+    """
+    per_page = max(1, min(int(per_page), 100))
+    page = max(1, int(page))
+    return _request(
+        "GET",
+        f"/payments?page={page}&per_page={per_page}",
+        timeout=_READ_TIMEOUT_SECONDS,
+    )
+
+
 def charge_token(
     token_id: str,
     amount: int,
