@@ -47,10 +47,16 @@ CREDIT_COST = {"en": 1, "ar": 2}
 TIER_CREDITS = {"free": 3, "pro": 24, "elite": 80}
 
 
-@lru_cache(maxsize=1)
 def maybe_row(result):
     """
     The row from a `.maybe_single().execute()`, or None.
+
+    NOT CACHED, and it must stay that way: a SingleAPIResponse is unhashable,
+    so an lru_cache on this raises TypeError for every caller. That is not
+    hypothetical — this function was first added directly beneath
+    get_admin_client's @lru_cache line, which silently moved the decorator
+    onto this function instead, and every route that reads a single row
+    started returning 500.
 
     READ THIS BEFORE WRITING `.maybe_single().execute().data` AGAIN.
     `execute()` on a maybe_single builder does not return a response object
@@ -74,6 +80,7 @@ def maybe_row(result):
     return result.data if result is not None else None
 
 
+@lru_cache(maxsize=1)
 def get_admin_client() -> Client:
     """
     Cached Supabase client authenticated with the service_role key.
