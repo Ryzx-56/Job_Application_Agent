@@ -5,9 +5,9 @@ import uuid
 import threading
 import concurrent.futures
 import uvicorn
-from fastapi import FastAPI, HTTPException, status, UploadFile, File, Form, Depends, Query
+from fastapi import FastAPI, HTTPException, status, UploadFile, File, Form, Depends, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.responses import FileResponse, StreamingResponse, JSONResponse
 from dotenv import load_dotenv
 from loguru import logger
 
@@ -98,6 +98,33 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# ─── Unhandled exceptions must stay readable to the browser ────────────────
+#
+# Without this, an unhandled exception is turned into a bare 500 by
+# Starlette's ServerErrorMiddleware, which sits OUTSIDE CORSMiddleware — so
+# the response carries no Access-Control-Allow-Origin. A cross-origin caller
+# cannot read a response without it, so the browser discards the 500 and
+# reports `TypeError: Failed to fetch` instead. Every backend crash therefore
+# reached the UI as a network error with no detail, which is how a
+# subscription bug spent two rounds being mistaken for a connectivity
+# problem.
+#
+# Registering a handler for Exception moves the response back INSIDE the
+# middleware stack, so CORS headers are applied and the client sees a real
+# 500 it can read and report. The traceback goes to the logs; the caller gets
+# the exception type and nothing else, which is enough to route a bug report
+# without describing our schema to the internet.
+@app.exception_handler(Exception)
+async def unhandled_exception_handler(request: Request, exc: Exception):
+    logger.exception(
+        f"🚨 Unhandled {type(exc).__name__} on {request.method} {request.url.path}: {exc}"
+    )
+    return JSONResponse(
+        status_code=500,
+        content={"detail": {"code": "internal_error", "type": type(exc).__name__}},
+    )
+
 
 app.include_router(location_router)
 app.include_router(documents_router)

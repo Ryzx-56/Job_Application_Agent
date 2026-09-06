@@ -18,11 +18,15 @@ class Q:
     def __init__(self, store, name):
         self.store, self.name, self.op, self.f = store, name, None, {}
         self._single = False
-        self.inv, self._lte, self._gte = {}, {}, {}
+        self.inv, self._lte, self._gte, self.nf = {}, {}, {}, {}
     def select(self, *a, **k): self.op = "select"; return self
     def update(self, p): self.op, self.p = "update", p; return self
     def upsert(self, p, on_conflict=None): self.op, self.p = "upsert", p; return self
     def eq(self, c, v): self.f[c] = v; return self
+    # _live_subscription() filters with .neq("status", "canceled"). Without
+    # this the fake raised AttributeError, so that function was never
+    # exercised here at all.
+    def neq(self, c, v): self.nf[c] = v; return self
     def is_(self, c, v): self.f[f"{c}__is"] = v; return self
     def in_(self, c, v): self.inv[c] = list(v); return self
     def lte(self, c, v): self._lte[c] = v; return self
@@ -41,6 +45,7 @@ class Q:
             if any(r.get(k) != v for k, v in self.f.items() if not k.endswith("__is")): continue
             if self.f.get("credits_granted__is") == "null" and r.get("credits_granted") is not None: continue
             if any(r.get(k) not in v for k, v in self.inv.items()): continue
+            if any(r.get(k) == v for k, v in self.nf.items()): continue
             if any(str(r.get(k) or "") > v for k, v in self._lte.items()): continue
             if any(str(r.get(k) or "") < v for k, v in self._gte.items()): continue
             out.append(r)
