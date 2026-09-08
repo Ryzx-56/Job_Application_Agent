@@ -4,6 +4,7 @@ from loguru import logger
 from core.state import AgentState
 from core.llm_config import generate_claude_text
 from core.humanizer import HUMANIZER_RULES
+from schemas.jd_schema import real_company
 from utils.arabic_localizer import apply_glossary, build_glossary, find_latin_terms
 from utils.cv_context import resolve_candidate_name
 import anthropic
@@ -203,7 +204,10 @@ def generate_cover_letter(state: AgentState) -> str:
 
     prompt = COVER_LETTER_PROMPT.format(
         job_title       = weight_factors.get("job_title", "the role"),
-        company         = weight_factors.get("company", "your company"),
+        # An unnamed employer is described as unnamed, never as a company
+        # called "Unknown" — the prompt asks the letter to name the company,
+        # and it would have obliged.
+        company         = real_company(weight_factors.get("company")) or "the employer (not named in the posting)",
         culture_signals = ", ".join(weight_factors.get("culture_signals", [])),
         facts_json      = json.dumps(facts_json, ensure_ascii=False),
         weight_factors  = json.dumps(weight_factors, ensure_ascii=False),

@@ -6,6 +6,7 @@ from datetime import date
 from pathlib import Path
 
 import jinja2
+from schemas.jd_schema import real_company
 from loguru import logger
 from markupsafe import Markup
 from xml.sax.saxutils import escape as _xml_escape
@@ -518,7 +519,14 @@ def render_cover_letter_pdf(state: dict, output_path: str) -> str:
     story.append(Paragraph(body(today_str) if is_arabic else _xml_escape(today_str), styles['CL_Body']))
     story.append(Spacer(1, 15))
 
-    company = wf.get("company")
+    # "Unknown" IS NOT A COMPANY. jd_analyzer is instructed to write the
+    # literal string "Unknown" when the posting names no employer (see its
+    # prompt), so a plain truthiness check treats it as a real name — which
+    # produced a letter addressed to the "Unknown Recruitment Team", printed
+    # "Unknown" as the recipient, and never once used the fallback greeting
+    # that exists for exactly this case. Found by reading a generated letter,
+    # not by reading the code.
+    company = real_company(wf.get("company"))
     job_title = wf.get("job_title")
     # NO STANDALONE "Hiring Team" HEADING. It sat directly above a greeting
     # that said "Dear Hiring Team," — the same words twice, three lines

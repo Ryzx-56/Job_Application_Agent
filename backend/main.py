@@ -60,6 +60,7 @@ from utils.pdf_generator import render_cv_pdf, render_cover_letter_pdf
 from utils.docx_generator import generate_cv_docx
 from utils.template_registry import DEFAULT_TEMPLATE_ID, template_supports_photo
 from schemas.manual_cv_request import ManualCVRequest
+from schemas.jd_schema import real_company
 
 # 1. Initialize FastAPI Application Instance
 app = FastAPI(
@@ -812,7 +813,9 @@ def build_success_payload(result_state: dict, request_id: str, reserved_amount: 
         "similar_jobs": result_state.get("similar_jobs", []),
         "fact_check_passed": result_state.get("fact_check_passed", False),
         "job_title": result_state.get("weight_factors", {}).get("job_title", ""),
-        "company": result_state.get("weight_factors", {}).get("company", ""),
+        # Not the "Unknown" placeholder — that would file the CV under a
+        # company of that name in My Resumes.
+        "company": real_company(result_state.get("weight_factors", {}).get("company")),
         "cv_language": result_state.get("cv_language", "en"),
         "generated_cv_pdf": generated_paths["cv_pdf"],
         "generated_cv_docx": generated_paths["cv_docx"],
