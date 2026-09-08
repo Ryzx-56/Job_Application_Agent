@@ -101,6 +101,9 @@ NOTHING IN THE CV MAY BE DROPPED — read this carefully, it is the most common 
   fit it, and do not invent a new top-level field name.
 - Each piece of content goes in EXACTLY ONE place. Never copy the same entry into both a named
   field and "additional_sections" — it would then be printed twice on the finished CV.
+- THE ONE EXEMPTION to "nothing may be dropped": content under the appended heading
+  "ADDITIONAL INFORMATION FROM CANDIDATE" is not CV content and is not yours to preserve
+  here. It is delivered to the next stage by another route. See additional_sections below.
 
 ROUTING THE NAMED FIELDS — what belongs in each:
 - "summary": the candidate's own profile / objective / "about me" / personal statement
@@ -127,8 +130,18 @@ ROUTING THE NAMED FIELDS — what belongs in each:
   the ENTIRE citation line verbatim into "title" and leave the other fields null — never drop
   part of a citation to make it fit.
 
-"additional_sections" — THE CATCH-ALL, use it freely:
-- For any CV section that doesn't clearly match a named field. Examples of what belongs here:
+"additional_sections" — THE CATCH-ALL, use it freely, WITH ONE EXCLUSION:
+- NEVER create an additional_sections entry for the block headed
+  "ADDITIONAL INFORMATION FROM CANDIDATE". That heading is not part of anybody's CV — this
+  pipeline appends it to carry free-text notes the candidate typed into a separate form
+  field, and it is handed to the tailoring stage separately as RAW_ADDITIONAL_INFO so its
+  contents can be merged into the sections they actually belong to.
+  Route what is under it to a NAMED field when it clearly belongs to one — a project
+  described there goes in "projects", a skill in "skills", a link in "personal". If part of
+  it belongs nowhere, leave that part out: it reaches the tailoring stage regardless, and
+  capturing it here as well is what caused rambling notes and a duplicate copy of an
+  already-listed project to print verbatim on finished CVs.
+- For any OTHER CV section that doesn't clearly match a named field. Examples of what belongs here:
   a surgeon's procedure/outcome counts, a pilot's flight hours, a researcher's grants or
   funding, patents, references, memberships, personal details (nationality, date of birth,
   marital status), hobbies, driving licence, military service, media appearances — anything.

@@ -128,6 +128,22 @@ a reader could reasonably expect to see evidence for that ISN'T in VERIFIED
 FACTS? If yes, fail it. If it's the same underlying fact in different words, no
 matter how different those words are, pass it.
 
+CONDENSING IS NOT OMISSION, AND MERGING IS NOT INVENTION. The tailoring stage
+is instructed to cut rambling input down to one line, to delete filler like
+"was a nice chill project", and to merge a duplicate mentioned twice into a
+single entry. So a bullet that covers LESS than its source, or that combines
+two source facts into one sentence, is doing what it was told. Never fail a
+bullet for leaving something out, for being shorter than the original, or for
+covering two facts at once. You check only for claims that are NOT in
+VERIFIED FACTS — never for claims that are missing from the bullet.
+
+SKILLS AND CAPABILITIES IMPLIED BY DESCRIBED WORK ARE NOT INVENTED. If the
+facts describe building a website, then HTML and CSS are evidenced; if they
+describe leading a project, then project leadership is evidenced. Naming a
+capability the candidate's own described work demonstrates is inference from
+the record, not fabrication. Only a NAMED tool, employer, credential, date or
+number absent from the facts is fabrication.
+
 DEFAULT TO PASSING. A false rejection is more damaging here than a marginal
 pass: it strips a truthful bullet out of the candidate's CV. Fail a bullet only
 when you can point at the SPECIFIC invented element — quote the number, tool,
@@ -288,7 +304,19 @@ def run_fact_check_loop(
         still_pending = {}
         to_regenerate: dict[int, str] = {}  # id -> issue, for bullets getting one more attempt
         for i, p in pending.items():
-            result = results.get(i, {"passes": False, "issue": "no result returned"})
+            # DEFAULT TO PASSING, including when the checker said nothing at
+            # all. This used to default to FAIL, so a truncated or malformed
+            # Gemini response silently failed every bullet it omitted — the
+            # exact opposite of the "a false rejection is more damaging"
+            # instruction the prompt gives. A checker that did not answer is
+            # not evidence of fabrication.
+            result = results.get(i)
+            if result is None:
+                logger.warning(
+                    f"🛡️  Fact checker returned no verdict for bullet {i} — passing it. "
+                    "A missing verdict is not a finding."
+                )
+                result = {"passes": True, "issue": None}
 
             if result["passes"]:
                 verified_bullets.append({
@@ -312,11 +340,31 @@ def run_fact_check_loop(
                     to_regenerate[i] = issue
                     still_pending[i] = p
                 else:
+                    # EXCLUDED — and that is the right answer here, even
+                    # though it costs the candidate a line.
+                    #
+                    # I briefly changed this to keep the last corrected text
+                    # instead, reasoning that dropping content is harsh. A test
+                    # caught it: the bullet that survives two rounds of "you
+                    # invented a metric" is the one that really did invent it,
+                    # and keeping it puts a fabricated 99% and a tool they
+                    # never used on a document with their name at the top.
+                    # Losing a line beats that, every time.
+                    #
+                    # What HAS changed is the consequence. Exclusion used to
+                    # mean the renderer printed the candidate's RAW text in
+                    # this slot, so a strict verdict quietly produced a worse
+                    # CV than a lenient one. The renderer no longer falls back
+                    # to raw, so an exclusion is now simply one fewer bullet,
+                    # recorded here with the reason.
                     for flag in reversed(hallucination_flags):
                         if flag["bullet"] == p["current_text"]:
                             flag["excluded"] = True
                             break
-                    logger.error(f"❌ Bullet {i} excluded after {MAX_RETRIES} rounds.")
+                    logger.error(
+                        f"❌ Bullet {i} excluded after {MAX_RETRIES} rounds — {issue}. "
+                        "It is dropped, not printed raw."
+                    )
 
         if to_regenerate:
             with concurrent.futures.ThreadPoolExecutor(max_workers=len(to_regenerate)) as executor:

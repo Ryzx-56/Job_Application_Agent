@@ -39,22 +39,42 @@ STRICT RULES — DO NOT CROSS THESE:
   - You MUST NOT invent percentages, numbers, timeframes, team sizes, or outcomes
   - If the candidate lacks a required skill, DO NOT mention it. It will be flagged in gap analysis.
 
-READ-ONLY FIELDS — PRINTED VERBATIM, NEVER YOURS TO REWRITE:
-  These FACTS_JSON fields are rendered onto the finished CV EXACTLY as they were extracted,
-  and there is no slot for them in the JSON you return:
+FIELD CLASSIFICATION — THREE TIERS. Getting this wrong is how raw notes reach a CV.
+
+  TIER 1 — PROTECTED RECORD. Printed exactly as extracted, no slot in your JSON:
     major_achievements, training_courses, participation, publications,
-    teaching_and_editorial, awards, certifications, education, additional_sections
-  - Do NOT return them. Do NOT produce rewritten versions of them. Nothing you write about
-    them reaches the document.
-  - additional_sections is the CV's own sections that no other field covers — a surgeon's
-    procedure counts, a pilot's flight hours, a researcher's grant totals. It is raw source
-    data under the candidate's own headings, and it carries hard numbers that were checked by
-    nobody but the candidate. NEVER restate, round, reformat, convert, re-derive or summarize
-    any figure from it anywhere in your output. A paraphrased number is a fabricated number.
-  - What these fields ARE for you: evidence. Read them to understand what this candidate has
-    actually done, and let that inform the professional summary, the bullets you emphasize,
-    and which JD keywords you can honestly cover. A skill demonstrated by a publication, a
-    course or a committee role is a real skill and may go in tailored_skills.
+    teaching_and_editorial, awards
+  - Do NOT return them and do NOT rewrite them. These are the candidate's factual record:
+    an award's name, a committee role, a citation. A citation in particular is a lookup key —
+    half-rewriting it produces a reference nobody can find.
+
+  TIER 2 — CORRECT THE SPELLING, NEVER THE SUBSTANCE. Return in "normalized_text":
+    certification names, award names as written, institution names, degree names,
+    training course titles, company names.
+  - People type these in a hurry: "bachelor of computer sciene", "KAU univeristy",
+    "aws certified solutions architect". Fix capitalisation, spelling and spacing so they
+    read professionally.
+  - You may NOT change which credential it is, upgrade it, expand it into something grander,
+    or add one that is not in FACTS_JSON. "AWS Certified Solutions Architect" may become
+    properly capitalised; it may never become "AWS Certified Solutions Architect –
+    Professional" unless the candidate wrote that. Inventing a credential is the single worst
+    thing you can do on a CV.
+  - Return ONLY strings you actually changed. If it was already correct, leave it out.
+
+  TIER 3 — REWRITE PROPERLY. Everything else, including additional_sections.
+  - additional_sections holds the CV's own sections that no named field covers — a surgeon's
+    procedure counts, a pilot's flight hours, a researcher's grant totals. These used to be
+    printed verbatim, which meant a rambling paragraph reached the document unedited.
+    Rewrite the PROSE into clean, professional lines via "tailored_additional_sections".
+  - NUMBERS INSIDE THEM ARE SACRED. Never restate, round, reformat, convert, re-derive or
+    summarize any figure. A paraphrased number is a fabricated number. Carry every figure
+    across character-for-character; rewrite only the language around it.
+  - Keep each section's own heading exactly as written. Do not translate or "improve" it.
+
+  WHAT TIER 1 AND 2 ARE FOR YOU BEYOND THAT: evidence. Read them to understand what this
+  candidate has actually done, and let that inform the professional summary, the bullets you
+  emphasize, and which JD keywords you can honestly cover. A skill demonstrated by a
+  publication, a course or a committee role is a real skill and may go in tailored_skills.
 
 FACTS_JSON.summary — the candidate's own profile paragraph from their CV:
   - Treat it as the primary source for "professional_summary". Cover its substance: the
@@ -122,7 +142,20 @@ KEYWORD COVERAGE — this directly determines the candidate's ATS score, so it m
   - Do NOT force in a keyword the candidate has zero genuine evidence for. That is fabrication and is forbidden.
   - Try to maximize the keywords used from the canditate's real experience, but never add any new skills or claims that aren't already present in FACTS_JSON or RAW_ADDITIONAL_INFO.
 
+LENGTH CONTROL — CONDENSE, DO NOT COPY:
+  Input arrives as whatever the candidate typed: a paragraph of stream of consciousness, three
+  runs of the same thought, a sentence that trails off. A CV line is not that.
+  - A bullet is ONE line: roughly 12-28 words. If the source is a paragraph, extract what
+    matters and drop the rest. Length is not fidelity.
+  - A project description is 2-3 sentences, not the whole story.
+  - Merge duplicates. If the same project, skill or achievement appears twice — including once
+    in a description and once in RAW_ADDITIONAL_INFO — produce ONE entry carrying the best
+    detail from both. Printing both is the defect this rule exists to prevent.
+  - Cut filler outright: "was a nice chill project", "im also hard working", "and stuff",
+    "etc". It carries no information a recruiter can use.
+
 ADDITIONAL INFO PLACEMENT:
+
   RAW_ADDITIONAL_INFO must NOT become its own isolated CV section. Instead:
   - If it adds context that belongs in the overall narrative, weave it into "professional_summary".
   - If it's clearly about a specific project already in FACTS_JSON.projects, fold the relevant detail into that project's "tailored_description" instead.
@@ -134,7 +167,10 @@ SKILLS CLEANUP:
   - DROP entries that are not genuine skills, competencies, or tools.
   - Fix capitalization and light phrasing on entries you keep (e.g. "fixing computers" -> "Computer hardware troubleshooting") — but do not invent a skill that has zero support anywhere in FACTS_JSON.
 
-  MISSING/EMPTY SKILLS — infer from evidence, do not leave it blank:
+  MISSING/EMPTY/IRRELEVANT SKILLS — infer from evidence, do not leave it blank:
+  - The same applies when what they listed is simply not relevant to THIS job. A section full of
+    skills the JD never asks for is as weak as an empty one: keep the genuine ones, and add the
+    JD-relevant skills their own experience and projects demonstrate but they forgot to list.
   - If FACTS_JSON.skills is empty or very thin (fewer than ~3 total entries across all categories),
     you MUST still populate "tailored_skills" by inferring skills that are clearly and specifically
     demonstrated in FACTS_JSON.experience, FACTS_JSON.projects, or RAW_ADDITIONAL_INFO — even though
@@ -192,9 +228,26 @@ For each entry in FACTS_JSON.experience (if any), return in "tailored_experience
   - "company": the "company" field EXACTLY as given in FACTS_JSON for that entry (used to match it back up — do not alter this one, including any " — venue" suffix it may have)
   - "title": the job title, localized/translated per the OUTPUT LANGUAGE instruction below. In English output this can be the same title cleaned up for capitalization; in Arabic output this MUST be an actual Arabic translation of the title, not the English title left as-is.
 
+INSTRUCTIONS THE CANDIDATE TYPED INTO A CONTENT FIELD:
+  People write notes to you inside their own CV fields — "make all this sound cooler",
+  "fix my grammar", "add more keywords", "shorten this". These are directions addressed to
+  you. They are NOT achievements and must never appear on the finished document.
+  - ACT ON THEM. Apply the instruction to the surrounding bullets in that role.
+  - DECLARE THEM. Every such bullet goes in "declined_bullets" with a short reason. Do not
+    put it in "bullets", and do not invent a rewritten version of it.
+  - This is the ONLY way to drop a bullet. Anything you leave out of BOTH lists is treated
+    as a generation failure and retried, so silence is never the right answer.
+
+EVERY BULLET MUST BE ACCOUNTED FOR. For each bullet in FACTS_JSON.experience[].bullets,
+return it in exactly one of "bullets" (rewritten) or "declined_bullets" (an instruction, or
+empty/meaningless filler). Never both, never neither.
+
 Return ONLY a JSON object in this exact format (no markdown):
 {{
   "professional_summary": "3-5 sentence summary here, confident and specific, not generic filler",
+  "declined_bullets": [
+    {{"original": "the exact original text", "reason": "instruction to the model, not CV content"}}
+  ],
   "bullets": [
     {{
       "original": "original bullet text here",
@@ -211,6 +264,15 @@ Return ONLY a JSON object in this exact format (no markdown):
     }}
   ],
   "tailored_volunteer_work": ["Polished sentence for volunteer entry 1"],
+  "normalized_text": [
+    {{"original": "bachelor of computer sciene", "normalized": "Bachelor of Computer Science"}}
+  ],
+  "tailored_additional_sections": [
+    {{
+      "section_title": "the section's own heading, copied exactly",
+      "entries": ["rewritten line, every figure carried across unchanged"]
+    }}
+  ],
   "tailored_experience_titles": [
     {{
       "company": "Company field exactly as in facts_json",
@@ -604,6 +666,17 @@ def run_tailoring_engine(state: AgentState) -> dict:
                     for b in data.get("bullets", [])
                     if isinstance(b, dict)
                 ],
+                "normalized_text": [
+                    n for n in (data.get("normalized_text") or [])
+                    if isinstance(n, dict) and n.get("original") and n.get("normalized")
+                ],
+                "tailored_additional_sections": [
+                    a for a in (data.get("tailored_additional_sections") or [])
+                    if isinstance(a, dict) and a.get("section_title")
+                ],
+                "declined_bullets": [
+                    d for d in (data.get("declined_bullets") or []) if isinstance(d, dict)
+                ],
                 "tailored_projects": data.get("tailored_projects", []),
                 "tailored_volunteer_work": data.get("tailored_volunteer_work", []),
                 "tailored_experience_titles": data.get("tailored_experience_titles", []),
@@ -700,6 +773,15 @@ def run_tailoring_engine(state: AgentState) -> dict:
 
             return {
                 "tailored_bullets": bullets,
+                # Bullets the model deliberately refused, with its reason.
+                # cv_context uses this to tell an intended drop apart from a
+                # broken join — see the note above resolve_bullet.
+                "declined_bullets": core_data.get("declined_bullets", []),
+                # Spelling/capitalisation corrections for credential-shaped
+                # strings (Tier 2) and rewritten prose for the CV's own
+                # unmatched sections (Tier 3).
+                "normalized_text": core_data.get("normalized_text", []),
+                "tailored_additional_sections": core_data.get("tailored_additional_sections", []),
                 "tailored_summary": validated.professional_summary,
                 "tailored_projects": tailored_projects,
                 "tailored_volunteer_work": tailored_volunteer_work,

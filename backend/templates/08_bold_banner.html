@@ -5,6 +5,26 @@
 <style>
   :root { --cv-scale: {{ cv_scale|default(1) }}; }
   @page { size: A4; margin: 0; }
+
+  /* ── PAGINATION ─────────────────────────────────────────────────────
+     No page limit is set anywhere: length follows content. These rules
+     govern only WHERE a break may fall.
+       orphans/widows — never leave one line of a paragraph stranded at the
+         bottom of a page or start a page with a single trailing line.
+       break-after on headings — a section title must not be the last thing
+         on a page with its content overleaf.
+       break-inside on entries — a job, project or qualification is one
+         unit and must not be split across a break.
+     page-break-* is the CSS2 spelling WeasyPrint honours; the unprefixed
+     properties are the CSS3 ones. Both are given so this keeps working if
+     the renderer changes. */
+  p, li, .entry-desc, .summary { orphans: 3; widows: 3; }
+  .section-title, .main-title, .side-title,
+  h1, h2, h3 { break-after: avoid; page-break-after: avoid;
+               break-inside: avoid; page-break-inside: avoid; }
+  .entry, .entry-header, .main-section > li, .side-section > li {
+    break-inside: avoid; page-break-inside: avoid; }
+
   * { margin: 0; padding: 0; box-sizing: border-box; }
   body { font-family: "Segoe UI", Arial, sans-serif; font-size: 10.5pt; color: #222; }
   .banner { background: #1c1c1c; color: #fff; padding: 30px 50px; }

@@ -10,6 +10,9 @@ future bug fix to "how do we match a tailored bullet back to its section"
 only has to happen once, and PDF/DOCX can't drift out of sync again.
 """
 
+import re
+from difflib import SequenceMatcher
+
 from loguru import logger
 
 from markupsafe import Markup, escape
@@ -158,6 +161,69 @@ _LABELS_AR = {
     "additional": "معلومات إضافية",
     "spoken_languages": "اللغات",
 }
+
+
+# ─── MATCHING AGENT 3'S OUTPUT BACK TO THE RAW BULLETS ──────────────────────
+#
+# This join used to be exact string equality with a silent fallback to the
+# candidate's own raw text. Three separate things routinely break that key:
+#
+#   1. Agent 3 DECLINES a bullet. When a candidate types an instruction into a
+#      field — "make all this sound cooler broski" — the model correctly
+#      refuses to treat it as content and returns nothing for it. The old join
+#      then printed the instruction on the finished CV. The model doing the
+#      right thing was what put it there.
+#   2. The fact checker EXCLUDES a bullet after MAX_RETRIES. It never reaches
+#      tailored_bullets, so the key is missing, so the raw text printed —
+#      meaning a strict fact check degraded the CV to unprocessed notes.
+#   3. The model echoes the key back with a corrected typo or normalised
+#      whitespace, which is very likely on exactly the messy input that needs
+#      rewriting most.
+#
+# All three produced the same visible defect and none of them were logged.
+# The fix is two-part: match tolerantly, and NEVER fall back to raw. A bullet
+# with no tailored version is omitted and recorded, because printing the
+# candidate's unedited notes is worse than printing one bullet fewer, and a
+# silent miss is worse than either.
+
+_WS_RE = re.compile(r"\s+")
+_PUNCT_EDGE_RE = re.compile(r"^[\s\-–—•*.,;:]+|[\s\-–—•*.,;:]+$")
+
+# Below this ratio two strings are different bullets, not one bullet with a
+# typo fixed. Chosen high on purpose: a wrong match attaches one bullet's
+# rewrite to another bullet's slot, which is worse than a recorded miss.
+_FUZZY_MIN_RATIO = 0.82
+
+
+def _match_key(text: str) -> str:
+    """Casefolded, whitespace-collapsed, edge-punctuation-stripped."""
+    return _PUNCT_EDGE_RE.sub("", _WS_RE.sub(" ", (text or "").strip())).casefold()
+
+
+def resolve_bullet(raw: str, exact: dict, normalized: dict) -> tuple[str | None, str]:
+    """
+    The tailored replacement for one raw bullet, and how it was found.
+
+    Returns (text, "exact" | "normalized" | "fuzzy") or (None, "miss").
+    """
+    key = (raw or "").strip()
+    if key in exact:
+        return exact[key], "exact"
+
+    norm = _match_key(key)
+    if norm and norm in normalized:
+        return normalized[norm], "normalized"
+
+    if norm:
+        best, best_ratio = None, 0.0
+        for candidate_key, value in normalized.items():
+            ratio = SequenceMatcher(None, norm, candidate_key).ratio()
+            if ratio > best_ratio:
+                best, best_ratio = value, ratio
+        if best is not None and best_ratio >= _FUZZY_MIN_RATIO:
+            return best, "fuzzy"
+
+    return None, "miss"
 
 
 def text_direction(strings, default: str) -> str:
@@ -401,6 +467,32 @@ def _contact_lines(personal: dict) -> list[Markup]:
     return [sep.join(line) for line in (line1, line2, line3) if line]
 
 
+def _normalizer(state) -> "callable":
+    """
+    Applies Agent 3's Tier 2 spelling/capitalisation corrections.
+
+    Credential-shaped strings — certification names, institutions, degrees,
+    company names — are the candidate's factual record, so the model may not
+    REPLACE them, only correct how they are spelled. It returns only the ones
+    it actually changed, and this maps them back onto the raw values. Matched
+    tolerantly for the same reason bullets are: the model tends to tidy the
+    key it echoes, which is precisely the input that needed correcting.
+    """
+    pairs = {
+        _match_key(n.get("original") or ""): _s(n.get("normalized")).strip()
+        for n in state.get("normalized_text", []) or []
+        if n.get("original") and n.get("normalized")
+    }
+    if not pairs:
+        return lambda value: value
+
+    def apply(value):
+        key = _match_key(_s(value))
+        return pairs.get(key, value) if key else value
+
+    return apply
+
+
 def build_cv_context(state: dict, template_id: str | None = None) -> dict:
     facts = state.get("facts_json", {}) or {}
     personal = facts.get("personal", {}) or {}
@@ -422,8 +514,14 @@ def build_cv_context(state: dict, template_id: str | None = None) -> dict:
     # real guarantee is that they simply aren't passed in.
     glossary = (state.get("arabic_glossary") or {}) if is_arabic else {}
 
+    # TIER 2 runs FIRST, then the Arabic glossary. Order matters: the
+    # glossary substitutes on the text it is given, and correcting
+    # "univeristy" -> "University" before it looks is what lets it match.
+    normalize = _normalizer(state)
+
     def ar(value) -> str:
-        return apply_glossary(_s(value), glossary) if glossary else _s(value)
+        corrected = normalize(_s(value))
+        return apply_glossary(corrected, glossary) if glossary else corrected
 
     def ar_list(values) -> list:
         return [ar(v) for v in (values or [])]
@@ -461,6 +559,20 @@ def build_cv_context(state: dict, template_id: str | None = None) -> dict:
         for b in state.get("tailored_bullets", []) or []
         if b.get("original") and b.get("tailored")
     }
+    # Second index for the tolerant passes — see resolve_bullet.
+    bullet_lookup_normalized = {
+        _match_key(k): v for k, v in bullet_lookup.items() if _match_key(k)
+    }
+    # Bullets Agent 3 deliberately refused, with its reason. These are NOT
+    # misses: an instruction the candidate typed into a description field is
+    # correctly not CV content, and dropping it is the intended outcome. They
+    # are tracked separately so a real join failure stays visible.
+    declined = {
+        _match_key(d.get("original") or ""): (d.get("reason") or "no reason given")
+        for d in state.get("declined_bullets", []) or []
+        if d.get("original")
+    }
+    bullet_stats = {"exact": 0, "normalized": 0, "fuzzy": 0, "declined": 0, "miss": 0}
     project_lookup = {
         (p.get("name") or "").strip(): p
         for p in state.get("tailored_projects", []) or []
@@ -477,6 +589,17 @@ def build_cv_context(state: dict, template_id: str | None = None) -> dict:
         for t in state.get("tailored_experience_titles", []) or []
         if t.get("company") and t.get("title")
     }
+    # One line per generation, so a degraded CV is visible in the logs
+    # instead of only in the finished document. A non-zero "miss" is a bug:
+    # the model returned bullets that could not be matched back at all.
+    if any(bullet_stats.values()):
+        level = logger.error if bullet_stats["miss"] else logger.info
+        level(
+            "🔗 Bullet match: "
+            + ", ".join(f"{k}={v}" for k, v in bullet_stats.items() if v)
+            + (" — MISSES ARE A GENERATION DEFECT" if bullet_stats["miss"] else "")
+        )
+
     raw_volunteer_work = facts.get("volunteer_work", []) or []
     tailored_volunteer_work = state.get("tailored_volunteer_work", []) or []
     display_volunteer = (
@@ -502,8 +625,27 @@ def build_cv_context(state: dict, template_id: str | None = None) -> dict:
         for raw in (exp.get("bullets", []) or []):
             if not raw or not raw.strip():
                 continue
-            tailored = bullet_lookup.get(raw.strip())
-            resolved_bullets.append(tailored if tailored is not None else ar(raw))
+
+            norm_raw = _match_key(raw)
+            if norm_raw in declined:
+                bullet_stats["declined"] += 1
+                logger.info(
+                    f"🚮 Bullet deliberately not printed ({declined[norm_raw]}): {raw.strip()[:80]!r}"
+                )
+                continue
+
+            tailored, how = resolve_bullet(raw, bullet_lookup, bullet_lookup_normalized)
+            bullet_stats[how] += 1
+            if tailored is None:
+                # NEVER the candidate's raw text. A bullet with no rewrite is
+                # a generation defect; printing the unedited source hides it
+                # behind something that looks like output.
+                logger.error(
+                    "🚨 No tailored version for a bullet and it was not declined — "
+                    f"omitting rather than printing raw: {raw.strip()[:100]!r}"
+                )
+                continue
+            resolved_bullets.append(tailored)
 
         experience.append({
             "title": title_lookup.get((exp.get("company") or "").strip()) or ar(exp.get("title")),
@@ -627,9 +769,34 @@ def build_cv_context(state: dict, template_id: str | None = None) -> dict:
     # above. Sections whose own heading didn't survive extraction are kept and
     # printed under the generic label rather than dropped: losing the heading
     # is a formatting problem, losing the content is a data loss.
+    # TIER 3: prefer Agent 3's rewritten prose over the raw extraction. These
+    # sections used to print exactly as typed, which is how a rambling
+    # paragraph reached a finished CV. Matched on the section's own heading;
+    # any section the model did not return still renders (nothing the
+    # candidate wrote is silently lost) but is logged, because an unrewritten
+    # section is a quality defect even when it is legible.
+    tailored_sections = {
+        _match_key(a.get("section_title") or ""): [
+            _s(e) for e in (a.get("entries") or []) if _s(e).strip()
+        ]
+        for a in state.get("tailored_additional_sections", []) or []
+        if a.get("section_title")
+    }
+
     additional_sections = []
     for section in (facts.get("additional_sections", []) or []):
-        entries = [_s(entry) for entry in (section.get("entries") or []) if _s(entry).strip()]
+        raw_entries = [_s(entry) for entry in (section.get("entries") or []) if _s(entry).strip()]
+        rewritten = tailored_sections.get(_match_key(section.get("section_title") or ""))
+        if rewritten:
+            entries = rewritten
+        else:
+            entries = raw_entries
+            if raw_entries:
+                logger.warning(
+                    "⚠️ Additional section "
+                    f"{_s(section.get('section_title'))[:50]!r} was not rewritten by Agent 3 — "
+                    "printing the extracted text."
+                )
         if not entries:
             continue
         title = _s(section.get("section_title")).strip()
@@ -698,6 +865,9 @@ def build_cv_context(state: dict, template_id: str | None = None) -> dict:
         "photo": resolve_candidate_photo(state, template_id),
         "tailored_summary": state.get("tailored_summary") or ar(facts.get("summary")),
         "experience": experience,
+        # Read by the orchestrator to decide whether the generation is
+        # degraded, and folded into cv_generation_events.
+        "bullet_match_stats": bullet_stats,
         "projects": projects,
         "skills": tailored_skills,
         "education": education,

@@ -128,6 +128,17 @@ class AgentState(TypedDict):
     weight_factors:          dict
 
     # ── AGENT 3 OUTPUT (Gemini — temporary; Claude later) ───
+    # Bullets Agent 3 deliberately refused to treat as CV content — an
+    # instruction the candidate typed into a description field, or empty
+    # filler — each with the model's reason. Distinct from a bullet that is
+    # simply missing, which is a join failure and gets retried.
+    declined_bullets:          list
+    # Tier 2 corrections: {"original", "normalized"} for credential-shaped
+    # strings the candidate mistyped. Identity preserved, spelling fixed.
+    normalized_text:           list
+    # Tier 3: the CV's own unmatched sections, rewritten. Figures inside are
+    # carried across unchanged — see the classification block in Agent 3.
+    tailored_additional_sections: list
     tailored_bullets:        List[dict]
     tailored_summary:        str
     # Free-text sections (project descriptions, volunteer work,
