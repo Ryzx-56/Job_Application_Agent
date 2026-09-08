@@ -22,10 +22,26 @@
 # it to what Moyasar says was actually paid. A client that sends an amount is
 # a client that can send `1`.
 #
-# CONSOLIDATION IS NOT FINISHED — §6 of the billing brief completes it.
-# admin_stats.py and linkedin.py still hold their own copies. They agree with
-# this table today (verified figure by figure when this file was written), and
-# §6 is where they start importing from it instead.
+# WHO READS THIS TABLE. Every backend price is derived from it — there is no
+# second copy left to disagree with it:
+#   · core/payments.py     what a payment is verified against before credits
+#                          are granted, and what /payments/catalog serves
+#   · core/billing.py      what a renewal charges
+#   · core/linkedin.py     PRICING["premium"], read through from the catalog
+#   · core/admin_stats.py  TIER_PRICING / PACK_PRICING / LINKEDIN_PRICING are
+#                          built from CATALOG at import; only the display
+#                          labels are local to that module
+#
+# THE ONE MIRROR THAT REMAINS is frontend/src/lib/pricing.ts, and it cannot be
+# removed: the pricing page is statically rendered, and making it fetch these
+# figures would put a spinner where the price goes every time Render's free
+# tier has spun down. backend/tests/test_pricing_parity.py reads that file as
+# text and fails if any number in it drifts from this table, so the mirror is
+# checked by the test suite rather than by a customer.
+#
+# ⚠️ CHANGING A PRICE: edit the CATALOG entry below, then run
+# `pytest backend/tests/test_pricing_parity.py`. It will name the exact line
+# of pricing.ts to change if the site would otherwise quote the old figure.
 from dataclasses import dataclass
 from decimal import Decimal
 from typing import Optional
@@ -40,6 +56,16 @@ TYPE_SUBSCRIPTION_RENEWAL = "subscription_renewal"
 TYPE_ADDON = "addon"
 
 CURRENCY = "SAR"
+
+# The dollar reference rate, and ONLY a reference: SAR is the charged currency
+# everywhere, nothing here is a currency selector, and no USD figure is ever
+# an amount sent to Moyasar. SAR has been pegged at 3.75/USD since 1986, so
+# this is a constant rather than a rate to fetch.
+#
+# It lives here rather than in admin_stats.py because the admin dashboard and
+# frontend/src/lib/pricing.ts both convert with it, and two surfaces dividing
+# by different numbers is how a dashboard ends up disagreeing with the page.
+SAR_PER_USD = 3.75
 
 
 @dataclass(frozen=True)
@@ -57,8 +83,10 @@ class Product:
     credits: Optional[int] = None
     # Set for plans only: the profiles.tier this subscribes the buyer to.
     tier: Optional[str] = None
-    # Set for packs only: the key used by frontend PACKS and by
-    # admin_stats.PACK_PRICING, so the three can be cross-checked in §6.
+    # Set for packs only: the key the rest of the product calls this pack
+    # ("starter"), as opposed to the reference the ledger prices by
+    # ("starter_pack"). admin_stats.py keys its table by this, the frontend
+    # PACKS object keys by it, and payments.reference maps back to it.
     pack_slug: Optional[str] = None
 
     @property

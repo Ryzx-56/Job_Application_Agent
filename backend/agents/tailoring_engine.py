@@ -59,6 +59,14 @@ FIELD CLASSIFICATION — THREE TIERS. Getting this wrong is how raw notes reach 
     properly capitalised; it may never become "AWS Certified Solutions Architect –
     Professional" unless the candidate wrote that. Inventing a credential is the single worst
     thing you can do on a CV.
+  - COMPANY NAMES GET THE MOST CAUTION OF ALL. Fix casing that is plainly just careless
+    typing — "team lab inc" -> "Team Lab Inc". But a great many real companies are
+    deliberately styled: PwC, eBay, openai, iOS, danah boyd, ASOS. Restyling one of those is
+    a visible error on a document being sent TO that company, and it is worse than leaving a
+    lowercase name alone. If the name carries any internal capitalisation, or you recognise
+    it as a brand whose styling is intentional, or you are simply unsure — LEAVE IT EXACTLY
+    AS WRITTEN. Only correct a company name when it is uniformly miscased AND you have no
+    reason to think that casing is deliberate.
   - Return ONLY strings you actually changed. If it was already correct, leave it out.
 
   TIER 3 — REWRITE PROPERLY. Everything else, including additional_sections.

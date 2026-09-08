@@ -20,21 +20,21 @@ from core.entitlements import ADDON_CAPS
 
 router = APIRouter()
 
-# Fixed peg. SAR has been pegged at 3.75/USD since 1986, so this is a
-# constant rather than a rate to fetch. Kept here (not in the frontend) so
-# every surface converts identically and a display tweak can never disagree
-# with what the ledger says.
-USD_TO_SAR = 3.75
+# Fixed peg, read from the price list so the dashboard and the pricing page
+# divide by the same number. Re-exported under this name because two API
+# responses below carry it as `usd_to_sar`.
+USD_TO_SAR = pricing_catalog.SAR_PER_USD
 
 # ─── PRICING ────────────────────────────────────────────────────────────────
-# Source of truth for every revenue figure the admin pages show. Kept
-# server-side so the maths happens once rather than being reimplemented per
-# page, and denominated in SAR because SAR is what customers are actually
-# charged. USD is derived for display only, at the peg above.
+# EVERY FIGURE BELOW IS DERIVED FROM core/pricing.py. Nothing in this module
+# restates a price or an allowance, because this module is a REPORT ON money
+# that core/pricing.py CHARGES — and a report that keeps its own copy of the
+# numbers eventually reports a price the product does not charge. That is not
+# hypothetical: this table used to hold literals, and the panel spent a while
+# pricing subscribers at a founding-era rate that had already been removed.
 #
-# Values are from pricing reference v6 §3 and §6. They must stay in step with
-# the `sar` fields in frontend/src/lib/language.tsx, which is what a customer
-# sees.
+# Denominated in SAR because SAR is what customers are charged; USD is derived
+# for display only, at the peg above.
 #
 # THERE IS ONE PRICE PER TIER. Nobody is grandfathered onto a lower one: the
 # founding offer is a badge and a 50-seat cap with no discount attached (§3a),
@@ -47,21 +47,47 @@ USD_TO_SAR = 3.75
 # most expensive generations: credits × COST_PER_CREDIT_SAR. It's what makes
 # Free a NEGATIVE line, since every free user is an acquisition cost rather
 # than income. Derived, not hardcoded per tier, so the two can never disagree.
+#
+# COST_PER_CREDIT_SAR is genuinely local: it is an INPUT cost (what a
+# generation costs us to serve), not a price anyone is charged, so it has no
+# entry in the catalogue and nothing else reads it.
 COST_PER_CREDIT_SAR = 0.75  # $0.20 per credit at the 3.75 peg (reference §1, §7)
 
+# Display labels only. These stay local on purpose: the catalogue's label_en is
+# the description that goes on the Moyasar form and the buyer's card statement
+# ("Starter pack — 5 credits"), which is the wrong string for a dashboard table
+# column. A label drifting is a cosmetic bug; a number drifting is a wrong
+# revenue figure, and only the numbers are derived.
+_TIER_LABELS = {"free": "Free", "pro": "Pro", "elite": "Elite"}
+_PACK_LABELS = {"starter": "Starter", "best-value": "Best Value", "power": "Power"}
+
+# Free is not in CATALOG and must not be: it is not purchasable and must never
+# reach Moyasar (see core/pricing.py). Its allowance still comes from there.
 TIER_PRICING = {
-    "free":  {"label": "Free",  "price_sar": 0.00,  "credits": 3},
-    # ONE PRO PRICE. There is no founding price any more: the founding offer
-    # is a badge and a 50-seat cap, with no discount attached, so there is no
-    # second figure to grandfather and no `founding_price_sar` here.
-    "pro":   {"label": "Pro",   "price_sar": 29.00, "credits": 24},
-    "elite": {"label": "Elite", "price_sar": 99.00, "credits": 80},
+    "free": {
+        "label": _TIER_LABELS["free"],
+        "price_sar": 0.00,
+        "credits": pricing_catalog.FREE_TIER_CREDITS,
+    },
+    **{
+        product.tier: {
+            "label": _TIER_LABELS.get(product.tier, str(product.tier).title()),
+            "price_sar": float(product.amount_sar),
+            "credits": product.credits,
+        }
+        for product in pricing_catalog.CATALOG.values()
+        if product.kind == "plan"
+    },
 }
 
 PACK_PRICING = {
-    "starter":    {"label": "Starter",    "price_sar": 9.00,  "credits": 5},
-    "best-value": {"label": "Best Value", "price_sar": 22.00, "credits": 15},
-    "power":      {"label": "Power",      "price_sar": 38.00, "credits": 30},
+    product.pack_slug: {
+        "label": _PACK_LABELS.get(product.pack_slug, str(product.pack_slug).title()),
+        "price_sar": float(product.amount_sar),
+        "credits": product.credits,
+    }
+    for product in pricing_catalog.CATALOG.values()
+    if product.kind == "pack"
 }
 
 # ADD-ONS BUNDLED INTO A SUBSCRIPTION. Neither is sold separately, so neither
@@ -99,8 +125,20 @@ LINKEDIN_PRICING = {
     # _linkedin_revenue(), which is a measurement of what buyers actually paid,
     # so legacy rows keep reporting their real historical price. None is
     # correct here and makes a future accidental read fail loudly.
-    "normal":  {"label": "Essential", "price_sar": None,   "worst_case_cost_sar": 0.15},
-    "premium": {"label": "Premium",   "price_sar": 200.00, "worst_case_cost_sar": None},
+    "normal": {
+        "label": "Essential",
+        "price_sar": None,
+        "worst_case_cost_sar": 0.15,
+    },
+    "premium": {
+        "label": "Premium",
+        # Derived, like every other price here. Nothing reads it today —
+        # premium revenue is summed from what buyers actually paid — but a
+        # stale literal sitting next to live figures is how the next reader
+        # ends up quoting it.
+        "price_sar": float(pricing_catalog.CATALOG["linkedin_premium"].amount_sar),
+        "worst_case_cost_sar": None,
+    },
 }
 
 

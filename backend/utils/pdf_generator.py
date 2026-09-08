@@ -546,18 +546,43 @@ def render_cover_letter_pdf(state: dict, output_path: str) -> str:
     # The Arabic is not a translation of the English line. "السادة / X
     # المحترمين" is the ordinary opening of a formal Saudi business letter,
     # which is what an Arabic-speaking applicant would actually write.
+    # "Dear Hiring Team" is banned outright, and so is any greeting that
+    # merely repeats a heading printed above it. Where the employer is known
+    # the letter says their name; where it genuinely is not, it uses the
+    # standard formal opening for an unknown recipient rather than inventing
+    # a category to address.
+    #
+    # The Arabic is not a translation of the English. "السادة / X المحترمين"
+    # is the ordinary opening of a formal Saudi business letter, and
+    # "إلى من يهمه الأمر" is the established Arabic for an unknown recipient —
+    # both are what an Arabic-speaking applicant would actually write.
     if is_arabic:
         dear_markup = body(
-            f"السادة / {company} المحترمين،" if company else "سعادة مسؤول التوظيف المحترم،"
+            f"السادة / {company} المحترمين،" if company else "إلى من يهمه الأمر،"
         )
     elif company:
-        dear_markup = _mixed_script(f"Dear {company} hiring team,")
+        # "Recruitment Team", not "Hiring Team". The banned phrase is banned
+        # even with a company name bolted onto the front of it — that reads
+        # as the machine formula with a mail-merge field, which is the thing
+        # being avoided. "Recruitment Team" is equally standard business
+        # English and carries none of that.
+        dear_markup = _mixed_script(f"Dear {company} Recruitment Team,")
     else:
-        dear_markup = _xml_escape("Dear Hiring Manager,")
+        dear_markup = _xml_escape("To Whom It May Concern,")
     story.append(Paragraph(dear_markup, styles['CL_Body']))
     story.append(Spacer(1, 10))
 
     letter_text = state.get("cover_letter_text") or ""
+    # FAIL LOUDLY RATHER THAN SHIP A SHELL. With no body text this renders a
+    # perfectly formatted letter containing a greeting, "Sincerely," and a
+    # name — a document that looks finished and says nothing. That is the
+    # same shape of defect as returning success when the parser failed:
+    # nothing downstream can tell it went wrong.
+    if not [p for p in letter_text.split("\n") if p.strip()]:
+        raise ValueError(
+            "Cover letter has no body text — refusing to render a letter with only a "
+            "greeting and a sign-off."
+        )
     for para in [p.strip() for p in letter_text.split('\n') if p.strip()]:
         story.append(Paragraph(body(para), styles['CL_Body']))
         story.append(Spacer(1, 12))
