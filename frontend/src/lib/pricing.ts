@@ -17,22 +17,34 @@
    with itself, so nothing below may be re-typed into a dictionary string:
    interpolate it.
 
-   These mirror the backend, which is what actually enforces them:
+   ⚠️ THIS FILE IS A MIRROR, NOT THE SOURCE. backend/core/pricing.py is the
+   price list: it is what a card is actually charged, and every other backend
+   surface (the admin dashboard's revenue tables, the LinkedIn add-on) derives
+   from it rather than keeping a copy. This file exists only because the
+   pricing page is statically rendered — fetching the catalogue at runtime
+   would put a spinner where the price goes every time Render's free tier has
+   spun down — so the numbers are repeated here and CHECKED instead:
+
+     · TIERS.sar / PACKS  -> CATALOG        in backend/core/pricing.py
+     · LINKEDIN_PREMIUM   -> CATALOG        in backend/core/pricing.py
+     · SAR_PER_USD        -> SAR_PER_USD    in backend/core/pricing.py
      · TIERS.credits      -> TIER_CREDITS   in backend/core/credits.py
      · CREDIT_COST        -> CREDIT_COST    in backend/core/credits.py
      · ADDON_CAPS         -> ADDON_CAPS     in backend/core/entitlements.py
-     · LINKEDIN_PREMIUM   -> PRICING        in backend/core/linkedin.py
-     · TIERS.sar / PACKS  -> TIER_PRICING / PACK_PRICING in
-                             backend/core/admin_stats.py
-   Subscription and pack prices have no other backend home: nothing charges
-   for them yet (no payment gateway is configured), so admin_stats.py is the
-   only other copy and these two must be changed together.
+
+   backend/tests/test_pricing_parity.py reads this file as text and fails if
+   ANY of those drift, naming both figures in the message.
+
+   ⚠️ TO CHANGE A PRICE: edit backend/core/pricing.py first, then the matching
+   number here, then run `pytest backend/tests/test_pricing_parity.py`. Doing
+   it in one place only is caught by the test rather than by a customer who
+   was quoted one figure and charged another.
 ======================================================================== */
 
 /** SAR has been pegged at 3.75 to the dollar since 1986, so this is a
  *  constant rather than a rate to fetch. Same value the backend uses in
- *  core/admin_stats.py, deliberately: two surfaces converting differently is
- *  how a page ends up disagreeing with the ledger. */
+ *  core/pricing.py, deliberately: two surfaces converting differently is how
+ *  a page ends up disagreeing with the ledger. */
 export const SAR_PER_USD = 3.75;
 
 /* ── THE NUMBERS ─────────────────────────────────────────────────────────

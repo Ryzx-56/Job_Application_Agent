@@ -474,9 +474,9 @@ export const content = {
           name: "Pro",
           slug: "pro",
           // ONE PRICE FOR EVERY PRO SUBSCRIBER, founding or not. There is no
-          // founding discount and no prior price: 29 SAR has never been
-          // anything else, so nothing here may present it as reduced. See
-          // the note on `originalSar` in the Free plan above.
+          // founding discount and no prior price — the Pro price has never
+          // been anything else, so nothing here may present it as reduced.
+          // See the note on `originalSar` in the Free plan above.
           sar: TIERS.pro.sar,
           period: "/ month",
           description: "For active job seekers who want serious volume, every time.",
@@ -1945,7 +1945,7 @@ export const content = {
           name: "برو",
           slug: "pro",
           // سعر واحد لكل مشتركي برو، مؤسسين أو غير مؤسسين. لا خصم تأسيس ولا
-          // سعر سابق: 29 ريالًا لم يكن يومًا رقمًا آخر.
+          // سعر سابق: سعر برو لم يكن يومًا رقمًا آخر.
           sar: TIERS.pro.sar,
           period: "شهريًا",
           description: "لمن يبحث عن عمل بنشاط ويريد كمية أكبر من الطلبات، في كل مرة.",
