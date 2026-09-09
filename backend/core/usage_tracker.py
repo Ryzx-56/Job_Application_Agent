@@ -21,7 +21,7 @@
 # supplies its own — both are read together in from_pipeline_result below.
 #
 # Also note: total_calls/total_input_tokens/total_output_tokens still only
-# cover tailoring_engine.py + fact_checker.py's Claude calls — jd_analyzer,
+# cover tailoring_engine.py + fact_checker.py's writing-model calls — jd_analyzer,
 # document_generator, and match_scorer aren't instrumented yet. Same
 # pattern (on_usage callback -> accumulate -> return as a cumulative state
 # field) would extend to them if you want full-pipeline token totals later.
@@ -79,7 +79,7 @@ class UsageEvent:
         hit_max_retries keys that tailoring_engine.py now returns.
 
         NOTE: total_calls/total_input_tokens/total_output_tokens cover both
-        tailoring_engine.py's Claude calls (main pass + Arabic purity pass)
+        tailoring_engine.py's writing-model calls (main pass + Arabic purity pass)
         AND fact_checker.py's regeneration calls — jd_analyzer,
         document_generator, and match_scorer still aren't instrumented.
         """
@@ -102,7 +102,7 @@ class UsageEvent:
     # --- call these from the points in the pipeline noted below ---
 
     def record_call(self, input_tokens: int | None = None, output_tokens: int | None = None):
-        """Call this every time generate_claude_text is invoked, from any
+        """Call this every time generate_writing_text is invoked, from any
         agent (tailoring_engine's main pass, the purity pass, each
         regeneration call). If your llm wrapper doesn't return usage yet,
         just call with no args to at least keep total_calls accurate."""

@@ -513,12 +513,16 @@ def render_cover_letter_pdf(state: dict, output_path: str) -> str:
     story.extend(_cover_letter_header(sender_block, photo_bytes, is_arabic))
     story.append(Spacer(1, 15))
 
-    today_str = date.today().strftime("%B %d, %Y")
-    if is_arabic:
-        today_str = _to_eastern_arabic_numerals(_translate_date_terms(today_str))
-    story.append(Paragraph(body(today_str) if is_arabic else _xml_escape(today_str), styles['CL_Body']))
-    story.append(Spacer(1, 15))
-
+    # RECIPIENT BEFORE DATE. The letter used to read: name, city, email, DATE,
+    # then finally the company — so the first thing after the sender's own
+    # letterhead was a date, and the employer appeared fourth. A letter opens
+    # by addressing its recipient and then states its subject; the date is
+    # supporting matter and sits between the two.
+    #
+    # (The sender letterhead stays at the top: it is the letterhead, and it
+    # carries the photo on the portrait templates. Moving that below the body
+    # is a layout change, not an ordering one.)
+    #
     # "Unknown" IS NOT A COMPANY. jd_analyzer is instructed to write the
     # literal string "Unknown" when the posting names no employer (see its
     # prompt), so a plain truthiness check treats it as a real name — which
@@ -538,6 +542,13 @@ def render_cover_letter_pdf(state: dict, output_path: str) -> str:
         story.append(Paragraph(
             body(company) if is_arabic else _mixed_script(company), styles['CL_Body']))
     story.append(Spacer(1, 15))
+
+    today_str = date.today().strftime("%B %d, %Y")
+    if is_arabic:
+        today_str = _to_eastern_arabic_numerals(_translate_date_terms(today_str))
+    story.append(Paragraph(body(today_str) if is_arabic else _xml_escape(today_str), styles['CL_Body']))
+    story.append(Spacer(1, 15))
+
     if job_title:
         if is_arabic:
             re_markup = body(f"الموضوع: التقديم على وظيفة {job_title}")

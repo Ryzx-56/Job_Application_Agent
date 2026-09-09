@@ -194,7 +194,12 @@ export function LinkedInResults({
                 {item.url}
               </p>
               {item.instruction && (
-                <p className="mt-2 text-sm leading-relaxed text-slate-600">{item.instruction}</p>
+                <Advice
+                  en={item.instruction}
+                  ar={item.instruction_ar}
+                  lang={lang}
+                  className="mt-2 text-sm leading-relaxed text-slate-600"
+                />
               )}
             </div>
           ))}
@@ -275,26 +280,63 @@ export function LinkedInResults({
     note: notes.posts,
     body: (
       <div className="space-y-3">
-        {data.post_ideas.map((idea, index) => (
-          <div key={`${idea.title}-${index}`} className="rounded-xl border border-slate-200 bg-white p-3.5">
-            <p dir="ltr" className="text-left text-sm font-semibold text-slate-900">
-              {idea.title}
-            </p>
-            {idea.angle && (
-              <>
-                <p className="mt-2 text-xs font-semibold uppercase tracking-wide text-slate-400">{labels.angle}</p>
-                <p dir="ltr" className="mt-0.5 text-left text-sm leading-relaxed text-slate-600">
-                  {idea.angle}
-                </p>
-              </>
-            )}
-            {idea.draft_hook && (
-              <div className="mt-3">
-                <CopyField label={labels.hook} value={idea.draft_hook} multiline {...copyProps} />
-              </div>
-            )}
-          </div>
-        ))}
+        {data.post_ideas.map((idea, index) => {
+          /* POST IDEAS FOLLOW THE PAGE LANGUAGE, unlike the profile fields
+             above. A profile is read by recruiters in English; a post is
+             written by the user, and Arabic-speaking users post in Arabic.
+             Falls back to the English text on generations made before the
+             _ar fields existed, so old results keep working. */
+          const isAr = lang === "ar";
+          const title = (isAr && idea.title_ar) || idea.title;
+          const angle = (isAr && idea.angle_ar) || idea.angle;
+          const hook = (isAr && idea.draft_hook_ar) || idea.draft_hook;
+          const hookIsAr = isAr && Boolean(idea.draft_hook_ar);
+          return (
+            <div key={`${idea.title}-${index}`} className="rounded-xl border border-slate-200 bg-white p-3.5">
+              <p
+                dir={isAr && idea.title_ar ? "rtl" : "ltr"}
+                className={`text-sm font-semibold text-slate-900 ${
+                  isAr && idea.title_ar ? "text-right" : "text-left"
+                }`}
+              >
+                {title}
+              </p>
+              {angle && (
+                <>
+                  {/* Arabic has no uppercase, and letter-spaced caps render as
+                      separated letters — so the label keeps its normal case
+                      and spacing on an Arabic page. */}
+                  <p
+                    className={`mt-2 text-xs font-semibold text-slate-400 ${
+                      isAr ? "" : "uppercase tracking-wide"
+                    }`}
+                  >
+                    {labels.angle}
+                  </p>
+                  <p
+                    dir={isAr && idea.angle_ar ? "rtl" : "ltr"}
+                    className={`mt-0.5 text-sm leading-relaxed text-slate-600 ${
+                      isAr && idea.angle_ar ? "text-right leading-[1.9]" : "text-left"
+                    }`}
+                  >
+                    {angle}
+                  </p>
+                </>
+              )}
+              {hook && (
+                <div className="mt-3">
+                  <CopyField
+                    label={labels.hook}
+                    value={hook}
+                    multiline
+                    dir={hookIsAr ? "rtl" : "ltr"}
+                    {...copyProps}
+                  />
+                </div>
+              )}
+            </div>
+          );
+        })}
       </div>
     ),
   });
@@ -306,7 +348,9 @@ export function LinkedInResults({
     note: notes.manualEntry,
     body: (
       <div className="space-y-3">
-        {certs.instruction && <p className="text-sm leading-relaxed text-slate-600">{certs.instruction}</p>}
+        {certs.instruction && (
+          <Advice en={certs.instruction} ar={certs.instruction_ar} lang={lang} />
+        )}
 
         {certs.education_entries.length > 0 && (
           <div className="space-y-2 rounded-xl border border-slate-200 bg-white p-3.5">
@@ -360,7 +404,9 @@ export function LinkedInResults({
     note: projects.entries.length ? notes.projectEntries : undefined,
     body: (
       <div className="space-y-3">
-        {projects.instruction && <p className="text-sm leading-relaxed text-slate-600">{projects.instruction}</p>}
+        {projects.instruction && (
+          <Advice en={projects.instruction} ar={projects.instruction_ar} lang={lang} />
+        )}
 
         {projects.entries.map((project, index) => (
           <div key={`${project.name}-${index}`} className="rounded-xl border border-slate-200 bg-white p-3.5">

@@ -95,6 +95,10 @@ class LinkedInFeaturedItem(BaseModel):
     label: str = ""
     url: str = ""
     instruction: str = ""
+    # The page's guidance text, so it follows the SITE language rather than
+    # staying English on an Arabic page. Read, not pasted — see the _ar note
+    # on LinkedInPostIdea.
+    instruction_ar: str = ""
 
 
 class LinkedInExperienceEntry(BaseModel):
@@ -121,10 +125,20 @@ class LinkedInExperienceEntry(BaseModel):
 class LinkedInPostIdea(BaseModel):
     """A post the person could actually write, tied to a specific thing they
     really did. `draft_hook` is the opening line, which is the part people
-    stall on."""
+    stall on.
+
+    RETURNED IN BOTH LANGUAGES, unlike the rest of the profile. The profile
+    fields are deliberately English-only because recruiters read LinkedIn
+    profiles in English — but a POST is different. People post in Arabic on
+    LinkedIn all the time, and handing an Arabic-speaking user an English
+    draft hook to paste is handing them something they have to rewrite before
+    they can use it."""
     title: str = ""
     angle: str = ""
     draft_hook: str = ""
+    title_ar: str = ""
+    angle_ar: str = ""
+    draft_hook_ar: str = ""
 
 
 class LinkedInEducationEntry(BaseModel):
@@ -150,6 +164,10 @@ class LinkedInEducationSection(BaseModel):
     this section is instructions plus the data to type, not something to
     paste wholesale."""
     instruction: str = ""
+    # The page's guidance text, so it follows the SITE language rather than
+    # staying English on an Arabic page. Read, not pasted — see the _ar note
+    # on LinkedInPostIdea.
+    instruction_ar: str = ""
     education_entries: List[LinkedInEducationEntry] = Field(default_factory=list)
     certifications_note: str = ""
     # Populated only when the CV lists no certifications at all.
@@ -182,6 +200,10 @@ class LinkedInProjectsSection(BaseModel):
     those are clearly labeled as suggestions in the UI so they can never
     read as something the person has already built."""
     instruction: str = ""
+    # The page's guidance text, so it follows the SITE language rather than
+    # staying English on an Arabic page. Read, not pasted — see the _ar note
+    # on LinkedInPostIdea.
+    instruction_ar: str = ""
     entries: List[LinkedInProjectEntry] = Field(default_factory=list)
     recommended: List[LinkedInProjectIdea] = Field(default_factory=list)
 

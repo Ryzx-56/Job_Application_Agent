@@ -5,7 +5,7 @@ cover letter.
 
 WHY A GLOSSARY INSTEAD OF RE-GENERATING THE DOCUMENT
 ----------------------------------------------------
-The previous Arabic purity fix sent the ENTIRE tailored JSON back to Claude
+The previous Arabic purity fix sent the ENTIRE tailored JSON back to the model
 and asked for a fully translated copy. That had three problems:
 
   1. Cost — it re-emitted every field to fix a handful of stray words, and on
@@ -38,7 +38,7 @@ import json
 import re
 from loguru import logger
 
-from core.llm_config import generate_claude_text
+from core.llm_config import generate_writing_text
 
 # One "term" is a run of Latin words: letters, digits, and the punctuation
 # that legitimately appears INSIDE a technology name (Next.js, Scikit-learn,
@@ -177,7 +177,7 @@ def whole_latin_values(strings, max_words: int = 10) -> list[str]:
 
 def build_glossary(terms: list[str], on_usage=None, max_terms: int = 120) -> dict[str, str]:
     """
-    One Claude call turning Latin terms into Arabic equivalents. Returns
+    One writing-model call turning Latin terms into Arabic equivalents. Returns
     {} on any failure — callers treat an empty glossary as "leave the text
     as it is" rather than failing the run, matching the best-effort
     philosophy the rest of the Arabic path already uses.
@@ -190,7 +190,7 @@ def build_glossary(terms: list[str], on_usage=None, max_terms: int = 120) -> dic
 
     capped = terms[:max_terms]
     try:
-        raw = generate_claude_text(
+        raw = generate_writing_text(
             GLOSSARY_PROMPT.format(terms=json.dumps(capped, ensure_ascii=False)),
             max_tokens=6000,
             max_tokens_ceiling=12000,

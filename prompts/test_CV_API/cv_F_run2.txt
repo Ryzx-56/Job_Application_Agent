@@ -1,0 +1,51 @@
+                       Abdulmalik Yousef Hawsawi
+abdulmalikhawsawi0@gmail.com · +966 58-092-7705 · Jeddah, Saudi Arabia · linkedin.com/in/abdulmalik-hawsawi ·
+                                           github.com/Ryzx-56
+
+
+PROFESSIONAL SUMMARY
+
+Machine Learning Engineer with hands-on experience building predictive models and computer vision
+systems. Proficient in Python, data preprocessing, and model development across classification and
+image analysis tasks. Currently pursuing a degree in Artificial Intelligence with a track record of leading
+technical projects from conception through deployment. Seeking to apply expertise in model
+architecture and data pipeline development to production machine learning systems.
+
+EXPERIENCE
+
+Sales and Customer Service Assistant — Team Lab Inc               June 2025 – August 2025 (Summer Position)
+ • Owned front-of-house operations end to end at a high-traffic museum, handling ticketing, visitor
+   check-in, and customer issue resolution.
+ • Drove gift shop sales through direct customer engagement and product knowledge application.
+ • Trained incoming staff on customer service protocols and operational workflows.
+
+PROJECTS
+
+Flight Demand Prediction Model                        Python, Machine Learning, Pandas, Data Preprocessing
+Led development of a machine learning classification model to predict flight demand levels across high,
+medium, and low categories. Owned the full pipeline from data cleaning through Gaussian Mixture
+Model implementation and final model delivery.
+
+Image Forgery Detection System                Python, Computer Vision, Image Processing, Machine Learning
+Designed and led a computer vision model to detect image forgery through copy-move and duplication
+analysis. Trained the system on CASIA 2 dataset from Kaggle to classify authentic and manipulated
+images.
+
+SKILLS
+
+Languages: Python
+Tools: API Integration, Multi-Agent Systems
+
+LANGUAGES
+
+Arabic, English
+
+EDUCATION
+
+Bachelor degree in Artificial Intelligence — University of Jeddah                                       2027
+GPA: 4.28
+
+CERTIFICATIONS
+
+ • SDA Agentic AI
+

@@ -28,6 +28,7 @@
 import json
 import queue
 import threading
+import uuid
 
 from core.rate_limit import enforce, ADDON_GENERATION
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -283,10 +284,10 @@ def interview_overview(user_id: str = Depends(get_current_user_id)) -> dict:
 #
 # WHY THIS ENDPOINT STREAMS RATHER THAN BLOCKING.
 #
-# A measured run is two to four minutes: one big Sonnet call over a whole CV
+# A measured run is two to four minutes: one big writing call over a whole CV
 # and a whole posting. A plain POST held open that long is exactly the request
-# an intermediary kills. generate_claude_text already solved the same problem
-# on the backend-to-Anthropic hop by streaming (see its docstring: Render's
+# an intermediary kills. generate_writing_text already solved the same problem
+# on the backend-to-provider hop by streaming (see its docstring: Render's
 # outbound proxy kills a connection that goes silent, and the SDK reports it
 # as an indistinguishable "Connection error"); this is the same fix applied to
 # the browser-to-backend hop, and the same SSE shape main.py's
@@ -320,15 +321,33 @@ def _stream_interview_prep(row: dict, user_id: str, language: str | None):
     and emit a heartbeat each time that timeout expires. The queue is also how
     the agent's real phase events cross the thread boundary.
 
+    THE WORKER OWNS BOTH THE SAVE AND THE REFUND. Neither one may live out
+    here in the generator, because the generator stops running the moment the
+    browser goes away — and a two-to-four minute SSE stream loses its client
+    fairly often (a phone locking, a tab backgrounded, a proxy giving up).
+    When that used to happen mid-run, the worker finished successfully, the
+    generator was already closed, `_save_prep` never ran and the quota was
+    never released. The user paid a monthly slot for questions that were
+    generated, discarded, and had to be generated again on the next visit.
+    That is both the "nothing was charged" claim being false and the
+    regenerate-every-time complaint, from one line being on the wrong side of
+    a thread boundary.
+
     The thread is a daemon, so a client that disconnects mid-run doesn't keep
-    the worker alive past shutdown. The work itself still finishes and is
-    discarded, which is the right trade: nothing is stored, no credit is
-    spent, and cancelling an in-flight Claude call would save nothing by then.
+    the worker alive past shutdown.
     """
     events: queue.Queue = queue.Queue()
     result: dict = {}
+    # Correlates every log line from this run, so a user reporting a failure
+    # can be traced to one request in Render's logs instead of guessing from
+    # a timestamp. Short on purpose: it is for grepping, not for security.
+    request_id = uuid.uuid4().hex[:12]
 
     def work():
+        logger.info(
+            f"🎤 [{request_id}] Interview prep starting — resume={row['id']} "
+            f"user={user_id} language={language or 'auto'}"
+        )
         try:
             result["content"] = run_interview_prep(
                 row,
@@ -336,19 +355,53 @@ def _stream_interview_prep(row: dict, user_id: str, language: str | None):
                 output_language=language,
             )
         except InterviewPrepError as e:
-            logger.error(f"❌ Interview prep failed for resume {row['id']}: {e}")
-            result["error"] = {"code": "generation_failed", "message": str(e)}
+            # Expected failure with a known cause. The traceback still goes to
+            # the log — "the model returned unusable JSON" is not a diagnosis,
+            # and the line that raised it is.
+            logger.opt(exception=True).error(
+                f"❌ [{request_id}] Interview prep failed — resume={row['id']} "
+                f"user={user_id}: {type(e).__name__}: {e}"
+            )
+            result["error"] = {"code": "generation_failed", "message": str(e), "request_id": request_id}
         except Exception as e:
-            logger.error(f"❌ Interview prep crashed for resume {row['id']}: {type(e).__name__}: {e}")
+            # THE CASE THAT PRODUCED NOTHING USEFUL IN THE LOGS. This used to
+            # log the exception's class and str() only, which for a KeyError
+            # is the name of a dict key and for an AttributeError is a
+            # sentence about NoneType — in both cases with no indication of
+            # which of ~800 lines it came from. logger.opt(exception=True)
+            # attaches the full traceback.
+            logger.opt(exception=True).error(
+                f"❌ [{request_id}] Interview prep crashed — resume={row['id']} "
+                f"user={user_id}: {type(e).__name__}: {e}"
+            )
             result["error"] = {
                 "code": "generation_failed",
                 "message": "Something went wrong preparing your questions. Please try again.",
+                "request_id": request_id,
             }
+        else:
+            # SAVED HERE, ON THE WORKER, BEFORE THE PAYLOAD IS OFFERED TO A
+            # CONNECTION THAT MAY ALREADY BE GONE. _save_prep never raises,
+            # so this cannot turn a good run into a failure.
+            _save_prep(
+                user_id,
+                row["id"],
+                (result["content"] or {}).get("language") or "en",
+                result["content"],
+            )
+            logger.info(f"✅ [{request_id}] Interview prep saved for resume {row['id']}")
         finally:
             # A run that produced nothing must not cost a month's slot, the
             # same rule refund_credits applies to a failed CV generation.
+            # This is the code path behind the user-facing "nothing was
+            # charged" — it has to actually run, on this thread, whatever the
+            # client did.
             if "error" in result:
                 release_addon_quota(user_id, INTERVIEW_PREP)
+                logger.info(
+                    f"↩️ [{request_id}] Released the interview-prep slot for {user_id} "
+                    "— the run produced nothing"
+                )
             events.put(("__done__", None))
 
     thread = threading.Thread(target=work, daemon=True)
@@ -369,9 +422,8 @@ def _stream_interview_prep(row: dict, user_id: str, language: str | None):
     if "error" in result:
         yield _sse("error", result["error"])
     else:
-        # Saved before the payload goes out, so a user who reloads the moment
-        # it lands finds it there.
-        _save_prep(user_id, row["id"], (result["content"] or {}).get("language") or "en", result["content"])
+        # Already saved by the worker (see its docstring) — this only hands
+        # the payload to a browser that is still listening.
         yield _sse("complete", {
             "resume_id": row["id"],
             "content": result["content"],

@@ -200,8 +200,80 @@ function placeholderForCountry(country: CountryPhoneOption): string {
 const inputClass =
   "block w-full rounded-lg border border-slate-200 bg-white px-3.5 py-2.5 text-sm text-slate-900 placeholder:text-slate-400 outline-none transition-colors focus:border-blue-400 focus:ring-2 focus:ring-blue-500/15";
 
-function FieldLabel({ children }: { children: React.ReactNode }) {
-  return <label className="mb-1.5 block text-xs font-medium text-slate-600">{children}</label>;
+/**
+ * A field label that says whether the field is required.
+ *
+ * WHY THIS CARRIES THE STATE. Before, exactly one field in an 878-line form
+ * had a red asterisk typed into its label string, and nothing else said
+ * anything. A user could not tell which fields would block generation from
+ * which were safe to skip, so the safe assumption was "fill in everything" —
+ * on a form most people are completing on a phone.
+ *
+ * `required` marks the four fields the CV genuinely cannot be built without.
+ * Everything else is labelled optional EXPLICITLY rather than by omission:
+ * plenty of users are students or career changers with no experience at all,
+ * and an unlabelled Experience section reads as an expectation.
+ *
+ * The asterisk is never the only signal — it is accompanied by the word
+ * itself, because an asterisk alone is invisible to a screen reader and easy
+ * to miss at 375px.
+ */
+function FieldLabel({
+  children,
+  required,
+  optional,
+  lang,
+}: {
+  children: React.ReactNode;
+  required?: boolean;
+  optional?: boolean;
+  lang?: string;
+}) {
+  const isArabic = lang === "ar";
+  return (
+    <label className="mb-1.5 flex items-baseline gap-1.5 text-xs font-medium text-slate-600">
+      <span>{children}</span>
+      {required && (
+        <span className="text-rose-600">
+          <span aria-hidden>*</span>
+          <span className="sr-only">{isArabic ? "حقل مطلوب" : "required"}</span>
+        </span>
+      )}
+      {optional && (
+        <span className="font-normal text-slate-400">
+          {isArabic ? "(اختياري)" : "(optional)"}
+        </span>
+      )}
+    </label>
+  );
+}
+
+/* ── WHICH FIELDS BLOCK GENERATION ──────────────────────────────────────────
+   Four, and they are the four a CV is unusable without: a document with no
+   name is not a CV, and one with no way to contact the candidate is worse
+   than none at all. Location is required because job matching is
+   geography-aware (see the tiered search) and cannot work without it.
+
+   Kept as data rather than as four separate checks so the form, the submit
+   guard and the error message cannot disagree about what is required. */
+export const REQUIRED_PERSONAL_FIELDS = ["name", "email", "phone", "location"] as const;
+
+export function missingRequiredFields(value: {
+  name?: string; email?: string; phone?: string; location?: string;
+}): string[] {
+  return REQUIRED_PERSONAL_FIELDS.filter((f) => !(value[f] ?? "").trim());
+}
+
+export function requiredFieldLabel(field: string, lang: string): string {
+  const labels: Record<string, { en: string; ar: string }> = {
+    name: { en: "Full name", ar: "الاسم الكامل" },
+    email: { en: "Email", ar: "البريد الإلكتروني" },
+    phone: { en: "Phone", ar: "رقم الهاتف" },
+    location: { en: "Location", ar: "الموقع" },
+  };
+  const entry = labels[field];
+  if (!entry) return field;
+  return lang === "ar" ? entry.ar : entry.en;
 }
 
 /* ========================================================================
@@ -213,21 +285,35 @@ function SectionCard({
   icon: Icon,
   title,
   action,
+  optional,
+  lang,
   children,
 }: {
   icon: React.ElementType;
   title: string;
   action?: React.ReactNode;
+  /* Every section except Personal information is optional. Saying so on the
+     card is what stops a student with no work history reading an empty
+     Experience card as something they have failed to fill in. An empty
+     optional section is also skipped entirely in the finished CV — no
+     heading with nothing under it — so leaving it blank costs nothing. */
+  optional?: boolean;
+  lang?: string;
   children: React.ReactNode;
 }) {
   return (
     <div className="rounded-xl border border-slate-200 bg-slate-50/50 p-4 sm:p-5">
       <div className="mb-3.5 flex items-center justify-between gap-2">
-        <div className="flex items-center gap-2">
+        <div className="flex min-w-0 items-center gap-2">
           <span className="grid size-7 shrink-0 place-items-center rounded-md bg-blue-50 text-blue-600">
             <Icon className="size-3.5" aria-hidden />
           </span>
-          <p className="text-sm font-semibold text-slate-800">{title}</p>
+          <p className="truncate text-sm font-semibold text-slate-800">{title}</p>
+          {optional && (
+            <span className="shrink-0 text-xs font-normal text-slate-400">
+              {lang === "ar" ? "(اختياري)" : "(optional)"}
+            </span>
+          )}
         </div>
         {action}
       </div>
@@ -257,6 +343,8 @@ function RepeatableSection<T>({
     <SectionCard
       icon={icon}
       title={title}
+      optional
+      lang={lang}
       action={
         <button
           type="button"
@@ -307,6 +395,7 @@ function LineListSection({
   onChange,
   placeholder,
   rows = 3,
+  lang,
 }: {
   icon: React.ElementType;
   title: string;
@@ -314,9 +403,10 @@ function LineListSection({
   onChange: (value: string) => void;
   placeholder: string;
   rows?: number;
+  lang?: string;
 }) {
   return (
-    <SectionCard icon={icon} title={title}>
+    <SectionCard icon={icon} title={title} optional lang={lang}>
       <textarea
         className={`${inputClass} resize-y`}
         rows={rows}
@@ -389,7 +479,7 @@ export function ManualCvForm({
       <SectionCard icon={User} title={lang === "ar" ? "المعلومات الشخصية" : "Personal information"}>
         <div className="grid gap-3 sm:grid-cols-2">
           <div>
-            <FieldLabel>{lang === "ar" ? "الاسم الكامل *" : "Full name *"}</FieldLabel>
+            <FieldLabel required lang={lang}>{lang === "ar" ? "الاسم الكامل" : "Full name"}</FieldLabel>
             <input
               className={inputClass}
               value={value.name}
@@ -398,7 +488,7 @@ export function ManualCvForm({
             />
           </div>
           <div>
-            <FieldLabel>{lang === "ar" ? "البريد الإلكتروني" : "Email"}</FieldLabel>
+            <FieldLabel required lang={lang}>{lang === "ar" ? "البريد الإلكتروني" : "Email"}</FieldLabel>
             <input
               className={inputClass}
               value={value.email}
@@ -407,7 +497,7 @@ export function ManualCvForm({
             />
           </div>
           <div>
-            <FieldLabel>{lang === "ar" ? "رقم الهاتف" : "Phone"}</FieldLabel>
+            <FieldLabel required lang={lang}>{lang === "ar" ? "رقم الهاتف" : "Phone"}</FieldLabel>
             <div className="flex gap-2">
               <select
                 value={value.phoneCountry}
@@ -448,7 +538,14 @@ export function ManualCvForm({
             </div>
           </div>
           <div>
-            <FieldLabel>{lang === "ar" ? "لينكد إن" : "LinkedIn"}</FieldLabel>
+            <FieldLabel optional lang={lang}>
+              {lang === "ar" ? "لينكد إن" : "LinkedIn"}
+            </FieldLabel>
+            <p className="-mt-1 mb-1.5 text-[11px] leading-relaxed text-slate-500">
+              {lang === "ar"
+                ? "يمكننا أيضًا إعداد ملف لينكد إن احترافي لك."
+                : "We can also build you a professional LinkedIn profile."}
+            </p>
             <input
               className={inputClass}
               value={value.linkedin}
@@ -457,7 +554,7 @@ export function ManualCvForm({
             />
           </div>
           <div className="sm:col-span-2">
-            <FieldLabel>{lang === "ar" ? "الموقع" : "Location"}</FieldLabel>
+            <FieldLabel required lang={lang}>{lang === "ar" ? "الموقع" : "Location"}</FieldLabel>
             <div className="grid gap-2 sm:grid-cols-2">
               <SearchableSelect
                 theme="light"
@@ -623,7 +720,7 @@ export function ManualCvForm({
         )}
       />
 
-      <SectionCard icon={Wrench} title={lang === "ar" ? "المهارات" : "Skills"}>
+      <SectionCard icon={Wrench} title={lang === "ar" ? "المهارات" : "Skills"} optional lang={lang}>
         <input
           className={inputClass}
           value={value.skills}
@@ -638,7 +735,7 @@ export function ManualCvForm({
 
       {/* Human languages — facts_json.languages_spoken, which every template
           now renders as its own section directly after Skills. */}
-      <SectionCard icon={Languages} title={lang === "ar" ? "اللغات" : "Languages"}>
+      <SectionCard icon={Languages} title={lang === "ar" ? "اللغات" : "Languages"} optional lang={lang}>
         <input
           className={inputClass}
           value={value.languages}
@@ -673,7 +770,7 @@ export function ManualCvForm({
 
       {showMore && (
         <div className="space-y-4">
-          <SectionCard icon={FileText} title={lang === "ar" ? "الملخص المهني" : "Professional summary"}>
+          <SectionCard icon={FileText} title={lang === "ar" ? "الملخص المهني" : "Professional summary"} optional lang={lang}>
             <textarea
               className={`${inputClass} resize-y`}
               rows={4}

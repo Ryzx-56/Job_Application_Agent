@@ -206,6 +206,10 @@ export type CheckoutFormOptions = {
    *  Off for one-time purchases: keeping a card nobody asked us to keep is
    *  not something a credit-pack buyer agreed to. */
   saveCard?: boolean;
+  /** What the BACKEND says it is running as, from the catalog response.
+   *  Compared against this bundle's own publishable key — see the check in
+   *  mountCheckoutForm. Optional so an older caller still works. */
+  backendMode?: string;
   onCompleted?: (payment: { id?: string; status?: string }) => void | Promise<void>;
   onFailure?: (error: unknown) => void;
 };
@@ -221,6 +225,40 @@ export async function mountCheckoutForm(options: CheckoutFormOptions): Promise<v
 
   const publishableKey = process.env.NEXT_PUBLIC_MOYASAR_PUBLISHABLE_KEY;
   if (!publishableKey) throw new Error("moyasar-key-missing");
+
+  /* THE TWO HALVES OF THE GO-LIVE SWITCH, CHECKED AGAINST EACH OTHER.
+   *
+   * The publishable key lives in Vercel and the secret key lives in Render.
+   * They are set by hand, in two different dashboards, and nothing has ever
+   * compared them. Get it half-right — flip Render to live, forget Vercel —
+   * and the browser tokenizes a card against TEST while the server charges
+   * against LIVE. Every payment fails, with a decline that is not
+   * reproducible from either side on its own.
+   *
+   * The catalog already tells us which mode the backend is in. Refusing to
+   * mount is the right response: a form that would take a card and certainly
+   * fail should not be shown at all. The backend makes the same check at
+   * startup (core/moyasar_client.config_problems) — this is the half that
+   * can see the browser's key. */
+  const keyMode = publishableKey.startsWith("pk_live_")
+    ? "live"
+    : publishableKey.startsWith("pk_test_")
+      ? "test"
+      : "unknown";
+  if (
+    options.backendMode &&
+    options.backendMode !== "unknown" &&
+    keyMode !== "unknown" &&
+    keyMode !== options.backendMode
+  ) {
+    console.error(
+      `Moyasar key mismatch: this build has a ${keyMode} publishable key but the ` +
+        `backend is in ${options.backendMode} mode. Update ` +
+        `NEXT_PUBLIC_MOYASAR_PUBLISHABLE_KEY in Vercel to match Render's ` +
+        `MOYASAR_SECRET_KEY, then redeploy.`
+    );
+    throw new Error("moyasar-key-mode-mismatch");
+  }
 
   /* WHO IS BUYING, RESOLVED HERE RATHER THAN ASKED OF THE CALLER.
    *

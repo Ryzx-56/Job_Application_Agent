@@ -2,7 +2,7 @@
 """
 ATS Score calculation logic.
 Handles exact keyword matching + semantic matching via cosine similarity.
-Claude (Agent 5) handles the reasoning layer on top of this.
+Agent 5 handles the reasoning layer on top of this.
 """
 
 import re
@@ -723,7 +723,7 @@ def calculate_ats_score(
 ) -> dict:
     """
     Master function. Calculates the full ATS score breakdown.
-    Returns the score_breakdown dict that Agent 5 (Claude) uses for gap analysis.
+    Returns the score_breakdown dict that Agent 5 (Agent 5) uses for gap analysis.
     """
     # Prefer tailoring_engine.py's cleaned/inferred skills (what's actually
     # on the rendered CV) over the raw facts_json extraction — see the bug
@@ -833,7 +833,7 @@ def calculate_ats_score(
 def run_ats_scorer(state: dict) -> dict:
     """
     LangGraph node. Wraps calculate_ats_score above — pure Python matching,
-    no LLM call, so it's instant and immune to Gemini/Claude rate limits
+    no LLM call, so it's instant and immune to Gemini/model rate limits
     or billing issues entirely.
     """
     from loguru import logger

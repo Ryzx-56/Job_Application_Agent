@@ -1,0 +1,57 @@
+                       Abdulmalik Yousef Hawsawi
+abdulmalikhawsawi0@gmail.com · +966 58-092-7705 · Jeddah, Saudi Arabia · linkedin.com/in/abdulmalik-hawsawi ·
+                                           github.com/Ryzx-56
+
+
+PROFESSIONAL SUMMARY
+
+Artificial Intelligence undergraduate at the University of Jeddah (GPA 4.28, graduating 2027) working
+toward a Machine Learning Engineer role, based in Jeddah, Saudi Arabia. Led two academic machine
+learning teams end to end: a GMM-based flight demand classifier built in Python and pandas, and a
+computer vision model that flags copy-move image forgery using the CASIA 2 dataset. Also built a full
+multi-agent web application that generates CVs and cover letters from a job description and surfaces
+similar roles, with a working backend and frontend, user sign-up and login, and paid subscriptions.
+Hands-on with Python, API integration, image processing, and custom PC builds and repair, with
+customer-facing sales and staff training experience from a summer role at Team Lab Inc.
+
+EXPERIENCE
+
+Sales & Customer Service Assistant — Team Lab Inc                 June 2025 – August 2025 (Summer Position)
+ • Ran front-of-house operations end to end at a high-traffic museum, owning ticket sales, visitor check-
+   in, lost and found, and complaint resolution.
+ • Drove gift shop revenue by pairing detailed product knowledge with direct conversations with
+   visitors on the floor.
+ • Onboarded new hires, coaching them through customer service protocols and day-to-day floor
+   procedures.
+
+PROJECTS
+
+Flight Demand Prediction                         Python, Machine learning, pandas, Gaussian Mixture Model
+Led a team to build a machine learning model that predicts flight demand and classifies it as high,
+medium, or low. Built the full GMM pipeline personally in Python, from data cleaning through to the
+finished model.
+
+Detecting Image Forgery                          Computer vision, Image processing, Python, CASIA 2 dataset
+Team leader on a computer vision model that takes an image and reports whether it has been tampered
+with through copy-move forgery, where content is duplicated within the same picture. Trained and
+evaluated on the CASIA 2 dataset from Kaggle using image processing techniques.
+
+SKILLS
+
+Languages: Python
+Frameworks & Libraries: pandas
+Tools: API integration, Multi-agent systems, GitHub
+
+LANGUAGES
+
+Arabic, English
+
+EDUCATION
+
+Bachelor's Degree in Artificial Intelligence — University of Jeddah                                     2027
+GPA: 4.28
+
+CERTIFICATIONS
+
+ • SDA Agentic AI
+

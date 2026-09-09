@@ -18,11 +18,11 @@ import {
 
    Reached as ?pack=starter | best-value | power.
 
-   ?plan=pro | elite still lands on the "coming soon" panel: a subscription
-   needs the card TOKENIZED as well as charged, plus a billing cycle and
-   dunning, which is §5 of the billing brief and not built yet. Charging
-   someone a first month through this page would take their money for a
-   subscription that would never renew and could not be cancelled.
+   ?plan=pro | elite is HANDLED HERE TOO. It used to fall through to a
+   "coming soon" panel because a subscription needs the card tokenized as
+   well as charged, plus a billing cycle and dunning — all of which shipped
+   in §5 of the billing brief (commits 650d5aa, d05f0e7). A plan sets
+   save_card so the renewal job has something to charge next month.
 
    NOTHING HERE UNLOCKS ANYTHING. The form posts to Moyasar, Moyasar
    redirects to /payment/callback, and the credits are granted server-side by
@@ -147,6 +147,11 @@ export default function CheckoutPage() {
         // token there is nothing to charge next month, and the subscription
         // would silently lapse after one period.
         saveCard: isSubscription,
+        // What the SERVER says it is running as. Compared against this
+        // build's own publishable key inside mountCheckoutForm — the two
+        // halves of the go-live switch live in two different dashboards and
+        // nothing else compares them. See the note there.
+        backendMode: mode,
         onFailure: () => {
           setError(
             isAr
@@ -169,7 +174,12 @@ export default function CheckoutPage() {
       console.error("[checkout] the card form did not mount:", cause || err);
 
       setError(
-        cause === "moyasar-key-missing" || cause === "payment-user-unknown"
+        cause === "moyasar-key-missing" ||
+        cause === "payment-user-unknown" ||
+        // A live/test key mismatch between Vercel and Render. Same class of
+        // fault as a missing key — a deployment problem the buyer cannot fix
+        // — so it gets the same message rather than "check your connection".
+        cause === "moyasar-key-mode-mismatch"
           ? isAr
             ? "الدفع غير متاح حاليًا بسبب خطأ في الإعداد لدينا. لم يتم خصم أي مبلغ. حاول لاحقًا أو تواصل معنا."
             : "Payments are unavailable right now because of a configuration error on our side. Nothing was charged. Try again later or contact us."
@@ -178,7 +188,7 @@ export default function CheckoutPage() {
             : "The payment form couldn't load. Check your connection and refresh."
       );
     }
-  }, [product, isAr, lang, purchaseId, isSubscription]);
+  }, [product, isAr, lang, purchaseId, isSubscription, mode]);
 
   useEffect(() => {
     void mountForm();

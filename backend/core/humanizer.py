@@ -8,7 +8,7 @@
 #
 # WHY PROMPT-LEVEL AND NOT A SECOND PASS: the obvious alternative is a
 # draft -> critique -> revise loop, which is the standard humanizing workflow.
-# It is deliberately NOT used here. Every extra pass is another full Claude
+# It is deliberately NOT used here. Every extra pass is another full model
 # call per generation: roughly double the tokens and double the wait on a
 # request the user is already sitting through, in exchange for a small gain
 # over instructions that are simply written well the first time. A CV
@@ -59,7 +59,7 @@ def with_humanizer(prompt_section: str) -> str:
     """Appends the rules to an existing style section of a prompt.
 
     Returned text is stable for a given input, so a prompt built with this
-    stays byte-identical across calls and remains eligible for Anthropic's
+    stays byte-identical across calls and remains eligible for the provider's
     prompt caching (see the `system` note in core/llm_config.py).
     """
     return f"{prompt_section.rstrip()}\n\n{HUMANIZER_RULES}"

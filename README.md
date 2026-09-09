@@ -12,7 +12,7 @@ Upload a CV and a job description. Eight specialized agents read both, rewrite y
 ![Python](https://img.shields.io/badge/backend-Python%203.11-3776AB?logo=python&logoColor=white)
 ![Next.js](https://img.shields.io/badge/frontend-Next.js%2016-000000?logo=nextdotjs&logoColor=white)
 ![LangGraph](https://img.shields.io/badge/orchestration-LangGraph-1C3C3C)
-![Claude](https://img.shields.io/badge/LLM-Claude%20Sonnet%205-D97757?logo=anthropic&logoColor=white)
+![GPT](https://img.shields.io/badge/LLM-GPT--5.6%20Luna-10A37F?logo=openai&logoColor=white)
 ![Gemini](https://img.shields.io/badge/LLM-Gemini%203.1-4285F4?logo=googlegemini&logoColor=white)
 
 </div>
@@ -25,7 +25,7 @@ Tarshih is a full-stack, production SaaS product: paying subscribers, real infra
 
 It was designed, built, and shipped **solo**, front to back: the LangGraph agent orchestration, the FastAPI backend, the Next.js frontend, the Supabase auth/billing/data layer, and the prompt engineering holding the whole pipeline together against hallucination.
 
-Every generation runs **8 coordinated agents across 3 different AI providers** (Anthropic Claude, Google Gemini, and Tavily's search API) in a graph that fans work out in parallel where it can and loops back on itself when a rewritten bullet point can't be verified against the facts. A single CV generation can trigger anywhere from 6 to 20+ real API calls, depending on how much the fact-checker has to push back.
+Every generation runs **8 coordinated agents across 3 different AI providers** (OpenAI, Google Gemini, and Tavily's search API) in a graph that fans work out in parallel where it can and loops back on itself when a rewritten bullet point can't be verified against the facts. A single CV generation can trigger anywhere from 6 to 20+ real API calls, depending on how much the fact-checker has to push back.
 
 ## Table of Contents
 
@@ -80,13 +80,13 @@ flowchart TD
     START([Request]) --> A1["Agent 1 · CV Parser<br/>Gemini · extracts structured facts"]
     START --> A2["Agent 2 · JD Analyzer<br/>Gemini · extracts weighted requirements"]
     A1 --> A3
-    A2 --> A3["Agent 3 · Tailoring Engine<br/>Claude Sonnet 5 · rewrites CV + summary"]
-    A3 --> FC{{"Fact Checker<br/>Gemini batch-check + Claude regeneration"}}
+    A2 --> A3["Agent 3 · Tailoring Engine<br/>GPT-5.6 Luna · rewrites CV + summary"]
+    A3 --> FC{{"Fact Checker<br/>Gemini batch-check + Luna regeneration"}}
     FC -- "unverifiable claim found, retry ≤ 2x" --> A3
-    FC -- "verified or retries exhausted" --> A4["Agent 4 · Cover Letter<br/>Claude Sonnet 5"]
+    FC -- "verified or retries exhausted" --> A4["Agent 4 · Cover Letter<br/>GPT-5.6 Luna"]
     FC --> ATS["ATS Scorer<br/>deterministic, no LLM"]
     FC --> A6["Agent 6 · Jobs Finder<br/>Tavily · live search"]
-    ATS --> A5["Agent 5 · Match Scorer<br/>Claude Sonnet 5"]
+    ATS --> A5["Agent 5 · Match Scorer<br/>GPT-5.6 Luna"]
     A4 --> DONE([Response])
     A5 --> DONE
     A6 --> DONE
@@ -96,10 +96,10 @@ flowchart TD
 |---|---|---|---|
 | 1 | CV Parser | Gemini 3.1 Flash Lite | Extracts structured facts (experience, education, skills, projects) from an uploaded PDF or the manual entry form. Extraction only, never invents or improves anything |
 | 2 | JD Analyzer | Gemini 3.1 Flash Lite | Pulls required vs. preferred skills, seniority, ATS keywords, and culture signals out of the job description (runs in parallel with Agent 1) |
-| 3 | Tailoring Engine | Claude Sonnet 5 | Rewrites the summary, bullets, and project descriptions to align with the target role, grounded strictly in Agent 1's extracted facts |
-| - | Fact Checker | Gemini (batch) + Claude (regeneration) | Verifies every tailored bullet's claims trace back to verified facts. Not a style check, a truth check. Loops back to Agent 3 for anything that fails, up to 2 rounds |
-| 4 | Document Generator | Claude Sonnet 5 | Writes the matching cover letter |
-| 5 | Match Scorer | Claude Sonnet 5 | Semantic job-fit score, gap analysis, and a plain-language recommendation |
+| 3 | Tailoring Engine | GPT-5.6 Luna | Rewrites the summary, bullets, and project descriptions to align with the target role, grounded strictly in Agent 1's extracted facts |
+| - | Fact Checker | Gemini (batch) + Luna (regeneration) | Verifies every tailored bullet's claims trace back to verified facts. Not a style check, a truth check. Loops back to Agent 3 for anything that fails, up to 2 rounds |
+| 4 | Document Generator | GPT-5.6 Luna | Writes the matching cover letter |
+| 5 | Match Scorer | GPT-5.6 Luna | Semantic job-fit score, gap analysis, and a plain-language recommendation |
 | - | ATS Scorer | Deterministic (no LLM) | Keyword/skills/education/experience match against the JD (instant, reproducible) |
 | 6 | Jobs Finder | Tavily | Finds real, currently-open, relevant listings (Jadarat-prioritized, noise- and scam-filtered) |
 
@@ -129,7 +129,7 @@ Three of the eleven CV templates the pipeline can render (PDF and DOCX, both fro
 | **Frontend** | Next.js 16 (App Router, Turbopack), TypeScript, Tailwind CSS |
 | **Backend** | FastAPI (Python 3.11), served over Server-Sent Events for live progress |
 | **Agent orchestration** | LangGraph: a real stateful graph with conditional routing and retry loops, not a linear chain |
-| **LLMs** | Claude Sonnet 5 (Anthropic) for generation-quality tasks, Gemini 3.1 Flash Lite (Google) for high-volume extraction/verification tasks |
+| **LLMs** | GPT-5.6 Luna (OpenAI) for generation-quality tasks, Gemini 3.1 Flash Lite (Google) for high-volume extraction/verification tasks. The writing model is a single switch, `WRITING_MODEL` in `backend/core/llm_config.py`, and the Anthropic path is kept alongside it, so reverting is one line |
 | **Job search** | Tavily API |
 | **Auth, database, storage** | Supabase (Postgres + Row Level Security + Auth) |
 | **PDF rendering** | WeasyPrint: real HTML/CSS layout via Pango/Cairo, not a headless-browser screenshot |
@@ -147,7 +147,7 @@ A few things under the hood that aren't obvious from the feature list:
 
 - **Prompt-caching aware**
 
-  The tailoring engine's system prompt is large and static per request. It's marked for Anthropic's ephemeral prompt caching so repeated structure doesn't get re-billed and re-processed every call.
+  The tailoring engine's system prompt is large and static per request, and it is sent as the `system` message so it forms an identical prefix on every call. OpenAI caches that prefix automatically (measured: 5,699 of 5,702 input tokens served from cache across a 10-run batch), so repeated structure isn't re-billed every call. The retained Anthropic path marks the same block with an explicit `cache_control` breakpoint, which is how the same saving is obtained there.
 
 - **Parallel where it's actually independent**
 
@@ -172,7 +172,7 @@ A few things under the hood that aren't obvious from the feature list:
 - Python 3.11
 - Node.js 18+
 - A [Supabase](https://supabase.com) project
-- API keys: [Anthropic](https://console.anthropic.com), [Google AI Studio](https://aistudio.google.com) (Gemini), [Tavily](https://tavily.com)
+- API keys: [OpenAI](https://platform.openai.com), [Google AI Studio](https://aistudio.google.com) (Gemini), [Tavily](https://tavily.com). `ANTHROPIC_API_KEY` is optional and only needed to run the retained Claude path
 - **Windows only:** WeasyPrint needs GTK's native libraries (Pango/Cairo), which don't come from pip. Install [MSYS2](https://www.msys2.org/), then run `pacman -S mingw-w64-x86_64-pango` and add `C:\msys64\mingw64\bin` to your PATH. macOS and Linux don't need this step.
 
 ### Backend

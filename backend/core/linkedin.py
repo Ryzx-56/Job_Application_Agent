@@ -60,7 +60,7 @@ router = APIRouter()
 # sends a tier, never a price, and what the buyer actually paid is copied onto
 # the purchase row so a later price change can't rewrite history.
 #
-# normal (49 SAR): a single Claude Sonnet call over structured JSON we already
+# normal (49 SAR): a single writing-model call over structured JSON we already
 # have, so the marginal cost is a couple of cents, priced as an impulse add-on
 # right after CV creation.
 # premium (200 SAR): priced for a human's time building the profile, not for
@@ -839,14 +839,14 @@ def linkedin_generate(
         metered monthly (pricing reference v6 section 4). No purchase exists,
         so the entitlement and the cap are the whole gate.
 
-    Deliberately a plain `def`, not `async def`: the Claude call blocks for
+    Deliberately a plain `def`, not `async def`: the model call blocks for
     tens of seconds, and FastAPI runs sync endpoints in a threadpool, so this
     can't stall the event loop for everyone else the way an un-awaited
     blocking call inside an async endpoint would.
     """
     # Covers both routes below. The paid route is bounded by the purchase and
     # the included route by its monthly cap, so this is burst protection on a
-    # Claude call that runs for tens of seconds.
+    # model call that runs for tens of seconds.
     enforce(ADDON_GENERATION, user_id)
 
     if not (payload.purchase_id or "").strip():

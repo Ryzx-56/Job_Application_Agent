@@ -19,6 +19,7 @@ from markupsafe import Markup, escape
 
 from core.profile_names import has_arabic, has_latin
 from utils.skills import has_skills
+from utils.cv_validators import normalize_degree
 from utils.template_registry import DEFAULT_TEMPLATE_ID, template_supports_photo
 from utils.arabic_localizer import apply_glossary, localize_date, to_eastern_arabic_numerals
 
@@ -677,14 +678,73 @@ def build_cv_context(state: dict, template_id: str | None = None) -> dict:
             if isinstance(raw_tech, str):
                 raw_tech = [t.strip() for t in raw_tech.split(",") if t.strip()]
             tech_items = [ar(t).strip() for t in raw_tech if _s(t).strip()]
+        # NEVER THE RAW DESCRIPTION. Same rule, and the same reasoning, as
+        # resolve_bullet above: a project Agent 3 did not rewrite is a
+        # generation defect, and printing the candidate's unedited notes
+        # ("forgot its name but eiter way") hides that defect behind
+        # something that looks like output. The bullet path was fixed; this
+        # one was the same bug on a different field, and it did not even log.
+        description = (tailored or {}).get("tailored_description") or ""
+        if not description.strip():
+            logger.error(
+                "🚨 No tailored description for a project — omitting the description "
+                f"rather than printing raw notes: {name[:60]!r}"
+            )
         projects.append({
             # `name` here is the raw facts_json project name used as the
             # display fallback — localize it. The join key itself (matched
             # in project_lookup above) is deliberately left untranslated.
             "name": (tailored.get("display_name") if tailored else None) or ar(name),
             "tech_stack": tech_items,
-            "description": (tailored.get("tailored_description") if tailored else None)
-                            or ar(proj.get("description")),
+            "description": description,
+        })
+
+    # ─── PROJECTS THAT ONLY EXIST IN THE CANDIDATE'S NOTES ──────────────────
+    #
+    # THE MISSING-PROJECTS GAP. All six models in the blind comparison failed
+    # this identically, which is what proves it was never a model problem: a
+    # project described only in RAW_ADDITIONAL_INFO could not reach the
+    # Projects section by any route. Two independent blocks, both structural:
+    #
+    #   1. The prompt's ADDITIONAL INFO PLACEMENT rule offered exactly three
+    #      destinations — the summary, an EXISTING project's description, or
+    #      skills. There was no branch that creates a project. That is why the
+    #      strongest thing on the CV showed up as a clause in the summary or
+    #      as two words in a Tools list.
+    #   2. This loop iterates facts_json.projects, so even a model that
+    #      returned a new project anyway would have had it silently dropped
+    #      here.
+    #
+    # Both are fixed. Agent 3 now returns these in their own "new_projects"
+    # key — separate from tailored_projects, which is a join keyed on
+    # facts_json project names that these have no key for. Asking for them in
+    # the same list with an empty name was tried first and the model returned
+    # neither. They are appended after the matched ones, because the
+    # candidate's own structured projects are the ones they chose to put
+    # forward.
+    #
+    # This is not fabrication and does not weaken the no-invention rule: every
+    # word came from a field the candidate typed themselves.
+    rendered = {_match_key(p["name"]) for p in projects}
+    for tailored in state.get("new_projects", []) or []:
+        if not isinstance(tailored, dict):
+            continue
+        display_name = _s(tailored.get("display_name")).strip()
+        description = _s(tailored.get("tailored_description")).strip()
+        if not display_name or not description:
+            continue
+        # Belt and braces: if the model put a notes project here AND matched it
+        # to a facts entry above, print it once.
+        if _match_key(display_name) in rendered:
+            continue
+        rendered.add(_match_key(display_name))
+        logger.info(
+            f"➕ Project promoted out of the candidate's notes: {display_name[:60]!r}"
+        )
+        projects.append({
+            "name": display_name,
+            "tech_stack": [_s(t).strip() for t in (tailored.get("tech_stack") or []) if _s(t).strip()],
+            "description": description,
         })
 
     # ─── FACTS THAT NO AGENT REWRITES ───────────────────────────────────────
@@ -811,7 +871,13 @@ def build_cv_context(state: dict, template_id: str | None = None) -> dict:
     education = [
         {
             "institution": ar(edu.get("institution")),
-            "degree": ar(edu.get("degree")),
+            # normalize_degree runs BEFORE the glossary and before ar(): it is
+            # a Latin-only spelling fix, and an Arabic degree passes through it
+            # untouched. A hard validator rather than a prompt rule because
+            # the prompt rule demonstrably does not hold — it passed both runs
+            # of the blind comparison and failed the very next production run
+            # on the same input. See utils/cv_validators.py.
+            "degree": ar(normalize_degree(edu.get("degree"))),
             # GPA is a number; graduation_year can carry "2022-Current".
             "gpa": to_eastern_arabic_numerals(_s(edu.get("gpa"))) if is_arabic else _s(edu.get("gpa")),
             "graduation_year": localize_date(edu.get("graduation_year")) if is_arabic else _s(edu.get("graduation_year")),

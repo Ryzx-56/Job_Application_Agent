@@ -1,0 +1,55 @@
+                       Abdulmalik Yousef Hawsawi
+abdulmalikhawsawi0@gmail.com · +966 58-092-7705 · Jeddah, Saudi Arabia · linkedin.com/in/abdulmalik-hawsawi ·
+                                           github.com/Ryzx-56
+
+
+PROFESSIONAL SUMMARY
+
+Artificial Intelligence undergraduate at University of Jeddah with hands-on project experience across
+machine learning and computer vision, including leading a team that built a Gaussian Mixture Model to
+classify flight demand and a separate model that detects copy-move image forgery using the CASIA2
+dataset. Comfortable owning a project end to end, from data cleaning through to a finished, working
+system, with additional experience developing a full-stack multi-agent AI web application that included
+user authentication and subscription handling. Holds a certification in Agentic AI and brings a Python-
+based, project-driven approach to applied ML work, along with a practical background in computer
+hardware.
+
+EXPERIENCE
+
+Sales & Customer Service Assistant — Team Lab Inc                 June 2025 – August 2025 (Summer Position)
+ • Owned front-of-house operations for a high-traffic museum, handling ticketing, visitor check-in, lost
+   and found, and complaint resolution end to end.
+ • Drove gift shop sales through direct visitor engagement, applying product knowledge to convert
+   interest into purchases.
+ • Onboarded new hires by walking them through customer service protocols and daily operating
+   procedures.
+
+PROJECTS
+
+Flight Demand Prediction                Python, Machine Learning, Pandas, Gaussian Mixture Models (GMM)
+Led a team project that built a Gaussian Mixture Model to classify flight demand as high, medium, or
+low, owning the full pipeline from data cleaning through to a finished model. Worked in Python with
+pandas to prepare and process the underlying data.
+
+Detecting Image Forgery                                                   Image Processing, Computer Vision
+Led a team project that built a computer vision model to detect image forgery, identifying copy-move
+manipulation within an image using the CASIA2 dataset from Kaggle.
+
+SKILLS
+
+Languages: Python
+Tools: API Integration, Multi-Agent Systems, Pandas, Full-Stack Web Development
+
+LANGUAGES
+
+Arabic, English
+
+EDUCATION
+
+Bachelor's Degree in Artificial Intelligence — University of Jeddah                                     2027
+GPA: 4.28
+
+CERTIFICATIONS
+
+ • SDA Agentic AI
+

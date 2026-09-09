@@ -26,6 +26,7 @@ from starlette.background import BackgroundTask
 from loguru import logger
 
 from core.auth import (
+    get_current_user_id,
     get_current_user_id_query_or_header,
     get_current_admin_user_id_query_or_header,
     get_current_admin_user_id,
@@ -56,6 +57,20 @@ _DOC_TYPES = {
         "filename": "cover_letter.pdf",
     },
 }
+
+
+_UUID_RE = re.compile(r"^[0-9a-fA-F-]{36}$")
+
+
+def _require_uuid(value: str) -> str:
+    """A resume id that is shaped like one, or a 404.
+
+    404 rather than 400 on purpose: a malformed id and someone else's id must
+    be indistinguishable from the outside.
+    """
+    if not _UUID_RE.match(str(value or "")):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="CV not found.")
+    return value
 
 
 def _fetch_resume(resume_id: str) -> dict:
@@ -247,3 +262,136 @@ def get_any_resume_document(
     file's module docstring."""
     resume = _fetch_resume(resume_id)
     return _regenerate_response(resume, doc_type, download=download)
+
+
+# ─── FIND MATCHING JOBS, ON DEMAND ──────────────────────────────────────────
+#
+# WHY THIS IS AN ENDPOINT AND NOT A GRAPH NODE.
+#
+# `jobs_finder` used to be an unconditional sibling in the LangGraph fan-out,
+# so EVERY CV generation spent 8 Tavily credits looking for matching jobs
+# whether or not the person ever scrolled to that panel. Measured: 0.24 SAR of
+# Tavily against 0.0133 SAR of model on the same English CV. Tavily was 95% of
+# the cost of generating a CV, and most of it was spent on a feature nobody
+# had asked for at that moment.
+#
+# The results are identical — same pipeline, same screening, same
+# `similar_jobs` column. The only change is that somebody presses a button
+# first. If half the users never press it, that is half the Tavily bill, and
+# nobody who wants the jobs is any worse off.
+#
+# METERED, like LinkedIn Essential and Interview Prep. It is the most
+# expensive thing the product does and it was the only paid feature with no
+# cap at all — see ADDON_CAPS in core/entitlements.py.
+@router.post("/api/v1/resumes/{resume_id}/find-jobs", tags=["Resumes"])
+def find_jobs_for_resume(
+    resume_id: str,
+    user_id: str = Depends(get_current_user_id),
+) -> dict:
+    """
+    Searches for jobs matching a saved CV, and stores the result on the row.
+
+    Ownership-checked against the caller. Idempotent in the way that matters:
+    a CV that already has results returns them without spending anything, so a
+    double-click or a refresh cannot cost a second search — pass
+    `?refresh=true` to deliberately re-run one.
+    """
+    from agents.jobs_finder import (
+        TavilyQuotaExhausted,
+        _fetch_profile_location,
+        _looks_like_real_location,
+        find_similar_jobs,
+    )
+    from core.entitlements import JOB_SEARCH, consume_addon_quota, release_addon_quota, require_addon_quota
+    from core.rate_limit import JOB_SEARCH as JOB_SEARCH_RATE, enforce
+
+    enforce(JOB_SEARCH_RATE, user_id)
+
+    row = maybe_row(
+        get_admin_client()
+        .table("resumes")
+        .select("id, user_id, generation_snapshot, similar_jobs")
+        .eq("id", _require_uuid(resume_id))
+        .maybe_single()
+        .execute()
+    )
+    if not row or row.get("user_id") != user_id:
+        # 404 rather than 403 for someone else's id — a 403 would confirm the
+        # row exists. Same convention as core/linkedin.py and core/interview.py.
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="CV not found.")
+
+    existing = row.get("similar_jobs") or []
+    if existing:
+        # ALREADY PAID FOR. Returning the stored results costs nothing and is
+        # what makes the button safe to press twice.
+        return {"resume_id": resume_id, "jobs": existing, "from_cache": True}
+
+    snapshot = row.get("generation_snapshot") or {}
+    facts_json = snapshot.get("facts_json") or {}
+    weight_factors = snapshot.get("weight_factors") or {}
+    if not weight_factors.get("job_title"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={
+                "code": "cv_not_supported",
+                "message": (
+                    "This CV was saved before we started storing the data a job "
+                    "search needs. Generate a newer CV and search from that one."
+                ),
+            },
+        )
+
+    # Refused BEFORE the search, so an over-cap request costs nothing.
+    require_addon_quota(user_id, JOB_SEARCH)
+    if not consume_addon_quota(user_id, JOB_SEARCH):
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail={"code": "quota_exhausted",
+                    "message": "You have used this month's job searches."},
+        )
+
+    cv_location = ((facts_json.get("personal", {}) or {}).get("location") or "").strip()
+    profile_location = _fetch_profile_location(user_id)
+
+    try:
+        jobs = find_similar_jobs(
+            weight_factors,
+            facts_json,
+            fallback_location=None if _looks_like_real_location(cv_location) else profile_location,
+            profile_location=profile_location,
+        )
+    except TavilyQuotaExhausted as e:
+        # The slot goes back: they asked for a search and got nothing, and the
+        # reason was ours. Same rule the interview-prep worker applies.
+        release_addon_quota(user_id, JOB_SEARCH)
+        logger.error(f"🚫 Job match unavailable (Tavily quota) for resume {resume_id}: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail={
+                "code": "search_quota_exhausted",
+                "message": (
+                    "Job matching is unavailable for the rest of this month while we "
+                    "top up our search provider. Nothing was charged."
+                ),
+            },
+        )
+    except Exception as e:
+        release_addon_quota(user_id, JOB_SEARCH)
+        logger.opt(exception=True).error(f"❌ Job match failed for resume {resume_id}: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail={"code": "search_failed",
+                    "message": "Job matching is temporarily unavailable. Nothing was charged."},
+        )
+
+    # Stored so the next visit is free — this is the same column the graph
+    # node used to write, so My Resumes and everything else reads it unchanged.
+    try:
+        get_admin_client().table("resumes").update(
+            {"similar_jobs": jobs}).eq("id", resume_id).execute()
+    except Exception as e:
+        # The user has their results; failing the request now would be worse
+        # than losing the cache.
+        logger.error(f"Could not store job matches for resume {resume_id}: {e}")
+
+    return {"resume_id": resume_id, "jobs": jobs, "from_cache": False}

@@ -265,6 +265,62 @@ def _call_gemini_batch(bullet_objs: list[dict], facts_json: dict) -> dict:
         raise FactCheckerUnavailable(str(e)) from e
 
 
+# ─── ENFORCING THE PROMPT'S OWN STANDARD OF EVIDENCE ────────────────────────
+#
+# The prompt is emphatic about this and has been for a while:
+#
+#   "Fail a bullet only when you can point at the SPECIFIC invented element —
+#    quote the number, tool, employer, title, date, or scope claim that is
+#    absent from VERIFIED FACTS ... 'Feels exaggerated', 'tone is too strong',
+#    'wording differs from the source' and 'cannot be fully verified' are NOT
+#    valid reasons to fail, and any issue you write that amounts to one of
+#    those means the bullet should have passed."
+#
+# Nothing enforced it. A verdict of {"passes": false, "issue": "this feels
+# overstated"} was accepted at face value, cost a regeneration round, and on
+# the second round cost the candidate the bullet — for a reason the prompt
+# explicitly declares invalid.
+#
+# This is the Section 4 loosening, and it is a validator rather than more
+# prompt text for the same reason degree normalisation became one: the rule
+# was already written down and was already not holding.
+#
+# Deliberately narrow. It does not second-guess a verdict that names
+# something — it only rejects verdicts that name NOTHING, which by the
+# prompt's own definition are not findings. A checker that cannot say what was
+# invented has not found an invention.
+_VAGUE_ISSUE_PHRASES = (
+    "feels", "seems", "sounds", "reads as", "may be", "might be", "could be",
+    "cannot be fully verified", "can't be fully verified", "not fully verifiable",
+    "unverifiable", "cannot be verified", "can't be verified", "no evidence",
+    "too strong", "too bold", "overstated", "exaggerat", "embellish",
+    "differs from the source", "does not match the original", "not in the original wording",
+    "vague", "unclear", "generic", "subjective", "stronger than",
+)
+
+# Something concrete enough to point at: a digit, a quoted span, or a
+# capitalised proper noun that isn't just the start of the sentence.
+_CONCRETE_RE = re.compile(r"\d|[\"'“‘]|(?<!^)(?<![.!?]\s)\b[A-Z][A-Za-z0-9+#.\-]{2,}")
+
+
+def issue_names_a_specific_invention(issue: str) -> bool:
+    """
+    Does this failure verdict point at an actual invented element?
+
+    True  -> a real finding; fail the bullet.
+    False -> the prompt's own list of non-reasons; pass the bullet.
+    """
+    text = (issue or "").strip()
+    if not text:
+        return False
+    lowered = text.lower()
+    if _CONCRETE_RE.search(text):
+        return True
+    # No concrete element anywhere AND it reads like one of the named
+    # non-reasons: this is a vibe, not a finding.
+    return not any(phrase in lowered for phrase in _VAGUE_ISSUE_PHRASES)
+
+
 def run_fact_check_loop(
     bullets: list[dict],
     facts_json: dict,
@@ -276,7 +332,7 @@ def run_fact_check_loop(
     Each subsequent round: only re-check bullets that failed, still batched into one call.
 
     SPEED: when multiple bullets fail in the same round, their regeneration
-    calls (tailoring_fn -> a Claude API call each) used to run one at a time
+    calls (tailoring_fn -> a model API call each) used to run one at a time
     in a plain for-loop — a CV with, say, 5 flagged bullets paid for 5
     sequential network round-trips before the next fact-check round could
     even start. Each regeneration is independent (bullet N's rewrite
@@ -315,6 +371,16 @@ def run_fact_check_loop(
                 logger.warning(
                     f"🛡️  Fact checker returned no verdict for bullet {i} — passing it. "
                     "A missing verdict is not a finding."
+                )
+                result = {"passes": True, "issue": None}
+
+            if not result["passes"] and not issue_names_a_specific_invention(result.get("issue")):
+                # The prompt says this is not a finding. Honour that here
+                # rather than charging the candidate a regeneration round and
+                # then a bullet for it.
+                logger.info(
+                    f"🛡️  Bullet {i} failure overruled — the checker named nothing specific "
+                    f"({(result.get('issue') or '')[:70]!r}). Passing it per the prompt's own rule."
                 )
                 result = {"passes": True, "issue": None}
 
@@ -397,9 +463,9 @@ def run_fact_checker(state: AgentState) -> dict:
     facts_json = state.get("facts_json", {}) or {}
 
     # Tracks how many bullets actually needed a regeneration call (business
-    # metric) separately from raw Claude call/token counts (cost metric) —
+    # metric) separately from raw writing-model call/token counts (cost metric) —
     # a single regeneration can itself involve more than one underlying API
-    # call if generate_claude_text has to retry internally, so these two
+    # call if generate_writing_text has to retry internally, so these two
     # numbers legitimately diverge. Both get folded into the return dict
     # below and read back out by UsageEvent.from_pipeline_result in
     # core/usage_tracker.py.

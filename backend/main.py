@@ -138,6 +138,29 @@ app.include_router(job_search_router)
 app.include_router(payments_router)
 app.include_router(account_router)
 
+from core import moyasar_client  # noqa: E402  (router wiring above must run first)
+
+
+# ─── PAYMENT CONFIGURATION, CHECKED AT BOOT ─────────────────────────────────
+#
+# Going live is environment variables in two dashboards, and every way of
+# getting it wrong is SILENT: a live secret key beside a test publishable key,
+# or live keys beside the test webhook's secret. Nothing breaks at startup —
+# the failure arrives later as a customer who has been charged and credited
+# nothing, which is the worst outcome this system can produce.
+#
+# So the configuration is asserted once, here, and the mode is stated in the
+# logs in plain words. It logs and does not raise: a payment misconfiguration
+# must be loud, but it must not stop the product serving CVs to everyone who
+# is not trying to buy anything. See moyasar_client.config_problems() for the
+# specific cases and why each one is silent.
+@app.on_event("startup")
+def _report_payment_configuration() -> None:
+    try:
+        moyasar_client.startup_report()
+    except Exception as e:  # never let a diagnostic take the app down
+        logger.warning(f"Could not report the payment configuration at startup: {e}")
+
 OUTPUT_DIR = "outputs"
 
 # BUG FIX: the old constants below (RESUME_PDF_PATH etc.) pointed every user
@@ -666,10 +689,16 @@ def _pipeline_ready(result_state: dict) -> tuple[bool, str, str]:
 #     route_after_fact_check in orchestrator.py) — repeated completions of
 #     the same node are ignored here so the frontend only ever sees it go
 #     from running -> done once, not flicker on retries.
-#   - ats_scorer / document_generator / jobs_finder run in TRUE parallel
-#     (LangGraph fan-out), so they can complete in any order. Each is still
-#     reported under its own fixed Agent number the moment IT finishes,
-#     regardless of the order events actually arrive in.
+#   - ats_scorer / document_generator run in TRUE parallel (LangGraph
+#     fan-out), so they can complete in any order. Each is still reported
+#     under its own fixed Agent number the moment IT finishes, regardless of
+#     the order events actually arrive in.
+#   - jobs_finder is NOT in this map any more. It left the graph entirely —
+#     finding matching jobs is now something the user asks for on the results
+#     page rather than something every generation pays 8 Tavily credits for.
+#     See route_after_fact_check in core/orchestrator.py. Agent number 8 is
+#     deliberately left unused rather than renumbered, so a stored progress
+#     event from an older run still means what it meant when it was written.
 # The label strings are intentionally generic ("Reading your CV") — no
 # model names, no internal node names — that's the whole point of this
 # endpoint vs. what you see in the local dev logs.
@@ -687,7 +716,6 @@ _STEP_NODE_TO_AGENT = {
     "fact_checker": [(4, "factCheck")],
     "document_generator": [(6, "coverLetter")],
     "scoring": [(5, "atsScore"), (7, "matchScore")],
-    "jobs_finder": [(8, "similarJobs")],
 }
 
 

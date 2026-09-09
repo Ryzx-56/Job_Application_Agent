@@ -16,7 +16,7 @@ import {
 } from "lucide-react";
 import { useLang } from "@/lib/language";
 import { formatMediumDate } from "@/lib/pricing";
-import { fetchResumes, ResumeRecord } from "@/lib/supabase/resumes";
+import { fetchResumes, ResumeListRecord } from "@/lib/supabase/resumes";
 import { updateProfileNames } from "@/lib/supabase/profile-names";
 import {
   ApiError,
@@ -98,7 +98,7 @@ export default function LinkedInPage() {
   const params = useSearchParams();
 
   const [overview, setOverview] = useState<LinkedInOverview | null>(null);
-  const [resumes, setResumes] = useState<ResumeRecord[]>([]);
+  const [resumes, setResumes] = useState<ResumeListRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   // The underlying failure, shown in mono under the friendly line, same as
@@ -218,7 +218,7 @@ export default function LinkedInPage() {
   /** CVs we can actually build from: a row saved before generation_snapshot
    *  existed has no facts_json, so the backend would refuse it, better to say
    *  so in the picker than to fail after payment. */
-  const usableResumes = useMemo(() => resumes.filter((r) => Boolean(r.generation_snapshot)), [resumes]);
+  const usableResumes = useMemo(() => resumes.filter((r) => r.has_snapshot), [resumes]);
 
   const pricing = overview?.pricing;
   const essentialQuota = overview?.essential_quota ?? null;
@@ -832,15 +832,15 @@ function CvPicker({
   lang,
   compact = false,
 }: {
-  resumes: ResumeRecord[];
-  allResumes: ResumeRecord[];
+  resumes: ResumeListRecord[];
+  allResumes: ResumeListRecord[];
   selectedId: string | null;
   onSelect: (id: string) => void;
   copy: ReturnType<typeof useLang>["t"]["dashboard"]["linkedin"];
   lang: "en" | "ar";
   compact?: boolean;
 }) {
-  const unusableCount = allResumes.filter((r) => !r.generation_snapshot).length;
+  const unusableCount = allResumes.filter((r) => !r.has_snapshot).length;
   const nothingUsable = resumes.length === 0;
 
   // Nothing at all, or nothing we can build from: both end in the same place,

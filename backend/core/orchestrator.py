@@ -10,7 +10,6 @@ from core.fact_checker import run_fact_checker      # Validation Node
 from agents.document_generator import run_document_generator  # Agent 4
 from agents.match_scorer import run_match_scorer    # Agent 5
 from utils.ats_scorer import run_ats_scorer          # Deterministic ATS keyword/skills/education/experience match
-from agents.jobs_finder import run_jobs_finder      # Agent 6 
 
 # 1. Initialize State Graph Engine
 workflow = StateGraph(AgentState)
@@ -54,7 +53,6 @@ def run_scoring(state: AgentState) -> dict:
 
 
 workflow.add_node("scoring", run_scoring)
-workflow.add_node("jobs_finder", run_jobs_finder) # Registering the new node
 
 # jd_analyzer always runs — JD analysis doesn't depend on how the CV
 # was provided.
@@ -87,7 +85,7 @@ workflow.add_edge("jd_analyzer", "tailoring_engine")
 # ceiling). Everything downstream reads the tailored CV it never produced,
 # so continuing only buys an empty document at full price. Previously the
 # graph ran on regardless: the fact checker no-oped, ats_scorer and
-# match_scorer no-oped to 0, and document_generator STILL made a full Claude
+# match_scorer no-oped to 0, and document_generator STILL made a full model
 # call for a cover letter attached to a CV that didn't exist. That is the
 # "burned tokens for ~5 minutes and returned 0% / 0% / no content" report.
 def route_after_tailoring(state: AgentState) -> str:
@@ -118,10 +116,26 @@ def route_after_fact_check(state: AgentState):
     # output. It's folded into the "scoring" node instead (see run_scoring),
     # which keeps the ordering guarantee AND the parallelism.
     if state.get("fact_check_passed", False):
-        # Cover letter, scoring (ATS + match), and job search all run in
-        # PARALLEL — they're independent of each other. See run_scoring for
-        # why the two scorers are one node rather than two.
-        return ["document_generator", "scoring", "jobs_finder"]
+        # Cover letter and scoring (ATS + match) run in PARALLEL — they're
+        # independent of each other. See run_scoring for why the two scorers
+        # are one node rather than two.
+        #
+        # ⚠️ jobs_finder IS NO LONGER HERE, and that is the single largest
+        # cost change in the product.
+        #
+        # It used to be an unconditional third sibling, so EVERY CV
+        # generation spent 8 Tavily credits looking for matching jobs whether
+        # or not the person ever scrolled to that panel. Measured: 0.24 SAR of
+        # Tavily against 0.0133 SAR of model on the same English CV — Tavily
+        # was 95% of the cost of generating a CV, and it was spent on a
+        # feature nobody asked for at that moment.
+        #
+        # It is now on demand: POST /api/v1/resumes/{id}/find-jobs, behind a
+        # "Find matching jobs" button on the results page. Anyone who wants
+        # the results still gets exactly the same results, from the same
+        # pipeline, written back to the same `similar_jobs` column — they just
+        # press a button first. See find_jobs_for_resume in core/documents.py.
+        return ["document_generator", "scoring"]
 
     # FAIL FAST #2 — the checker itself couldn't run (see
     # FactCheckerUnavailable in core/fact_checker.py). Nothing downstream
@@ -156,7 +170,6 @@ workflow.add_conditional_edges(
     {
         "document_generator": "document_generator",
         "scoring": "scoring",
-        "jobs_finder": "jobs_finder",
         "tailoring_engine": "tailoring_engine",
         "abort": END,
     }
@@ -167,7 +180,6 @@ workflow.add_conditional_edges(
 # Connect everything out to final execution sink step
 workflow.add_edge("document_generator", END)
 workflow.add_edge("scoring", END)
-workflow.add_edge("jobs_finder", END)
 
 # Compile Graph Structure
 app = workflow.compile()

@@ -280,6 +280,7 @@ export function FileResultCard({
   previewHref,
   downloadHref,
   disabled = false,
+  onDownload,
 }: {
   icon?: React.ElementType;
   title: string;
@@ -288,6 +289,10 @@ export function FileResultCard({
   downloadLabel: string;
   previewHref: string;
   downloadHref: string;
+  /* When given, Download opens a chooser instead of downloading straight
+     away — the CV and cover letter exist as both PDF and Word, and one
+     button that silently means PDF is not a choice the user made. */
+  onDownload?: () => void;
   disabled?: boolean;
 }) {
   return (
@@ -324,8 +329,10 @@ export function FileResultCard({
           <span className="truncate">{previewLabel}</span>
         </a>
         <a
-          href={disabled ? undefined : downloadHref}
-          download
+          href={disabled || onDownload ? undefined : downloadHref}
+          download={onDownload ? undefined : true}
+          role={onDownload ? "button" : undefined}
+          onClick={onDownload ? (e) => { e.preventDefault(); onDownload(); } : undefined}
           aria-disabled={disabled}
           className={`inline-flex h-8 min-w-0 flex-1 items-center justify-center gap-1.5 rounded-lg bg-blue-600 px-2 text-xs font-medium text-white transition-colors ${
             disabled ? "pointer-events-none opacity-40" : "hover:bg-blue-500"

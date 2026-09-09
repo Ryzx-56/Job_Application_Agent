@@ -39,7 +39,11 @@ from core.auth import (
     get_current_user_id,
     read_subscription_tier,
 )
-from agents.jobs_finder import search_jobs_by_title, _fetch_profile_location
+from agents.jobs_finder import (
+    TavilyQuotaExhausted,
+    _fetch_profile_location,
+    search_jobs_by_title,
+)
 
 router = APIRouter()
 
@@ -119,6 +123,24 @@ def job_search(
     try:
         results = search_jobs_by_title(
             title, location=location, internships=bool(payload.internships)
+        )
+    except TavilyQuotaExhausted as e:
+        # NOT "no jobs found". The search provider is out of credits for the
+        # month, and returning an empty list here would tell a paying
+        # subscriber there are no jobs for their title — which is a lie, and
+        # the most damaging possible reading of this failure. Its own code so
+        # the page can say something true.
+        logger.error(f"🚫 Job search unavailable (Tavily quota) for '{title}': {e}")
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail={
+                "code": "search_quota_exhausted",
+                "message": (
+                    "Job search is unavailable for the rest of this month while we "
+                    "top up our search provider. Nothing was charged. Your saved "
+                    "CVs and every other feature are unaffected."
+                ),
+            },
         )
     except Exception as e:
         logger.error(f"❌ Job search failed for '{title}': {type(e).__name__}: {e}")

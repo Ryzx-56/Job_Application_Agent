@@ -1,0 +1,56 @@
+                       Abdulmalik Yousef Hawsawi
+abdulmalikhawsawi0@gmail.com · +966 58-092-7705 · Jeddah, Saudi Arabia · linkedin.com/in/abdulmalik-hawsawi ·
+                                           github.com/Ryzx-56
+
+
+PROFESSIONAL SUMMARY
+
+Machine Learning Engineer with hands-on experience building end-to-end ML pipelines, from data
+preprocessing through model deployment. Proficient in Python and computer vision, with demonstrated
+expertise in classification models and image processing. Currently pursuing a degree in Artificial
+Intelligence and actively developing production-grade systems including multi-agent architectures.
+Seeking to apply strong technical foundation and proven ability to lead projects in a mid-level ML
+engineering role.
+
+EXPERIENCE
+
+Sales & Customer Service Assistant — Team Lab Inc                 June 2025 – August 2025 (Summer Position)
+ • Owned front-of-house operations at a high-traffic venue, handling ticketing, visitor flow, and
+   customer service inquiries independently.
+ • Drove retail sales through direct customer engagement and product knowledge application in a fast-
+   paced environment.
+ • Onboarded new team members by documenting and instructing operational procedures and
+   customer service standards.
+
+PROJECTS
+
+Flight Demand              Python, Machine Learning, Pandas, Gaussian Mixture Models, Data Preprocessing
+Prediction Model
+Led development of a machine learning classifier that predicts and categorizes flight demand as high,
+medium, or low using Gaussian Mixture Models. Owned the complete pipeline from data cleaning and
+feature engineering with Pandas through model training and validation.
+
+Image Forgery Detection          Python, Computer Vision, Image Processing, Deep Learning, Kaggle Datasets
+System
+Led a team project to build a computer vision model that identifies forged images by detecting copy-
+move forgery and other tampering techniques. Trained the model on the CASIA 2 dataset and delivered
+a system capable of classifying image authenticity with visual evidence of alterations.
+
+SKILLS
+
+Languages: Python
+Tools: API Integration, Multi-Agent Systems
+
+LANGUAGES
+
+Arabic, English
+
+EDUCATION
+
+Bachelor degree in Artificial Intelligence — University of Jeddah                                       2027
+GPA: 4.28
+
+CERTIFICATIONS
+
+ • SDA Agentic AI
+

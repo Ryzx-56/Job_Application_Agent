@@ -1,10 +1,16 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { ChevronDown, ChevronUp, ChevronLeft, ChevronRight, FileText, FileType2, Mail, Loader2, AlertCircle, Trash2, Briefcase, ExternalLink } from "lucide-react";
+import React, { useEffect, useState } from "react";
+import { ChevronDown, ChevronUp, ChevronLeft, ChevronRight, FileText, FileType2, Mail, Loader2, AlertCircle, Trash2, Briefcase, ExternalLink, Download, X } from "lucide-react";
 import { useLang } from "@/lib/language";
 import { EmptyState, ScoreRing, ScoreBar, FileResultCard } from "@/components/dashboard";
-import { fetchResumes, getDocumentUrl, deleteResume, ResumeRecord } from "@/lib/supabase/resumes";
+import {
+  fetchResumes,
+  getDocumentUrl,
+  deleteResume,
+  findJobsForResume,
+  ResumeListRecord,
+} from "@/lib/supabase/resumes";
 import { MATCH_TIER_COPY, getMatchTier, type MatchTier, type SimilarJob } from "@/lib/jobMatch";
 import { formatMediumDate } from "@/lib/pricing";
 
@@ -145,7 +151,55 @@ const MATCH_BADGE_CLASSES: Record<MatchTier, string> = {
    existed, or a run that genuinely matched nothing), which is why the empty
    case says nothing was SAVED rather than nothing was found.
 ======================================================================== */
-function ResumeJobs({ jobs, lang, copy }: { jobs: SimilarJob[]; lang: "en" | "ar"; copy: any }) {
+/** The jobs panel, and the button that fills it.
+ *
+ *  Job matching used to run inside every CV generation — 8 Tavily credits per
+ *  CV, roughly 18x the model cost of the same CV, on a panel most people never
+ *  scrolled to. It is now asked for. `savedJobs` is what the row already has;
+ *  pressing the button fetches and stores them, after which the row has them
+ *  and never searches again. */
+function ResumeJobs({
+  resumeId,
+  savedJobs,
+  lang,
+  copy,
+}: {
+  resumeId: string;
+  savedJobs: SimilarJob[];
+  lang: "en" | "ar";
+  copy: any;
+}) {
+  const [jobs, setJobs] = useState<SimilarJob[]>(savedJobs);
+  const [searching, setSearching] = useState(false);
+  const [searchError, setSearchError] = useState<string | null>(null);
+  const [searched, setSearched] = useState(savedJobs.length > 0);
+
+  async function handleFind() {
+    setSearching(true);
+    setSearchError(null);
+    try {
+      const result = await findJobsForResume(resumeId);
+      setJobs(result.jobs);
+      setSearched(true);
+    } catch (error) {
+      const err = error as Error & { code?: string };
+      console.error("findJobsForResume failed:", err);
+      setSearchError(
+        err.code === "search_quota_exhausted"
+          ? copy.jobsQuotaExhausted
+          : err.code === "upgrade_required"
+            ? copy.jobsUpgradeRequired
+            : err.code === "cv_not_supported"
+              ? copy.jobsNotSupported
+              : err.code === "quota_exhausted"
+                ? copy.jobsSearchNoneLeft("")
+                : copy.jobsSearchFailed
+      );
+    } finally {
+      setSearching(false);
+    }
+  }
+
   return (
     <div className="rounded-xl border border-slate-200 bg-white p-4">
       <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
@@ -158,9 +212,34 @@ function ResumeJobs({ jobs, lang, copy }: { jobs: SimilarJob[]; lang: "en" | "ar
         )}
       </div>
 
-      {jobs.length === 0 ? (
+      {!searched && jobs.length === 0 && (
+        <div className="mt-2">
+          <p className="text-sm text-slate-500">{copy.jobsNotSearchedYet}</p>
+          <button
+            type="button"
+            onClick={handleFind}
+            disabled={searching}
+            className="mt-2.5 inline-flex min-h-[40px] items-center gap-1.5 rounded-lg bg-blue-600 px-3.5 text-sm font-medium text-white transition-colors hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-60 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600"
+          >
+            {searching ? (
+              <Loader2 className="size-4 animate-spin motion-reduce:animate-none" aria-hidden />
+            ) : (
+              <Briefcase className="size-4" aria-hidden />
+            )}
+            {searching ? copy.jobsFinding : copy.jobsFindCta}
+          </button>
+        </div>
+      )}
+
+      {searchError && (
+        <p role="alert" className="mt-2.5 text-sm leading-relaxed text-amber-700">
+          {searchError}
+        </p>
+      )}
+
+      {searched && jobs.length === 0 ? (
         <p className="mt-2 text-sm text-slate-500">{copy.jobsEmpty}</p>
-      ) : (
+      ) : jobs.length === 0 ? null : (
         <>
           <p className="mt-1.5 text-xs leading-relaxed text-slate-500">{copy.jobsSub}</p>
           <ul className="mt-3 space-y-2">
@@ -226,7 +305,109 @@ function ResumeJobs({ jobs, lang, copy }: { jobs: SimilarJob[]; lang: "en" | "ar
    opened/downloaded, same latency profile as the original generate flow's
    preview/download links.
 ======================================================================== */
-function ResumeDetail({ resume, lang, copy, generateCopy }: { resume: ResumeRecord; lang: "en" | "ar"; copy: any; generateCopy: any }) {
+/* ========================================================================
+   DOWNLOAD FORMAT CHOOSER
+   Replaces a bare "Download as Word" link sitting next to a Download button
+   that silently meant PDF — two controls, one of which named its format and
+   the other did not.
+
+   MOBILE FIRST: a bottom sheet on small screens (thumb reach, 44px targets)
+   and a centred dialog from `sm` up. Most users are on a phone.
+
+   EVERY WORD FOLLOWS THE PAGE LANGUAGE except "Word" and "PDF", which are
+   product names and stay Latin in both.
+======================================================================== */
+function DownloadFormatDialog({
+  open,
+  onClose,
+  title,
+  pdfHref,
+  docxHref,
+  copy,
+  lang,
+}: {
+  open: boolean;
+  onClose: () => void;
+  title: string;
+  pdfHref: string | null;
+  docxHref: string | null;
+  copy: any;
+  lang: "en" | "ar";
+}) {
+  // Escape closes it, and focus goes to the panel so a keyboard user is
+  // inside the dialog rather than still on the page behind it.
+  const panelRef = React.useRef<HTMLDivElement>(null);
+  React.useEffect(() => {
+    if (!open) return;
+    panelRef.current?.focus();
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [open, onClose]);
+
+  if (!open) return null;
+
+  const option = (href: string | null, label: string, note: string) => (
+    <a
+      href={href ?? "#"}
+      aria-disabled={!href}
+      onClick={(e) => {
+        if (!href) e.preventDefault();
+        else onClose();
+      }}
+      className={`flex min-h-[52px] items-center justify-between gap-3 rounded-xl border px-4 py-3 text-start transition-colors ${
+        href
+          ? "border-slate-200 bg-white hover:border-blue-400 hover:bg-blue-50/50"
+          : "cursor-not-allowed border-slate-200 bg-slate-50 opacity-60"
+      } focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600`}
+    >
+      <span className="min-w-0">
+        <span className="block text-sm font-semibold text-slate-900">{label}</span>
+        <span className="mt-0.5 block text-xs leading-relaxed text-slate-500">{note}</span>
+      </span>
+      <Download className="size-4 shrink-0 text-slate-400" aria-hidden />
+    </a>
+  );
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-end justify-center bg-slate-900/50 p-0 sm:items-center sm:p-4"
+      onClick={onClose}
+      dir={lang === "ar" ? "rtl" : "ltr"}
+    >
+      <div
+        ref={panelRef}
+        tabIndex={-1}
+        role="dialog"
+        aria-modal="true"
+        aria-label={title}
+        onClick={(e) => e.stopPropagation()}
+        className="w-full max-w-sm rounded-t-2xl bg-white p-5 shadow-xl outline-none sm:rounded-2xl"
+      >
+        <div className="mb-1 flex items-start justify-between gap-3">
+          <h2 className="text-base font-semibold text-slate-900">{title}</h2>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label={copy.downloadDialogClose}
+            className="-me-1.5 -mt-1.5 grid size-9 shrink-0 place-items-center rounded-lg text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600"
+          >
+            <X className="size-4" aria-hidden />
+          </button>
+        </div>
+        <p className="mb-4 text-xs leading-relaxed text-slate-500">{copy.downloadDialogBody}</p>
+        <div className="space-y-2.5">
+          {option(pdfHref, "PDF", lang === "ar" ? "يحافظ على التنسيق تمامًا" : "Keeps the layout exactly")}
+          {option(docxHref, "Word", lang === "ar" ? "قابل للتعديل" : "Editable")}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ResumeDetail({ resume, lang, copy, generateCopy }: { resume: ResumeListRecord; lang: "en" | "ar"; copy: any; generateCopy: any }) {
   const [cvUrl, setCvUrl] = useState<string | null>(null);
   const [clUrl, setClUrl] = useState<string | null>(null);
   const [cvDownloadUrl, setCvDownloadUrl] = useState<string | null>(null);
@@ -234,7 +415,9 @@ function ResumeDetail({ resume, lang, copy, generateCopy }: { resume: ResumeReco
   const [cvDocxDownloadUrl, setCvDocxDownloadUrl] = useState<string | null>(null);
   const [loadingFiles, setLoadingFiles] = useState(true);
 
-  const hasSnapshot = !!resume.generation_snapshot;
+  const hasSnapshot = resume.has_snapshot;
+  // Which document's format chooser is open, if any.
+  const [downloadChoice, setDownloadChoice] = useState<"cv" | "cl" | null>(null);
 
   useEffect(() => {
     if (!hasSnapshot) {
@@ -294,6 +477,10 @@ function ResumeDetail({ resume, lang, copy, generateCopy }: { resume: ResumeReco
           </p>
           {resume.job_match_reason && (
             <>
+              {/* This paragraph had a label a user could not act on. It is the
+                  match scorer's explanation of the SCORE — strengths and gaps
+                  in prose — and it is not the gap analysis, which is a
+                  separate structured list rendered below. */}
               <p className="mt-2 text-xs font-medium text-slate-500">{copy.matchReasonLabel}</p>
               <p className="mt-1 text-sm leading-relaxed text-slate-600">{resume.job_match_reason}</p>
             </>
@@ -318,6 +505,44 @@ function ResumeDetail({ resume, lang, copy, generateCopy }: { resume: ResumeReco
         </div>
       </div>
 
+      {/* GAP ANALYSIS — generated, stored, and until now never displayed.
+          `gap_analysis` is written by the match scorer on every run and the
+          page rendered none of it, so the most actionable thing the pipeline
+          produces (the specific skills this job wants that the CV does not
+          evidence, and what to do about each) existed only in the database.
+          It gets its own heading because the section above is a different
+          thing and was being mistaken for this one. */}
+      {(resume.gap_analysis ?? []).length > 0 && (
+        <div className="rounded-xl border border-slate-200 bg-white p-4">
+          <p className="text-sm font-semibold text-slate-900">{copy.gapAnalysisLabel}</p>
+          <p className="mt-0.5 text-xs text-slate-500">{copy.gapAnalysisNote}</p>
+          <ul className="mt-3 space-y-2.5">
+            {(resume.gap_analysis ?? []).map((gap, i) => (
+              <li key={`${gap.skill}-${i}`} className="rounded-lg border border-slate-200 p-3">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="text-sm font-medium text-slate-900">{gap.skill}</span>
+                  <span
+                    className={`rounded px-1.5 py-0.5 text-[11px] font-medium ${
+                      gap.importance === "required"
+                        ? "bg-rose-50 text-rose-700"
+                        : "bg-slate-100 text-slate-600"
+                    }`}
+                  >
+                    {gap.importance === "required" ? copy.gapRequired : copy.gapPreferred}
+                  </span>
+                </div>
+                {gap.how_to_close && (
+                  <>
+                    <p className="mt-1.5 text-xs font-medium text-slate-500">{copy.gapHowToClose}</p>
+                    <p className="mt-0.5 text-sm leading-relaxed text-slate-600">{gap.how_to_close}</p>
+                  </>
+                )}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
       {resume.tailored_summary && (
         <p className="rounded-xl border border-slate-200 bg-white p-4 text-sm leading-relaxed text-slate-700">
           {resume.tailored_summary}
@@ -326,7 +551,12 @@ function ResumeDetail({ resume, lang, copy, generateCopy }: { resume: ResumeReco
 
       {/* similar_jobs is a JSONB column that can be null on rows written
           before job search shipped — coalesce before handing it on. */}
-      <ResumeJobs jobs={resume.similar_jobs ?? []} lang={lang} copy={copy} />
+      <ResumeJobs
+        resumeId={resume.id}
+        savedJobs={resume.similar_jobs ?? []}
+        lang={lang}
+        copy={copy}
+      />
 
       {!hasSnapshot ? (
         <div className="flex items-center gap-2 rounded-xl border border-amber-200 bg-amber-50/60 px-4 py-3 text-sm text-amber-700">
@@ -353,16 +583,11 @@ function ResumeDetail({ resume, lang, copy, generateCopy }: { resume: ResumeReco
               previewHref={cvUrl ?? "#"}
               downloadHref={cvDownloadUrl ?? "#"}
               disabled={!cvUrl}
+              onDownload={() => setDownloadChoice("cv")}
             />
-            {cvDocxDownloadUrl && (
-              <a
-                href={cvDocxDownloadUrl}
-                className="ms-1 inline-flex items-center gap-1 text-xs font-medium text-blue-600 hover:text-blue-700"
-              >
-                <FileType2 className="size-3" aria-hidden />
-                {lang === "ar" ? "تنزيل بصيغة Word" : "Download as Word"}
-              </a>
-            )}
+            {/* The words "download as word" are gone. Both formats now live
+                behind one Download control that asks which — see
+                DownloadFormatDialog. */}
           </div>
           <FileResultCard
             icon={Mail}
@@ -373,9 +598,24 @@ function ResumeDetail({ resume, lang, copy, generateCopy }: { resume: ResumeReco
             previewHref={clUrl ?? "#"}
             downloadHref={clDownloadUrl ?? "#"}
             disabled={!clUrl}
+            onDownload={() => setDownloadChoice("cl")}
           />
         </div>
       )}
+
+      {/* One dialog, driven by which card asked. The cover letter has no
+          Word export endpoint, so that option renders disabled rather than
+          offering a download that would 404 — an honest "not available"
+          beats a broken link. */}
+      <DownloadFormatDialog
+        open={downloadChoice !== null}
+        onClose={() => setDownloadChoice(null)}
+        title={downloadChoice === "cl" ? copy.downloadCoverLetterTitle : copy.downloadCvTitle}
+        pdfHref={downloadChoice === "cl" ? clDownloadUrl : cvDownloadUrl}
+        docxHref={downloadChoice === "cl" ? null : cvDocxDownloadUrl}
+        copy={copy}
+        lang={lang}
+      />
     </div>
   );
 }
@@ -385,7 +625,7 @@ export default function MyResumesPage() {
   const copy = t.dashboard.resumes;
   const generateCopy = t.dashboard.generate;
 
-  const [resumes, setResumes] = useState<ResumeRecord[]>([]);
+  const [resumes, setResumes] = useState<ResumeListRecord[]>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -418,7 +658,7 @@ export default function MyResumesPage() {
 
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
-  async function handleDelete(resume: ResumeRecord) {
+  async function handleDelete(resume: ResumeListRecord) {
     const label = resume.role || copy.untitledRole;
     const confirmMsg =
       lang === "ar"

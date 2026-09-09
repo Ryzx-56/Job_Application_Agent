@@ -3,7 +3,7 @@ import json
 import re
 from loguru import logger
 from core.state import AgentState
-from core.llm_config import generate_claude_text, ClaudeTruncationError
+from core.llm_config import WRITING_MODEL, generate_writing_text, TruncationError
 
 MATCH_SCORER_PROMPT = """
 You are an expert recruiter and career coach.
@@ -99,7 +99,7 @@ def _strip_dashes(text: str) -> str:
 
 def run_match_scorer(state: AgentState) -> AgentState:
     """
-    Agent 5 — Match Scorer (Claude Sonnet 5).
+    Agent 5 — Match Scorer. Runs on core/llm_config.WRITING_MODEL.
     Calculates alignment between the tailored CV and the job description, AND
     turns Agent 2's (ats_scorer.py) raw missing_skills / unmatched_keywords into
     actionable "how to improve your CV" guidance the frontend renders directly.
@@ -114,7 +114,7 @@ def run_match_scorer(state: AgentState) -> AgentState:
     if state.get("error"):
         return state
 
-    logger.info("🎯 Agent 5 — Scoring match + building improvement guidance (Claude Sonnet 5)...")
+    logger.info(f"🎯 Agent 5 — Scoring match + building improvement guidance ({WRITING_MODEL})...")
 
     cv_content = {
     "summary": state.get("tailored_summary"),
@@ -159,16 +159,16 @@ def run_match_scorer(state: AgentState) -> AgentState:
         current_skills=json.dumps(current_skills, ensure_ascii=False),
     )
 
-    # 900 -> 2500: on Sonnet 5, adaptive thinking runs by default and its
+    # 900 -> 2500: on every writing model reasons before answering and those tokens
     # tokens count against max_tokens. This task needs the model to
     # actually reason about fit before answering (that's the point of
     # Agent 5), so we keep thinking ON rather than disabling it — just
     # give it enough headroom that reasoning doesn't crowd out the JSON
-    # it still has to return. generate_claude_text auto-escalates further
+    # it still has to return. generate_writing_text auto-escalates further
     # if even this gets truncated.
     #
     # Arabic gets more room for the same reason the tailoring budgets do
-    # (see CLAUDE_BUDGETS in core/llm_config.py): this node writes its
+    # (see WRITING_BUDGETS in core/llm_config.py): this node writes its
     # "reason" and "how_to_close" text in whatever language the CV is in,
     # and Arabic costs roughly 2-3x the tokens. At a flat 2500 an Arabic
     # run could truncate, fall into the except below, and report a 0% match
@@ -179,7 +179,7 @@ def run_match_scorer(state: AgentState) -> AgentState:
     budget = 5000 if is_arabic else 2500
 
     try:
-        raw = generate_claude_text(prompt, max_tokens=budget, max_tokens_ceiling=12000)
+        raw = generate_writing_text(prompt, max_tokens=budget, max_tokens_ceiling=12000)
         #logger.debug(f"Agent 5 raw response:\n{raw}")
         raw = re.sub(r"```json|```", "", raw).strip()
         MAX_RETRIES = 3
@@ -196,7 +196,7 @@ def run_match_scorer(state: AgentState) -> AgentState:
                     f"Agent 5 JSON parse failed ({attempt+1}/{MAX_RETRIES}), retrying..."
                 )
 
-                raw = generate_claude_text(prompt, max_tokens=budget, max_tokens_ceiling=12000)
+                raw = generate_writing_text(prompt, max_tokens=budget, max_tokens_ceiling=12000)
                 raw = re.sub(r"```json|```", "", raw).strip()
 
         match_score = data.get("score", 0)
@@ -230,7 +230,7 @@ def run_match_scorer(state: AgentState) -> AgentState:
             "overall_recommendation": overall_recommendation,
         }
 
-    except ClaudeTruncationError as e:
+    except TruncationError as e:
         # Retrying an identical prompt that already overflowed the ceiling
         # just spends more tokens to reach the same place. Log it distinctly
         # so a recurring truncation here is visible as a budget problem

@@ -148,23 +148,78 @@ export async function saveResumeResult(params: {
    excluded from this list by default; their data isn't deleted, just
    hidden from the main view, per the retention design.
 ======================================================================== */
+/* The columns a LIST needs. Everything a card or a picker row renders, and
+   nothing else.
+
+   WHY THIS EXISTS. This was `select("*")`, and `*` includes
+   `generation_snapshot` — the entire structured payload the PDF is rebuilt
+   from: full facts_json, every tailored bullet, the cover letter text, the
+   ATS breakdown. Tens of KB per row. The LinkedIn page asks for 50 rows, so
+   opening it downloaded **megabytes of JSON to draw a list of titles**, over
+   whatever connection the user is on. That is the "Loading your CVs" wait.
+
+   The one thing a list genuinely needs from the snapshot is whether it
+   EXISTS — CVs saved before snapshots were stored cannot be used for
+   LinkedIn or Interview Prep. So instead of the whole column, we pull one
+   deep field out of it via PostgREST's JSON path selection. It is a few
+   bytes, and it answers exactly the question the picker asks. */
+const RESUME_LIST_COLUMNS =
+  "id, user_id, role, company, cv_language, job_description, ats_score, " +
+  "ats_breakdown, job_match_score, job_match_reason, overall_recommendation, " +
+  "fact_check_passed, tailored_summary, tailored_bullets, gap_analysis, " +
+  "similar_jobs, cover_letter_text, is_archived, created_at, " +
+  "snapshot_name:generation_snapshot->facts_json->personal->name";
+
+/** Every column except `generation_snapshot`, plus `has_snapshot` answering
+ *  the only question the lists ever asked it.
+ *
+ *  The snapshot is dropped rather than trimmed because it is a SUPERSET of
+ *  most of the other columns — facts_json plus every tailored field — so a
+ *  list was downloading the same content twice, and the second copy was the
+ *  large one. */
+export type ResumeListRecord = Omit<ResumeRecord, "generation_snapshot"> & {
+  has_snapshot: boolean;
+};
+
 export async function fetchResumes(
   page: number,
   pageSize: number
-): Promise<{ resumes: ResumeRecord[]; total: number }> {
+): Promise<{ resumes: ResumeListRecord[]; total: number }> {
   const supabase = createClient();
   const from = page * pageSize;
   const to = from + pageSize - 1;
 
   const { data, error, count } = await supabase
     .from("resumes")
-    .select("*", { count: "exact" })
+    .select(RESUME_LIST_COLUMNS, { count: "exact" })
     .eq("is_archived", false)
     .order("created_at", { ascending: false })
     .range(from, to);
 
   if (error) throw error;
-  return { resumes: (data ?? []) as ResumeRecord[], total: count ?? 0 };
+  const rows = (data ?? []) as unknown as (ResumeListRecord & { snapshot_name?: unknown })[];
+  return {
+    resumes: rows.map(({ snapshot_name, ...row }) => ({
+      ...row,
+      // A name inside the snapshot means the structured data is there. Null
+      // on legacy rows, which is precisely what the pickers gate on.
+      has_snapshot: snapshot_name != null,
+    })),
+    total: count ?? 0,
+  };
+}
+
+/** The full row, snapshot included. For the one place that needs it: opening
+ *  a single CV, not listing them. */
+export async function fetchResume(id: string): Promise<ResumeRecord | null> {
+  const supabase = createClient();
+  const { data, error } = await supabase
+    .from("resumes")
+    .select("*")
+    .eq("id", id)
+    .maybeSingle();
+  if (error) throw error;
+  return (data as ResumeRecord) ?? null;
 }
 
 /* ========================================================================
@@ -299,4 +354,47 @@ export async function deleteResume(id: string): Promise<void> {
     // than an error in that case.
     throw new Error("Delete did not remove any rows. Check the RLS DELETE policy on `resumes`.");
   }
+}
+
+
+/* ========================================================================
+   FIND MATCHING JOBS — on demand.
+
+   Job matching used to run automatically inside every CV generation, which
+   spent 8 Tavily credits (0.24 SAR) per CV against a quota shared by the
+   whole platform — about 18x the model cost of the same CV, on a panel most
+   people never scrolled to. It is now something the user asks for.
+
+   The results are identical and land in the same `similar_jobs` column, so a
+   CV that already has them never searches again.
+======================================================================== */
+export type FindJobsResult = {
+  resume_id: string;
+  jobs: SimilarJob[];
+  from_cache: boolean;
+};
+
+export async function findJobsForResume(resumeId: string): Promise<FindJobsResult> {
+  const supabase = createClient();
+  const {
+    data: { session },
+  } = await supabase.auth.getSession();
+  if (!session?.access_token) throw new Error("Not authenticated");
+
+  const res = await fetch(`${API_URL}/api/v1/resumes/${resumeId}/find-jobs`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${session.access_token}` },
+  });
+
+  if (!res.ok) {
+    const body = await res.json().catch(() => null);
+    const detail = body?.detail;
+    const err: Error & { code?: string; status?: number } = new Error(
+      typeof detail === "string" ? detail : detail?.message ?? `Request failed: ${res.status}`
+    );
+    err.status = res.status;
+    if (detail && typeof detail === "object") err.code = detail.code;
+    throw err;
+  }
+  return (await res.json()) as FindJobsResult;
 }

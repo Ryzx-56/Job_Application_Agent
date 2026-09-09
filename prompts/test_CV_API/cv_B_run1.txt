@@ -1,0 +1,53 @@
+                       Abdulmalik Yousef Hawsawi
+abdulmalikhawsawi0@gmail.com · +966 58-092-7705 · Jeddah, Saudi Arabia · linkedin.com/in/abdulmalik-hawsawi ·
+                                           github.com/Ryzx-56
+
+
+PROFESSIONAL SUMMARY
+
+Artificial Intelligence student at the University of Jeddah, graduating in 2027 with a 4.28 GPA. Builds
+machine learning and computer vision projects in Python, including flight demand prediction with a
+GMM model and image forgery detection using CASIA 2 data from Kaggle. Led team projects from data
+cleaning through completed models and developed a multi-agent system with working frontend and
+backend features, user accounts, and paid subscriptions. Seeking to contribute to a Machine Learning
+Engineer role through practical model development, computer vision, and applied AI work.
+
+EXPERIENCE
+
+Sales and Customer Service Assistant — Team Lab Inc               June 2025 – August 2025 (Summer Position)
+ • Owned daily visitor-facing operations in a high-traffic museum, covering ticket sales, check-in, lost
+   and found, and customer complaint handling.
+ • Drove gift shop sales through product knowledge and direct customer conversations with museum
+   visitors.
+ • Guided new staff through customer service protocols and day-to-day operating procedures during
+   onboarding.
+
+PROJECTS
+
+Flight Demand Prediction              Python, Programming, Machine Learning, Pandas, GMM, Data Cleaning
+Led development of a Python machine learning model that classified flight demand as high, medium, or
+low. Built the full GMM workflow, from data cleaning through the completed model.
+
+Detecting Image Forgery                   Image Processing, Programming, Computer Vision, CASIA 2, Kaggle
+Led a team project that developed a computer vision model for identifying image forgery involving
+copied or duplicated content within an image. Used CASIA 2 data from Kaggle to support the image
+processing workflow.
+
+SKILLS
+
+Languages: Python
+Tools: API Integration, Multi-Agent System, Pandas, CASIA 2, Kaggle
+
+LANGUAGES
+
+Arabic, English
+
+EDUCATION
+
+Bachelor's Degree in Artificial Intelligence — University of Jeddah                                     2027
+GPA: 4.28
+
+CERTIFICATIONS
+
+ • SDA Agentic AI
+

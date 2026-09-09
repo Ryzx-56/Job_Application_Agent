@@ -4,9 +4,10 @@ import re
 from loguru import logger
 from pydantic import ValidationError
 from core.state import AgentState
-from core.llm_config import generate_claude_text, claude_budget, ClaudeTruncationError
+from core.llm_config import WRITING_MODEL, generate_writing_text, writing_budget, TruncationError
 from core.humanizer import HUMANIZER_RULES
 from schemas.tailored_cv_schema import TailoredCV
+from utils.cv_validators import clean_skills, clean_tech_stack
 from utils.arabic_localizer import (
     build_glossary,
     find_latin_terms,
@@ -17,15 +18,52 @@ from utils.arabic_localizer import (
 
 # Split into a static system block (identical on every single call —
 # English or Arabic, retry or first attempt — so it's what actually
-# benefits from cache_control in generate_claude_text) and a small dynamic
+# benefits from cache_control in generate_writing_text) and a small dynamic
 # user block below (TAILORING_USER_TEMPLATE) carrying the parts that
 # genuinely change per request: language_instruction (2 fixed variants) and
 # the three data blobs. Keeping FACTS_JSON/WEIGHT_FACTORS/additional_info
 # OUT of this block is what makes it cacheable — if per-request data were
 # spliced in here, every call would be a fresh cache write instead of a
 # hit, and none of the saving would materialize. See the `system` param
-# docstring on generate_claude_text (core/llm_config.py) for how the cache
+# docstring on generate_writing_text (core/llm_config.py) for how the cache
 # actually gets applied.
+# ─── THE SHARED SKILLS-INFERENCE RULE ────────────────────────────────────────
+#
+# A NAMED CONSTANT, not a slice of a prompt.
+#
+# agents/linkedin_generator.py holds its About-box skills to the same standard
+# this prompt sets, and used to get the text by calling
+# TAILORING_SYSTEM_PROMPT.index("MISSING/EMPTY SKILLS") at import time. That
+# heading was later renamed to "MISSING/EMPTY/IRRELEVANT SKILLS", the slice
+# raised, and linkedin_generator fell back to a four-line summary of the rule
+# — silently, behind a WARNING nobody was reading. It shipped that way, and
+# the only visible symptom was LinkedIn profiles held to a weaker
+# evidence standard than CVs.
+#
+# One string, imported by both, so renaming a heading cannot quietly downgrade
+# a feature. tests/test_shared_skills_rule.py fails loudly if this ever goes
+# missing from either consumer.
+SKILLS_INFERENCE_RULE = """\
+  MISSING/EMPTY/IRRELEVANT SKILLS — infer from evidence, do not leave it blank:
+  - The same applies when what they listed is simply not relevant to THIS job. A section full of
+    skills the JD never asks for is as weak as an empty one: keep the genuine ones, and add the
+    JD-relevant skills their own experience and projects demonstrate but they forgot to list.
+  - If FACTS_JSON.skills is empty or very thin (fewer than ~3 total entries across all categories),
+    you MUST still populate "tailored_skills" by inferring skills that are clearly and specifically
+    demonstrated in FACTS_JSON.experience, FACTS_JSON.projects, or RAW_ADDITIONAL_INFO — even though
+    they weren't listed under skills. Example: a bullet or project description saying "built a
+    website" supports adding "HTML" and "CSS"; "analyzed sales data in spreadsheets" supports
+    "Microsoft Excel" or "Data analysis"; it does NOT support adding "Python" unless a
+    language/tool is actually named or unambiguously implied.
+  - This is NOT an exception to the no-fabrication rule — it's the same "is this claim TRUE
+    according to FACTS_JSON" test used everywhere else in this prompt, just reading the evidence
+    from a different field. Every inferred skill must be traceable to a specific sentence in
+    FACTS_JSON if someone asked you to justify it. If you can't point to that sentence, leave the
+    skill out.
+  - "tailored_skills" being completely empty across every category is only acceptable if
+    FACTS_JSON.skills, FACTS_JSON.experience, FACTS_JSON.projects, and RAW_ADDITIONAL_INFO all
+    genuinely contain nothing to infer a skill from — this should be rare in practice."""
+
 TAILORING_SYSTEM_PROMPT = """
 You are a senior CV writer with 15 years of experience.
 
@@ -83,6 +121,24 @@ FIELD CLASSIFICATION — THREE TIERS. Getting this wrong is how raw notes reach 
   candidate has actually done, and let that inform the professional summary, the bullets you
   emphasize, and which JD keywords you can honestly cover. A skill demonstrated by a
   publication, a course or a committee role is a real skill and may go in tailored_skills.
+
+"professional_summary" — STRUCTURE IT, do not write a paragraph of adjectives:
+  Exactly three parts, in this order, 45-70 words total. Never longer.
+    1. The target role and the candidate's actual standing in it.
+    2. TWO concrete proof points, each naming a real technology, system or figure from
+       FACTS_JSON. Not "experienced in machine learning" — say what was built and with what.
+    3. One differentiator: the thing this candidate has that most applicants for this job
+       will not.
+  Good (write like this):
+    "Machine learning engineer building production computer-vision and multi-agent systems.
+     Trained a document-forgery detector to 92% accuracy in PyTorch, and built a multi-agent CV
+     platform end to end on FastAPI, LangGraph and Supabase, including auth and billing.
+     Ships complete systems rather than notebooks, in Arabic and English."
+  Bad (never write like this):
+    "Motivated and detail-oriented AI graduate with a passion for machine learning and a proven
+     track record of delivering results in fast-paced environments."
+  The bad example contains no fact. If a sentence you wrote would be equally true of a different
+  candidate, delete it and use the space for something from FACTS_JSON.
 
 FACTS_JSON.summary — the candidate's own profile paragraph from their CV:
   - Treat it as the primary source for "professional_summary". Cover its substance: the
@@ -164,37 +220,45 @@ LENGTH CONTROL — CONDENSE, DO NOT COPY:
 
 ADDITIONAL INFO PLACEMENT:
 
-  RAW_ADDITIONAL_INFO must NOT become its own isolated CV section. Instead:
+  RAW_ADDITIONAL_INFO must NOT become its own isolated CV section. Instead, route every part of
+  it to where it belongs:
+  - If it's clearly about a specific project ALREADY in FACTS_JSON.projects, fold the relevant
+    detail into that project's "tailored_description" instead.
+  - IF IT DESCRIBES A PROJECT THAT IS NOT IN FACTS_JSON.projects AT ALL, ADD IT — return it in the
+    separate "new_projects" list, NOT in "tailored_projects" (that one is only for projects that
+    have a FACTS_JSON entry to match back to). This is the most important placement rule here. A candidate who describes their strongest
+    piece of work in the notes field instead of the projects field has still described it, and
+    burying it in one clause of the summary is how the best thing on a CV disappears. It is NOT
+    fabrication: every word of it came from the candidate. Only do this when the text really is
+    about a discrete piece of work with a scope you can name — not for a passing mention of a
+    tool or a general claim about themselves.
   - If it adds context that belongs in the overall narrative, weave it into "professional_summary".
-  - If it's clearly about a specific project already in FACTS_JSON.projects, fold the relevant detail into that project's "tailored_description" instead.
-  - If it describes a general competency, add it as a cleaned-up entry in the appropriate "tailored_skills" category instead.
+  - If it describes a general competency, add it as a cleaned-up entry in the appropriate
+    "tailored_skills" category instead.
 
 SKILLS CLEANUP:
   FACTS_JSON.skills was extracted verbatim and may contain unprofessional filler. For "tailored_skills":
-  - Return the SAME categories as FACTS_JSON.skills (languages, frameworks, tools, soft_skills, other).
+  - Return the SAME categories as FACTS_JSON.skills (languages, frameworks, tools, soft_skills, other),
+    and PUT EACH SKILL IN THE RIGHT ONE. The categories are printed as separate labelled lines and a
+    reader scans them; everything dumped into "tools" reads as an undifferentiated pile and loses the
+    signal that the candidate knows three languages and four frameworks.
+      languages   — programming and markup languages ONLY (Python, SQL, Java, C++, HTML).
+      frameworks  — libraries and frameworks (PyTorch, React, FastAPI, Pandas, NumPy, LangGraph).
+      tools       — software and platforms you operate (Git, Docker, Figma, Jira, AWS, Linux).
+      soft_skills — human capabilities (team leadership, technical writing, stakeholder communication).
+      other       — real competencies that fit none of the above (Machine Learning, Computer Vision,
+                    Multi-Agent Systems, ETL, Statistical Modelling).
+    If FACTS_JSON put something in the wrong category, MOVE IT. That is a correction, not an invention.
+  - NEVER list a dataset, a benchmark or a site you download data from as a skill or a tool. CASIA 2,
+    ImageNet, COCO, MNIST, GLUE and Kaggle are things you USED, not things you can DO. Naming the
+    skill the dataset demonstrates ("Computer Vision", "Image Forensics") is right; naming the dataset
+    is not.
+  - NEVER return a filler entry that carries no information: "Programming", "Coding", "Technology",
+    "Software", "Computer Skills", "General", "Other". Every entry must name something specific.
   - DROP entries that are not genuine skills, competencies, or tools.
   - Fix capitalization and light phrasing on entries you keep (e.g. "fixing computers" -> "Computer hardware troubleshooting") — but do not invent a skill that has zero support anywhere in FACTS_JSON.
 
-  MISSING/EMPTY/IRRELEVANT SKILLS — infer from evidence, do not leave it blank:
-  - The same applies when what they listed is simply not relevant to THIS job. A section full of
-    skills the JD never asks for is as weak as an empty one: keep the genuine ones, and add the
-    JD-relevant skills their own experience and projects demonstrate but they forgot to list.
-  - If FACTS_JSON.skills is empty or very thin (fewer than ~3 total entries across all categories),
-    you MUST still populate "tailored_skills" by inferring skills that are clearly and specifically
-    demonstrated in FACTS_JSON.experience, FACTS_JSON.projects, or RAW_ADDITIONAL_INFO — even though
-    they weren't listed under skills. Example: a bullet or project description saying "built a
-    website" supports adding "HTML" and "CSS"; "analyzed sales data in spreadsheets" supports
-    "Microsoft Excel" or "Data analysis"; it does NOT support adding "Python" unless a
-    language/tool is actually named or unambiguously implied.
-  - This is NOT an exception to the no-fabrication rule — it's the same "is this claim TRUE
-    according to FACTS_JSON" test used everywhere else in this prompt, just reading the evidence
-    from a different field. Every inferred skill must be traceable to a specific sentence in
-    FACTS_JSON if someone asked you to justify it. If you can't point to that sentence, leave the
-    skill out.
-  - "tailored_skills" being completely empty across every category is only acceptable if
-    FACTS_JSON.skills, FACTS_JSON.experience, FACTS_JSON.projects, and RAW_ADDITIONAL_INFO all
-    genuinely contain nothing to infer a skill from — this should be rare in practice.
-
+<<SKILLS_INFERENCE_RULE>>
 FINAL CONSISTENCY CHECK before you output:
   - Skim what you're about to return as if you were reading the finished CV top to bottom. Bullets,
     project descriptions, and skills should read like one coherent document, not independently
@@ -223,6 +287,18 @@ For each project in FACTS_JSON.projects (if any), return in "tailored_projects":
          invented name unrelated to the actual project. Never invent a purpose or feature that
          isn't in the description just to make the title sound more impressive.
   - "tailored_description": 1-2 professional, resume-style sentences.
+
+"new_projects" — PROJECTS THE CANDIDATE DESCRIBED ONLY IN RAW_ADDITIONAL_INFO:
+  Read RAW_ADDITIONAL_INFO for discrete pieces of work that are NOT already in FACTS_JSON.projects.
+  For each one, return an entry with "display_name", "tailored_description" and "tech_stack",
+  written exactly the way the entries above are written. No "name" field — there is nothing to
+  match it back to.
+  This exists because candidates routinely describe their best work in the free-text notes box
+  instead of the projects form, and that work was being reduced to one clause of the summary or
+  two words in a skills list. If someone writes "i built a multi agent CV web app with next.js and
+  fastapi, login and paid subscriptions", that is a project, and it belongs in the Projects section.
+  Return an empty list when RAW_ADDITIONAL_INFO contains no such work. Do NOT promote a passing
+  mention of a tool, a general claim about themselves, or something already covered above.
   - "tech_stack": the technologies/tools used on this project. Start from FACTS_JSON.projects[].tech_stack
     if it has entries. If it's empty or thin, infer additional entries from what the project's own
     "description" text actually says was built or used — same grounded-inference rule as SKILLS
@@ -271,6 +347,13 @@ Return ONLY a JSON object in this exact format (no markdown):
       "tech_stack": ["Technology 1", "Technology 2"]
     }}
   ],
+  "new_projects": [
+    {{
+      "display_name": "Only for work described in RAW_ADDITIONAL_INFO and absent from facts_json.projects",
+      "tailored_description": "2-3 polished, resume-style sentences here.",
+      "tech_stack": ["Technology 1", "Technology 2"]
+    }}
+  ],
   "tailored_volunteer_work": ["Polished sentence for volunteer entry 1"],
   "normalized_text": [
     {{"original": "bachelor of computer sciene", "normalized": "Bachelor of Computer Science"}}
@@ -301,8 +384,11 @@ Return ONLY a JSON object in this exact format (no markdown):
 # generator so all three hold one standard, and are spliced in here rather than
 # copied into the string above. Substituted once at import: the result is
 # byte-identical on every call, which is what keeps this block cacheable (see
-# the note above and generate_claude_text's `system` docstring).
+# the note above and generate_writing_text's `system` docstring).
 TAILORING_SYSTEM_PROMPT = TAILORING_SYSTEM_PROMPT.replace("<<HUMANIZER_RULES>>", HUMANIZER_RULES)
+TAILORING_SYSTEM_PROMPT = TAILORING_SYSTEM_PROMPT.replace(
+    "<<SKILLS_INFERENCE_RULE>>", SKILLS_INFERENCE_RULE + "\n"
+)
 
 # The dynamic half of the tailoring call — everything here changes per
 # request, so none of it belongs in the cached system block above.
@@ -484,7 +570,7 @@ def _strip_dashes(text: str) -> str:
 
 def _make_usage_recorder(usage_counters: dict):
     """
-    Returns an on_usage callback for generate_claude_text that accumulates
+    Returns an on_usage callback for generate_writing_text that accumulates
     into usage_counters in place. usage_counters is a plain dict (not a
     class) so it survives being read after the function that created it
     returns, and so run_tailoring_engine can fold its final values straight
@@ -588,7 +674,7 @@ def run_tailoring_engine(state: AgentState) -> dict:
     cv_language      = state.get("cv_language", "en") or "en"
     attempts         = state.get("tailoring_attempts", 0) + 1
 
-    # Accumulates across every generate_claude_text call this node makes
+    # Accumulates across every generate_writing_text call this node makes
     # (main tailoring pass + Arabic purity pass, across however many of
     # the MAX_RETRIES loop below actually fire) — folded into the return
     # dict at the bottom so it merges into AgentState like everything else
@@ -631,7 +717,7 @@ def run_tailoring_engine(state: AgentState) -> dict:
         language_instruction = _build_language_instruction(cv_language),
     )
 
-    logger.info("🧠 Agent 3 — Tailoring Engine running (Claude Sonnet 5)...")
+    logger.info(f"🧠 Agent 3 — Tailoring Engine running ({WRITING_MODEL})...")
 
     
     MAX_RETRIES = 2
@@ -639,9 +725,10 @@ def run_tailoring_engine(state: AgentState) -> dict:
         try:
             # 3600 -> 6000: this is the single most content-heavy generation
             # in the pipeline (summary + every bullet + every project +
-            # volunteer work + skills, all as one JSON object), and on
-            # Sonnet 5, adaptive thinking (on by default) shares this same
-            # budget with the visible output. generate_claude_text will
+            # volunteer work + skills, all as one JSON object), and every
+            # current writing model reasons before it answers out of this
+            # same budget — Anthropic's adaptive thinking and OpenAI's
+            # reasoning_tokens are the same accounting. generate_writing_text will
             # keep escalating automatically if 6000 still isn't enough for
             # a particularly long CV.
             #
@@ -650,10 +737,10 @@ def run_tailoring_engine(state: AgentState) -> dict:
             # exact same static instruction block here, so after the first
             # call in a ~5min window, subsequent calls read it from cache
             # instead of paying full input-token price for it again.
-            raw = generate_claude_text(
+            raw = generate_writing_text(
                 prompt,
-                max_tokens=claude_budget(cv_language, "tailoring"),
-                max_tokens_ceiling=claude_budget(cv_language, "tailoring_ceiling"),
+                max_tokens=writing_budget(cv_language, "tailoring"),
+                max_tokens_ceiling=writing_budget(cv_language, "tailoring_ceiling"),
                 on_usage=_make_usage_recorder(usage_counters),
                 system=TAILORING_SYSTEM_PROMPT,
             )
@@ -685,10 +772,32 @@ def run_tailoring_engine(state: AgentState) -> dict:
                 "declined_bullets": [
                     d for d in (data.get("declined_bullets") or []) if isinstance(d, dict)
                 ],
-                "tailored_projects": data.get("tailored_projects", []),
+                # HARD VALIDATORS, not prompt hope. Each of these defects had
+                # an explicit prompt rule and still reached a finished CV — see
+                # utils/cv_validators.py for the measurement that settled it.
+                # Applied here, before Arabic localization, so the Arabic path
+                # gets the same cleanup instead of translating a dataset name.
+                "tailored_projects": [
+                    {**proj, "tech_stack": clean_tech_stack(
+                        proj.get("tech_stack"), proj.get("display_name") or proj.get("name") or "")}
+                    for proj in (data.get("tailored_projects") or [])
+                    if isinstance(proj, dict)
+                ],
+                # Projects the candidate described only in the notes field.
+                # Kept as their own key rather than folded into
+                # tailored_projects, because that list is a join keyed on
+                # facts_json project names and these have no key — mixing them
+                # made the model return neither. See the missing-projects note
+                # in utils/cv_context.py.
+                "new_projects": [
+                    {**proj, "tech_stack": clean_tech_stack(
+                        proj.get("tech_stack"), proj.get("display_name") or "")}
+                    for proj in (data.get("new_projects") or [])
+                    if isinstance(proj, dict) and (proj.get("display_name") or "").strip()
+                ],
                 "tailored_volunteer_work": data.get("tailored_volunteer_work", []),
                 "tailored_experience_titles": data.get("tailored_experience_titles", []),
-                "tailored_skills": data.get("tailored_skills", {}),
+                "tailored_skills": clean_skills(data.get("tailored_skills", {})),
             }
 
             # Arabic localization — see _enforce_arabic_purity. No-op for
@@ -756,6 +865,35 @@ def run_tailoring_engine(state: AgentState) -> dict:
                         "tech_stack": tech_stack,
                     })
 
+            # Same shaping as tailored_projects above, minus the join key —
+            # these have no facts_json entry to match back to, which is the
+            # whole reason they are a separate list. Required fields are
+            # display_name and a description: a project with no name to print
+            # or nothing to say about it is not a project.
+            new_projects = []
+            for p in core_data.get("new_projects", []):
+                if not isinstance(p, dict):
+                    continue
+                display_name = _strip_dashes(str(p.get("display_name", "")).strip())
+                desc = _strip_dashes(str(p.get("tailored_description", "")).strip())
+                raw_tech = p.get("tech_stack", [])
+                tech_stack = (
+                    [_strip_dashes(str(t).strip()) for t in raw_tech if str(t).strip()]
+                    if isinstance(raw_tech, list) else []
+                )
+                if display_name and desc:
+                    new_projects.append({
+                        "display_name": display_name,
+                        "tailored_description": desc,
+                        "tech_stack": tech_stack,
+                    })
+            if new_projects:
+                logger.info(
+                    "➕ Agent 3 promoted "
+                    f"{len(new_projects)} project(s) out of the candidate's notes: "
+                    + ", ".join(p["display_name"][:40] for p in new_projects)
+                )
+
             tailored_volunteer_work = [
                 _strip_dashes(str(v).strip()) for v in core_data.get("tailored_volunteer_work", []) if str(v).strip()
             ]
@@ -792,6 +930,9 @@ def run_tailoring_engine(state: AgentState) -> dict:
                 "tailored_additional_sections": core_data.get("tailored_additional_sections", []),
                 "tailored_summary": validated.professional_summary,
                 "tailored_projects": tailored_projects,
+                # Projects that existed only in the notes field — see
+                # the missing-projects note in utils/cv_context.py.
+                "new_projects": new_projects,
                 "tailored_volunteer_work": tailored_volunteer_work,
                 "tailored_experience_titles": tailored_experience_titles,
                 "tailored_skills": tailored_skills,
@@ -808,7 +949,7 @@ def run_tailoring_engine(state: AgentState) -> dict:
         # single biggest source of burned tokens on failed Arabic runs (two
         # full generations, each escalating its budget, all discarded). Stop
         # on the first one and let the pipeline abort.
-        except ClaudeTruncationError as e:
+        except TruncationError as e:
             logger.error(f"❌ Agent 3 output exceeded the max token budget and cannot be retried: {e}")
             return {
                 "tailoring_attempts": attempts,
@@ -854,13 +995,13 @@ def make_regeneration_fn(facts_json: dict, cv_language: str = "en", on_usage=Non
             facts_json     = json.dumps(facts_json, ensure_ascii=False),
             language_line  = language_line,
         )
-        # 300 -> 1000: same Sonnet 5 thinking-shares-the-budget issue as the
+        # 300 -> 1000: same reasoning-shares-the-budget issue as the
         # main call above. A single rewritten bullet is short, but if
         # thinking eats most of a 300-token budget there's nothing left for
         # the actual sentence. Arabic gets double, for the same
         # tokens-per-character reason as the main generation budgets.
         budget = 2000 if cv_language == "ar" else 1000
-        return generate_claude_text(
+        return generate_writing_text(
             prompt, max_tokens=budget, max_tokens_ceiling=budget * 2, on_usage=on_usage
         ).strip()
 

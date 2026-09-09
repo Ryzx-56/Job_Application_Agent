@@ -266,7 +266,15 @@ def get_current_paid_user_id(authorization: str = Header(None)) -> str:
     convention core/linkedin.py's error details use.
     """
     user_id = get_current_user_id(authorization)
-    tier = read_subscription_tier(user_id)
+    # effective_tier, not read_subscription_tier: someone who bought a credit
+    # pack has paid, and gating them out of the features they can spend those
+    # credits on is a refund request. See PACK_BUYER_TIER in
+    # core/entitlements.py for why a pack confers access without conferring a
+    # subscription. Imported here rather than at module scope because
+    # entitlements imports this module — a top-level import is circular.
+    from core.entitlements import effective_tier
+
+    tier = effective_tier(user_id)
     if tier not in PAID_TIERS:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,

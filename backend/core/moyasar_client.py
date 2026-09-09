@@ -149,6 +149,109 @@ def config_status() -> dict:
     }
 
 
+class MoyasarConfigError(RuntimeError):
+    """The payment configuration is internally inconsistent in a way that
+    would take real money and then fail to deliver. Raised at startup, not at
+    charge time, because the charge-time version of this is a customer who has
+    paid and received nothing."""
+
+
+def config_problems() -> list[str]:
+    """
+    Everything wrong with the current Moyasar configuration, worst first.
+
+    WHY THIS EXISTS. Going live is a handful of environment variables set in
+    two dashboards, and the failure modes are all silent:
+
+      · Live secret key, TEST publishable key. The browser tokenizes a card
+        against test while the server charges live. The buyer sees a failure
+        they cannot explain and you see a decline you cannot reproduce.
+      · Live keys, webhook secret still the TEST webhook's. Every live webhook
+        fails signature verification and returns 401. Moyasar retries, gives
+        up, and the buyer is charged and never credited — the single worst
+        outcome this system can produce.
+      · Live keys, no webhook secret at all. The receiver fails closed, which
+        is correct, and produces the same result.
+      · MOYASAR_MODE asserted as one thing while the key says another, which
+        means the wrong key set is deployed.
+
+    None of these break anything at boot, which is exactly why they need to be
+    checked at boot.
+    """
+    problems: list[str] = []
+    secret = (os.getenv("MOYASAR_SECRET_KEY", "") or "").strip()
+    publishable = publishable_key()
+    declared = (os.getenv("MOYASAR_MODE", "") or "").strip().lower()
+
+    if not secret:
+        return problems  # Payments simply aren't configured. Not an error.
+
+    key_mode = "live" if secret.startswith("sk_live_") else "test" if secret.startswith("sk_test_") else "unknown"
+
+    if key_mode == "unknown":
+        problems.append(
+            "MOYASAR_SECRET_KEY does not start with sk_test_ or sk_live_, so the "
+            "mode cannot be determined and live-only checks will not run."
+        )
+    if declared in ("test", "live") and key_mode in ("test", "live") and declared != key_mode:
+        problems.append(
+            f"MOYASAR_MODE says '{declared}' but the secret key is a '{key_mode}' key. "
+            "The wrong key set is deployed."
+        )
+    if publishable:
+        pub_mode = "live" if publishable.startswith("pk_live_") else "test" if publishable.startswith("pk_test_") else "unknown"
+        if pub_mode != "unknown" and key_mode != "unknown" and pub_mode != key_mode:
+            problems.append(
+                f"MOYASAR_SECRET_KEY is a '{key_mode}' key but MOYASAR_PUBLISHABLE_KEY "
+                f"is a '{pub_mode}' key. The card form and the charge would use "
+                "different environments and every payment would fail."
+            )
+    if key_mode == "live" and not webhook_secret():
+        problems.append(
+            "MOYASAR_WEBHOOK_SECRET is not set while LIVE keys are in use. Webhooks "
+            "fail closed, so buyers would be charged and never credited. Set it to "
+            "the LIVE webhook's secret from Moyasar Dashboard -> Webhooks — it is a "
+            "different value from the test webhook's."
+        )
+    if key_mode == "live" and not (os.getenv("PUBLIC_APP_URL", "") or "").strip().startswith("https://"):
+        problems.append(
+            "PUBLIC_APP_URL is not an https:// URL while LIVE keys are in use. "
+            "That is where Moyasar returns the buyer after paying."
+        )
+    return problems
+
+
+def startup_report(*, raise_on_problem: bool = False) -> dict:
+    """
+    Log the payment configuration once, at boot, and say plainly whether real
+    money is in play.
+
+    Never logs a key or any fragment of one — booleans and a mode string, the
+    same contract as config_status().
+
+    `raise_on_problem` is off by default on purpose: a misconfiguration should
+    be loud, but it should not stop the rest of the product serving CVs to
+    people who are not trying to pay for anything.
+    """
+    status = config_status()
+    problems = config_problems()
+
+    if not status["secret_key_set"]:
+        logger.info("💳 Payments: not configured (MOYASAR_SECRET_KEY unset). Nobody can buy.")
+        return {**status, "problems": problems}
+
+    banner = "💳 Payments: LIVE — real money" if status["mode"] == "live" else f"💳 Payments: {status['mode']} mode"
+    logger.info(
+        f"{banner} | publishable_key_set={status['publishable_key_set']} "
+        f"webhook_secret_set={status['webhook_secret_set']} api_base={status['api_base']}"
+    )
+    for problem in problems:
+        logger.error(f"🚨 Payment configuration problem: {problem}")
+    if problems and raise_on_problem:
+        raise MoyasarConfigError("; ".join(problems))
+    return {**status, "problems": problems}
+
+
 def _request(
     method: str,
     path: str,

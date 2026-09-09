@@ -1,6 +1,6 @@
 # agents/linkedin_generator.py
 #
-# The LinkedIn add-on's only agent. ONE Claude Sonnet call over the
+# The LinkedIn add-on's only agent. ONE large writing call over the
 # facts_json a CV generation already produced, deliberately not a pipeline.
 # Nothing in the existing CV graph (core/orchestrator.py) runs for this
 # feature and nothing here is wired into that graph; this module is called
@@ -29,7 +29,8 @@ import re
 from loguru import logger
 
 from core.humanizer import HUMANIZER_RULES
-from core.llm_config import generate_claude_text, ClaudeTruncationError
+from core.llm_config import generate_writing_text, TruncationError
+from agents.tailoring_engine import SKILLS_INFERENCE_RULE
 from core.profile_names import has_arabic
 from schemas.linkedin_schema import (
     ABOUT_BEST_RANGE,
@@ -58,54 +59,32 @@ class LinkedInLanguageError(LinkedInGenerationError):
 
 # ─── SHARED SKILLS-INFERENCE RULE ────────────────────────────────────────────
 #
-# The spec for the About box's 5 skills says: if the CV lists no skills,
-# infer them from experience/projects "the same way the pipeline already
-# does, reuse that logic, don't rewrite it".
+# The spec for the About box's 5 skills says: if the CV lists no skills, infer
+# them from experience/projects "the same way the pipeline already does, reuse
+# that logic, don't rewrite it".
 #
-# That logic is not a function. It lives as a block of prompt text inside
-# tailoring_engine.py's TAILORING_SYSTEM_PROMPT (the "MISSING/EMPTY SKILLS"
-# section), because the inference is done by the model, not by code. So it's
-# reused the only way a prompt fragment can be: sliced out of the original
-# string at import time. tailoring_engine.py is imported, never modified.
+# That logic is not a function — the inference is done by the model, not by
+# code — so it is reused as what it is: a named string constant that
+# tailoring_engine.py defines and both features import.
 #
-# If that section is ever renamed the slice fails, and rather than silently
-# dropping the rule (or duplicating it here, which is the thing this avoids)
-# we fall back to a one-line pointer at the same standard and log loudly so
-# the drift is visible.
-_SKILLS_RULE_START = "MISSING/EMPTY SKILLS"
-_SKILLS_RULE_END = "FINAL CONSISTENCY CHECK"
-
-_SKILLS_RULE_FALLBACK = (
-    "  - If the CV lists no skills, infer them only from skills that are clearly and specifically\n"
-    "    demonstrated by a sentence in FACTS_JSON.experience or FACTS_JSON.projects. Every inferred\n"
-    "    skill must be traceable to a specific sentence. If you cannot point to that sentence,\n"
-    "    leave the skill out."
-)
+# It used to be sliced out of TAILORING_SYSTEM_PROMPT at import time by
+# searching for a heading. The heading was renamed, the slice raised, and this
+# module quietly fell back to a four-line paraphrase — logging a WARNING that
+# ran in production for weeks with nobody reading it. A silent fallback to a
+# weaker prompt is a quality regression that leaves no trace in the output.
+# There is no fallback now: if the rule is gone, the import fails at startup.
+#
+# The quoted text is the original author's prose, which uses em dashes. This
+# prompt tells the model never to produce one, so they are normalized on the
+# way in rather than handing it an instruction that contradicts the style of
+# the text carrying it. Wording is untouched.
+_SKILLS_RULE = SKILLS_INFERENCE_RULE.replace(" — ", ", ").strip()
 
 
 def _shared_skills_inference_rule() -> str:
-    """The canonical evidence-traceable skills-inference rule, quoted from
-    the CV tailoring prompt so both features hold skills to one standard."""
-    try:
-        from agents.tailoring_engine import TAILORING_SYSTEM_PROMPT
-
-        start = TAILORING_SYSTEM_PROMPT.index(_SKILLS_RULE_START)
-        end = TAILORING_SYSTEM_PROMPT.index(_SKILLS_RULE_END, start)
-        block = TAILORING_SYSTEM_PROMPT[start:end].strip()
-        if not block:
-            raise ValueError("empty skills-inference block")
-        # The quoted text is the original author's prose, which uses em dashes.
-        # This prompt tells the model never to produce one, so the dashes are
-        # normalized on the way in rather than handing it an instruction that
-        # contradicts the style of the text carrying it. Wording is untouched.
-        return block.replace(" — ", ", ")
-    except Exception as e:
-        logger.warning(
-            "⚠️ Could not quote the shared skills-inference rule from "
-            f"tailoring_engine.TAILORING_SYSTEM_PROMPT ({e}). Using the short fallback, "
-            f"check whether the '{_SKILLS_RULE_START}' section was renamed."
-        )
-        return _SKILLS_RULE_FALLBACK
+    """The canonical evidence-traceable skills-inference rule, shared with the
+    CV tailoring prompt so both features hold skills to one standard."""
+    return _SKILLS_RULE
 
 
 # ─── PROMPT ─────────────────────────────────────────────────────────────────
@@ -115,7 +94,7 @@ def _shared_skills_inference_rule() -> str:
 # brace to survive .format makes it unreadable and easy to break.
 #
 # The result is assembled ONCE at import time and is byte-identical on every
-# call, which is what lets it be sent as generate_claude_text's cached
+# call, which is what lets it be sent as generate_writing_text's cached
 # `system` block. Nothing per-request is spliced into it, the CV goes in the
 # user turn below.
 
@@ -124,8 +103,12 @@ You are an expert LinkedIn profile writer. You turn a candidate's verified CV da
 ready-to-paste LinkedIn profile content: the exact text they will paste into each box on
 LinkedIn, plus clear instructions for the sections LinkedIn makes them type in themselves.
 
-Your audience is a professional in Saudi Arabia / the wider MENA region applying to roles
-where recruiters read LinkedIn in English.
+Your audience is a professional applying to roles where recruiters read LinkedIn in English.
+Their country is given in FACTS_JSON.personal.location. Use THAT country wherever advice is
+country-specific — the job market, which companies to follow, which recruiters to connect
+with. Do not assume Saudi Arabia, and do not name a country the candidate's own location
+does not support. If no location is given, keep the advice country-neutral rather than
+guessing one.
 
 OUTPUT LANGUAGE: MANDATORY:
 
@@ -148,6 +131,14 @@ rather than PASTE are returned in both languages. There are exactly two:
 
   · growth_playbook.title_ar and growth_playbook.steps_ar
   · education_and_certifications.recommended_certifications[].why_ar
+  · EVERY "instruction" field gets an "instruction_ar" — these are the page's
+    guidance text, and an Arabic page showing English instructions is the
+    single most visible language bug in this feature.
+  · post_ideas[].title_ar, post_ideas[].angle_ar and post_ideas[].draft_hook_ar.
+    Post ideas are the one exception to English-only output: people post in
+    Arabic on LinkedIn, and draft_hook_ar must be a hook someone would
+    ACTUALLY post in Arabic, not a translation of the English one. Write it
+    natively for an Arabic-speaking audience.
 
 Rules for them:
 
@@ -243,7 +234,9 @@ SECTION-BY-SECTION INSTRUCTIONS:
    [the real project name]" is right; "post about your career journey" is not. Each has a
    "title" (what the post is about), an "angle" (2-3 sentences on what to say and why people
    would care), and a "draft_hook" (the actual opening line they can paste, under 220
-   characters, no hashtags).
+   characters, no hashtags). Also "title_ar", "angle_ar" and "draft_hook_ar" — see the "_ar"
+   rules above. draft_hook_ar is written natively in Arabic for an Arabic-reading audience,
+   not translated from the English hook.
 
 6. EDUCATION AND CERTIFICATIONS ("education_and_certifications"), LinkedIn requires these to
    be entered directly as structured entries, so this section is instructions plus the data to
@@ -283,7 +276,11 @@ SECTION-BY-SECTION INSTRUCTIONS:
    purchase. "title" is a short heading. "steps" is 5-6 concrete, specific actions covering:
    getting past 500 connections and who to connect with in THEIR field, a realistic posting
    cadence, engaging on other people's posts, keywords recruiters in their field actually
-   search for, and turning on Open To Work / recruiter visibility. Name their field. No filler.
+   search for, and turning on Open To Work / recruiter visibility. No filler.
+   - NAME THEIR ACTUAL FIELD AND THEIR ACTUAL COUNTRY, both derived from FACTS_JSON — their
+     field from their experience, projects and skills, their country from
+     FACTS_JSON.personal.location. Never a fixed phrase: "AI and machine learning career in
+     Saudi Arabia" is correct only for a Saudi ML engineer and is wrong for everybody else.
    - This section is advice, not content to paste, so it is also returned in Arabic:
      "title_ar" is the heading and "steps_ar" is the same steps, in the same order, same
      count, in natural Modern Standard Arabic. See the "_ar" rules above.
@@ -335,16 +332,19 @@ Return ONLY a valid JSON object, no markdown fences, in EXACTLY this shape:
     }
   ],
   "post_ideas": [
-    { "title": "", "angle": "", "draft_hook": "" }
+    { "title": "", "angle": "", "draft_hook": "",
+      "title_ar": "", "angle_ar": "", "draft_hook_ar": "" }
   ],
   "education_and_certifications": {
     "instruction": "",
+    "instruction_ar": "",
     "education_entries": [{ "school": "", "degree": "", "dates": "" }],
     "certifications_note": "",
     "recommended_certifications": [{ "name": "", "issuer": "", "why": "", "why_ar": "" }]
   },
   "projects": {
     "instruction": "",
+    "instruction_ar": "",
     "entries": [{ "name": "", "description": "", "skills": ["", "", "", "", ""] }],
     "recommended": [{ "name": "", "why": "", "description": "" }]
   },
@@ -410,12 +410,12 @@ fields (growth_playbook.title_ar, growth_playbook.steps_ar, and each
 recommended_certifications[].why_ar), which must still be filled in.
 """
 
-# Output budget. Sonnet 5 runs adaptive thinking by default and those tokens
+# Output budget. every current writing model reasons before answering and those tokens
 # count against max_tokens, so this needs headroom well above the size of the
 # JSON itself: a CV with several roles lands around 3-4k output tokens, and
 # the reasoning about headline/About framing is the part worth paying for.
 # Nearly all the output is English, so there is no full Arabic multiplier here
-# (unlike CLAUDE_BUDGETS in core/llm_config.py). The bilingual advice fields do
+# (unlike WRITING_BUDGETS in core/llm_config.py). The bilingual advice fields do
 # cost real tokens though, Arabic runs 2-3x the tokens of the same text under
 # this tokenizer, so the budget carries roughly a playbook's worth of headroom
 # above the old 9000: enough that the usual run finishes in one call instead of
@@ -601,8 +601,8 @@ def _postprocess(data: dict, name_en: str, source_cv_language: str) -> dict:
 
 
 def _parse_json(raw: str) -> dict:
-    """Strips any markdown fence the model added and parses. Claude has no
-    native JSON response mode (see generate_claude_json in
+    """Strips any markdown fence the model added and parses. neither writing provider is asked for a
+    native JSON response mode (see generate_writing_json in
     core/llm_config.py), so a stray fence is a normal thing to handle."""
     cleaned = re.sub(r"```json|```", "", raw or "").strip()
     data = json.loads(cleaned)
@@ -612,7 +612,7 @@ def _parse_json(raw: str) -> dict:
 
 
 def _call_model(user_prompt: str) -> dict:
-    raw = generate_claude_text(
+    raw = generate_writing_text(
         user_prompt,
         max_tokens=_MAX_TOKENS,
         max_tokens_ceiling=_MAX_TOKENS_CEILING,
@@ -653,7 +653,7 @@ def run_linkedin_generator(
 
     logger.info(
         f"💼 LinkedIn generator, building English profile content from a "
-        f"{'n Arabic' if source_is_arabic else 'n English'} CV (Claude Sonnet, single call)..."
+        f"{'n Arabic' if source_is_arabic else 'n English'} CV (single call)..."
     )
 
     user_prompt = _render(
@@ -666,7 +666,7 @@ def run_linkedin_generator(
 
     try:
         data = _call_model(user_prompt)
-    except ClaudeTruncationError as e:
+    except TruncationError as e:
         # Retrying the identical prompt that already overflowed the ceiling
         # just spends tokens to reach the same place, same reasoning as
         # match_scorer.py's handling of this error.

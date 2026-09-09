@@ -53,7 +53,12 @@ export type LinkedInIntro = {
 
 export type LinkedInAbout = { text: string; skills: string[] };
 
-export type LinkedInFeaturedItem = { label: string; url: string; instruction: string };
+export type LinkedInFeaturedItem = {
+  label: string;
+  url: string;
+  instruction: string;
+  instruction_ar?: string;
+};
 
 export type LinkedInExperienceEntry = {
   job_title: string;
@@ -69,10 +74,23 @@ export type LinkedInExperienceEntry = {
   skills: string[];
 };
 
-export type LinkedInPostIdea = { title: string; angle: string; draft_hook: string };
+/** Post ideas are the ONE part of the generated content returned in both
+ *  languages. The profile fields stay English because recruiters read
+ *  LinkedIn in English; a post is different — people post in Arabic, and an
+ *  English draft hook is something an Arabic-speaking user has to rewrite
+ *  before they can use it. */
+export type LinkedInPostIdea = {
+  title: string;
+  angle: string;
+  draft_hook: string;
+  title_ar?: string;
+  angle_ar?: string;
+  draft_hook_ar?: string;
+};
 
 export type LinkedInEducationSection = {
   instruction: string;
+  instruction_ar?: string;
   education_entries: { school: string; degree: string; dates: string }[];
   certifications_note: string;
   /** name and issuer are always English (they're the credential's real,
@@ -82,6 +100,7 @@ export type LinkedInEducationSection = {
 
 export type LinkedInProjectsSection = {
   instruction: string;
+  instruction_ar?: string;
   /** `skills` are the five to tag on the project in LinkedIn's own box.
    *  Absent on generations made before the field existed. */
   entries: { name: string; description: string; skills?: string[] }[];

@@ -29,7 +29,13 @@ import { DashboardButton, ScoreRing, ScoreBar, UploadZone, FileResultCard } from
 import { AgentProgress } from "@/components/agent-progress";
 import { useOptimizeStream } from "@/lib/useOptimizeStream";
 import { createClient } from "@/lib/supabase/client";
-import { ManualCvForm, ManualCvData, emptyManualCvData } from "@/components/manual-cv-form";
+import {
+  ManualCvForm,
+  ManualCvData,
+  emptyManualCvData,
+  missingRequiredFields,
+  requiredFieldLabel,
+} from "@/components/manual-cv-form";
 import { saveResumeResult } from "@/lib/supabase/resumes";
 import { fetchCredits } from "@/lib/supabase/credits";
 import { updateProfileNames, suggestNameFromCv, fetchAdminStatus, fetchBadges, markBadgesSeen } from "@/lib/supabase/profile-names";
@@ -586,9 +592,32 @@ export default function DashboardHomePage() {
   }, [additionalInfo]);
 
   const requiredCredits = cvLanguage === "ar" ? 2 : 1;
+
+  // WHAT IS ACTUALLY MISSING, not just "is the form valid".
+  //
+  // The manual form used to gate on `name` alone, so a CV could be generated
+  // — and a credit spent — with no email, no phone and no location on it. A
+  // CV nobody can reply to is not a CV, and location is what the
+  // geography-aware job matching runs on.
+  //
+  // Computed rather than hardcoded so the button, the message and the form's
+  // own asterisks cannot drift apart. See REQUIRED_PERSONAL_FIELDS.
+  const missingFields = cvMode === "manual" ? missingRequiredFields(manualData) : [];
+
+  // A photo template on the create-from-scratch flow has nowhere to take a
+  // photo from: /api/v1/optimize-manual never sets candidate_photo, so the
+  // renderer draws the frame and leaves it empty. The upload flow is
+  // different — it pulls the photo out of the PDF the user gave us — which is
+  // why this only fires on `manual`.
+  const selectedTemplateNeedsPhoto = Boolean(
+    CV_TEMPLATES.find((t) => t.id === templateId)?.photo
+  );
+  const photoTemplateWithoutPhoto = cvMode === "manual" && selectedTemplateNeedsPhoto;
+
   const canGenerate =
-    (cvMode === "upload" ? !!cvFile : manualData.name.trim().length > 0) &&
+    (cvMode === "upload" ? !!cvFile : missingFields.length === 0) &&
     jobDescription.trim().length > 0 &&
+    !photoTemplateWithoutPhoto &&
     !generating &&
     creditsRemaining >= requiredCredits;
 
@@ -628,9 +657,25 @@ export default function DashboardHomePage() {
       setError(copy.missingFields);
       return;
     }
-    if (cvMode === "manual" && (!manualData.name.trim() || !jobDescription.trim())) {
-      setError(copy.missingFields);
-      return;
+    if (cvMode === "manual") {
+      // NAME THE MISSING FIELDS. A generic "fill in all required fields" on a
+      // form this long makes the user hunt for what it means.
+      if (missingFields.length > 0) {
+        setError(
+          copy.missingRequired(
+            missingFields.map((f) => requiredFieldLabel(f, lang)).join(lang === "ar" ? "، " : ", ")
+          )
+        );
+        return;
+      }
+      if (!jobDescription.trim()) {
+        setError(copy.missingJobDescription);
+        return;
+      }
+      if (photoTemplateWithoutPhoto) {
+        setError(copy.photoTemplateNoPhoto);
+        return;
+      }
     }
     setNamePromptOpen(false);
     setGenerating(true);
@@ -987,6 +1032,27 @@ export default function DashboardHomePage() {
               </DashboardButton>
             </div>
             <p className="mt-2 text-xs text-slate-500">{nameCopy.skipHint}</p>
+          </div>
+        )}
+
+        {/* THE WARNING GOES WHERE THE DECISION IS MADE, not after generation.
+            A photo template on the create-from-scratch flow renders a CV with
+            an empty photo frame, and the only way the user found that out was
+            by spending a credit and looking at the result. It offers the fix
+            it is complaining about rather than only naming the problem. */}
+        {photoTemplateWithoutPhoto && (
+          <div
+            role="status"
+            className="mb-3 flex flex-col gap-2.5 rounded-xl border border-amber-300 bg-amber-50 p-3.5 sm:flex-row sm:items-center sm:justify-between"
+          >
+            <p className="text-sm leading-relaxed text-amber-900">{copy.photoTemplateNoPhoto}</p>
+            <button
+              type="button"
+              onClick={() => setTemplateId(CV_TEMPLATES.find((t) => !t.photo)?.id ?? "original_classic")}
+              className="shrink-0 rounded-lg border border-amber-400 bg-white px-3 py-2 text-xs font-medium text-amber-900 transition-colors hover:bg-amber-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-600"
+            >
+              {copy.photoTemplateSwitch}
+            </button>
           </div>
         )}
 

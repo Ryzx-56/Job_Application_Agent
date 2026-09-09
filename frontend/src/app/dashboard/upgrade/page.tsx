@@ -394,6 +394,22 @@ export default function UpgradePage() {
             // Elite (pricing reference v6 section 4), so it renders the
             // entitlement line instead of a figure.
             const price = isPremium ? linkedinData?.pricing?.premium?.price : undefined;
+
+            // NEVER SHOW A PRICE THAT IS NOT THE REAL ONE, not even for a
+            // frame.
+            //
+            // `price` was undefined for two completely different reasons —
+            // "Essential has no price" and "the fetch hasn't landed yet" —
+            // and the render treated them the same. So the PREMIUM card
+            // showed "Free with Pro or Elite" on first paint and corrected
+            // itself to 200 SAR when linkedinData arrived. Showing "free" and
+            // then charging 200 SAR is the worst possible version of this
+            // bug: it reads as bait and switch.
+            //
+            // A skeleton until the real value is known. The two states are
+            // now distinguishable: `priceLoading` is "we don't know yet",
+            // `price === undefined` after loading is "there is no price".
+            const priceLoading = isPremium && linkedinData === null;
             return (
               <div
                 key={tier}
@@ -425,9 +441,21 @@ export default function UpgradePage() {
                       {/* Premium has a price; Essential is included with a
                           subscription, so it says that rather than "n/a",
                           which read like the price had failed to load. */}
-                      {price !== undefined ? formatSar(price, lang) : li.tiers.normalIncluded}
+                      {priceLoading ? (
+                        <span
+                          className={`inline-block h-7 w-24 animate-pulse rounded ${
+                            isPremium ? "bg-white/15" : "bg-slate-200"
+                          } motion-reduce:animate-none`}
+                          aria-label={li.tiers.priceLoading}
+                          role="status"
+                        />
+                      ) : price !== undefined ? (
+                        formatSar(price, lang)
+                      ) : (
+                        li.tiers.normalIncluded
+                      )}
                     </div>
-                    {price !== undefined && usdApprox(price) && (
+                    {!priceLoading && price !== undefined && usdApprox(price) && (
                       <div className={`text-xs ${isPremium ? "text-slate-500" : "text-slate-400"}`}>
                         {usdApprox(price)}
                       </div>

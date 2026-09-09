@@ -1,6 +1,6 @@
 # agents/interview_prep.py
 #
-# The Interview Prep add-on's only agent. ONE Claude Sonnet call over data the
+# The Interview Prep add-on's only agent. ONE large writing call over data the
 # CV pipeline already produced, deliberately not a graph node: nothing in
 # core/orchestrator.py runs for this feature and nothing here is wired into
 # that graph. core/interview.py calls this directly.
@@ -39,13 +39,14 @@
 # EXPLICITLY OUT OF SCOPE: no follow-up chat, no answer scoring, no voice, no
 # stored session. One request, one set of questions.
 import concurrent.futures
+import threading
 import json
 import re
 
 from loguru import logger
 
 from core.humanizer import HUMANIZER_RULES
-from core.llm_config import generate_claude_text, ClaudeTruncationError
+from core.llm_config import generate_writing_text, TruncationError
 from schemas.interview_schema import (
     CATEGORIES,
     CONTENT_LIMITS,
@@ -74,7 +75,7 @@ class InterviewPrepError(RuntimeError):
 # example and doubling every brace to survive .format makes it unreadable.
 #
 # Assembled ONCE at import time and byte-identical on every call, which is
-# what lets it be sent as generate_claude_text's cached `system` block. Every
+# what lets it be sent as generate_writing_text's cached `system` block. Every
 # per-request value goes in the user turn below.
 
 _INTERVIEW_SYSTEM_TEMPLATE = """
@@ -330,16 +331,16 @@ _QUESTION_SPLIT = (
 )
 
 # Output budget, PER CALL. Halved from the single-call figures because each
-# call now writes half the questions; generate_claude_text still escalates on
+# call now writes half the questions; generate_writing_text still escalates on
 # its own if a particular CV runs long.
-# Sonnet 5 runs adaptive thinking by default and those tokens
+# every current writing model reasons before answering and those tokens
 # count against max_tokens, so this needs real headroom above the JSON: 12-15
 # questions with four STAR beats each is a large answer before any reasoning.
-# Arabic gets roughly 1.7x for the same reason CLAUDE_BUDGETS does in
+# Arabic gets roughly 1.7x for the same reason WRITING_BUDGETS does in
 # core/llm_config.py, Arabic costs 2-3x the tokens for the same text.
 #
 # SIZED FROM A REAL RUN, NOT GUESSED: at 12000 a normal English run truncated
-# and generate_claude_text escalated to 24000 to finish, which means the first
+# and generate_writing_text escalated to 24000 to finish, which means the first
 # full response was billed and thrown away and the user waited through two
 # generations. max_tokens is a CAP, not a reservation, so setting it above
 # what a run actually uses costs nothing; setting it below costs a whole
@@ -549,7 +550,7 @@ def _prose_leaks(terms: list[str]) -> list[str]:
     posting, and it genuinely needs fixing.
 
     Filtering here rather than in the prompt is what stops every Arabic run
-    paying for a second Claude call just to be told that "Next.js" is spelled
+    paying for a second model call just to be told that "Next.js" is spelled
     "Next.js".
     """
     return [term for term in terms if len(term.split()) > 1]
@@ -614,8 +615,8 @@ def _enforce_arabic_purity(payload: dict, seed_glossary: dict | None) -> dict:
 
 
 def _parse_json(raw: str) -> dict:
-    """Strips any markdown fence and parses. Claude has no native JSON
-    response mode (see generate_claude_json in core/llm_config.py), so a
+    """Strips any markdown fence and parses. neither writing provider is asked for a native JSON
+    response mode (see generate_writing_json in core/llm_config.py), so a
     stray fence is a normal thing to handle, not an error."""
     cleaned = re.sub(r"```json|```", "", raw or "").strip()
     data = json.loads(cleaned)
@@ -629,6 +630,7 @@ def run_interview_prep(
     snapshot: dict | None = None,
     on_step=None,
     output_language: str | None = None,
+    usage_sink: dict | None = None,
 ) -> dict:
     """
     Builds one interview prep set from a saved CV and the job description it
@@ -718,15 +720,34 @@ def run_interview_prep(
     budget_key = "ar" if is_arabic else "en"
     system_prompt = _SYSTEM_PROMPT_AR if is_arabic else _SYSTEM_PROMPT_EN
 
+    # TOKEN ACCOUNTING. This feature had none — zero production rows and no
+    # token columns — so its unit cost was unknown, while every revisit was
+    # (before the Section 2 fix) paying for it again.
+    #
+    # A LOCK, NOT A PLAIN DICT: the two halves below run in a
+    # ThreadPoolExecutor and both retry independently, so the counters are
+    # genuinely written from two threads. `+=` on a dict entry is a read and a
+    # write, and losing one of those loses a whole call's tokens — which shows
+    # up as a cost figure that is quietly and unreproducibly too low.
+    usage = {"calls": 0, "input_tokens": 0, "output_tokens": 0}
+    usage_lock = threading.Lock()
+
+    def _record(input_tokens: int, output_tokens: int) -> None:
+        with usage_lock:
+            usage["calls"] += 1
+            usage["input_tokens"] += input_tokens
+            usage["output_tokens"] += output_tokens
+
     def _call(categories: tuple[str, ...], count: int, wants_overview: bool) -> dict:
         prompt = _user_prompt(categories, count, wants_overview)
 
         def _once() -> dict:
-            raw = generate_claude_text(
+            raw = generate_writing_text(
                 prompt,
                 max_tokens=_MAX_TOKENS[budget_key],
                 max_tokens_ceiling=_MAX_TOKENS_CEILING[budget_key],
                 system=system_prompt,
+                on_usage=_record,
             )
             return _parse_json(raw)
 
@@ -739,7 +760,7 @@ def run_interview_prep(
     _step("generate")
 
     # BOTH HALVES AT ONCE. A thread pool rather than asyncio because
-    # generate_claude_text is a blocking call and this whole module is
+    # generate_writing_text is a blocking call and this whole module is
     # already called from a sync endpoint running in FastAPI's threadpool.
     try:
         with concurrent.futures.ThreadPoolExecutor(max_workers=len(_QUESTION_SPLIT)) as pool:
@@ -752,7 +773,7 @@ def run_interview_prep(
             # the minimum this feature promises, and a retry costs the user
             # nothing.
             parts = [future.result() for future in futures]
-    except ClaudeTruncationError as e:
+    except TruncationError as e:
         # Retrying the identical prompt that already overflowed the ceiling
         # just spends tokens to reach the same place. Same reasoning as
         # match_scorer.py and linkedin_generator.py.
@@ -799,5 +820,18 @@ def run_interview_prep(
         f"✅ Interview prep ready: {len(content.questions)} questions "
         f"({', '.join(f'{n} {c}' for c, n in by_category.items() if n)})."
     )
+
+    # WHAT IT COST, on one greppable line, in the same shape
+    # cv_generation_events records for CV generation. Logged unconditionally
+    # rather than only when a sink is passed, because the point of this is
+    # that the number exists at all — this feature had no cost data of any
+    # kind, so its price was set by guesswork.
+    logger.info(
+        f"💰 Interview prep usage: calls={usage['calls']} "
+        f"input_tokens={usage['input_tokens']} output_tokens={usage['output_tokens']} "
+        f"language={'ar' if is_arabic else 'en'} questions={len(content.questions)}"
+    )
+    if usage_sink is not None:
+        usage_sink.update(usage)
 
     return content.model_dump()

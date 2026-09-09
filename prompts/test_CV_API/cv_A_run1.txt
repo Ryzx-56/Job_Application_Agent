@@ -1,0 +1,54 @@
+                       Abdulmalik Yousef Hawsawi
+abdulmalikhawsawi0@gmail.com · +966 58-092-7705 · Jeddah, Saudi Arabia · linkedin.com/in/abdulmalik-hawsawi ·
+                                           github.com/Ryzx-56
+
+
+PROFESSIONAL SUMMARY
+
+Artificial Intelligence specialist based in Saudi Arabia with hands-on experience building machine
+learning models and computer vision pipelines. Led project teams in developing flight demand
+classification systems using Gaussian Mixture Models and image forgery detection on benchmark
+datasets. Experienced in multi-agent systems and full-stack software development with API integration,
+supported by a 4.28 GPA at the University of Jeddah.
+
+EXPERIENCE
+
+Sales and Customer Service Assistant — Team Lab Inc               June 2025 – August 2025 (Summer Position)
+ • Directed front-of-house museum reception operations for high-volume crowds, managing visitor
+   check-ins, ticketing transactions, and issue resolution.
+ • Drove retail gift shop revenue through direct customer engagement and clear communication of
+   product features.
+ • Onboarded and coached incoming team members on standard service workflows, guest handling
+   guidelines, and daily operational procedures.
+
+PROJECTS
+
+Flight Demand Prediction and                    Python, Machine Learning, Pandas, Gaussian Mixture Models
+Classification
+Led a technical team to design a machine learning model that forecasts airline passenger demand into
+distinct volume tiers. Built the full pipeline using Gaussian Mixture Models, managing all phases from
+initial data cleaning through final model validation.
+
+Digital Image Forgery Detection System           Python, Computer Vision, Image Processing, CASIA 2 Dataset
+Served as team leader on a computer vision system built to expose image tampering and copy-move
+duplications. Utilized the CASIA 2 benchmark dataset to train and evaluate detection performance
+across manipulated source images.
+
+SKILLS
+
+Languages: Python
+Tools: API Integration, Multi-Agent Systems, Pandas, GitHub
+
+LANGUAGES
+
+Arabic, English
+
+EDUCATION
+
+Bachelor's Degree in Artificial Intelligence — University of Jeddah                                     2027
+GPA: 4.28
+
+CERTIFICATIONS
+
+ • SDA Agentic AI
+

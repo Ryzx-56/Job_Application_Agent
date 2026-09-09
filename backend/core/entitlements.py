@@ -31,15 +31,19 @@ from core.credits import get_admin_client
 # entry here, nothing else.
 LINKEDIN_ESSENTIAL = "linkedin_essential"
 INTERVIEW_PREP = "interview_prep"
+# Added pre-launch. Job Search was the only paid feature with no cap at all,
+# and it is the most expensive thing the product does — one standalone search
+# is 24-36 Tavily credits against a quota shared by the whole platform.
+JOB_SEARCH = "job_search"
 
 # Monthly allowance per tier, from pricing reference v6 §3, §4 and §5.
 # Free is 0 for both: both features are locked on Free, and stating that as a
 # cap of zero rather than a special case means the same code path answers
 # "can this user do it" for every tier.
 ADDON_CAPS: dict[str, dict[str, int]] = {
-    "free":  {LINKEDIN_ESSENTIAL: 0, INTERVIEW_PREP: 0},
-    "pro":   {LINKEDIN_ESSENTIAL: 2, INTERVIEW_PREP: 5},
-    "elite": {LINKEDIN_ESSENTIAL: 5, INTERVIEW_PREP: 15},
+    "free":  {LINKEDIN_ESSENTIAL: 0, INTERVIEW_PREP: 0,  JOB_SEARCH: 0},
+    "pro":   {LINKEDIN_ESSENTIAL: 2, INTERVIEW_PREP: 5,  JOB_SEARCH: 4},
+    "elite": {LINKEDIN_ESSENTIAL: 5, INTERVIEW_PREP: 15, JOB_SEARCH: 12},
 }
 
 # Human-readable, for logs only. User-facing labels come from the frontend
@@ -47,7 +51,73 @@ ADDON_CAPS: dict[str, dict[str, int]] = {
 ADDON_LABELS = {
     LINKEDIN_ESSENTIAL: "LinkedIn Essential",
     INTERVIEW_PREP: "Interview Prep",
+    JOB_SEARCH: "Job Search",
 }
+
+
+# ─── WHAT A CREDIT-PACK BUYER GETS ──────────────────────────────────────────
+#
+# Gating reads profiles.tier, and buying a credit pack does not change it —
+# grant_purchased_credits() touches purchased_credits and nothing else. So
+# somebody who paid 38 SAR for the Power pack was still tier='free' and locked
+# out of Job Search, Interview Prep and LinkedIn Essential. They had paid, and
+# they were gated. That blocked selling packs at all.
+#
+# THE RULE: holding purchased credits unlocks the gated features, at the Pro
+# allowance, for as long as the credits last. When purchased_credits reaches
+# zero they revert to their own tier's gating.
+#
+# WHY NOT JUST GRANT THEM A TIER. A pack is not a subscription and must not
+# confer one: no recurring monthly allowance, no renewal, nothing that keeps
+# giving after the thing they bought is spent. But someone who paid has to be
+# able to spend what they bought on whatever they want — that is the entire
+# premise of pay-as-you-go. Access while in credit, and it ends with the
+# credits.
+#
+# Pro's allowance rather than Elite's because a pack costs pack money. It is
+# also the conservative direction: too generous here is a cost leak that only
+# shows up on the invoice.
+PACK_BUYER_TIER = "pro"
+
+
+def has_purchased_credits(user_id: str) -> bool:
+    """True when this user is holding credits they paid for.
+
+    Never raises: a failed read reports False, which falls back to ordinary
+    tier gating rather than handing out access on a database hiccup.
+    """
+    try:
+        row = (
+            get_admin_client()
+            .table("profiles")
+            .select("purchased_credits")
+            .eq("id", user_id)
+            .maybe_single()
+            .execute()
+            .data
+        )
+        return int((row or {}).get("purchased_credits") or 0) > 0
+    except Exception as e:
+        logger.warning(f"Could not read purchased_credits for {user_id}: {e}")
+        return False
+
+
+def effective_tier(user_id: str) -> str:
+    """
+    The tier that GATING should use, as opposed to the tier they subscribe to.
+
+    Identical to the subscribed tier for everyone except a free user holding
+    bought credits, who is gated as PACK_BUYER_TIER while those credits last.
+    Never downgrades anyone: a real Pro or Elite subscriber keeps their own
+    tier whatever their pack balance is.
+    """
+    tier = read_subscription_tier(user_id)
+    if tier in PAID_TIERS:
+        return tier
+    if has_purchased_credits(user_id):
+        logger.info(f"🎟️  {user_id} is gated as {PACK_BUYER_TIER}: holding purchased credits.")
+        return PACK_BUYER_TIER
+    return tier
 
 
 def cap_for(tier: str, addon: str) -> int:
@@ -63,7 +133,9 @@ def get_addon_quota(user_id: str, addon: str) -> dict:
     than blocking the page. Enforcement is consume_addon_quota below, which
     is the only thing that decides anything.
     """
-    tier = read_subscription_tier(user_id)
+    # effective_tier, not read_subscription_tier: a pack buyer has paid and
+    # must be able to spend it. See PACK_BUYER_TIER.
+    tier = effective_tier(user_id)
     limit = cap_for(tier, addon)
     used = 0
 
@@ -89,7 +161,7 @@ def get_addon_quota(user_id: str, addon: str) -> dict:
         "limit": limit,
         "used": min(used, limit) if limit else used,
         "remaining": max(limit - used, 0),
-        "unlocked": tier in PAID_TIERS and limit > 0,
+        "unlocked": (tier in PAID_TIERS) and limit > 0,
     }
 
 

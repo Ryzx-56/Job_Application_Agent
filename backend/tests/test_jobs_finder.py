@@ -1,5 +1,13 @@
 # tests/test_jobs_finder.py
+#
+# ⚠️ THIS TEST SPENDS REAL TAVILY CREDITS. One run is up to 24 of them against
+# a quota shared by the whole platform, so it is behind the `live_tavily`
+# marker and deselected by default (see pytest.ini). Run it deliberately:
+#
+#     pytest tests/test_jobs_finder.py -m live_tavily
 import os
+
+import pytest
 from dotenv import load_dotenv
 from loguru import logger
 
@@ -7,7 +15,10 @@ from loguru import logger
 load_dotenv()
 
 # Import your Tavily agent function
-from agents.jobs_finder import find_similar_jobs
+from agents.jobs_finder import TavilyQuotaExhausted, find_similar_jobs
+
+pytestmark = pytest.mark.live_tavily
+
 
 def test_tavily_search_execution():
     logger.info("🧪 Initializing Tavily Integration Target Verification...")
@@ -34,8 +45,15 @@ def test_tavily_search_execution():
     }
     
     # Execute the search block
-    results = find_similar_jobs(mock_weight_factors, mock_facts_json)
-    
+    try:
+        results = find_similar_jobs(mock_weight_factors, mock_facts_json)
+    except TavilyQuotaExhausted as e:
+        # A spent quota is not a broken pipeline, and it must not read as one.
+        # This exception existing at all is the fix: the old code swallowed it
+        # and returned [], so an exhausted plan was indistinguishable from a
+        # search that genuinely found nothing.
+        pytest.skip(f"Tavily quota exhausted, cannot exercise the live path: {e}")
+
     assert isinstance(results, list), "Output must return structural list format."
     
     print("\n================ TAVILY OUTPUT EXECUTION TEST ================\n")

@@ -48,10 +48,29 @@ USD_TO_SAR = pricing_catalog.SAR_PER_USD
 # Free a NEGATIVE line, since every free user is an acquisition cost rather
 # than income. Derived, not hardcoded per tier, so the two can never disagree.
 #
+# ⚠️ MEASURED, and it is dominated by something that is not the model.
+#
+# The old value was 0.75 SAR, taken from the Claude Sonnet path and counting
+# model tokens only. Both halves of that are now wrong:
+#
+#   · The model moved to gpt-5.6-luna (core/llm_config.WRITING_MODEL). Measured
+#     over 10 runs per language: an English CV's model cost is 0.0133 SAR
+#     (tailoring 0.0083 + cover letter 0.0030 + match scorer 0.0020), an
+#     Arabic CV's is 0.0235. That is roughly 1/56th of the old figure.
+#
+#   · The old basis counted no TAVILY AT ALL, and Tavily is now the whole
+#     cost. jobs_finder runs on every generation and spends 8 Tavily credits;
+#     at Tavily's published $0.008/credit that is 0.24 SAR per CV — 18x the
+#     model cost of the same CV.
+#
+# So this is 0.24 (Tavily) + 0.02 (model, Arabic, the more expensive locale)
+# rounded up for headroom. Gemini extraction — cv_parser, jd_analyzer, the
+# fact checker — is NOT yet included: it could not be measured (see the
+# pre-launch log, Section 10), and it is small but not zero.
+#
 # COST_PER_CREDIT_SAR is genuinely local: it is an INPUT cost (what a
-# generation costs us to serve), not a price anyone is charged, so it has no
-# entry in the catalogue and nothing else reads it.
-COST_PER_CREDIT_SAR = 0.75  # $0.20 per credit at the 3.75 peg (reference §1, §7)
+# generation costs us to serve), not a price anyone is charged.
+COST_PER_CREDIT_SAR = 0.28
 
 # Display labels only. These stay local on purpose: the catalogue's label_en is
 # the description that goes on the Moyasar form and the buyer's card statement
@@ -96,7 +115,7 @@ PACK_PRICING = {
 # real ceiling rather than an unbounded one.
 #
 # Interview Prep's per-generation figure is an ESTIMATE. It is one large
-# Sonnet call over a whole CV and posting, sized from development runs rather
+# large writing call over a whole CV and posting, sized from development runs rather
 # than from production traffic, and every surface that shows it has to say so.
 BUNDLED_ADDON_COSTS_SAR = {
     "linkedin_essential": {"label": "LinkedIn Essential", "cost_sar": 0.15, "estimated": False},

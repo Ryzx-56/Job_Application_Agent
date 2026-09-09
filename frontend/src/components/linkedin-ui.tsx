@@ -169,6 +169,7 @@ export function CopyField({
   charCount,
   multiline = false,
   emptyLabel,
+  dir = "ltr",
 }: {
   label: string;
   value: string;
@@ -178,6 +179,10 @@ export function CopyField({
   charCount?: string;
   multiline?: boolean;
   emptyLabel?: string;
+  /* Almost everything here is English text pasted into LinkedIn, so ltr is
+     the right default. The exception is an Arabic post draft, which is
+     written to be posted in Arabic and renders as gibberish forced ltr. */
+  dir?: "ltr" | "rtl";
 }) {
   const empty = !value?.trim();
 
@@ -195,10 +200,10 @@ export function CopyField({
         <p className="text-sm text-slate-400">{emptyLabel ?? "N/A"}</p>
       ) : (
         <p
-          dir="ltr"
-          className={`text-left text-sm leading-relaxed text-slate-800 ${
-            multiline ? "whitespace-pre-wrap break-words" : "break-words"
-          }`}
+          dir={dir}
+          className={`text-sm text-slate-800 ${
+            dir === "rtl" ? "text-right leading-[1.9]" : "text-left leading-relaxed"
+          } ${multiline ? "whitespace-pre-wrap break-words" : "break-words"}`}
         >
           {value}
         </p>

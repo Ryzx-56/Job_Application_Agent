@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { AlertCircle, ArrowLeft, ArrowRight, Clock, Loader2, Lock, ShieldCheck, Sparkles } from "lucide-react";
 import { useLang } from "@/lib/language";
-import { fetchResumes, ResumeRecord } from "@/lib/supabase/resumes";
+import { fetchResumes, ResumeListRecord } from "@/lib/supabase/resumes";
 import { ApiError, fetchLinkedInOverview, LinkedInOverview, LinkedInPurchasableTier, startLinkedInCheckout } from "@/lib/supabase/linkedin";
 import { formatSar, liOutlineButton, liPrimaryButton, usdApprox, LinkedInPageShell } from "@/components/linkedin-ui";
 
@@ -42,7 +42,7 @@ export default function LinkedInCheckoutPage() {
   const isPremium = tier === "premium";
 
   const [overview, setOverview] = useState<LinkedInOverview | null>(null);
-  const [resume, setResume] = useState<ResumeRecord | null>(null);
+  const [resume, setResume] = useState<ResumeListRecord | null>(null);
   const [loading, setLoading] = useState(true);
 
   const [phone, setPhone] = useState("");

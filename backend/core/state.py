@@ -127,7 +127,7 @@ class AgentState(TypedDict):
     # ── AGENT 2 OUTPUT (Gemini) ─────────────────────────────
     weight_factors:          dict
 
-    # ── AGENT 3 OUTPUT (Gemini — temporary; Claude later) ───
+    # ── AGENT 3 OUTPUT (core/llm_config.WRITING_MODEL) ──────
     # Bullets Agent 3 deliberately refused to treat as CV content — an
     # instruction the candidate typed into a description field, or empty
     # filler — each with the model's reason. Distinct from a bullet that is
@@ -146,6 +146,12 @@ class AgentState(TypedDict):
     # language by Agent 3, kept separate from facts_json since Agent 1
     # must never rephrase — only Agent 3 (tailoring_engine) does that.
     tailored_projects:       List[dict]   # [{"name": str, "display_name": str, "tailored_description": str}]
+    # Projects the candidate described only in `additional_info` and never
+    # entered as a project. Separate from tailored_projects because that list
+    # is a join keyed on facts_json project names and these have no key —
+    # asking the model for both in one list returned neither. Appended to the
+    # Projects section by utils/cv_context.py.
+    new_projects:            List[dict]   # [{"display_name": str, "tailored_description": str, "tech_stack": list}]
     tailored_volunteer_work: List[str]
     tailored_skills:         dict         # cleaned/filtered version of facts_json["skills"]
     # [{"company": str, "title": str}] — the job title localized/translated
@@ -182,7 +188,7 @@ class AgentState(TypedDict):
     cv_pdf_path:             str
     cover_letter_pdf_path:   str
 
-    # ── AGENT 5 OUTPUT (Claude) — semantic job fit ──────────
+    # ── AGENT 5 OUTPUT (writing model) — semantic job fit ───
     job_match_score:         int
     job_match_reason:        str
     overall_recommendation:  str
@@ -203,7 +209,7 @@ class AgentState(TypedDict):
     # (currently: tailoring_engine exhausting its retries, and the fact
     # checker rejecting everything). orchestrator.py routes straight to END
     # when this is set instead of fanning out to the remaining agents, so a
-    # dead run stops costing Claude/Tavily calls the moment it's known dead.
+    # dead run stops costing model/Tavily calls the moment it's known dead.
     # A short machine-readable code, NOT a message — main.py maps it to the
     # user-facing text so wording lives in one place.
     fatal_error_code:        Optional[str]

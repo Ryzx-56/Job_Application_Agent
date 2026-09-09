@@ -1017,6 +1017,18 @@ export const content = {
         downloadCoverLetter: "Download Cover Letter",
         preview: "Preview",
         missingFields: "Upload a CV and paste a job description to generate.",
+        // SAYS WHICH FIELDS, not "some fields". A form this long with a
+        // generic error makes the user hunt. The list is built from the
+        // fields actually missing — see missingRequiredFields().
+        missingRequired: (fields: string) =>
+          `Add your ${fields} before generating. Nothing is charged until these are filled in.`,
+        missingJobDescription: "Paste the job description you're applying to.",
+        // Chosen a template with a photo slot, on the create-from-scratch
+        // flow, which has nowhere to take a photo from. Better to say so than
+        // to hand back a CV with an empty frame on it.
+        photoTemplateNoPhoto:
+          "This template shows a photo, and a CV built from the form has no photo to show. Pick a template without a photo, or upload an existing CV that has one.",
+        photoTemplateSwitch: "Use a template without a photo",
         // Shown when the profile is missing the name for the requested
         // output language. We ask instead of transliterating — a name has
         // several valid spellings in another script and getting it wrong
@@ -1072,8 +1084,22 @@ export const content = {
         loading: "Loading your resumes…",
         loadError: "Couldn't load your resumes. Please try again.",
         fileUnavailable: "File not available",
-        matchReasonLabel: "Why this match",
+        // WHAT THIS ACTUALLY IS, so the heading says it. It is the match
+        // scorer's explanation of the score — strengths and gaps in prose. It
+        // is NOT the gap analysis, which is a separate structured list and
+        // now has its own heading below.
+        matchReasonLabel: "Why you scored this",
         recommendationLabel: "Overall recommendation",
+        gapAnalysisLabel: "Gap analysis",
+        gapAnalysisNote: "Skills this job asks for that your CV does not evidence yet.",
+        gapRequired: "Required",
+        gapPreferred: "Preferred",
+        gapHowToClose: "How to close it",
+        downloadDialogTitle: "Choose a format",
+        downloadDialogBody: "Word is editable. PDF keeps the layout exactly as designed.",
+        downloadDialogClose: "Close",
+        downloadCvTitle: "Download resume",
+        downloadCoverLetterTitle: "Download cover letter",
         factCheckPassed: "Fact-check passed",
         factCheckFlagged: "Fact-check flagged issues",
         // Jobs found for this resume when it was generated. Re-read from the
@@ -1081,7 +1107,23 @@ export const content = {
         // the wording says "when this resume was generated", not "open now":
         // a listing found weeks ago may well have closed since.
         jobsTitle: "Jobs found for this resume",
-        jobsSub: "Found when this resume was generated. Older listings may have closed since.",
+        jobsSub: "Older listings may have closed since they were found.",
+        // Job matching is no longer automatic on every generation — it was
+        // spending search quota on a panel most people never opened. These
+        // are the states of asking for it.
+        jobsFindCta: "Find matching jobs",
+        jobsFinding: "Searching…",
+        jobsNotSearchedYet: "We haven't searched for jobs for this resume yet.",
+        jobsSearchCount: (remaining: number, limit: number) =>
+          `${remaining} of ${limit} searches left this month`,
+        jobsSearchNoneLeft: (limit: number) =>
+          `You've used all ${limit} of this month's searches.`,
+        jobsQuotaExhausted:
+          "Job search is unavailable for the rest of this month while we top up our search provider. Nothing was charged.",
+        jobsSearchFailed: "Job search didn't work just now. Nothing was charged, so please try again.",
+        jobsUpgradeRequired: "Job matching is available on the Pro and Elite plans.",
+        jobsNotSupported:
+          "This resume was saved before we stored the data a job search needs. Generate a newer one and search from that.",
         jobsCount: (n: number) => (n === 1 ? "1 job" : `${n} jobs`),
         jobsEmpty: "No job matches were saved with this resume.",
         jobsOpen: "Open listing",
@@ -1373,6 +1415,9 @@ export const content = {
           normalBadge: "Self-directed",
           // Sits where Premium shows its price. Essential has none.
           normalIncluded: "Free with Pro or Elite",
+          // Screen-reader label for the price skeleton. A sighted user sees a
+          // shimmer; this is what the same state sounds like.
+          priceLoading: "Loading the price",
           normalCta: "Choose Essential",
           premiumName: "Premium",
           premiumTagline: "Created for you by a specialist",
@@ -2461,6 +2506,12 @@ export const content = {
         downloadCoverLetter: "تنزيل خطاب التقديم",
         preview: "معاينة",
         missingFields: "ارفع سيرتك الذاتية والصق وصفًا وظيفيًا لإنشاء الطلب.",
+        missingRequired: (fields: string) =>
+          `أضف ${fields} قبل الإنشاء. لا يُخصم أي رصيد قبل تعبئتها.`,
+        missingJobDescription: "الصق الوصف الوظيفي للوظيفة التي تتقدم لها.",
+        photoTemplateNoPhoto:
+          "هذا القالب يعرض صورة شخصية، والسيرة الذاتية المُنشأة من النموذج لا تحتوي على صورة. اختر قالبًا بدون صورة، أو ارفع سيرة ذاتية موجودة تحتوي على صورتك.",
+        photoTemplateSwitch: "اختر قالبًا بدون صورة",
         namePrompt: {
           titleAr: "ما اسمك بالعربية؟",
           titleEn: "ما اسمك بالإنجليزية؟",
@@ -2512,7 +2563,17 @@ export const content = {
         loading: "جارٍ تحميل سيرك الذاتية…",
         loadError: "تعذّر تحميل سيرك الذاتية. حاول مرة أخرى.",
         fileUnavailable: "الملف غير متاح",
-        matchReasonLabel: "سبب هذا التطابق",
+        matchReasonLabel: "سبب حصولك على هذه النتيجة",
+        gapAnalysisLabel: "تحليل الفجوات",
+        gapAnalysisNote: "مهارات تطلبها الوظيفة ولا تظهر بعد في سيرتك الذاتية.",
+        gapRequired: "مطلوبة",
+        gapPreferred: "مفضلة",
+        gapHowToClose: "كيف تسدّها",
+        downloadDialogTitle: "اختر الصيغة",
+        downloadDialogBody: "صيغة Word قابلة للتعديل، وصيغة PDF تحافظ على التنسيق كما صُمم.",
+        downloadDialogClose: "إغلاق",
+        downloadCvTitle: "تنزيل السيرة الذاتية",
+        downloadCoverLetterTitle: "تنزيل خطاب التقديم",
         recommendationLabel: "التوصية العامة",
         factCheckPassed: "اجتاز التحقق من الحقائق",
         factCheckFlagged: "تم رصد ملاحظات في التحقق من الحقائق",
@@ -2520,7 +2581,20 @@ export const content = {
         // تقول "عند إنشاء السيرة" وليس "متاحة الآن"، لأن الوظائف محفوظة من
         // وقت الإنشاء ولا يُعاد البحث عند فتح الصفحة.
         jobsTitle: "وظائف وُجدت لهذه السيرة",
-        jobsSub: "وُجدت عند إنشاء هذه السيرة الذاتية، وقد يكون بعضها أُغلق منذ ذلك الحين.",
+        jobsSub: "قد يكون بعض هذه الإعلانات أُغلق منذ العثور عليها.",
+        jobsFindCta: "ابحث عن وظائف مناسبة",
+        jobsFinding: "جارٍ البحث…",
+        jobsNotSearchedYet: "لم نبحث بعد عن وظائف لهذه السيرة الذاتية.",
+        jobsSearchCount: (remaining: number, limit: number) =>
+          `بقيت ${remaining} من ${limit} عملية بحث هذا الشهر`,
+        jobsSearchNoneLeft: (limit: number) =>
+          `استخدمت جميع عمليات البحث المتاحة هذا الشهر وعددها ${limit}.`,
+        jobsQuotaExhausted:
+          "البحث عن الوظائف غير متاح لبقية هذا الشهر ريثما نجدد رصيد مزوّد البحث. لم يُخصم منك شيء.",
+        jobsSearchFailed: "تعذّر البحث عن الوظائف الآن. لم يُخصم منك شيء، فحاول مرة أخرى.",
+        jobsUpgradeRequired: "البحث عن الوظائف المناسبة متاح في باقتي برو والنخبة.",
+        jobsNotSupported:
+          "حُفظت هذه السيرة الذاتية قبل أن نخزّن البيانات التي يحتاجها البحث. أنشئ سيرة أحدث وابحث منها.",
         jobsCount: (n: number) => (n === 1 ? "وظيفة واحدة" : n === 2 ? "وظيفتان" : `${n} وظائف`),
         jobsEmpty: "لم تُحفظ أي وظائف مع هذه السيرة الذاتية.",
         jobsOpen: "فتح الإعلان",
@@ -2780,6 +2854,7 @@ export const content = {
           normalTagline: "نكتبه لك وتضعه أنت",
           normalBadge: "تنفيذ ذاتي",
           normalIncluded: "مجانًا مع برو أو النخبة",
+          priceLoading: "جارٍ تحميل السعر",
           normalCta: "اختيار الأساسية",
           premiumName: "المميزة",
           premiumTagline: "يُنشئه لك متخصص",
