@@ -21,6 +21,7 @@ import {
   FileType2,
   MapPin,
   AlertTriangle,
+  Upload,
 } from "lucide-react";
 import { useLang } from "@/lib/language";
 import { MATCH_TIER_COPY, getMatchTier, type MatchTier, type SimilarJob } from "@/lib/jobMatch";
@@ -312,7 +313,8 @@ function buildManualPayload(
   templateId: string,
   // See buildUploadFormData's note — same explicit legacy-path opt-in.
   allowNameFallback = false,
-  uiLanguage: "en" | "ar" = "en"
+  uiLanguage: "en" | "ar" = "en",
+  candidatePhoto: string | null = null
 ) {
   return {
     personal: {
@@ -395,6 +397,11 @@ function buildManualPayload(
     cv_language: cvLanguage,
     ui_language: uiLanguage,
     template_id: templateId,
+    // Re-decoded, downscaled and re-encoded server-side before it is stored
+    // — see normalize_uploaded_photo in backend/utils/cv_photo.py. Sent as
+    // null rather than "" when absent, so the backend's Optional[str] means
+    // what it says.
+    candidate_photo: candidatePhoto || null,
     allow_name_fallback: allowNameFallback,
   };
 }
@@ -440,6 +447,10 @@ export default function DashboardHomePage() {
   const [jobDescription, setJobDescription] = useState("");
   const [cvLanguage, setCvLanguage] = useState<"en" | "ar">("en");
   const [templateId, setTemplateId] = useState<string>(DEFAULT_CV_TEMPLATE_ID);
+  // Only meaningful on the create-from-scratch flow: the upload flow lifts a
+  // photo out of the document itself (read_uploaded_photo). Held as a data URI
+  // because that is what the backend stores and what WeasyPrint renders.
+  const [candidatePhoto, setCandidatePhoto] = useState<string | null>(null);
   const [templatePickerOpen, setTemplatePickerOpen] = useState(false);
   const [creditsRemaining, setCreditsRemaining] = useState(0);
   const [creditsTotal, setCreditsTotal] = useState(0);
@@ -612,7 +623,11 @@ export default function DashboardHomePage() {
   const selectedTemplateNeedsPhoto = Boolean(
     CV_TEMPLATES.find((t) => t.id === templateId)?.photo
   );
-  const photoTemplateWithoutPhoto = cvMode === "manual" && selectedTemplateNeedsPhoto;
+  // A photo template with nothing to put in its frame. Now genuinely
+  // resolvable on this flow — before, the manual path had no photo field at
+  // all and the only fix was to change template.
+  const photoTemplateWithoutPhoto =
+    cvMode === "manual" && selectedTemplateNeedsPhoto && !candidatePhoto;
 
   const canGenerate =
     (cvMode === "upload" ? !!cvFile : missingFields.length === 0) &&
@@ -700,7 +715,7 @@ export default function DashboardHomePage() {
           : await runOptimizeStream(
               `${API_URL}/api/v1/optimize-manual/stream`,
               JSON.stringify(
-                buildManualPayload(manualData, jobDescription, additionalInfo, cvLanguage, templateId, allowNameFallback, lang)
+                buildManualPayload(manualData, jobDescription, additionalInfo, cvLanguage, templateId, allowNameFallback, lang, candidatePhoto)
               ),
               token
             );
@@ -1046,12 +1061,57 @@ export default function DashboardHomePage() {
             className="mb-3 flex flex-col gap-2.5 rounded-xl border border-amber-300 bg-amber-50 p-3.5 sm:flex-row sm:items-center sm:justify-between"
           >
             <p className="text-sm leading-relaxed text-amber-900">{copy.photoTemplateNoPhoto}</p>
+            <div className="flex shrink-0 flex-wrap gap-2">
+              {/* THE FIX FIRST, the workaround second. Until now this banner
+                  could only offer "pick a different template", because the
+                  create-from-scratch flow had no photo field at all. */}
+              <label className="inline-flex min-h-[40px] cursor-pointer items-center gap-1.5 rounded-lg bg-amber-600 px-3 text-xs font-medium text-white transition-colors hover:bg-amber-500 focus-within:outline focus-within:outline-2 focus-within:outline-offset-2 focus-within:outline-amber-700">
+                <Upload className="size-3.5" aria-hidden />
+                {copy.photoTemplateUpload}
+                <input
+                  type="file"
+                  accept="image/png,image/jpeg,image/webp"
+                  className="sr-only"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    if (!file) return;
+                    // Read as a data URI, which is the shape the backend
+                    // stores and the renderer consumes. It re-encodes it
+                    // anyway (normalize_uploaded_photo), so this is a
+                    // convenience, not a trust boundary.
+                    const reader = new FileReader();
+                    reader.onload = () => setCandidatePhoto(String(reader.result));
+                    reader.onerror = () => setError(copy.photoReadFailed);
+                    reader.readAsDataURL(file);
+                  }}
+                />
+              </label>
+              <button
+                type="button"
+                onClick={() => setTemplateId(CV_TEMPLATES.find((t) => !t.photo)?.id ?? "original_classic")}
+                className="min-h-[40px] rounded-lg border border-amber-400 bg-white px-3 text-xs font-medium text-amber-900 transition-colors hover:bg-amber-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-600"
+              >
+                {copy.photoTemplateSwitch}
+              </button>
+            </div>
+          </div>
+        )}
+
+        {cvMode === "manual" && candidatePhoto && selectedTemplateNeedsPhoto && (
+          <div className="mb-3 flex items-center gap-3 rounded-xl border border-slate-200 bg-slate-50 p-3">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={candidatePhoto}
+              alt=""
+              className="size-11 shrink-0 rounded-lg object-cover"
+            />
+            <p className="min-w-0 flex-1 text-sm text-slate-700">{copy.photoAttached}</p>
             <button
               type="button"
-              onClick={() => setTemplateId(CV_TEMPLATES.find((t) => !t.photo)?.id ?? "original_classic")}
-              className="shrink-0 rounded-lg border border-amber-400 bg-white px-3 py-2 text-xs font-medium text-amber-900 transition-colors hover:bg-amber-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-600"
+              onClick={() => setCandidatePhoto(null)}
+              className="shrink-0 rounded-lg px-2.5 py-1.5 text-xs font-medium text-slate-500 transition-colors hover:bg-slate-200 hover:text-slate-800 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-500"
             >
-              {copy.photoTemplateSwitch}
+              {copy.photoRemove}
             </button>
           </div>
         )}
@@ -1762,7 +1822,7 @@ export default function DashboardHomePage() {
                         <span className="text-xs text-slate-500">
                           {lang === "ar"
                             ? "يعرض صورتك الشخصية إذا كانت موجودة في الملف الذي رفعته"
-                            : "Shows your photo if the CV you upload has one"}
+                            : "Shows your photo"}
                         </span>
                       )}
                     </span>

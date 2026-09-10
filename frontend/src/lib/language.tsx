@@ -1029,6 +1029,10 @@ export const content = {
         photoTemplateNoPhoto:
           "This template shows a photo, and a CV built from the form has no photo to show. Pick a template without a photo, or upload an existing CV that has one.",
         photoTemplateSwitch: "Use a template without a photo",
+        photoTemplateUpload: "Upload a photo",
+        photoAttached: "Your photo will appear on this template.",
+        photoRemove: "Remove",
+        photoReadFailed: "That image couldn't be read. Try a different file.",
         // Shown when the profile is missing the name for the requested
         // output language. We ask instead of transliterating — a name has
         // several valid spellings in another script and getting it wrong
@@ -2512,6 +2516,10 @@ export const content = {
         photoTemplateNoPhoto:
           "هذا القالب يعرض صورة شخصية، والسيرة الذاتية المُنشأة من النموذج لا تحتوي على صورة. اختر قالبًا بدون صورة، أو ارفع سيرة ذاتية موجودة تحتوي على صورتك.",
         photoTemplateSwitch: "اختر قالبًا بدون صورة",
+        photoTemplateUpload: "ارفع صورة",
+        photoAttached: "ستظهر صورتك في هذا القالب.",
+        photoRemove: "إزالة",
+        photoReadFailed: "تعذّرت قراءة هذه الصورة. جرّب ملفًا آخر.",
         namePrompt: {
           titleAr: "ما اسمك بالعربية؟",
           titleEn: "ما اسمك بالإنجليزية؟",

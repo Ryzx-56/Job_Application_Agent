@@ -284,3 +284,53 @@ def data_uri_to_bytes(photo: str | None) -> bytes | None:
     except Exception as e:
         logger.warning(f"📷 Stored photo could not be decoded, rendering without it: {e}")
         return None
+
+
+def normalize_uploaded_photo(photo: str | None) -> str | None:
+    """
+    A photo the candidate uploaded on the Create-CV form, put through exactly
+    the same mill as one extracted from an uploaded document.
+
+    WHY IT GOES THROUGH THE SAME MILL. extract_candidate_photo() gets its
+    bytes from a PDF we parsed; this gets them from a base64 string a browser
+    sent, which is the difference between "input we produced" and "input a
+    stranger controls". So it is re-decoded with Pillow, EXIF-rotated,
+    downscaled to MAX_PHOTO_EDGE and re-encoded as JPEG — the value stored is
+    always something this process produced, never bytes that arrived from
+    outside. That drops any embedded payload, any absurd pixel dimension, and
+    anything that is not actually an image.
+
+    Returns None for anything unusable rather than raising: a photo is a
+    nice-to-have, and a bad one must not cost the user their CV.
+    """
+    if not photo or not isinstance(photo, str):
+        return None
+    if not photo.startswith("data:image/"):
+        logger.info("📷 Uploaded photo rejected: not an image data URI.")
+        return None
+
+    # Guard BEFORE base64-decoding: a 50 MB string should not become a 37 MB
+    # bytes object in memory first. Generous multiple of the stored ceiling,
+    # since the client's encoding is unconstrained and only the OUTPUT size
+    # actually matters.
+    if len(photo) > MAX_DATA_URI_BYTES * 20:
+        logger.info(f"📷 Uploaded photo rejected: {len(photo)} chars before decoding.")
+        return None
+
+    try:
+        raw = base64.b64decode(photo.split(",", 1)[1], validate=True)
+    except Exception as e:
+        logger.info(f"📷 Uploaded photo rejected: not valid base64 ({e}).")
+        return None
+
+    image = _open_image(raw)
+    if image is None:
+        logger.info("📷 Uploaded photo rejected: Pillow could not decode it.")
+        return None
+
+    # Deliberately NOT run through _looks_like_a_photograph(). That heuristic
+    # exists to pick a headshot out of the images embedded in a PDF, where
+    # most candidates are logos and icons. Here the user has explicitly chosen
+    # this file as their photo, and second-guessing that would reject
+    # legitimate portraits — a flat studio backdrop scores like a logo.
+    return _to_data_uri(image)

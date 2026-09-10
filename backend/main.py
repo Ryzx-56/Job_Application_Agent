@@ -55,7 +55,7 @@ from core.usage_tracker import UsageEvent
 from core.rate_limit import enforce, GENERATION
 from utils.uploads import read_upload_capped, MAX_CV_UPLOAD_BYTES
 from utils.pdf_parser import extract_text_from_pdf, UnsupportedCVFormat
-from utils.cv_photo import extract_candidate_photo
+from utils.cv_photo import extract_candidate_photo, normalize_uploaded_photo
 from utils.pdf_generator import render_cv_pdf, render_cover_letter_pdf
 from utils.docx_generator import generate_cv_docx
 from utils.template_registry import DEFAULT_TEMPLATE_ID, template_supports_photo
@@ -1233,7 +1233,7 @@ async def optimize_manual_application_stream(
     enforce(GENERATION, user_id)
     logger.info("🚀 API Gateway received a STREAMING manual optimization request.")
 
-    manual_data = payload.model_dump(exclude={"job_description", "additional_info", "cv_language", "ui_language", "template_id", "allow_name_fallback"})
+    manual_data = payload.model_dump(exclude={"job_description", "additional_info", "cv_language", "ui_language", "template_id", "allow_name_fallback", "candidate_photo"})
     final_jd_text = payload.job_description or SHORT_SAMPLE_JD
 
     initial_state = make_initial_state("", final_jd_text, template_id=getattr(payload, "template_id", None))
@@ -1243,6 +1243,15 @@ async def optimize_manual_application_stream(
     initial_state["additional_info"] = payload.additional_info or ""
     initial_state["cv_language"] = normalize_cv_language(payload.cv_language or "en")
     initial_state["ui_language"] = "ar" if str(payload.ui_language or "en").lower().startswith("ar") else "en"
+    # Re-encoded server-side, never stored as sent — see the field's note in
+    # schemas/manual_cv_request.py. Only kept when the chosen template has
+    # somewhere to put it, matching what read_uploaded_photo does for the
+    # upload flow.
+    initial_state["candidate_photo"] = (
+        normalize_uploaded_photo(payload.candidate_photo)
+        if template_supports_photo(getattr(payload, "template_id", None))
+        else ""
+    ) or ""
 
     # Name check BEFORE credits — being asked for your name costs nothing.
     apply_candidate_names(initial_state, user_id, bool(payload.allow_name_fallback))
@@ -1275,7 +1284,7 @@ async def optimize_manual_application(
     enforce(GENERATION, user_id)
     logger.info("🚀 API Gateway received a MANUAL CV optimization request.")
 
-    manual_data = payload.model_dump(exclude={"job_description", "additional_info", "cv_language", "ui_language", "template_id", "allow_name_fallback"})
+    manual_data = payload.model_dump(exclude={"job_description", "additional_info", "cv_language", "ui_language", "template_id", "allow_name_fallback", "candidate_photo"})
     final_jd_text = payload.job_description or SHORT_SAMPLE_JD
 
     initial_state = make_initial_state("", final_jd_text, template_id=getattr(payload, "template_id", None))
@@ -1285,6 +1294,15 @@ async def optimize_manual_application(
     initial_state["additional_info"] = payload.additional_info or ""
     initial_state["cv_language"] = normalize_cv_language(payload.cv_language or "en")
     initial_state["ui_language"] = "ar" if str(payload.ui_language or "en").lower().startswith("ar") else "en"
+    # Re-encoded server-side, never stored as sent — see the field's note in
+    # schemas/manual_cv_request.py. Only kept when the chosen template has
+    # somewhere to put it, matching what read_uploaded_photo does for the
+    # upload flow.
+    initial_state["candidate_photo"] = (
+        normalize_uploaded_photo(payload.candidate_photo)
+        if template_supports_photo(getattr(payload, "template_id", None))
+        else ""
+    ) or ""
 
     # Name check BEFORE credits — being asked for your name costs nothing.
     apply_candidate_names(initial_state, user_id, bool(payload.allow_name_fallback))

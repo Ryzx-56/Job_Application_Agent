@@ -101,6 +101,19 @@ class ManualCVRequest(BaseModel):
     # the cover letter and the portfolio section all follow cv_language.
     ui_language: Optional[str] = "en"
     template_id: Optional[str] = None  # which of the 11 CV templates to render with — see utils/template_registry.py
+    # THE PHOTO, for the five portrait templates.
+    #
+    # A base64 image data URI, the same shape utils/cv_photo.py already stores
+    # for a photo lifted out of an uploaded CV. Without this field the
+    # create-from-scratch flow had nowhere to take a photo from, so a portrait
+    # template rendered a CV with an empty frame — for every user, every time,
+    # and the only way to find out was to spend a credit and look at it.
+    #
+    # NOT trusted as sent. main.py runs it through
+    # cv_photo.normalize_uploaded_photo(), which re-decodes it with Pillow,
+    # downscales it and re-encodes it as JPEG, so the value that reaches the
+    # renderer is always something the server produced.
+    candidate_photo: Optional[str] = None
     # Explicit "generate anyway" opt-in when profiles.name_ar / name_en for
     # the chosen output language is still empty. See apply_candidate_names()
     # in main.py — defaults False so the user is asked rather than handed a
