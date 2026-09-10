@@ -44,13 +44,24 @@ Rates verified against the provider's published pricing page:
 | **ATS score** | **0.00000** | — | **0 — pure Python** |
 | Interview Prep — English | 0.0302 | 3 | 2 |
 | Interview Prep — Arabic | 0.0355 | 2 | 2 |
-| LinkedIn generation | **not measured** | 0 | 1 |
+| **LinkedIn generation** | **0.0188** | **3** | **1** |
 
 **Whole CV, model only:** **English 0.01332 SAR**, **Arabic 0.02345 SAR**.
 
 > **Arabic costs 1.76× English.** v6 recorded them as equal. It is still only
 > 2.3 halalas, so the conclusion is not "Arabic is expensive" — it is that
 > Arabic at 2 credits against English at 1 is if anything generous to us.
+
+**LinkedIn generation, measured since this doc was first written:** one call,
+5,141 input tokens (5,138 of them cached on a warm run), 3,833 output, 36
+seconds. **0.0177 SAR warm, 0.0207 cold.** It is the largest single generation
+in the product by output tokens and it is still under two halalas.
+
+> Two admin figures were wrong because of this. `BUNDLED_ADDON_COSTS_SAR` in
+> `core/admin_stats.py` carried **0.15** for LinkedIn Essential and **0.85**
+> for Interview Prep — development-era guesses, **8× and 24× the measured
+> values**. Both made the bundled add-ons look expensive enough to argue
+> against including them. Replaced with 0.019 and 0.036.
 
 **Not included:** Gemini extraction (`cv_parser`, `jd_analyzer`, the fact
 checker, the jobs screener) could not be measured — Gemini was unreachable from
@@ -251,7 +262,6 @@ line in the pricing page — and the most expensive thing the product does.
 ## Open, for a v8
 
 - **Measure Gemini extraction.** Needs a machine that can reach Gemini.
-- **Measure LinkedIn generation.** Needs a paid purchase row.
 - **Run the search-depth test.** 30 credits, potentially halves §1.1.
 - **Decide whether Job Search should also be purchasable with credits** once
   its real cost is stable. Today it is baseline-only, deliberately — the

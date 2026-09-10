@@ -118,8 +118,20 @@ PACK_PRICING = {
 # large writing call over a whole CV and posting, sized from development runs rather
 # than from production traffic, and every surface that shows it has to say so.
 BUNDLED_ADDON_COSTS_SAR = {
-    "linkedin_essential": {"label": "LinkedIn Essential", "cost_sar": 0.15, "estimated": False},
-    "interview_prep":     {"label": "Interview Prep",     "cost_sar": 0.85, "estimated": True},
+    # MEASURED on gpt-5.6-luna, not estimated. Both figures below replace
+    # development-era guesses that were wrong by roughly an order of magnitude
+    # in the same direction — 0.15 and 0.85 — which made every bundled add-on
+    # look far more expensive to serve than it is, and made the worst-case
+    # profit panel pessimistic enough to argue against giving them away.
+    #
+    #   LinkedIn Essential  n=3: 1 call, 5,141 input (5,138 cached on a warm
+    #                       run), 3,833 output. 0.0177 warm / 0.0207 cold.
+    #   Interview Prep      n=5: 2 parallel calls, ~7,300 input, ~5,500
+    #                       output. 0.0302 English, 0.0355 Arabic — the
+    #                       Arabic figure is used, being the worse case and
+    #                       the primary locale.
+    "linkedin_essential": {"label": "LinkedIn Essential", "cost_sar": 0.019, "estimated": False},
+    "interview_prep":     {"label": "Interview Prep",     "cost_sar": 0.036, "estimated": False},
 }
 
 # Monthly caps per tier. IMPORTED, not restated: core/entitlements.py is what
@@ -147,7 +159,11 @@ LINKEDIN_PRICING = {
     "normal": {
         "label": "Essential",
         "price_sar": None,
-        "worst_case_cost_sar": 0.15,
+        # Measured, n=3. See BUNDLED_ADDON_COSTS_SAR above — same generation,
+        # same number, kept in both places because this table is what the
+        # LinkedIn revenue panel reads and that one is what the tier
+        # worst-case reads.
+        "worst_case_cost_sar": 0.019,
     },
     "premium": {
         "label": "Premium",

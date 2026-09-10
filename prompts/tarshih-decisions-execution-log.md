@@ -661,3 +661,126 @@ exactly what is still missing without revealing any key.
 `test_document_generator.py` fixture errors). `npm run build` and
 `tsc --noEmit` clean on TypeScript 7. Clean-venv install exits 0 and `main.py`
 imports in it. All new endpoints confirmed live on Render.
+
+---
+
+## The failed Supabase migration — it was mine, and the failure was correct
+
+**`20260910050000_admin_stats_read_payments_not_payment_events.sql` failed**,
+and it failed for a good reason.
+
+### What happened
+
+That migration rewrote **three** admin functions, on my assumption that all
+three still pointed at the dropped `payment_events` table. **Only one did.**
+`20260902200000_retire_payment_events.sql` had already rebuilt
+`admin_payment_stats()` and `admin_payment_by_product()` on the new `payments`
+ledger — **in halalas, with different column names** (`revenue_all_time_halalas`,
+`revenue_halalas`), which is exactly what `core/admin_stats.py` reads.
+
+My versions returned `numeric` USD under different names. Postgres refused:
+
+```
+ERROR: cannot change return type of existing function
+```
+
+**`CREATE OR REPLACE FUNCTION` cannot change a return type**, and that refusal
+is the only reason this did not become a much worse bug. Written as
+`DROP` + `CREATE` it would have applied cleanly and **silently broken two
+working functions** by renaming the columns out from under their caller.
+Nothing would have errored — every revenue figure on the admin dashboard would
+just have started reading zero.
+
+### Why my own test did not catch it
+
+**I built the fixture from the baseline dump, so it had the pre-`20260902200000`
+signatures — the ones my migration expected.** It passed. The test agreed with
+the mistake instead of checking it.
+
+Rebuilt the fixture to production's shape **after** that migration, and it
+reproduces the failure immediately.
+
+### The fix, and two more bugs found on the way
+
+The migration now touches **only `admin_paid_by_users()`**, which genuinely was
+still selecting `FROM public.payment_events` and failing on every admin users
+page load — the exact line from your Render log.
+
+**And the unit was wrong.** The column was named `total_paid_usd`, and
+`core/admin_stats.py` passes it to `_money()`, whose docstring says plainly:
+*"TAKES SAR NOW, not USD."* **The admin table was rendering dollars as riyals,
+understating every user's spend by the 3.75 peg.** Renamed to `total_paid_sar`,
+returned in SAR, and the one caller updated — the rename is what stops the
+mismatch coming back quietly.
+
+### Verified against real Postgres, not by reading
+
+I ran an actual Postgres 16 locally (`pgserver`), built a fixture matching
+production, applied **all three** of this session's migrations, and checked
+behaviour:
+
+```
+reset_credits_if_due on PRO : credits=2 unchanged, clock not pushed  ✅
+reset_credits_if_due on FREE: credits=8 (3 monthly + 5 purchased)     ✅
+job_search quota, cap 4      : [T,T,T,T,F,F]                          ✅
+release_addon_quota          : 4 -> 3                                 ✅
+apply_monthly_allowance      : credits=29, job_search_used=0          ✅
+unknown add-on               : raises "Unknown add-on"                ✅
+admin_paid_by_users          : 67.00 SAR across 2 paid rows           ✅
+```
+
+**All three migrations now apply cleanly and behave correctly.** The push has
+gone out, so the deploy workflow will retry.
+
+**The other two migrations from this session were never the problem** —
+`20260909190000` and `20260909200000` both applied. Only the admin-stats one
+failed, and because `db push` applies in filename order and stops at a failure,
+anything after it would have been skipped. There was nothing after it.
+
+---
+
+## LinkedIn generator cost — measured
+
+You asked what it costs. **0.0188 SAR per generation**, n=3 on
+`gpt-5.6-luna`.
+
+| | |
+|---|---|
+| Cost, warm cache | **0.0177 SAR** ($0.0047) |
+| Cost, cold cache | 0.0207 SAR |
+| API calls | **1** |
+| Input tokens | 5,141 — **5,138 of them cached** on a warm run |
+| Output tokens | **3,833** |
+| Wall clock | 36s |
+
+**It is the largest single generation in the product by output tokens** —
+more than an Arabic CV's 3,209 — and it still costs under two halalas.
+
+### It also caught two admin figures that were badly wrong
+
+`BUNDLED_ADDON_COSTS_SAR` in `core/admin_stats.py` carried development-era
+guesses that fed the worst-case profit panel:
+
+| | Was | **Measured** | Wrong by |
+|---|---|---|---|
+| LinkedIn Essential | 0.15 | **0.019** | **8×** |
+| Interview Prep | 0.85 | **0.036** | **24×** |
+
+Both overstated, both in the direction that makes a bundled feature look too
+expensive to include. `LINKEDIN_PRICING["normal"]["worst_case_cost_sar"]` had
+the same 0.15. All three replaced with measured values, and
+`interview_prep`'s `"estimated": True` flag dropped — it is not an estimate any
+more.
+
+### What it means for the two ways you sell it
+
+**Essential (bundled, metered):** Pro's 2/month costs **0.038 SAR**; Elite's
+5/month costs **0.094 SAR**. Against 29 and 99 SAR of revenue, this is
+rounding error. **The cap exists to stop abuse, not to control cost** — and at
+these numbers you could raise it substantially without noticing.
+
+**Premium (200 SAR):** the model cost is 0.019 SAR, so the compute margin is
+**99.99%**. That figure is close to meaningless, and `LINKEDIN_PRICING` is
+right to record `worst_case_cost_sar: None` for it — **Premium's real cost is
+your time**, since it is fulfilled by hand. The measurement says the AI half of
+it is free; it says nothing about whether 200 SAR pays for the hour.
