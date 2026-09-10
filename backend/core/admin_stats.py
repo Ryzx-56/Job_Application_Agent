@@ -702,7 +702,7 @@ def lookup_users(
             # Analytics page; support just needs "how much have they used it".
             "cv_count": cv.get("cv_count") or 0,
             "last_generated_at": cv.get("last_generated"),
-            "total_paid": _money(paid.get("total_paid_usd")),
+            "total_paid": _money(paid.get("total_paid_sar")),
             "payment_count": paid.get("payment_count") or 0,
         })
 

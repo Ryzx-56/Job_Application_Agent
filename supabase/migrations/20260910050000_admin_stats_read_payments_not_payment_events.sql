@@ -1,100 +1,73 @@
--- Three admin functions still read a table that was dropped a week ago.
+-- admin_paid_by_users() still reads a table that was dropped a week ago.
 --
 -- ─── THE BUG, FROM A REAL PRODUCTION LOG ────────────────────────────────────
 --
 --   admin stats RPC 'admin_paid_by_users' failed:
 --   {'message': 'relation "public.payment_events" does not exist', 'code': '42P01'}
 --
--- 20260902200000_retire_payment_events.sql did `DROP TABLE public.payment_events`
--- and did not repoint the three SQL functions that query it:
+-- 20260902200000_retire_payment_events.sql dropped public.payment_events and
+-- rebuilt admin_payment_stats() and admin_payment_by_product() on the new
+-- `payments` ledger. It did NOT rebuild admin_paid_by_users(), which is the
+-- "paid" column on the admin users table — so that one RPC has been failing
+-- ever since.
 --
---   admin_paid_by_users(uuid[])   the "paid" column on the admin users table
---   admin_payment_by_product()    revenue split by product
---   admin_payment_stats()         the revenue headline numbers
+-- Nothing surfaced it. core/admin_stats.py's _rpc() swallows a failed RPC and
+-- returns a default, so /api/v1/admin/users still answered 200 with every
+-- user's total showing zero — which looks exactly like an admin dashboard
+-- correctly reporting that nobody has paid.
 --
--- Nothing caught it because core/admin_stats.py's _rpc() swallows a failed RPC
--- and returns a default, so /api/v1/admin/users still answered 200 — with
--- every revenue figure silently zero. An admin dashboard that reports zero
--- revenue because a table is missing looks exactly like an admin dashboard
--- reporting that nobody has paid.
+-- ⚠️ ONLY THIS FUNCTION. The first draft of this migration also rewrote
+-- admin_payment_stats() and admin_payment_by_product(), on the assumption
+-- that they were broken too. They were not — 20260902200000 had already
+-- rebuilt them, in HALALAS with different column names (revenue_all_time_
+-- halalas, revenue_halalas), which is what core/admin_stats.py reads. That
+-- draft failed to apply, and the failure was the good outcome:
+--
+--   ERROR: cannot change return type of existing function
+--
+-- CREATE OR REPLACE cannot change a return type, so Postgres refused it. Had
+-- it been written as DROP + CREATE it would have applied and silently broken
+-- two working functions by renaming the columns out from under their caller.
 --
 -- ─── THE TRANSLATION ────────────────────────────────────────────────────────
 --
--- payment_events         ->  payments
---   .amount_usd          ->  .amount is HALALAS (integer, SAR). USD is derived
---                            at the 3.75 peg, which is fixed (core/pricing.py
---                            SAR_PER_USD) — so amount / 100.0 / 3.75.
---   .status = 'paid'     ->  .status = 'paid'  (unchanged)
---   .kind                ->  .type, with different values:
---                              'subscription' -> 'subscription_initial'
---                                                'subscription_renewal'
---                              'pack'         -> 'credit_pack'
---                              'refund'       -> there is no refund TYPE; a
---                                                refund is a status. Excluded
---                                                by the status filter instead.
---   .product_slug        ->  .reference
+--   payment_events        ->  payments
+--   .amount_usd           ->  .amount, which is integer HALALAS (100 to the
+--                             riyal, Moyasar's own unit)
+--   .status = 'paid'      ->  unchanged
 --
--- The USD column names are kept exactly as they were. Every caller in
--- core/admin_stats.py reads them by name, and renaming them here to say SAR
--- would be a second, unrelated change riding along inside a bug fix — the
--- dashboard converts with the same peg and would then double-convert.
+-- ─── AND THE UNIT WAS WRONG ─────────────────────────────────────────────────
+--
+-- The old column was named total_paid_usd, and core/admin_stats.py passes it
+-- to _money(), whose docstring says plainly: "TAKES SAR NOW, not USD." So the
+-- admin users table was rendering a dollar figure as though it were riyals,
+-- understating every user's spend by the 3.75 peg.
+--
+-- Renamed to total_paid_sar and returned in SAR, which is what the caller
+-- already assumed and what the customer is actually charged. The rename is
+-- what makes the mismatch impossible to reintroduce quietly; core/admin_stats.py
+-- reads the new name.
+--
+-- DROP + CREATE rather than CREATE OR REPLACE, precisely because the return
+-- type is changing. That is the operation the first draft could not perform.
 
-CREATE OR REPLACE FUNCTION public.admin_paid_by_users(ids uuid[])
-RETURNS TABLE(user_id uuid, total_paid_usd numeric, payment_count bigint)
+DROP FUNCTION IF EXISTS public.admin_paid_by_users(uuid[]);
+
+CREATE FUNCTION public.admin_paid_by_users(ids uuid[])
+RETURNS TABLE(user_id uuid, total_paid_sar numeric, payment_count bigint)
 LANGUAGE sql SECURITY DEFINER
 SET search_path TO 'public'
 AS $$
   SELECT p.user_id,
-         COALESCE(SUM(p.amount / 100.0 / 3.75) FILTER (WHERE p.status = 'paid'), 0),
+         -- Halalas to riyals. Never a currency conversion: SAR is what was
+         -- charged, and the dollar figure the admin pages show is derived
+         -- from this one at the fixed peg, not the other way round.
+         COALESCE(SUM(p.amount / 100.0) FILTER (WHERE p.status = 'paid'), 0),
          count(*) FILTER (WHERE p.status = 'paid')
   FROM public.payments p
   WHERE p.user_id = ANY(ids)
   GROUP BY p.user_id;
 $$;
 
-
-CREATE OR REPLACE FUNCTION public.admin_payment_by_product()
-RETURNS TABLE(kind text, product_slug text, count_ever bigint, count_month bigint, revenue_usd numeric)
-LANGUAGE sql SECURITY DEFINER
-SET search_path TO 'public'
-AS $$
-  SELECT
-    -- Collapsed back to the two buckets the dashboard has always grouped by,
-    -- so the UI does not have to learn that a renewal and a first month are
-    -- both subscription revenue.
-    CASE
-      WHEN p.type IN ('subscription_initial', 'subscription_renewal') THEN 'subscription'
-      WHEN p.type = 'credit_pack' THEN 'pack'
-      ELSE p.type
-    END,
-    COALESCE(p.reference, 'unknown'),
-    count(*),
-    count(*) FILTER (WHERE p.created_at >= date_trunc('month', now())),
-    COALESCE(SUM(p.amount / 100.0 / 3.75), 0)
-  FROM public.payments p
-  WHERE p.status = 'paid'
-  GROUP BY 1, COALESCE(p.reference, 'unknown');
-$$;
-
-
-CREATE OR REPLACE FUNCTION public.admin_payment_stats()
-RETURNS TABLE(total_events bigint, revenue_all_time_usd numeric, revenue_this_month_usd numeric,
-              subs_ever bigint, subs_this_month bigint, packs_ever bigint, packs_this_month bigint)
-LANGUAGE sql SECURITY DEFINER
-SET search_path TO 'public'
-AS $$
-  WITH month_start AS (SELECT date_trunc('month', now()) AS d)
-  SELECT
-    count(*),
-    COALESCE(SUM(amount / 100.0 / 3.75) FILTER (WHERE status = 'paid'), 0),
-    COALESCE(SUM(amount / 100.0 / 3.75) FILTER (WHERE status = 'paid'
-             AND created_at >= (SELECT d FROM month_start)), 0),
-    count(*) FILTER (WHERE type IN ('subscription_initial', 'subscription_renewal')
-             AND status = 'paid'),
-    count(*) FILTER (WHERE type IN ('subscription_initial', 'subscription_renewal')
-             AND status = 'paid' AND created_at >= (SELECT d FROM month_start)),
-    count(*) FILTER (WHERE type = 'credit_pack' AND status = 'paid'),
-    count(*) FILTER (WHERE type = 'credit_pack' AND status = 'paid'
-             AND created_at >= (SELECT d FROM month_start))
-  FROM public.payments;
-$$;
+REVOKE ALL ON FUNCTION public.admin_paid_by_users(uuid[]) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.admin_paid_by_users(uuid[]) TO service_role;
