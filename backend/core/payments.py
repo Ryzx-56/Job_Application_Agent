@@ -29,6 +29,7 @@
 # THE WEBHOOK IS THE SOURCE OF TRUTH, not the callback page. The callback
 # route exists so the buyer sees an answer immediately; if it never runs,
 # the webhook still grants the credits.
+import os
 import hmac
 import json
 from typing import Any, Optional
@@ -1065,4 +1066,46 @@ def admin_refund_payment(
         "credits_granted": granted,
         "credits_clawed_back": clawed,
         "credits_already_spent": (int(granted) - clawed) if granted else 0,
+    }
+
+
+@router.get("/api/v1/admin/payments/config", tags=["Admin"])
+def payment_config_check(user_id: str = Depends(get_current_admin_user_id)) -> dict:
+    """
+    Whether this deployment is actually configured to take a payment, and what
+    is wrong if it is not.
+
+    WHY THIS EXISTS. Going live is environment variables in two dashboards —
+    the secret key in Render, the publishable key in Vercel — and every way of
+    getting it half-right is silent. The first real attempt to pay failed with
+    "Payments are unavailable right now because of a configuration error on our
+    side", which is the correct message to show a customer and tells the
+    operator nothing at all. This is the operator's version of that sentence.
+
+    NEVER RETURNS A KEY OR PART OF ONE. Booleans, a mode string, and the
+    problems list from moyasar_client.config_problems() — the same contract
+    config_status() has always had. Admin-gated anyway, because "is the webhook
+    secret set" is not a fact a stranger needs.
+
+    THE ONE THING IT CANNOT SEE is NEXT_PUBLIC_MOYASAR_PUBLISHABLE_KEY, which
+    lives in Vercel and is compiled into the browser bundle. `frontend_hint`
+    below says how to check that half, because it is the half that was missing.
+    """
+    status_report = moyasar_client.config_status()
+    problems = moyasar_client.config_problems()
+    ready = bool(status_report["secret_key_set"]) and not problems
+
+    return {
+        **status_report,
+        "problems": problems,
+        "ready_to_charge": ready,
+        "cron_secret_set": bool((os.getenv("CRON_SECRET") or "").strip()),
+        "public_app_url": (os.getenv("PUBLIC_APP_URL") or "").strip() or None,
+        "frontend_hint": (
+            "This endpoint cannot see NEXT_PUBLIC_MOYASAR_PUBLISHABLE_KEY — it is a "
+            "Vercel variable compiled into the browser bundle. Open the checkout page "
+            "and check the browser console: 'moyasar-key-missing' means it is unset, "
+            "'moyasar-key-mode-mismatch' means it is set to the wrong environment for "
+            "the mode above."
+        ),
     }
