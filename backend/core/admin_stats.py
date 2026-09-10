@@ -686,8 +686,28 @@ def lookup_users(
     except Exception as e:
         logger.error(f"admin profile fetch failed: {e}")
 
-    cv_by_id = {r["user_id"]: r for r in (_rpc("admin_cv_counts_by_users", {"ids": user_ids}) or [])}
-    paid_by_id = {r["user_id"]: r for r in (_rpc("admin_paid_by_users", {"ids": user_ids}) or [])}
+    # ⚠️ `or []` WOULD THROW AWAY THE ONLY THING _rpc's RETURN VALUE SAYS.
+    #
+    # _rpc returns None for "this could not be read" and [] for "read fine,
+    # nothing there" — its docstring is explicit that the UI must render those
+    # differently, because "showing an unread metric as 0 is how dashboards end
+    # up lying". Collapsing None into [] with `or []` did exactly that: when
+    # admin_paid_by_users was failing (it still selected FROM the dropped
+    # payment_events table), every user's total rendered as 0.00, which is
+    # indistinguishable from a customer who has genuinely never paid.
+    #
+    # A week of real revenue was invisible behind an HTTP 200.
+    cv_rows = _rpc("admin_cv_counts_by_users", {"ids": user_ids})
+    paid_rows = _rpc("admin_paid_by_users", {"ids": user_ids})
+    cv_unavailable = cv_rows is None
+    paid_unavailable = paid_rows is None
+    if paid_unavailable:
+        logger.error(
+            "🚨 admin_paid_by_users could not be read — every 'total paid' below "
+            "is UNKNOWN, not zero. Check that the latest migration applied."
+        )
+    cv_by_id = {r["user_id"]: r for r in (cv_rows or [])}
+    paid_by_id = {r["user_id"]: r for r in (paid_rows or [])}
 
     users = []
     for match in matches:
@@ -716,10 +736,26 @@ def lookup_users(
             "signed_up_at": profile.get("created_at"),
             # Combined across languages on purpose — the split lives on the
             # Analytics page; support just needs "how much have they used it".
-            "cv_count": cv.get("cv_count") or 0,
+            # None, not 0, when the source could not be read — see above.
+            "cv_count": None if cv_unavailable else (cv.get("cv_count") or 0),
             "last_generated_at": cv.get("last_generated"),
-            "total_paid": _money(paid.get("total_paid_sar")),
-            "payment_count": paid.get("payment_count") or 0,
+            # None when unreadable, so the table can say so rather than
+            # rendering an authoritative-looking 0.00 SAR next to a customer
+            # who has in fact paid.
+            "total_paid": None if paid_unavailable else _money(paid.get("total_paid_sar")),
+            "payment_count": None if paid_unavailable else (paid.get("payment_count") or 0),
         })
 
-    return {"users": users, "count": len(users), "usd_to_sar": USD_TO_SAR}
+    return {
+        "users": users,
+        "count": len(users),
+        "usd_to_sar": USD_TO_SAR,
+        # The page renders a banner off these. A dashboard that cannot read a
+        # number must say "unavailable", never show a confident zero.
+        "unavailable": [
+            name for name, missing in (
+                ("payments", paid_unavailable),
+                ("cv_counts", cv_unavailable),
+            ) if missing
+        ],
+    }

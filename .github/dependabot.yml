@@ -40,7 +40,59 @@ updates:
       interval: weekly
       day: monday
     open-pull-requests-limit: 5
+
+    # ─── Packages Dependabot must not raise ─────────────────────────────────
+    ignore:
+      # websockets: CAPPED BY TWO DEPENDENCIES, NOT BY PREFERENCE.
+      #
+      #   google-genai 2.22.0 requires websockets<17.0
+      #   realtime     2.31.0 requires websockets<16     (Supabase Realtime)
+      #
+      # realtime is the binding one, so >=13.0,<16.0 in requirements.txt is
+      # already the highest installable version. Dependabot opened
+      # `websockets>=17.1,<18.0` anyway — it reads the constraint in our file,
+      # not the ones in our dependencies' metadata. Merging it is not risky,
+      # it is IMPOSSIBLE: pip answers ResolutionImpossible, and if it somehow
+      # resolved it would take out cv_parser, jd_analyzer and the fact
+      # checker, all of which run on google-genai.
+      #
+      # Remove this ONLY after checking that both packages have raised their
+      # ceilings — `pip index versions` will not tell you; read their
+      # requires_dist on PyPI.
+      - dependency-name: websockets
+
     groups:
+      # ⚠️ THE PINNED SUB-DEPENDENCIES MOVE WITH THEIR PARENTS OR NOT AT ALL.
+      #
+      # requirements.txt is a full freeze, so it pins pydantic_core and
+      # protobuf independently of the packages that require exact versions of
+      # them. Grouped updates then bumped a parent and left its child behind,
+      # twice, and each time the PR could not install itself:
+      #
+      #   pydantic 2.13.5 pins pydantic-core 2.46.5; the PR set it to 2.48.0
+      #     -> ResolutionImpossible
+      #   google-api-core 2.36.0 requires protobuf>=6.33.5; the PR left
+      #     protobuf==5.29.6
+      #     -> ResolutionImpossible
+      #
+      # Naming them in the same group is the same fix the next-react group
+      # uses for React and its types: things that must move together are
+      # offered together, so a version skew cannot be proposed in the first
+      # place. This does NOT make the group correct automatically — verify a
+      # pip PR with a from-scratch install in a throwaway venv, never against
+      # the working one, because pip will have already repaired the venv and
+      # the file will still be wrong.
+      pydantic:
+        patterns:
+          - "pydantic"
+          - "pydantic_core"
+          - "pydantic-core"
+      google-stack:
+        patterns:
+          - "google-*"
+          - "protobuf"
+          - "grpcio*"
+          - "proto-plus"
       python-minor-patch:
         update-types:
           - minor

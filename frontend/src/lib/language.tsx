@@ -1099,6 +1099,15 @@ export const content = {
         gapRequired: "Required",
         gapPreferred: "Preferred",
         gapHowToClose: "How to close it",
+        // Shown on the Word option, ARABIC CVs ONLY. Deliberately not phrased
+        // as a problem with the PDF: the PDF renders correctly and is fine for
+        // a human reader. The recommendation is about machine parsing, so the
+        // copy says that and nothing more — "our PDF has a problem with
+        // Arabic" would be more alarming than the situation warrants and would
+        // make a working option look unusable.
+        docxArabicBadge: "recommended for Arabic",
+        docxArabicNote:
+          "Applicant tracking systems read Arabic text more reliably from Word files.",
         downloadDialogTitle: "Choose a format",
         downloadDialogBody: "Word is editable. PDF keeps the layout exactly as designed.",
         downloadDialogClose: "Close",
@@ -2577,6 +2586,8 @@ export const content = {
         gapRequired: "مطلوبة",
         gapPreferred: "مفضلة",
         gapHowToClose: "كيف تسدّها",
+        docxArabicBadge: "يُفضّل للسيرة العربية",
+        docxArabicNote: "أنظمة التوظيف تقرأ النص العربي من ملفات Word بدقة أعلى.",
         downloadDialogTitle: "اختر الصيغة",
         downloadDialogBody: "صيغة Word قابلة للتعديل، وصيغة PDF تحافظ على التنسيق كما صُمم.",
         downloadDialogClose: "إغلاق",

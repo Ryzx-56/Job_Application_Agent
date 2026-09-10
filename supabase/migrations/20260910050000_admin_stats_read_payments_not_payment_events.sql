@@ -51,7 +51,30 @@
 -- DROP + CREATE rather than CREATE OR REPLACE, precisely because the return
 -- type is changing. That is the operation the first draft could not perform.
 
-DROP FUNCTION IF EXISTS public.admin_paid_by_users(uuid[]);
+-- ─── WHY THE DROP IS DONE BY OID AND NOT BY SIGNATURE ───────────────────────
+--
+-- `DROP FUNCTION IF EXISTS public.admin_paid_by_users(uuid[])` only matches a
+-- function whose argument types are exactly uuid[]. If the deployed copy was
+-- ever created with a different argument type, the DROP silently matches
+-- nothing, the CREATE below then collides with the existing function, and the
+-- migration fails on a database that looks fine locally.
+--
+-- This drops every overload of the name, whatever its arguments, so the
+-- migration cannot fail for a reason that depends on history nobody can see.
+DO $$
+DECLARE
+  fn record;
+BEGIN
+  FOR fn IN
+    SELECT p.oid::regprocedure AS sig
+    FROM pg_proc p
+    JOIN pg_namespace n ON n.oid = p.pronamespace
+    WHERE n.nspname = 'public' AND p.proname = 'admin_paid_by_users'
+  LOOP
+    EXECUTE format('DROP FUNCTION IF EXISTS %s', fn.sig);
+  END LOOP;
+END
+$$;
 
 CREATE FUNCTION public.admin_paid_by_users(ids uuid[])
 RETURNS TABLE(user_id uuid, total_paid_sar numeric, payment_count bigint)
@@ -71,3 +94,28 @@ $$;
 
 REVOKE ALL ON FUNCTION public.admin_paid_by_users(uuid[]) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.admin_paid_by_users(uuid[]) TO service_role;
+
+
+-- ─── THE ASSERTION THAT MAKES A SILENT FAILURE IMPOSSIBLE ───────────────────
+--
+-- The whole reason this bug survived a week is that nothing checked. The
+-- function was broken, _rpc() swallowed the error, the endpoint answered 200,
+-- and the dashboard showed 0.00 next to customers who had paid.
+--
+-- So the migration verifies its own work. If admin_paid_by_users still cannot
+-- run, `supabase db push` fails HERE, in CI, with this message — instead of
+-- reporting success and leaving the discovery to whoever notices the revenue
+-- is missing.
+DO $$
+DECLARE
+  probe numeric;
+BEGIN
+  SELECT total_paid_sar INTO probe
+  FROM public.admin_paid_by_users(ARRAY[]::uuid[]) LIMIT 1;
+  RAISE NOTICE 'admin_paid_by_users is callable and returns total_paid_sar.';
+EXCEPTION WHEN OTHERS THEN
+  RAISE EXCEPTION
+    'admin_paid_by_users is still not callable after this migration: % (%)',
+    SQLERRM, SQLSTATE;
+END
+$$;

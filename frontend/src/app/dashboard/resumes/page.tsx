@@ -325,6 +325,7 @@ function DownloadFormatDialog({
   docxHref,
   copy,
   lang,
+  cvIsArabic,
 }: {
   open: boolean;
   onClose: () => void;
@@ -333,6 +334,12 @@ function DownloadFormatDialog({
   docxHref: string | null;
   copy: any;
   lang: "en" | "ar";
+  /* The language of the DOCUMENT, not of the page. The Word recommendation
+     below is about how applicant tracking systems read Arabic text, so it is
+     true of an Arabic CV read on an English dashboard and false of an English
+     CV read on an Arabic one. Showing it on an English CV would be noise at
+     best and a claim that isn't true at worst. */
+  cvIsArabic: boolean;
 }) {
   // Escape closes it, and focus goes to the panel so a keyboard user is
   // inside the dialog rather than still on the page behind it.
@@ -349,7 +356,12 @@ function DownloadFormatDialog({
 
   if (!open) return null;
 
-  const option = (href: string | null, label: string, note: string) => (
+  const option = (
+    href: string | null,
+    label: string,
+    note: string,
+    recommendation?: string
+  ) => (
     <a
       href={href ?? "#"}
       aria-disabled={!href}
@@ -364,8 +376,25 @@ function DownloadFormatDialog({
       } focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600`}
     >
       <span className="min-w-0">
-        <span className="block text-sm font-semibold text-slate-900">{label}</span>
+        <span className="block text-sm font-semibold text-slate-900">
+          {label}
+          {recommendation && (
+            <span className="ms-1.5 align-middle text-xs font-medium text-emerald-700">
+              {copy.docxArabicBadge}
+            </span>
+          )}
+        </span>
         <span className="mt-0.5 block text-xs leading-relaxed text-slate-500">{note}</span>
+        {/* A recommendation, not a warning. The PDF is visually correct and
+            perfectly good for a human reader — someone emailing a CV straight
+            to a hiring manager has no reason to avoid it. The advice is
+            specifically about machine parsing, so the line says exactly that
+            and stops. */}
+        {recommendation && (
+          <span className="mt-1 block text-xs leading-relaxed text-emerald-700">
+            {recommendation}
+          </span>
+        )}
       </span>
       <Download className="size-4 shrink-0 text-slate-400" aria-hidden />
     </a>
@@ -400,7 +429,12 @@ function DownloadFormatDialog({
         <p className="mb-4 text-xs leading-relaxed text-slate-500">{copy.downloadDialogBody}</p>
         <div className="space-y-2.5">
           {option(pdfHref, "PDF", lang === "ar" ? "يحافظ على التنسيق تمامًا" : "Keeps the layout exactly")}
-          {option(docxHref, "Word", lang === "ar" ? "قابل للتعديل" : "Editable")}
+          {option(
+            docxHref,
+            "Word",
+            lang === "ar" ? "قابل للتعديل" : "Editable",
+            cvIsArabic ? copy.docxArabicNote : undefined
+          )}
         </div>
       </div>
     </div>
@@ -615,6 +649,7 @@ function ResumeDetail({ resume, lang, copy, generateCopy }: { resume: ResumeList
         docxHref={downloadChoice === "cl" ? null : cvDocxDownloadUrl}
         copy={copy}
         lang={lang}
+        cvIsArabic={resume.cv_language === "ar"}
       />
     </div>
   );

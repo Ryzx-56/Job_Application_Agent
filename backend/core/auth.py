@@ -107,6 +107,19 @@ _OWNER_COLUMN_CANDIDATES = ("is_owner", "owner")
 _ALPHA_COLUMN_CANDIDATES = ("is_alpha_tester", "alpha_tester")
 
 
+# PostgREST's vocabulary for "that column is not on this table". 42703 is
+# Postgres' own undefined_column SQLSTATE; PGRST204 is PostgREST's schema-cache
+# equivalent, returned when it knows the table and not the column.
+_MISSING_COLUMN_MARKERS = ("42703", "pgrst204", "does not exist", "could not find")
+
+
+def _is_missing_column_error(exc: Exception) -> bool:
+    """Is this failure specifically 'no such column', as opposed to any other
+    reason a read can fail?"""
+    text = f"{getattr(exc, 'code', '')} {exc}".lower()
+    return any(marker in text for marker in _MISSING_COLUMN_MARKERS)
+
+
 def _read_bool_column(user_id: str | None, candidates: tuple[str, ...], label: str) -> bool:
     """
     Reads a boolean profile flag that may live under more than one column
@@ -153,17 +166,36 @@ def _read_bool_column(user_id: str | None, candidates: tuple[str, ...], label: s
                 .execute()
                 .data
             )
-        except Exception:
-            continue  # column doesn't exist on this schema — try the next name
+        except Exception as e:
+            # ⚠️ NOT EVERY FAILURE IS A MISSING COLUMN, and treating them the
+            # same is how this reported a schema problem that did not exist.
+            #
+            # PostgREST answers an unknown column with 42703 (undefined_column)
+            # or PGRST204. Anything else — a dropped connection, a 5xx, an RLS
+            # refusal, a timeout — means the column's existence is UNKNOWN, and
+            # saying "run the matching migration" about it sends whoever reads
+            # the log to rewrite a schema that was already correct.
+            if _is_missing_column_error(e):
+                continue  # genuinely not on this schema — try the next name
+            logger.error(
+                f"{label} check could not read profiles.{column} for {user_id}: "
+                f"{type(e).__name__}: {e}. This is NOT a missing column — the "
+                f"query failed. Treating as not {label.lower()} for now."
+            )
+            return False
 
         found_any_column = True
         if row is not None and bool(row.get(column)):
             return True
 
     if not found_any_column:
+        # Reached only when EVERY candidate came back as a genuine
+        # undefined-column error, so this really is a schema gap.
         logger.warning(
             f"{label} check found no {' or '.join(candidates)} column on profiles — "
-            f"treating user {user_id} as not {label.lower()}. Run the matching migration in supabase/migrations/."
+            f"treating user {user_id} as not {label.lower()}. Every candidate returned "
+            f"an undefined-column error, so this is a real schema gap rather than a "
+            f"failed query. Run the matching migration in supabase/migrations/."
         )
     return False
 
