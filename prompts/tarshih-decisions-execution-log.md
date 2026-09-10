@@ -784,3 +784,54 @@ these numbers you could raise it substantially without noticing.
 right to record `worst_case_cost_sar: None` for it — **Premium's real cost is
 your time**, since it is fulfilled by hand. The measurement says the AI half of
 it is free; it says nothing about whether 200 SAR pays for the hour.
+
+---
+
+## The branches, finished
+
+**Down to `main` + one, and that one cannot be merged by anybody.**
+
+### `python-minor-patch` — merged, after fixing two pins Dependabot got wrong
+
+Dependabot regenerated this branch (60 updates) against my earlier merges, so
+it kept all my fixes. It still could not install itself — twice, both times
+because it bumped a package without bumping what that package now requires:
+
+```
+google-api-core 2.36.0 requires protobuf>=6.33.5   — branch left protobuf==5.29.6
+pydantic 2.13.5 pins pydantic-core 2.46.5          — branch moved it to 2.48.0
+```
+
+Two lines. Fixed both and merged the rest, rather than dropping 60 legitimate
+patch updates over them.
+
+**Verified the only way that means anything for a dependency change:** a
+throwaway venv, `pip install -r requirements.txt` from scratch (exit 0),
+`import main` inside that environment, then **the full suite run with that
+interpreter — 340 passed.**
+
+`fastapi 0.136.1 → 0.141.1`, `pydantic 2.13.4 → 2.13.5`,
+`google-genai 2.3.0 → 2.22.0`, `protobuf 5.29.6 → 6.33.5`.
+
+### `websockets>=17.1` — not a judgement call, arithmetic
+
+I checked PyPI directly rather than relying on the earlier install error:
+
+```
+google-genai 2.22.0  requires websockets<17.0
+realtime     2.31.0  requires websockets<16
+```
+
+**`realtime` caps it below 16, so the existing `>=13.0,<16.0` pin is already
+the highest installable version.** There is no version of this branch that can
+be merged — pip confirms it:
+
+```
+ERROR: Cannot install google-genai==2.3.0 and websockets<18.0 and >=17.1
+ResolutionImpossible
+```
+
+Merging it would take out `cv_parser`, `jd_analyzer` and the fact checker.
+**Close the PR on GitHub** — Dependabot will keep reopening it otherwise, and
+the constraint lives in Google's and Supabase's metadata, not in anything you
+can change.
