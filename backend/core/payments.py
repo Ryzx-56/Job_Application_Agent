@@ -471,7 +471,33 @@ def verify_payment(
         # A 404 from Moyasar means this id isn't a payment. Answer 404 rather
         # than echoing their error, matching how the rest of this codebase
         # responds to an id that isn't yours or isn't real.
-        logger.warning(f"🚫 Moyasar rejected a lookup of {payment_id}: {e}")
+        #
+        # ⚠️ BUT "NOT FOUND" HAS A SECOND, MUCH MORE LIKELY MEANING DURING
+        # GO-LIVE, and reading it as the first one costs an afternoon.
+        #
+        # Moyasar's test and live environments are separate ledgers with
+        # separate ids. A payment created by a form holding a pk_test_ key and
+        # then verified by a server holding an sk_live_ key IS NOT FOUND —
+        # because the live account has genuinely never seen it. The customer's
+        # card was charged in test, our server looked in live, and the log says
+        # "The Payment record you were looking for was not found", which reads
+        # like the payment vanished rather than like the two halves of the
+        # deployment disagreeing.
+        #
+        # This happened here, in production, on the first real attempt. So when
+        # we are in live mode and a lookup 404s, say the likely cause out loud.
+        # It costs one log line and it is the difference between checking two
+        # dashboard variables and doubting the payment provider.
+        hint = ""
+        if moyasar_client.is_live():
+            hint = (
+                " — this server is in LIVE mode, so a payment created against "
+                "TEST keys would look exactly like this. Check that Vercel's "
+                "NEXT_PUBLIC_MOYASAR_PUBLISHABLE_KEY is pk_live_, matching "
+                "Render's sk_live_ secret key. GET /api/v1/admin/payments/config "
+                "reports the server half."
+            )
+        logger.warning(f"🚫 Moyasar rejected a lookup of {payment_id}: {e}{hint}")
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail={"code": "payment_not_found", "message": "We couldn't find that payment."},
