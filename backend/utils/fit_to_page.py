@@ -28,7 +28,12 @@ from pathlib import Path
 from urllib.parse import urlparse
 from urllib.request import url2pathname
 
-import fitz  # PyMuPDF — already used by utils/pdf_parser.py
+# pymupdf, not fitz. `fitz` is PyMuPDF's legacy import alias and it now emits
+# a DeprecationWarning on every boot; the project has said it will be removed,
+# at which point this becomes an ImportError rather than a warning. The module
+# is identical either way — same objects, same API — so this is a rename and
+# nothing more.
+import pymupdf as fitz  # already used by utils/pdf_parser.py
 from weasyprint import HTML, default_url_fetcher
 from weasyprint.text.fonts import FontConfiguration
 from pypdf import PdfReader

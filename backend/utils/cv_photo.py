@@ -153,7 +153,7 @@ def _pdf_candidates(file_bytes: bytes) -> list[tuple[tuple, object]]:
     i.e. earliest page, then highest on that page, then largest — which is
     where a CV photo sits in every layout this codebase renders.
     """
-    import fitz
+    import pymupdf as fitz
 
     candidates: list[tuple[tuple, object]] = []
     with fitz.open(stream=file_bytes, filetype="pdf") as doc:

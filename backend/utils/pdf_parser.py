@@ -1,7 +1,12 @@
 import io
 import zipfile
 
-import fitz
+# pymupdf, not fitz. `fitz` is PyMuPDF's legacy import alias and it now emits
+# a DeprecationWarning on every boot; the project has said it will be removed,
+# at which point this becomes an ImportError rather than a warning. The module
+# is identical either way — same objects, same API — so this is a rename and
+# nothing more.
+import pymupdf as fitz
 from loguru import logger
 
 

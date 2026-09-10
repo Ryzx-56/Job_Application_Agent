@@ -20,7 +20,7 @@ Deliberately NO LLM CALLS: everything below runs off a fixed facts_json, so
 it is fast, free and deterministic. The one test that does exercise Agent 1's
 routing is marked `extra_api_call` and is excluded by default (see pytest.ini).
 """
-import fitz
+import pymupdf as fitz
 import pytest
 from docx import Document
 

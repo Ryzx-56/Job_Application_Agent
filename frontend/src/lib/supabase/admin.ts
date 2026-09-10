@@ -187,6 +187,26 @@ export const fetchAdminAnalytics = () => adminGet<AdminAnalytics>("/api/v1/admin
 export const fetchPipelineHealth = (days = 30) =>
   adminGet<AdminPipelineHealth>(`/api/v1/admin/pipeline-health?days=${days}`);
 
+/* ── Payment configuration (§go-live) ─────────────────────────────────────
+   Whether this deployment can actually take a payment, and what is wrong if
+   it cannot. Booleans and a mode string only — the endpoint never returns a
+   key or any part of one. */
+export type AdminPaymentConfig = {
+  secret_key_set: boolean;
+  publishable_key_set: boolean;
+  webhook_secret_set: boolean;
+  api_base: string;
+  mode: "test" | "live" | "unknown";
+  problems: string[];
+  ready_to_charge: boolean;
+  cron_secret_set: boolean;
+  public_app_url: string | null;
+  frontend_hint: string;
+};
+
+export const fetchPaymentConfig = () =>
+  adminGet<AdminPaymentConfig>("/api/v1/admin/payments/config");
+
 export const fetchAdminUsers = (q?: string) =>
   adminGet<{ users: AdminUserRow[]; count: number }>(
     `/api/v1/admin/users${q ? `?q=${encodeURIComponent(q)}` : ""}`

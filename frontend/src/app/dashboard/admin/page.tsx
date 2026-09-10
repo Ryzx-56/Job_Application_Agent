@@ -2,7 +2,10 @@
 
 import React from "react";
 import Link from "next/link";
-import { Activity, ArrowRight, BadgeCheck, BarChart3, CreditCard, FileText, Users } from "lucide-react";
+import {
+  Activity, ArrowRight, BadgeCheck, BarChart3, CreditCard, FileText,
+  ShieldCheck, Users,
+} from "lucide-react";
 import { AdminPage, ADMIN_MONO } from "@/components/admin-ui";
 
 /**
@@ -61,6 +64,15 @@ const TOOLS = [
     accent: "text-amber-600",
     ring: "group-hover:border-amber-300",
     desc: "Every Moyasar payment, and the only place a refund can be issued. There is no customer-facing refund flow.",
+  },
+  {
+    href: "/dashboard/admin/config",
+    name: "Configuration",
+    cmd: "config",
+    icon: ShieldCheck,
+    accent: "text-emerald-600",
+    ring: "group-hover:border-emerald-300",
+    desc: "Whether this deployment can actually take a payment, and which variable is wrong if it cannot. Read live from the backend; never shows a key.",
   },
   {
     href: "/dashboard/admin/health",
