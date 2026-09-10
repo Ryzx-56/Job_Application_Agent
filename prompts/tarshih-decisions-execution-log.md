@@ -591,3 +591,73 @@ tidiness; it is the thing that makes the design safe.
 (needs a machine that can reach it), LinkedIn generation is still unmeasured
 (needs a paid purchase row), and the `basic` vs `advanced` search-depth test is
 still unrun (needs 30 Tavily credits).
+
+---
+
+# Summary
+
+## The one thing you have to do
+
+**Vercel → `NEXT_PUBLIC_MOYASAR_PUBLISHABLE_KEY` = `pk_live_…` → redeploy.**
+
+Render already has a live secret key (`mode: live`, confirmed against your
+running backend). Vercel has no publishable key at all — confirmed by fetching
+every JavaScript chunk the checkout page loads and finding no `pk_` in any of
+them. That is why the card form would not mount, and why your payment verify
+404'd: a payment created in test and looked up in live genuinely does not
+exist.
+
+Then check `MOYASAR_WEBHOOK_SECRET` is the **live** webhook's secret, and hit
+**`GET /api/v1/admin/payments/config`** — it is deployed and will tell you
+exactly what is still missing without revealing any key.
+
+## Status of the ten items
+
+| # | Item | Status |
+|---|---|---|
+| 1 | Section 9 cuts A–E | ✅ shipped — 72→24 typical, 144→36 worst |
+| 1b | `basic` vs `advanced` depth | ⚠️ **not tested — quota was exhausted.** Tool committed, 30 credits, one command |
+| 2 | Job match on demand | ✅ shipped — out of the graph, behind a button |
+| 3 | Free tier 3 credits, match gated | ✅ confirmed — 0.76 SAR → **0.04 SAR** per free user |
+| 4 | Pack buyers get access | ✅ shipped — `effective_tier()` |
+| 5 | Arabic PDF | ✅ diagnosis reopened, runtime report shipped. ⚠️ DOCX copy needs your wording |
+| 6 | Photo on the manual flow | ✅ shipped, with server-side re-encoding |
+| 7 | `reason_ar` / `how_to_close_ar` | ⚠️ **already done in `6ab7cb7`** — my earlier report was wrong |
+| 8 | Tavily quota guard | ✅ shipped — all three layers |
+| 9 | `noindex` | ✅ shipped. ⚠️ public CV-URL is a content decision, recommendation given |
+| 10 | Pricing v7 | ✅ written |
+
+## What I found that you did not ask about
+
+1. **The deploy had been broken since 2026-09-08.** `pip install -r
+   requirements.txt` failed on a clean install — twice, for two different
+   reasons, both caused by adding `openai` without adjusting the pins around
+   it. **Neither was visible to any test**, because every test ran against a
+   venv pip had already fixed. Now verified with a throwaway venv.
+
+2. **Three admin SQL functions still queried `payment_events`,** dropped a week
+   ago. `_rpc()` swallows the failure, so the dashboard answered 200 with every
+   revenue figure silently zero — indistinguishable from "nobody has paid".
+
+3. **Your Tavily quota was at 976/1000 and refusing requests**, and the failure
+   surfaced to users as an empty results page.
+
+4. **`websockets>=17.1` would have broken Gemini and Supabase Realtime.**
+   Dependabot does not know that; the constraint lives in `google-genai` and
+   `realtime`, not in your file.
+
+## Still yours
+
+- The Vercel key, and the live webhook secret.
+- The manual logged-in pass and Lighthouse on a real device.
+- The Supabase backup — **note that this session added three migrations**
+  (`20260909190000`, `20260909200000`, `20260910050000`) and they apply on
+  push, which has now happened.
+- The DOCX-for-Arabic copy wording, and the public CV-creation page content.
+
+## Verification
+
+**340 backend tests pass** (10 deselected, the same 3 pre-existing
+`test_document_generator.py` fixture errors). `npm run build` and
+`tsc --noEmit` clean on TypeScript 7. Clean-venv install exits 0 and `main.py`
+imports in it. All new endpoints confirmed live on Render.
