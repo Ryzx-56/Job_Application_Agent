@@ -161,6 +161,23 @@ def _report_payment_configuration() -> None:
     except Exception as e:  # never let a diagnostic take the app down
         logger.warning(f"Could not report the payment configuration at startup: {e}")
 
+
+# ─── THE ARABIC RENDERING STACK, ASKED AT RUNTIME ───────────────────────────
+#
+# Two of the three things this reports can be wrong in a way that never
+# raises: arabic_reshaper/python-bidi sit behind a try/except ImportError and
+# silently degrade Arabic cover letters to unjoined isolated letters, and a
+# WeasyPrint older than 69.0 corrupts the copyable text layer of every Arabic
+# CV while the page still LOOKS right. requirements.txt says what was asked
+# for; this says what is running. See render_environment_report().
+@app.on_event("startup")
+def _report_render_environment() -> None:
+    try:
+        from utils.pdf_generator import log_render_environment
+        log_render_environment()
+    except Exception as e:
+        logger.warning(f"Could not report the rendering environment at startup: {e}")
+
 OUTPUT_DIR = "outputs"
 
 # BUG FIX: the old constants below (RESUME_PDF_PATH etc.) pointed every user

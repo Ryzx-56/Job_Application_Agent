@@ -615,3 +615,70 @@ def render_cover_letter_pdf(state: dict, output_path: str) -> str:
     doc.build(story)
     logger.info(f"✅ Cover letter PDF saved → {output_path}")
     return output_path
+
+
+def render_environment_report() -> dict:
+    """
+    What the Arabic rendering path is ACTUALLY running on, in production.
+
+    WHY IT IS ASKED AT RUNTIME AND NOT READ FROM requirements.txt. Two of the
+    three things below can be absent or a different version than the file
+    claims, and both fail QUIETLY:
+
+      · arabic_reshaper / python-bidi are wrapped in a try/except ImportError,
+        so a missing wheel does not crash — it silently renders Arabic cover
+        letters as unjoined isolated letters. Legible as a bug only if you
+        know what joined Arabic looks like.
+      · WeasyPrint's RTL cluster mapping was fixed in 69.0. The pinned version
+        is 69.0, but a build that resolved something older, or a system
+        install shadowing the wheel, produces exactly the transposition
+        signature seen in the extracted text layer of Arabic CVs
+        (الملخص المهني -> الملخص المهين, في -> يف). Reading the pin tells you
+        what was requested; this tells you what is running.
+
+    Logged once at startup. Cheap, and it turns "Arabic looks wrong" from a
+    guess into a lookup.
+    """
+    try:
+        import weasyprint
+        weasyprint_version = getattr(weasyprint, "__version__", "unknown")
+    except Exception as e:
+        weasyprint_version = f"import failed: {type(e).__name__}"
+
+    fonts_present = {
+        path.name: path.exists()
+        for path in (_ARABIC_FONT_REGULAR, _ARABIC_FONT_BOLD)
+    }
+
+    return {
+        "weasyprint": weasyprint_version,
+        "arabic_shaping": _ARABIC_SHAPING_AVAILABLE,
+        "reportlab_arabic_font_registered": _ARABIC_REPORTLAB_FONT_REGISTERED,
+        "fonts": fonts_present,
+    }
+
+
+def log_render_environment() -> dict:
+    report = render_environment_report()
+    missing_fonts = [name for name, present in report["fonts"].items() if not present]
+
+    logger.info(
+        f"🖨️  Rendering: weasyprint={report['weasyprint']} "
+        f"arabic_shaping={report['arabic_shaping']} "
+        f"reportlab_arabic_font={report['reportlab_arabic_font_registered']}"
+    )
+    if not report["arabic_shaping"]:
+        logger.error(
+            "🚨 arabic_reshaper / python-bidi are NOT installed. Arabic cover "
+            "letters will render as unjoined isolated letters — visibly broken, "
+            "and it will not raise. Check the build log for a failed wheel."
+        )
+    if missing_fonts:
+        logger.error(f"🚨 Arabic font asset(s) missing: {', '.join(missing_fonts)}")
+    if str(report["weasyprint"]).split(".")[0].isdigit() and int(str(report["weasyprint"]).split(".")[0]) < 69:
+        logger.error(
+            f"🚨 weasyprint {report['weasyprint']} is older than 69.0, which is where "
+            "the RTL cluster-mapping fix landed. Arabic PDFs will have a corrupted "
+            "copyable text layer."
+        )
+    return report
