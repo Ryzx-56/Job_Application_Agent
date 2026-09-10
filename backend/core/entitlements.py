@@ -98,7 +98,17 @@ def has_purchased_credits(user_id: str) -> bool:
         )
         return int((row or {}).get("purchased_credits") or 0) > 0
     except Exception as e:
-        logger.warning(f"Could not read purchased_credits for {user_id}: {e}")
+        # Fails CLOSED, which is the right direction for a gate — but it means
+        # a customer who paid 38 SAR for a pack is refused Job Search,
+        # Interview Prep and LinkedIn Essential, shown an upgrade prompt, and
+        # nothing anywhere says why. ERROR rather than WARNING because that is
+        # a paying customer being turned away, and it should be findable in a
+        # log without knowing to look for it.
+        logger.error(
+            f"Could not read purchased_credits for {user_id}: {e}. Gating them as "
+            "if they hold none — if they bought a pack, they are being refused "
+            "access they paid for."
+        )
         return False
 
 

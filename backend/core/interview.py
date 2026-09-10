@@ -137,8 +137,22 @@ def _fetch_prep(resume_id: str, user_id: str) -> dict | None:
         return None
 
 
-def _prepared_map(user_id: str) -> dict[str, str]:
-    """resume_id -> when its prep was last written, for the picker."""
+def _prepared_map(user_id: str) -> dict[str, str] | None:
+    """
+    resume_id -> when its prep was last written, for the picker.
+    None when the list could not be READ, which is not the same as nobody
+    having prepared anything.
+
+    WHY None RATHER THAN {}. An empty dict means "no CV has a saved prep", and
+    the page acts on that by calling generate instead of open — which spends
+    one of the month's generations (Pro gets 5) reproducing questions the user
+    already owns. A transient database error produced exactly the same {} and
+    therefore exactly the same charge.
+
+    This is the same defect as the interview SSE dropping a completed
+    generation, one layer up: there the SAVE was lost, here the READ is, and
+    the user sees the identical symptom — "it regenerates every time".
+    """
     try:
         rows = (
             get_admin_client()
@@ -150,8 +164,12 @@ def _prepared_map(user_id: str) -> dict[str, str]:
             or []
         )
     except Exception as e:
-        logger.warning(f"Could not list saved interview preps for {user_id}: {e}")
-        return {}
+        logger.error(
+            f"Could not list saved interview preps for {user_id}: {e}. Reporting "
+            "UNKNOWN rather than 'none prepared', so the page does not spend a "
+            "generation on work that may already exist."
+        )
+        return None
     return {r["resume_id"]: r.get("updated_at") for r in rows}
 
 
@@ -251,6 +269,10 @@ def interview_overview(user_id: str = Depends(get_current_user_id)) -> dict:
         )
 
     prepared = _prepared_map(user_id)
+    # None means the lookup failed. Say so, rather than letting every card
+    # render as "not prepared" — see _prepared_map.
+    prepared_unavailable = prepared is None
+    prepared = prepared or {}
 
     cvs = []
     for row in rows:
@@ -264,7 +286,9 @@ def interview_overview(user_id: str = Depends(get_current_user_id)) -> dict:
             "eligible": eligibility["eligible"],
             "ineligible_reason": eligibility["reason"],
             # Already generated: the card opens it instead of spending
-            # another monthly slot.
+            # another monthly slot. None here is ambiguous by nature, so the
+            # response carries `prepared_unavailable` alongside it — the page
+            # must not offer to generate when it does not know.
             "prepared_at": prepared.get(row["id"]),
         })
 
@@ -277,6 +301,9 @@ def interview_overview(user_id: str = Depends(get_current_user_id)) -> dict:
         # Elite). Shown before a run so the cost of pressing the button is
         # visible, rather than discovered by being refused.
         "quota": get_addon_quota(user_id, INTERVIEW_PREP),
+        # True when prepared_at is unknown for every CV rather than known-absent.
+        # The page shows "couldn't check" and refuses to spend a generation.
+        "prepared_unavailable": prepared_unavailable,
     }
 
 

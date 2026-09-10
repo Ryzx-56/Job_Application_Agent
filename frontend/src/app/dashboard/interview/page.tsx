@@ -172,6 +172,31 @@ export default function InterviewPrepPage() {
    * silently cost a monthly generation.
    */
   async function handleOpen(cv: InterviewCv) {
+    // WHEN WE DO NOT KNOW, DO NOT SPEND. prepared_at is null both when a CV
+    // genuinely has no saved prep and when the backend could not read the
+    // list at all. Generating on the second one costs a monthly slot (Pro
+    // gets 5) to reproduce questions the user already owns. Try the saved
+    // copy first instead — a real 404 falls through to generate below, which
+    // is the same outcome by a safer route.
+    if (!cv.prepared_at && overview?.prepared_unavailable) {
+      setBusyId(cv.id);
+      setActionError(null);
+      try {
+        const { content } = await fetchSavedInterviewPrep(cv.id);
+        showResult(content, cv.id);
+        return;
+      } catch (error) {
+        const err = error as ApiError;
+        if (err.status !== 404) {
+          setActionError(messageForError(err));
+          return;
+        }
+        // 404 = genuinely none saved. Generating is correct.
+      } finally {
+        setBusyId(null);
+      }
+      return handleGenerate(cv.id);
+    }
     if (!cv.prepared_at) return handleGenerate(cv.id);
 
     setBusyId(cv.id);

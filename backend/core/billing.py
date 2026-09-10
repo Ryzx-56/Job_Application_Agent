@@ -31,6 +31,7 @@
 import os
 import uuid
 from datetime import datetime, timedelta, timezone
+import time
 from typing import Optional
 
 from loguru import logger
@@ -128,7 +129,32 @@ def start_subscription(user_id: str, reference: str, payment: dict) -> Optional[
         return None
 
     admin = get_admin_client()
-    token_row = _upsert_token(admin, user_id, token_id, source)
+
+    # ONE RETRY, THEN REFUSE. A transient database error must not cost a
+    # paying customer their subscription, but neither may it be ignored: a
+    # subscription with payment_token_id NULL renews nothing and lapses in a
+    # month with nothing to explain it. So try twice, and if the card still
+    # cannot be recorded, take the same route the missing-token branch above
+    # already takes — refuse, shout, and leave it for a human. The money has
+    # been taken either way; the difference is whether anyone finds out.
+    token_row = None
+    for attempt in (1, 2):
+        try:
+            token_row = _upsert_token(admin, user_id, token_id, source)
+            break
+        except CardTokenStoreFailed as e:
+            if attempt == 1:
+                logger.warning(f"Card token store failed, retrying once: {e}")
+                time.sleep(1.0)
+                continue
+            logger.error(
+                f"🚨 Payment {payment.get('id')} paid for {reference!r} and Moyasar saved the "
+                f"card, but we could not record it after two attempts ({e}). The plan is NOT "
+                "active and NOTHING WILL RENEW. The money has been taken. Resolve by hand: "
+                "the token id above is valid, so the card can be inserted into payment_tokens "
+                "and the subscription created against it."
+            )
+            return None
 
     now = _now()
     period_end = add_month(now)
@@ -167,15 +193,28 @@ def start_subscription(user_id: str, reference: str, payment: dict) -> Optional[
     )
     _align_credit_clock(admin, user_id, period_end)
 
+    # No `if token_row else '?'` fallbacks. token_row is guaranteed present by
+    # the retry-then-refuse above, and the old placeholders — `card ? ••••????`
+    # — were a failure notice printed inside a success message. Anything that
+    # can render as a success while describing a broken state will eventually
+    # be read as a success.
     logger.info(
         f"🎟️ Subscription started for {user_id}: {product.tier} until {period_end.date()}, "
-        f"card {token_row.get('card_brand') if token_row else '?'} "
-        f"••••{token_row.get('card_last_four') if token_row else '????'}"
+        f"card {token_row.get('card_brand')} ••••{token_row.get('card_last_four')}"
     )
     return row
 
 
-def _upsert_token(admin, user_id: str, token_id: str, source: dict) -> Optional[dict]:
+class CardTokenStoreFailed(RuntimeError):
+    """The card was tokenized by Moyasar but we could not record it.
+
+    Its own exception because the alternative — returning None — is
+    indistinguishable from "there was no card to store", and the caller acted
+    on that ambiguity by creating a subscription with no way to renew it.
+    """
+
+
+def _upsert_token(admin, user_id: str, token_id: str, source: dict) -> dict:
     """Store the saved card for display and for charging. Holds no card
     number — a token id and the four fields needed to render
     "Visa •••• 4242"."""
@@ -211,18 +250,42 @@ def _upsert_token(admin, user_id: str, token_id: str, source: dict) -> Optional[
         "card_expiry_year": pick("year"),
         "is_default": True,
     }
+    # RAISES RATHER THAN RETURNING None, because None already meant something
+    # else here and the caller could not tell the two apart.
+    #
+    # It used to catch, log, and return None — and start_subscription never
+    # checked. The subscription was created with payment_token_id NULL, the
+    # customer's money was taken, and a month later the renewal job found no
+    # card and the plan lapsed with nothing to explain it. The success line
+    # below even printed `card ? ••••????`, which only renders when this
+    # returned None: the log was announcing the failure inside a message
+    # saying it had worked.
+    #
+    # The module's own docstring already states the policy — "NO TOKEN MEANS
+    # NO SUBSCRIPTION ... pretending otherwise creates a subscription that
+    # silently lapses in a month" — it was simply only enforced for a token
+    # that never arrived, not for one that arrived and could not be saved.
     try:
         # Clear any previous default first: the partial unique index allows
         # exactly one default card per user, so setting a new one without
         # clearing the old would be rejected.
         admin.table("payment_tokens").update({"is_default": False}).eq(
             "user_id", user_id).eq("is_default", True).execute()
-        return (admin.table("payment_tokens")
-                .upsert(payload, on_conflict="moyasar_token_id")
-                .execute().data or [None])[0]
+        row = (admin.table("payment_tokens")
+               .upsert(payload, on_conflict="moyasar_token_id")
+               .execute().data or [None])[0]
     except Exception as e:
-        logger.error(f"❌ Could not store card token {token_id} for {user_id}: {e}")
-        return None
+        raise CardTokenStoreFailed(
+            f"could not store card token {token_id} for {user_id}: {e}"
+        ) from e
+
+    if not row:
+        # An upsert that raised nothing and returned nothing is still a
+        # failure to store, and it produced the identical NULL before.
+        raise CardTokenStoreFailed(
+            f"storing card token {token_id} for {user_id} returned no row"
+        )
+    return row
 
 
 def _live_subscription(admin, user_id: str) -> Optional[dict]:

@@ -96,6 +96,11 @@ export type InterviewOverview = {
    *  /generate when false. Two checks, and only the second one matters. */
   unlocked: boolean;
   cvs: InterviewCv[];
+  /** True when prepared_at could not be READ, as opposed to no CV having a
+   *  saved prep. The distinction costs a monthly generation: with it unknown,
+   *  opening a CV must not silently fall through to generating a fresh set of
+   *  questions the user may already own. */
+  prepared_unavailable?: boolean;
   question_range: { min: number; max: number };
   /** This month's allowance. Absent on an older backend. */
   quota?: InterviewQuota;

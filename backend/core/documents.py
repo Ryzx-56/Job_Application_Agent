@@ -150,16 +150,25 @@ def get_own_resume_document(
 _UUID_RE = re.compile(r"^[0-9a-fA-F-]{36}$")
 
 
-def _lookup_users(admin, term: str) -> list[dict]:
+def _lookup_users(admin, term: str) -> list[dict] | None:
     """Resolves a free-text search term to matching users via the
     admin_search_users SQL function (see 003_admin_access.sql). Emails live
     in auth.users, which PostgREST can't expose directly, so the join
     happens in a SECURITY DEFINER function granted to service_role only."""
+    # None for "the search could not run", [] for "it ran and matched nobody".
+    # Returning [] for both told support that an account does not exist when
+    # the truth was that the lookup was broken — and admin_search_users is a
+    # SQL function, so it is vulnerable to exactly the unapplied-migration
+    # failure that took out admin_paid_by_users for a week.
     try:
         return admin.rpc("admin_search_users", {"term": term}).execute().data or []
     except Exception as e:
-        logger.error(f"admin_search_users failed for '{term}': {e}")
-        return []
+        logger.error(
+            f"admin_search_users failed for '{term}': {e}. Reporting UNAVAILABLE "
+            "rather than 'no matches' — a broken lookup must not read as a "
+            "missing account."
+        )
+        return None
 
 
 def _attach_user_info(admin, resumes: list[dict]) -> list[dict]:
@@ -213,15 +222,33 @@ def list_all_resumes(
     if term:
         if _UUID_RE.match(term):
             # A raw id needs no lookup, though we still resolve it so the
-            # response can show whose account it is.
+            # response can show whose account it is. A failed resolve here is
+            # cosmetic — the id itself still filters correctly.
             target_user_ids = [term]
-            matched_users = _lookup_users(admin, term)
+            matched_users = _lookup_users(admin, term) or []
         else:
             matched_users = _lookup_users(admin, term)
+            if matched_users is None:
+                # THE SEARCH BROKE. Refusing is the only honest answer: an
+                # empty list here is rendered as "no such account", and
+                # support acts on that by telling a customer they have no
+                # record with us. 503 so the page says the search is
+                # unavailable instead.
+                raise HTTPException(
+                    status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                    detail={
+                        "code": "search_unavailable",
+                        "message": (
+                            "User search is unavailable — the lookup failed rather than "
+                            "returning no matches. This is not a statement about whether "
+                            "the account exists."
+                        ),
+                    },
+                )
             target_user_ids = [u["id"] for u in matched_users]
             if not target_user_ids:
-                # Nobody matched — return empty rather than every user's
-                # resumes, which is what an unfiltered query would do.
+                # Genuinely nobody matched — return empty rather than every
+                # user's resumes, which is what an unfiltered query would do.
                 return {
                     "resumes": [], "limit": limit, "offset": offset,
                     "matched_users": [], "total_matched_users": 0,
