@@ -1,10 +1,11 @@
 # tests/test_jobs_finder.py
 #
-# ⚠️ THIS TEST SPENDS REAL TAVILY CREDITS. One run is up to 24 of them against
-# a quota shared by the whole platform, so it is behind the `live_tavily`
-# marker and deselected by default (see pytest.ini). Run it deliberately:
+# ⚠️ THIS TEST SPENDS REAL SEARCH ALLOWANCE. One run is up to 18 provider
+# calls against a quota shared by the whole platform, so it is behind the
+# `live_search` marker and deselected by default (see pytest.ini). Run it
+# deliberately:
 #
-#     pytest tests/test_jobs_finder.py -m live_tavily
+#     pytest tests/test_jobs_finder.py -m live_search
 import os
 
 import pytest
@@ -15,9 +16,9 @@ from loguru import logger
 load_dotenv()
 
 # Import your Tavily agent function
-from agents.jobs_finder import TavilyQuotaExhausted, find_similar_jobs
+from agents.jobs_finder import SearchQuotaExhausted, find_similar_jobs
 
-pytestmark = pytest.mark.live_tavily
+pytestmark = pytest.mark.live_search
 
 
 def test_tavily_search_execution():
@@ -47,7 +48,7 @@ def test_tavily_search_execution():
     # Execute the search block
     try:
         results = find_similar_jobs(mock_weight_factors, mock_facts_json)
-    except TavilyQuotaExhausted as e:
+    except SearchQuotaExhausted as e:
         # A spent quota is not a broken pipeline, and it must not read as one.
         # This exception existing at all is the fix: the old code swallowed it
         # and returned [], so an exhausted plan was indistinguishable from a

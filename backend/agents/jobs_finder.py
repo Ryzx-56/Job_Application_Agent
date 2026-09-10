@@ -9,11 +9,11 @@ import time
 from collections import Counter
 
 import httpx
-from tavily import TavilyClient
 from loguru import logger
 from core.state import AgentState
 from core.credits import get_admin_client
 from core.llm_config import generate_gemini_json
+from core import search_provider
 # The same phrase matcher the ATS scorer uses, so "does this listing talk
 # about the candidate's field" is answered the same way "does this CV cover
 # the JD" is — see utils/ats_scorer.py's BM25 section.
@@ -192,7 +192,7 @@ def is_legitimate_open_web_result(url: str, title: str, content: str) -> tuple[b
     structure_hits = sum(1 for signal in _JOB_STRUCTURE_SIGNALS if signal in haystack)
 
     # A careers path is enough on its own. This deliberately does NOT also
-    # require posting structure: what reaches here is Tavily's SNIPPET, a few
+    # require posting structure: what reaches here is the provider's SNIPPET, a few
     # hundred characters, and demanding two structural phrases from an
     # excerpt rejected genuine company postings — 39 of them in one measured
     # run. Deciding "one posting vs a category index" is the SCREENER's job,
@@ -226,7 +226,7 @@ RESULT_CAP = 5
 
 # How many raw candidates to pull per search before quality-filtering trims
 # them down to RESULT_CAP. Needs headroom since noise/closed/off-topic
-# results get dropped AFTER the fact, not before — asking Tavily for
+# results get dropped AFTER the fact, not before — asking the provider for
 # exactly RESULT_CAP and then filtering could leave us with far fewer than
 # 5 even when good matches existed but didn't make the initial cut.
 #
@@ -237,18 +237,18 @@ RESULT_CAP = 5
 # compensate or the list gets shorter still.
 RAW_FETCH_LIMIT = 20
 
-# Tavily's time_range. 'week' was too tight to fill RESULT_CAP: a niche role
+# The provider's recency window. 'week' was too tight to fill RESULT_CAP: a niche role
 # in one city simply doesn't have 5 postings crawled in the last 7 days, and
 # every result that didn't make the window was invisible regardless of how
 # good a match it was. A month-old posting is usually still open, and the
 # _CLOSED_SIGNALS check below is what actually filters stale ones.
 SEARCH_TIME_RANGE = 'month'
 
-# Signals that a listing Tavily surfaced is no longer actually open. Tavily's
+# Signals that a surfaced listing is no longer actually open. The provider's
 # time_range='week' filters by crawl/publish date, not live status — a
 # posting crawled 3 days ago can still have been filled or pulled since. A
 # full guarantee would need a live fetch per URL (extra latency + API cost
-# per listing); this is a cheap first pass using the content Tavily already
+# per listing); this is a cheap first pass using the content the provider already
 # fetched. Not perfect, but catches the common "closed" boilerplate most job
 # boards render on an expired listing page.
 _CLOSED_SIGNALS = [
@@ -277,7 +277,7 @@ _CLOSED_SIGNALS = [
 #
 # What actually distinguishes a listing/category page from one job posting
 # is its STRUCTURE, not its vocabulary — verified against real Jadarat
-# content pulled via Tavily:
+# content pulled from the search provider:
 #   - a pagination counter ("1 to 10 of 5885 items") — real job postings
 #     never contain this pattern, board index pages almost always do.
 #   - a short template phrase repeated several times ("Job title based on
@@ -314,7 +314,7 @@ def _looks_like_listing_or_category_page(content: str) -> bool:
     return False
 
 
-# Titles Tavily's crawler surfaces verbatim for pages whose real content is
+# Titles a crawler surfaces verbatim for pages whose real content is
 # JS-rendered client-side (common on portals like Jadarat) — the crawl only
 # sees the page shell, so the "title" is a generic placeholder like
 # "JobDetails" or "Entity Profile" (an EMPLOYER's profile page, not a job
@@ -1049,183 +1049,52 @@ def _tag_tier(candidates: list[dict], tier: str) -> list[dict]:
     return candidates
 
 
-# ─── TAVILY CALL ACCOUNTING ─────────────────────────────────────────────────
+# ─── SEARCH PROVIDER ────────────────────────────────────────────────────────
 #
-# Tavily bills PER REQUEST, not per result: search_depth='advanced' is
-# 2 credits a call and max_results does not enter into it. That single fact
-# reframes the whole cost picture — RAW_FETCH_LIMIT is free to raise or lower,
-# and the only thing that costs money is HOW MANY TIMES this function runs.
+# The quota machinery, the call counter, the cost table and both provider
+# paths moved to core/search_provider.py when Serper was added. What used to
+# live here — TavilyQuotaExhausted, tavily_call_counter,
+# tavily_credits_remaining, assert_tavily_headroom, TAVILY_CREDITS_PER_CALL —
+# all baked a vendor name into this agent. Nothing in this file should know
+# which provider answered, for the same reason no agent knows which model
+# writes a CV: the next swap should be a config change, not a refactor.
 #
-# So this counts calls. Thread-local because a search fans out across a
-# ThreadPoolExecutor and a plain global would mix two users' searches together
-# on a shared server. Callers read it with tavily_call_counter().
-_tavily_calls = threading.local()
-
-# Credits per call at the search depth this module uses. Verified against
-# Tavily's published API-credit table: basic = 1, advanced = 2.
-TAVILY_CREDITS_PER_CALL = 2
+# Re-exported here so callers that already import from this module keep one
+# import site, and so the names read the same at both ends.
+search_call_counter = search_provider.search_call_counter
+SearchQuotaExhausted = search_provider.SearchQuotaExhausted
+SearchUnavailable = search_provider.SearchUnavailable
 
 
-@contextlib.contextmanager
-def tavily_call_counter():
+def _search_lane(client, query: str, domains: list[str] | None, max_results: int,
+                 counter: dict | None = None, country: str | None = None):
     """
-    Counts the Tavily requests made inside the block, for this thread and the
-    pools it starts.
+    One lane's worth of results, from whichever provider is configured.
 
-        with tavily_call_counter() as counter:
-            results = search_jobs_by_title(...)
-        counter["calls"], counter["credits"]
+    `domains=None` searches the whole web — that's the open lane. `client` is
+    accepted and ignored: the Tavily path used to need a constructed client
+    and the dispatcher builds its own, but the parameter is kept so the four
+    concurrent lane calls below did not all have to change shape at the same
+    time as the provider did.
 
-    Exists because Job Search's cost driver is search calls, not tokens, so it
-    needs its own unit — the token-based instrumentation the CV pipeline uses
-    cannot see it at all. See core/usage_tracker.py.
+    QUOTA IS NOT A LANE FAILURE. Every other error here means this one lane
+    found nothing, which the other three can cover for. Running out of
+    allowance means NOTHING will work for the rest of the month, and
+    swallowing it produced an empty page that read as a genuine "no results" —
+    which is what a paying subscriber saw for a week. It propagates.
     """
-    counter = {"calls": 0, "credits": 0}
-    previous = getattr(_tavily_calls, "counter", None)
-    _tavily_calls.counter = counter
     try:
-        yield counter
-    finally:
-        _tavily_calls.counter = previous
-
-
-def _record_tavily_call() -> None:
-    """One Tavily request happened. Also records it against the PARENT
-    thread's counter when called from a worker in the pool — the executor
-    copies no thread-local state, so each lane registers itself explicitly."""
-    counter = getattr(_tavily_calls, "counter", None)
-    if counter is None:
-        return
-    counter["calls"] += 1
-    counter["credits"] += TAVILY_CREDITS_PER_CALL
-
-
-class TavilyQuotaExhausted(RuntimeError):
-    """Tavily is refusing requests because the plan's credits are spent.
-
-    ITS OWN EXCEPTION, because it is the one search failure that is neither
-    transient nor about the query. A network blip should be swallowed and a
-    lane should return nothing; THIS should reach the user as "search is
-    unavailable this month", not as an empty results page that reads like
-    "there are no jobs for you". Telling a paying subscriber there are no jobs
-    when the truth is we ran out of quota is the worst version of this failure,
-    and it is what the code did before.
-    """
-
-
-# Tavily's wording, matched loosely because the exact sentence is theirs to
-# change. Verified against a real 403 from the Researcher plan at 976/1000:
-#   "This request exceeds your plan's set usage limit. Please upgrade your
-#    plan or contact support@tavily.com"
-_QUOTA_MARKERS = ("usage limit", "exceeds your plan", "upgrade your plan",
-                  "quota", "insufficient credits")
-
-
-def _is_quota_error(exc: Exception) -> bool:
-    text = str(exc).lower()
-    return any(marker in text for marker in _QUOTA_MARKERS)
-
-
-# ─── THE PLATFORM-WIDE CEILING ──────────────────────────────────────────────
-#
-# Asked of TAVILY, not tracked locally. Their /usage endpoint is authoritative
-# and free to call: it already knows about every instance, every restart, and
-# any credits spent outside this codebase, none of which a counter in this
-# process could see. A local counter would also reset on every Render deploy,
-# which on a free tier that spins down is often.
-#
-# The point is to REFUSE A SEARCH WE CANNOT AFFORD TO FINISH rather than start
-# one, spend most of a page's worth of credits, and hand back a half-empty
-# result that looks like a bad search. A search costs up to WORST_CASE_CREDITS
-# under the current cuts; below that much headroom, say so honestly instead.
-_USAGE_URL = "https://api.tavily.com/usage"
-_USAGE_CACHE_SECONDS = 300          # one call per five minutes, not per search
-_usage_cache: dict = {"at": 0.0, "value": None}
-
-# What one standalone search can cost at worst under cuts A-E: 12 calls for the
-# primary title's full ladder + 2 adjacent titles x 3 lanes = 18 calls.
-WORST_CASE_CREDITS = 18 * TAVILY_CREDITS_PER_CALL
-
-
-def tavily_credits_remaining(force: bool = False) -> int | None:
-    """
-    Credits left on the plan this month, or None if it cannot be determined.
-
-    None means "carry on" — a usage endpoint that is down or has changed shape
-    must not take job search offline with it. The real quota error still
-    arrives from the search call itself; this is the early, honest warning, not
-    the enforcement.
-    """
-    now = time.time()
-    if not force and _usage_cache["value"] is not None and now - _usage_cache["at"] < _USAGE_CACHE_SECONDS:
-        return _usage_cache["value"]
-
-    api_key = (os.getenv("TAVILY_API_KEY") or "").strip()
-    if not api_key:
-        return None
-    try:
-        response = httpx.get(_USAGE_URL, headers={"Authorization": f"Bearer {api_key}"}, timeout=5.0)
-        account = (response.json() or {}).get("account") or {}
-        limit, used = account.get("plan_limit"), account.get("plan_usage")
-        # Pay-As-You-Go has no plan_limit — there is no ceiling to be near.
-        if limit is None or used is None:
-            remaining = None
-        else:
-            remaining = max(0, int(limit) - int(used))
+        return search_provider.search(
+            query, domains=domains, max_results=max_results,
+            counter=counter, country=country,
+        )
+    except search_provider.SearchQuotaExhausted:
+        raise
+    except search_provider.SearchUnavailable as e:
+        logger.error(f"❌ Search failed for domains {domains or 'OPEN WEB'}: {e}")
+        return []
     except Exception as e:
-        logger.warning(f"Could not read Tavily usage ({e}) — proceeding without a quota check.")
-        remaining = None
-
-    _usage_cache.update({"at": now, "value": remaining})
-    return remaining
-
-
-def assert_tavily_headroom(needed: int = WORST_CASE_CREDITS) -> None:
-    """Raise TavilyQuotaExhausted if a search this size cannot be paid for."""
-    remaining = tavily_credits_remaining()
-    if remaining is not None and remaining < needed:
-        logger.error(
-            f"🚫 Refusing a job search: {remaining} Tavily credit(s) left, this "
-            f"search needs up to {needed}. Top up or switch on Pay-As-You-Go."
-        )
-        raise TavilyQuotaExhausted(
-            f"Only {remaining} Tavily credits remain this month."
-        )
-
-
-def _search_tavily(client: TavilyClient, query: str, domains: list[str] | None, max_results: int,
-                   counter: dict | None = None):
-    """`domains=None` searches the whole web — that's the open lane."""
-    # Billed whether or not it returns anything, so it is counted before the
-    # call rather than after a successful one.
-    if counter is not None:
-        counter["calls"] += 1
-        counter["credits"] += TAVILY_CREDITS_PER_CALL
-    else:
-        _record_tavily_call()
-    try:
-        kwargs = dict(
-            query=query,
-            search_depth='advanced',
-            max_results=max_results,
-            time_range=SEARCH_TIME_RANGE,
-        )
-        if domains:
-            kwargs["include_domains"] = domains
-        results = client.search(**kwargs)
-        return results.get('results', [])
-    except Exception as e:
-        # QUOTA IS NOT A LANE FAILURE. Every other error here means this one
-        # lane found nothing, which the other three can cover for. Running out
-        # of credits means NOTHING will work for the rest of the month, and
-        # swallowing it produced an empty page that looked like a genuine "no
-        # results" — see TavilyQuotaExhausted.
-        if _is_quota_error(e):
-            logger.error(
-                f"🚫 Tavily quota exhausted — refusing further searches. ({e})"
-            )
-            raise TavilyQuotaExhausted(str(e)) from e
-        logger.error(f"❌ Tavily API search failed for domains {domains or 'OPEN WEB'}: {e}")
+        logger.error(f"❌ Search failed for domains {domains or 'OPEN WEB'}: {e}")
         return []
 
 
@@ -1341,7 +1210,7 @@ def _collect_candidates(raw_results: list[dict], required_skills_lower: list[str
 
 def _run_search_pass(
     counter: dict | None,
-    client: TavilyClient,
+    client,
     query: str,
     required_skills_lower: list[str],
     use_open_lane: bool = True,
@@ -1370,10 +1239,10 @@ def _run_search_pass(
         # inside each query) and a pool worker inherits NO thread-local state.
         # The first version of this counted only the outermost four calls and
         # under-reported a real search by a factor of three.
-        priority_future = executor.submit(_search_tavily, client, query, PRIORITY_DOMAINS, RAW_FETCH_LIMIT, counter)
-        trusted_future = executor.submit(_search_tavily, client, query, TRUSTED_DOMAINS, RAW_FETCH_LIMIT, counter)
+        priority_future = executor.submit(_search_lane, client, query, PRIORITY_DOMAINS, RAW_FETCH_LIMIT, counter)
+        trusted_future = executor.submit(_search_lane, client, query, TRUSTED_DOMAINS, RAW_FETCH_LIMIT, counter)
         saudi_future = executor.submit(
-            _search_tavily, client, query, SAUDI_AGGREGATOR_DOMAINS, SAUDI_AGGREGATOR_FETCH_LIMIT,
+            _search_lane, client, query, SAUDI_AGGREGATOR_DOMAINS, SAUDI_AGGREGATOR_FETCH_LIMIT,
             counter,
         )
         # domains=None -> no include_domains -> the whole web.
@@ -1385,7 +1254,7 @@ def _run_search_pass(
         # and the one the legitimacy filter rejects most of, so it is 2 credits
         # buying mostly rejects.
         open_future = (
-            executor.submit(_search_tavily, client, query, None, RAW_FETCH_LIMIT, counter)
+            executor.submit(_search_lane, client, query, None, RAW_FETCH_LIMIT, counter)
             if use_open_lane else None
         )
         priority_result = priority_future.result()
@@ -1451,7 +1320,7 @@ def _run_search_pass(
 
 def _run_search_passes(
     counter: dict | None,
-    client: TavilyClient,
+    client,
     queries: list[str],
     required_skills_lower: list[str],
     use_open_lane: bool = True,
@@ -1482,7 +1351,7 @@ def _run_search_passes(
             for query in queries
         ]
         # Iterating `futures` (not as_completed) is what preserves order;
-        # .result() re-raises, and _search_tavily already swallows its own
+        # .result() re-raises, and _search_lane already swallows its own
         # errors, so a dead board yields an empty list rather than killing
         # the whole batch.
         return [future.result() for future in futures]
@@ -1576,9 +1445,9 @@ def fetch_postings_for_title(
         f'{title} vacancy hiring {where}'.strip(),
     ]
 
-    counter = getattr(_tavily_calls, "counter", None)
+    counter = search_provider.current_counter()
     try:
-        client = TavilyClient(api_key=api_key)
+        client = None
         # required_skills_lower=[] — there are no known required skills yet;
         # that is the entire reason this function is being called. It only
         # affects the heuristic skill ratio, which this caller ignores.
@@ -1664,7 +1533,7 @@ RELATED_CAP = RESULT_CAP * 2
 # typical and 144 worst case, against a 1,000-credit monthly quota shared by
 # the entire platform — seven worst-case searches and the product is dark for
 # the month. Tavily bills PER REQUEST, so the only thing that costs money is
-# how many times _search_tavily runs; RAW_FETCH_LIMIT is free.
+# how many times _search_lane runs; RAW_FETCH_LIMIT is free.
 #
 # Each constant below is one of the five cuts, named so a future change knows
 # what it is trading.
@@ -1790,7 +1659,7 @@ def _title_search_queries(job_title: str, location: str, internships: bool) -> l
 
 
 def _search_one_title(
-    client: TavilyClient,
+    client,
     job_title: str,
     location: str,
     internships: bool,
@@ -1901,16 +1770,16 @@ def search_jobs_by_title(
 
     # Checked BEFORE the first call, so a search that cannot be finished is
     # refused honestly rather than started, half-paid-for, and returned as a
-    # thin page. Raises TavilyQuotaExhausted, which core/job_search.py turns
+    # thin page. Raises SearchQuotaExhausted, which core/job_search.py turns
     # into a distinct user-facing message.
-    assert_tavily_headroom()
+    search_provider.assert_search_headroom()
 
-    client = TavilyClient(api_key=api_key)
+    client = None
     where = (location or "").strip()
     seen_urls: set[str] = set()
     # Read once, here, on the request's own thread. Everything below takes it
     # as an argument — see the note in _run_search_pass.
-    counter = getattr(_tavily_calls, "counter", None)
+    counter = search_provider.current_counter()
 
     # ── PASS 1: the title itself ──────────────────────────────────────────
     raw = _search_one_title(client, title, where, internships, seen_urls, counter)
@@ -2010,7 +1879,7 @@ def find_similar_jobs(
         logger.error("❌ TAVILY_API_KEY is missing from environment variables.")
         return []
 
-    client = TavilyClient(api_key=api_key)
+    client = None
 
     job_title = weight_factors.get("job_title", "Software Engineer")
     required_skills = weight_factors.get("required_skills", [])
@@ -2055,7 +1924,7 @@ def find_similar_jobs(
     candidates: list[dict] = []
     open_web: list[dict] = []
     seen_urls: set[str] = set()
-    counter = getattr(_tavily_calls, "counter", None)
+    counter = search_provider.current_counter()
 
     def _absorb(batch: list[dict], into: list[dict]) -> None:
         # Dedupe as we go — no reason to pay to screen the same URL twice.

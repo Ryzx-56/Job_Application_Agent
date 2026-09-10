@@ -324,7 +324,7 @@ def find_jobs_for_resume(
     `?refresh=true` to deliberately re-run one.
     """
     from agents.jobs_finder import (
-        TavilyQuotaExhausted,
+        SearchQuotaExhausted,
         _fetch_profile_location,
         _looks_like_real_location,
         find_similar_jobs,
@@ -387,11 +387,11 @@ def find_jobs_for_resume(
             fallback_location=None if _looks_like_real_location(cv_location) else profile_location,
             profile_location=profile_location,
         )
-    except TavilyQuotaExhausted as e:
+    except SearchQuotaExhausted as e:
         # The slot goes back: they asked for a search and got nothing, and the
         # reason was ours. Same rule the interview-prep worker applies.
         release_addon_quota(user_id, JOB_SEARCH)
-        logger.error(f"🚫 Job match unavailable (Tavily quota) for resume {resume_id}: {e}")
+        logger.error(f"🚫 Job match unavailable (search quota) for resume {resume_id}: {e}")
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail={
