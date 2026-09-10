@@ -3,6 +3,28 @@ import { createClient } from "@/lib/supabase/server";
 import { DashboardShell } from "@/components/dashboard";
 
 /**
+ * NOINDEX FOR EVERY /dashboard/* ROUTE.
+ *
+ * robots.txt already disallows /dashboard, and that is NOT the same thing —
+ * Disallow stops a crawler FETCHING the page, it does not stop the URL being
+ * indexed. Google will happily list a disallowed URL it found linked
+ * elsewhere, with no title and "no information is available for this page"
+ * where the description should be. That is a thin, empty result carrying the
+ * site's name, and it dilutes the pages that are meant to rank.
+ *
+ * Worse, the two mechanisms interfere: a crawler blocked by robots.txt never
+ * fetches the page, so it never SEES a noindex tag. Declaring it here covers
+ * the case that actually matters — a dashboard URL reached by a crawler that
+ * is not honouring the disallow, or reached through a redirect chain.
+ *
+ * Inherited by every nested route, so a new page under /dashboard cannot
+ * forget it.
+ */
+export const metadata = {
+  robots: { index: false, follow: false, nocache: true },
+};
+
+/**
  * Auth guard lives here as a Server Component so every /dashboard/* route
  * gets protected for free without each page re-checking the session.
  * Signed-out visitors are redirected to /login before any client JS runs.
