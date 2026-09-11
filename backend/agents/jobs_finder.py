@@ -1763,16 +1763,30 @@ def search_jobs_by_title(
     if not title:
         return {"exact": [], "related": [], "related_titles": []}
 
-    api_key = os.getenv('TAVILY_API_KEY')
-    if not api_key:
-        logger.error("❌ TAVILY_API_KEY missing — job search cannot run.")
-        return {"exact": [], "related": [], "related_titles": []}
-
     # Checked BEFORE the first call, so a search that cannot be finished is
     # refused honestly rather than started, half-paid-for, and returned as a
     # thin page. Raises SearchQuotaExhausted, which core/job_search.py turns
     # into a distinct user-facing message.
-    search_provider.assert_search_headroom()
+    #
+    # THE KEY IS NOT CHECKED HERE ANY MORE. It was `if not TAVILY_API_KEY:
+    # return empty` — a missing key rendered as "no jobs found", which is the
+    # exact defect CLAUDE.md now has a rule about. core/search_provider.py
+    # raises SearchUnavailable instead, and the caller says so.
+    cold_start = not search_provider.balance_is_known()
+    search_provider.assert_search_headroom(
+        # On a cold start the balance is unknown, so the search runs on a
+        # reduced budget rather than a full one — see COLD_START_CALL_BUDGET.
+        # Render's free tier spins down when idle, so this is a routine path,
+        # not an edge case.
+        search_provider.COLD_START_CALL_BUDGET * search_provider.units_per_call()
+        if cold_start else None
+    )
+    if cold_start:
+        logger.info(
+            "🔍 Cold start: no known search balance yet, so this search runs on the "
+            f"primary lane only ({search_provider.COLD_START_CALL_BUDGET} calls). The "
+            "response teaches the process its balance and the next search is fully guarded."
+        )
 
     client = None
     where = (location or "").strip()
@@ -1782,7 +1796,8 @@ def search_jobs_by_title(
     counter = search_provider.current_counter()
 
     # ── PASS 1: the title itself ──────────────────────────────────────────
-    raw = _search_one_title(client, title, where, internships, seen_urls, counter)
+    raw = _search_one_title(client, title, where, internships, seen_urls, counter,
+                            ladder=not cold_start)
     screened = _screen_and_finalize(raw, title, where, internships)
 
     exact, loose = [], []
@@ -1815,7 +1830,10 @@ def search_jobs_by_title(
     # matches still bought up to five more full searches to pad the page with
     # roles nobody asked for. Now the expansion is what it was always meant to
     # be — a rescue for a search that found NOTHING.
-    if len(exact) < ADJACENT_EXPANSION_THRESHOLD:
+    # No adjacent-title expansion on a cold start: that is where the other 14
+    # calls live, and the point of the reduced budget is not to spend them
+    # before the balance is known.
+    if len(exact) < ADJACENT_EXPANSION_THRESHOLD and not cold_start:
         # CUT C. At most ADJACENT_TITLES_MAX of them, sliced here rather than
         # relying on the RELATED_CAP break below: that break only fires once
         # results have already been paid for, so it capped the output and not

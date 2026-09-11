@@ -406,17 +406,37 @@ def search(query: str, domains: list[str] | None = None, max_results: int = 20,
 #
 # So the guard is now two-sided:
 #
-#   BEFORE  — the last known balance, if this process has seen one. On a cold
-#             start it has not, and the first search proceeds. That is a
-#             deliberate one-search-per-restart hole: refusing every search
-#             after a deploy because we have not looked yet would be a worse
-#             failure than overspending by one call.
+#   BEFORE  — the last known balance, if this process has seen one.
 #   AFTER   — every response updates the balance, so the SECOND search of a
 #             process is guarded and every one after it.
 #
-# Combined with the per-user monthly cap (ADDON_CAPS) and the per-search cuts,
-# an exhausted plan can cost at most one extra call per restart rather than a
-# whole month of empty pages.
+# ⚠️ THE COLD-START HOLE IS BIGGER HERE THAN IT LOOKS, BECAUSE COLD STARTS ARE
+# ROUTINE. Render's free tier spins down when idle — that is why the renewal
+# job runs from GitHub Actions rather than in-process — so restarts are not
+# occasional, they are several a day. "One unguarded search per restart"
+# sounded cheap when restarts were rare; at ten restarts a day, with a search
+# costing up to WORST_CASE_CALLS (18), that is 180 calls a day of exposure
+# once the plan is already exhausted, which is more than the free tier holds
+# in a month.
+#
+# So the first search of a process, before any balance is known, runs on a
+# REDUCED budget: the primary lane only, no ladder and no adjacent titles.
+# See COLD_START_CALL_BUDGET. That bounds the exposure to 4 calls per restart
+# instead of 18, and the response to the very first of those teaches the
+# process its balance — so the second search is fully guarded.
+#
+# THE REAL FIX IS A PERSISTED BALANCE, shared across instances and restarts:
+# one row in Postgres, written from the response header, read on boot. That is
+# what Tavily's /usage gave for free. Not built here because it needs a
+# migration and this machine cannot reach Supabase to test one — recorded as
+# the recommendation rather than guessed at.
+COLD_START_CALL_BUDGET = 4
+
+
+def balance_is_known() -> bool:
+    """Has this process seen a balance yet? False on a cold start, which is
+    frequent on a free-tier host that spins down when idle."""
+    return credits_remaining() is not None
 _balance_lock = threading.Lock()
 _balance: dict[str, Any] = {"remaining": None, "at": 0.0, "source": None}
 
