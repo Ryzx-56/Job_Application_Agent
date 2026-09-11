@@ -989,6 +989,56 @@ export const content = {
         admin: "Admin",
         logout: "Log out",
       },
+      /* --------------------------------------------------------------
+         ONBOARDING TOUR — shown once, on a new account's first visit.
+
+         Deliberately short. Each step is one sentence naming what a part
+         of the product is FOR, not how to operate it: someone who has
+         just signed up needs a map, not a manual. The detail lives on
+         each page, where it is needed.
+      -------------------------------------------------------------- */
+      tour: {
+        next: "Next",
+        done: "Done",
+        skip: "Skip tutorial",
+        close: "Close the tour",
+        // {current} and {total} are replaced at render time.
+        progress: "Step {current} of {total}",
+        steps: {
+          welcome: {
+            title: "Welcome to Tarshih",
+            body: "Tarshih writes a CV tailored to the job you are applying for, finds openings that suit it, and prepares you for the interview. Here is a quick look around.",
+          },
+          cv: {
+            title: "Start with your CV",
+            body: "Upload a CV you already have, or create one from scratch and enter your details. Either way you get a tailored version back.",
+          },
+          menu: {
+            title: "This is the menu",
+            body: "Every part of Tarshih is here. On a phone it opens from the button at the top of the screen.",
+          },
+          resumes: {
+            title: "My Resumes",
+            body: "Every CV you make is saved here, ready to download again or improve.",
+          },
+          jobs: {
+            title: "Job Search",
+            body: "Enter a job title and Tarshih searches for openings in Saudi Arabia that match it.",
+          },
+          interview: {
+            title: "Interview Prep",
+            body: "Questions you are likely to be asked for the role, answered from your own experience.",
+          },
+          linkedin: {
+            title: "LinkedIn",
+            body: "Rewrites your LinkedIn headline, About section and experience from a CV you have already made.",
+          },
+          pricing: {
+            title: "Pricing",
+            body: "Plans and credit packs. Open this page to see what each plan includes, or to top up when your credits run out.",
+          },
+        },
+      },
       generate: {
         eyebrow: "New application",
         title: "Tailor a resume for your next role",
@@ -2494,6 +2544,48 @@ export const content = {
         settings: "الإعدادات",
         admin: "الإدارة",
         logout: "تسجيل الخروج",
+      },
+      /* جولة التعريف — تظهر مرة واحدة عند أول زيارة لحساب جديد. */
+      tour: {
+        next: "التالي",
+        done: "تم",
+        skip: "تخطي الجولة",
+        close: "إغلاق الجولة",
+        progress: "الخطوة {current} من {total}",
+        steps: {
+          welcome: {
+            title: "مرحبًا بك في ترشيح",
+            body: "يكتب ترشيح سيرة ذاتية مخصّصة للوظيفة التي تتقدّم لها، ويبحث لك عن وظائف تناسبها، ويجهّزك للمقابلة. إليك جولة سريعة في المنصة.",
+          },
+          cv: {
+            title: "ابدأ بسيرتك الذاتية",
+            body: "ارفع سيرة ذاتية لديك، أو أنشئ واحدة من الصفر وأدخل بياناتك. في الحالتين تحصل على نسخة مخصّصة للوظيفة.",
+          },
+          menu: {
+            title: "هذه هي القائمة",
+            body: "كل أقسام ترشيح موجودة هنا. وعلى الجوال تفتح القائمة من الزر في أعلى الشاشة.",
+          },
+          resumes: {
+            title: "سيري الذاتية",
+            body: "كل سيرة ذاتية تنشئها تُحفظ هنا، جاهزة لتنزيلها مرة أخرى أو لتحسينها.",
+          },
+          jobs: {
+            title: "البحث عن وظائف",
+            body: "اكتب المسمّى الوظيفي، ويبحث لك ترشيح عن وظائف مفتوحة في السعودية تناسبه.",
+          },
+          interview: {
+            title: "التحضير للمقابلة",
+            body: "أسئلة متوقّعة للوظيفة التي تستهدفها، مع إجابات مبنية على خبرتك أنت.",
+          },
+          linkedin: {
+            title: "لينكدإن",
+            body: "يعيد صياغة العنوان ونبذة عنك والخبرات في ملفك على لينكدإن، انطلاقًا من سيرة ذاتية أنشأتها.",
+          },
+          pricing: {
+            title: "الأسعار",
+            body: "الخطط وباقات النقاط. افتح هذه الصفحة لترى ما تتضمّنه كل خطة، أو لشراء نقاط إضافية عند نفاد رصيدك.",
+          },
+        },
       },
       generate: {
         eyebrow: "طلب جديد",

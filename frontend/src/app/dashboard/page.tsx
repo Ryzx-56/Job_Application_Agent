@@ -41,6 +41,7 @@ import { saveResumeResult } from "@/lib/supabase/resumes";
 import { fetchCredits } from "@/lib/supabase/credits";
 import { updateProfileNames, suggestNameFromCv, fetchAdminStatus, fetchBadges, markBadgesSeen } from "@/lib/supabase/profile-names";
 import { BadgeUnlockModal } from "@/components/badge-unlock";
+import { useTourActive } from "@/components/onboarding-tour";
 import { RoleBadges, BadgeKey } from "@/components/badges";
 
 // Detects Arabic script. Used only to decide whether a manually-typed name
@@ -465,6 +466,11 @@ export default function DashboardHomePage() {
   const [newBadges, setNewBadges] = useState<BadgeKey[]>([]);
   const [badgeFoundingNumber, setBadgeFoundingNumber] = useState<number | null>(null);
   const [location, setLocation] = useState<string | null | undefined>(undefined);
+  // A new account earns the `free` badge the moment it is created, so the
+  // badge popup and the onboarding tour both want the screen on the very
+  // first visit. The tour goes first and the badge popup waits — it is
+  // still unacknowledged, so it simply fires when the tour closes.
+  const tourActive = useTourActive();
 
   const refreshCredits = () => {
     fetchCredits()
@@ -842,7 +848,7 @@ export default function DashboardHomePage() {
 
       {/* Fires once per newly-earned badge. Acknowledged only after it has
           actually been shown — see markBadgesSeen. */}
-      {newBadges.length > 0 && (
+      {newBadges.length > 0 && !tourActive && (
         <BadgeUnlockModal
           badges={newBadges}
           foundingMemberNumber={badgeFoundingNumber ?? foundingMemberNumber}
@@ -866,7 +872,7 @@ export default function DashboardHomePage() {
       <div className="space-y-5 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-7">
         <div>
           <label className="mb-2 block text-sm font-medium text-slate-700">{copy.uploadLabel}</label>
-          <div className="grid gap-3 sm:grid-cols-2">
+          <div data-tour="cv-start" className="grid gap-3 sm:grid-cols-2">
             <button
               type="button"
               onClick={() => setCvMode("manual")}

@@ -28,6 +28,7 @@ import { useLang, useSyncLanguageFromAccount } from "@/lib/language";
 import { fetchAdminStatus } from "@/lib/supabase/profile-names";
 import { Logo } from "@/components/brand";
 import { signOut } from "@/lib/auth";
+import { OnboardingTour } from "@/components/onboarding-tour";
 
 /* ========================================================================
    LANGUAGE SWITCHER (light) — brand.tsx's LangSwitcher is styled for the
@@ -407,6 +408,10 @@ export function StatusBadge({
    Collapses to a hamburger drawer on mobile.
 ======================================================================== */
 type DashboardUser = {
+  /** Supabase auth user id. Used to remember the onboarding tour per account. */
+  id: string;
+  /** ISO timestamp the account was created. Gates the onboarding tour. */
+  createdAt?: string | null;
   /** Latin-script name. */
   nameEn?: string | null;
   /** Arabic-script name. */
@@ -489,7 +494,7 @@ function SidebarContent({ onNavigate, isAdmin }: { onNavigate?: () => void; isAd
         </Link>
       </div>
 
-      <nav className="flex-1 space-y-1 px-3">
+      <nav data-tour="nav" className="flex-1 space-y-1 px-3">
         {navItems.map(({ href, label, icon: Icon }) => {
           // Admin has sub-routes (/admin/analytics, /admin/users, ...) and
           // LinkedIn has /linkedin/checkout, so both stay active for their
@@ -504,6 +509,7 @@ function SidebarContent({ onNavigate, isAdmin }: { onNavigate?: () => void; isAd
               key={href}
               href={href}
               onClick={onNavigate}
+              data-tour={`nav${href}`}
               className={`flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors ${
                 active ? "bg-blue-50 text-blue-700" : "text-slate-600 hover:bg-slate-100 hover:text-slate-900"
               }`}
@@ -579,6 +585,7 @@ export function DashboardShell({ user, children }: { user: DashboardUser; childr
               type="button"
               onClick={() => setDrawerOpen(true)}
               aria-label="Open menu"
+              data-tour="menu-button"
               className="grid size-9 place-items-center rounded-lg text-slate-500 hover:bg-slate-100 lg:hidden"
             >
               <Menu className="size-5" aria-hidden />
@@ -597,6 +604,15 @@ export function DashboardShell({ user, children }: { user: DashboardUser; childr
 
         <main className="flex-1 px-4 py-6 sm:px-6 lg:px-8 lg:py-8">{children}</main>
       </div>
+
+      {/* Mounted in the shell rather than on the dashboard page so it can
+          point at the sidebar, and so it survives a route change. It
+          decides for itself whether this account should see it. */}
+      <OnboardingTour
+        userId={user.id}
+        accountCreatedAt={user.createdAt}
+        onSidebarNeeded={setDrawerOpen}
+      />
     </div>
   );
 }
