@@ -18,8 +18,16 @@ import { LANG_COOKIE, LANG_HEADER, MARKETING_PATHS, isLocale, readLang, splitLoc
 
    They are structurally safe here, for three reasons:
 
-     · Those routes did not move. app/auth/** is exactly where it was; only
-       the marketing folders moved under app/[lang]/.
+     · Those routes did not move, and still haven't. app/auth/** is exactly
+       where it was. The marketing folders moved twice now: first under
+       app/[lang]/, and — once the plain header-passing approach below
+       turned out not to be enough (see next paragraph) — again, into
+       app/(marketing)/[lang]/, which is its OWN root layout. Neither move
+       touched app/auth, app/login, app/signup, app/dashboard,
+       app/forgot-password, app/reset-password or app/api: a route group's
+       parentheses are invisible in the URL, and Route Handlers
+       (auth/callback, auth/confirm) don't resolve through a layout at all,
+       so relocating layouts was never a thing that could reach them.
      · The locale redirect below is an ALLOW-LIST. It fires only for "/" and
        for the eight paths in MARKETING_PATHS. /auth is not one of them, so
        the rewrite branch is never even considered for it.
@@ -28,12 +36,20 @@ import { LANG_COOKIE, LANG_HEADER, MARKETING_PATHS, isLocale, readLang, splitLoc
        before. It is now SKIPPED on the marketing pages, which never read one;
        see the note on step 3 for why that is safe and what it buys.
 
-   The plan also called for moving the dashboard and auth into a route group
-   so each language could get its own root layout. That is NOT done, and it is
-   not needed: middleware hands the resolved language to the single root
-   layout in a request header (x-tarshih-lang), which is enough to render
-   <html lang dir> correctly per URL. Avoiding the route-group move is what
-   keeps /auth/** untouched, which is the whole point of the warning.
+   THE HEADER-PASSING APPROACH DESCRIBED BELOW WAS THE FIRST ATTEMPT, AND IT
+   WASN'T ENOUGH. Handing the resolved language to app/layout.tsx via
+   x-tarshih-lang avoided a route-group move, which is why it was tried
+   first — but app/layout.tsx also calls cookies(), and Next.js opts a whole
+   route into dynamic rendering (cache-control: no-store, no bf-cache) the
+   moment ANY server component in its tree reads a request-time API,
+   regardless of whether the header itself is used. Measured live, this
+   pinned marketing LCP at ~4.4s. Giving /[lang] its own root layout — the
+   thing this comment used to say wasn't needed — is what actually fixes
+   that, and it does so without moving anything auth-adjacent, per the point
+   above. app/layout.tsx (this file's actual target below) still exists,
+   still reads headers()/cookies(), and still serves everything that isn't
+   under app/(marketing)/ — the header it reads is now consumed by exactly
+   that layout, nothing under /[lang] any more.
 ======================================================================== */
 
 /** Static assets and API-ish paths never need either job doing. */

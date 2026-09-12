@@ -589,6 +589,23 @@ export const content = {
 
       linkedinTitle: "The LinkedIn add-on",
 
+      // Read from lib/payments.ts (methods: ["creditcard"], supported_networks:
+      // ["mada", "visa", "mastercard"]) — see the comment there on why Apple
+      // Pay and STC Pay aren't listed: they're separate integrations with
+      // their own merchant setup, not yet done, and a button for either would
+      // fail. Card data is tokenized in the browser against Moyasar directly
+      // and never reaches our servers, whether it's charged once or saved for
+      // a subscription's renewal.
+      paymentMethodsTitle: "How you pay",
+      paymentMethodsBody:
+        "Card payments only, run through Moyasar. Your card details go straight to Moyasar and never reach our servers.",
+      paymentMethodsRows: [
+        { label: "Accepted cards", value: "mada, Visa, Mastercard" },
+        { label: "Processor", value: "Moyasar" },
+        { label: "Subscriptions", value: "Renews automatically until you cancel" },
+        { label: "Credit packs", value: "One-time charge, nothing recurring" },
+      ],
+
       faqTitle: "Questions about billing",
       // Shown under the plan a signed-in reader is already on.
       backToProduct: "See what the product does",
@@ -2272,8 +2289,8 @@ export const content = {
        الموجودة أعلاه، فلا تختلف صفحة الأسعار عن الصفحة الرئيسية عن شاشة
        الترقية في لوحة التحكم. ولا يُكتب رقم هنا إطلاقًا.
 
-       لا قسم لطرق الدفع: البوابة (Moyasar) غير مربوطة بعد، ووعد فارغ في
-       صفحة أسعار أسوأ من غيابه.
+       قسم طرق الدفع أُضيف بعد ربط Moyasar فعليًا — قبل ذلك كان وعدًا فارغًا،
+       وهو أسوأ من غيابه على صفحة أسعار.
 
        «العضوية المؤسِّسة» شارة فقط: لا سعر مؤسِّس ولا خصم ولا سعر سابق
        مشطوب في أي موضع. */
@@ -2306,6 +2323,16 @@ export const content = {
         "أول خمسين مشتركًا في خطة Pro تبقى في ملفاتهم شارة «عضو مؤسِّس» بشكل دائم. وهي شارة فحسب: السعر هو سعر Pro المعتاد، ولا يوجد خصم تأسيسي ولا سعر يُثبَّت.",
 
       linkedinTitle: "إضافة لينكدإن",
+
+      paymentMethodsTitle: "طريقة الدفع",
+      paymentMethodsBody:
+        "الدفع بالبطاقة فقط، عبر Moyasar. بيانات بطاقتك تذهب مباشرة إلى Moyasar ولا تصل إلى خوادمنا إطلاقًا.",
+      paymentMethodsRows: [
+        { label: "البطاقات المقبولة", value: "مدى، فيزا، ماستركارد" },
+        { label: "مزوّد الدفع", value: "Moyasar" },
+        { label: "الاشتراكات", value: "تتجدّد تلقائيًا حتى تُلغيها" },
+        { label: "باقات النقاط", value: "دفعة واحدة، بلا تجديد" },
+      ],
 
       faqTitle: "أسئلة عن الاشتراك والدفع",
       backToProduct: "شاهد ما الذي يقدّمه المنتج",

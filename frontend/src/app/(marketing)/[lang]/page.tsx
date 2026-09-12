@@ -1,5 +1,4 @@
 import type { Metadata } from "next";
-import { cookies } from "next/headers";
 import { IBM_Plex_Sans, IBM_Plex_Sans_Arabic } from "next/font/google";
 import { readLang } from "@/lib/lang-cookie";
 import { localeAlternates } from "@/lib/hreflang";

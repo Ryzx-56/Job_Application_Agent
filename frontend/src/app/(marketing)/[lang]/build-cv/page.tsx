@@ -10,8 +10,8 @@ import { BuildCvPage } from "@/components/build-cv/build-cv-page";
 
    Same shape as the landing and /pricing shells and for the same reasons: a
    server component so the route can export metadata, with the interactive
-   page — the form included — as a client child. See app/[lang]/page.tsx for
-   the full note on why the typefaces are declared per-route.
+   page — the form included — as a client child. See ../page.tsx (route "/")
+   for the full note on why the typefaces are declared per-route.
 
    TARGET SEARCHES (English: build a CV, CV builder, ATS-friendly CV, CV for
    Saudi jobs. Arabic: إنشاء سيرة ذاتية، سيرة ذاتية احترافية، سيرة ذاتية ATS،

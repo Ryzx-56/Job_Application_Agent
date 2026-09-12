@@ -713,6 +713,33 @@ export function PricingPage() {
             </div>
           </Block>
 
+          {/* ── PAYMENT METHODS ───────────────────────────────────────────
+              Same dl treatment as the credits explainer above — this is a
+              list of facts, not a row of card-network badges in coloured
+              squares. Every row is read straight from lib/payments.ts:
+              methods: ["creditcard"], supported_networks: ["mada", "visa",
+              "mastercard"]. No Apple Pay, no STC Pay — those are separate
+              merchant integrations that don't exist yet, and a button for
+              either would render and then fail. */}
+          <Block title={copy.paymentMethodsTitle} body={copy.paymentMethodsBody} flipped track="payment-methods">
+            <dl className="m-0">
+              {copy.paymentMethodsRows.map((row) => (
+                <div
+                  key={row.label}
+                  className="flex items-baseline justify-between gap-6 border-t py-4"
+                  style={{ borderColor: "var(--line-hairline)" }}
+                >
+                  <dt className="t-body min-w-0" style={{ color: "var(--ink-2)" }}>
+                    {row.label}
+                  </dt>
+                  <dd className="t-body m-0 shrink-0 font-medium" style={{ color: "var(--ink-1)" }}>
+                    {row.value}
+                  </dd>
+                </div>
+              ))}
+            </dl>
+          </Block>
+
           {/* ── BILLING QUESTIONS ─────────────────────────────────────────
               ONE COLUMN, NOT A SPLIT. This was the alternating layout like
               every other block, and it was the one place the pattern broke:
