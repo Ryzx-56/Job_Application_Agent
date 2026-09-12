@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { IBM_Plex_Sans, IBM_Plex_Sans_Arabic } from "next/font/google";
 import { readLang } from "@/lib/lang-cookie";
 import { localeAlternates } from "@/lib/hreflang";
-import { OG_IMAGE } from "@/lib/site";
+import { ogImage } from "@/lib/site";
 import { BuildCvPage } from "@/components/build-cv/build-cv-page";
 
 /* ========================================================================
@@ -64,13 +64,13 @@ export async function generateMetadata({
       description: copy.description,
       locale: lang === "ar" ? "ar_SA" : "en_US",
       type: "website",
-      images: [OG_IMAGE],
+      images: [ogImage(lang)],
     },
     twitter: {
       card: "summary_large_image",
       title: copy.title,
       description: copy.description,
-      images: [OG_IMAGE],
+      images: [ogImage(lang)],
     },
   };
 }
