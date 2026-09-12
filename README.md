@@ -25,7 +25,7 @@ Tarshih is a full-stack, production SaaS product: paying subscribers, real infra
 
 It was designed, built, and shipped **solo**, front to back: the LangGraph agent orchestration, the FastAPI backend, the Next.js frontend, the Supabase auth/billing/data layer, and the prompt engineering holding the whole pipeline together against hallucination.
 
-Every generation runs **8 coordinated agents across 3 different AI providers** (OpenAI, Google Gemini, and Tavily's search API) in a graph that fans work out in parallel where it can and loops back on itself when a rewritten bullet point can't be verified against the facts. A single CV generation can trigger anywhere from 6 to 20+ real API calls, depending on how much the fact-checker has to push back.
+Every generation runs **6 coordinated agents across 2 AI providers** (OpenAI and Google Gemini), plus a deterministic ATS scorer with no LLM in the loop, in a graph that fans work out in parallel where it can and loops back on itself when a rewritten bullet point can't be verified against the facts. A single CV generation can trigger anywhere from 6 to 20+ real API calls, depending on how much the fact-checker has to push back. Job matching is a separate, on-demand agent (Tavily) a user triggers themselves from a saved CV or the standalone Job Search page — it doesn't run automatically, because it's the single most expensive thing the product does.
 
 ## Table of Contents
 
@@ -53,13 +53,13 @@ Every generation runs **8 coordinated agents across 3 different AI providers** (
 
   A second, independent read on how well you actually match the role, with a plain-language explanation and a structured skill-gap analysis: what's missing, how important it is, how to close it.
 
-- **Live similar-job search**
+- **Live similar-job search, on demand**
 
-  Prioritizes Saudi Arabia's national employment platform (Jadarat) and blends in a curated list of established global and Gulf/MENA job boards (LinkedIn, Indeed, Bayt, GulfTalent, and more) when it doesn't have enough good matches on its own. Filters out closed listings, scam signals, and board/category pages that aren't real postings.
+  Prioritizes Saudi Arabia's national employment platform (Jadarat) and blends in a curated list of established global and Gulf/MENA job boards (LinkedIn, Indeed, Bayt, GulfTalent, and more) when it doesn't have enough good matches on its own. Filters out closed listings, scam signals, and board/category pages that aren't real postings. Triggered by the user from a saved CV or the standalone Job Search page — not run automatically on every generation, since it's the most expensive thing the product does.
 
-- **11 CV templates**
+- **16 CV templates**, five with a candidate-photo slot
 
-  Each rendered properly in both PDF (WeasyPrint, real CSS layout engine) and Word/DOCX (python-docx, styled to match).
+  Each rendered properly in both PDF (WeasyPrint, real CSS layout engine) and Word/DOCX (python-docx, styled to match). Adding one is a single registry entry, not a pipeline change — every template shares the same variable contract.
 
 - **Fully bilingual**
 
@@ -71,7 +71,11 @@ Every generation runs **8 coordinated agents across 3 different AI providers** (
 
 - **Accounts, subscriptions, and credits**
 
-  Handled via Supabase, with a resume history that's retained by tier (soft-archived past the cap, never silently deleted) and paginated so it stays fast as it grows.
+  Handled via Supabase, with a resume history that's retained by tier (soft-archived past the cap, never silently deleted) and paginated so it stays fast as it grows. Payments run on Moyasar — cards, 3DS, and webhook-driven crediting, live in production.
+
+- **LinkedIn profile generation and interview prep, bundled into Pro/Elite**
+
+  Two more on-demand agents outside the CV graph, each reusing a CV's already-extracted facts and gap analysis rather than re-analyzing anything: LinkedIn Essential turns a CV into ready-to-paste profile copy in one writing call, bilingual where LinkedIn itself isn't (advice, not the pasted fields); Interview Prep generates role-specific questions grounded in the same skill gaps the match score already found. Metered monthly per tier, like job search. (LinkedIn Premium is a separate, human-fulfilled service — a manually built profile, not an agent.)
 
 ## The Agent Pipeline
 
@@ -85,11 +89,10 @@ flowchart TD
     FC -- "unverifiable claim found, retry ≤ 2x" --> A3
     FC -- "verified or retries exhausted" --> A4["Agent 4 · Cover Letter<br/>GPT-5.6 Luna"]
     FC --> ATS["ATS Scorer<br/>deterministic, no LLM"]
-    FC --> A6["Agent 6 · Jobs Finder<br/>Tavily · live search"]
     ATS --> A5["Agent 5 · Match Scorer<br/>GPT-5.6 Luna"]
     A4 --> DONE([Response])
     A5 --> DONE
-    A6 --> DONE
+    DONE -. "user presses<br/>Find matching jobs<br/>(on demand, metered)" .-> A6["Agent 6 · Jobs Finder<br/>Tavily · live search"]
 ```
 
 | # | Agent | Model / Tool | Job |
@@ -101,13 +104,13 @@ flowchart TD
 | 4 | Document Generator | GPT-5.6 Luna | Writes the matching cover letter |
 | 5 | Match Scorer | GPT-5.6 Luna | Semantic job-fit score, gap analysis, and a plain-language recommendation |
 | - | ATS Scorer | Deterministic (no LLM) | Keyword/skills/education/experience match against the JD (instant, reproducible) |
-| 6 | Jobs Finder | Tavily | Finds real, currently-open, relevant listings (Jadarat-prioritized, noise- and scam-filtered) |
+| 6 | Jobs Finder | Tavily | Finds real, currently-open, relevant listings (Jadarat-prioritized, noise- and scam-filtered). **On demand only** — not part of generation |
 
-Once fact-checking clears, the cover letter, ATS score, and job search all run **in parallel**. There's no reason to make a user wait for three independent branches to run one after another.
+Once fact-checking clears, the cover letter and ATS/match scoring run **in parallel** — there's no reason to make a user wait for two independent branches to run one after another. Jobs Finder isn't a third branch: it used to run automatically on every generation, spending real search-API cost on a panel most people never opened, so it's now behind a "Find matching jobs" button instead — same pipeline and filtering, triggered only when someone actually wants it, and metered on its own monthly allowance.
 
 ## What the Output Looks Like
 
-Three of the eleven CV templates the pipeline can render (PDF and DOCX, both from the same tailored content):
+Three of the sixteen CV templates the pipeline can render (PDF and DOCX, both from the same tailored content):
 
 <table>
 <tr>
@@ -134,7 +137,7 @@ Three of the eleven CV templates the pipeline can render (PDF and DOCX, both fro
 | **Auth, database, storage** | Supabase (Postgres + Row Level Security + Auth) |
 | **PDF rendering** | WeasyPrint: real HTML/CSS layout via Pango/Cairo, not a headless-browser screenshot |
 | **DOCX rendering** | python-docx, with per-template style presets |
-| **Payments** | Third-party payment gateway (provider selection and integration in progress) |
+| **Payments** | Moyasar — cards, 3DS, webhook-driven crediting and subscription renewal, live in production |
 | **Hosting** | Vercel (frontend) · Render (backend) |
 
 ## Engineering Notes
@@ -191,7 +194,7 @@ uvicorn main:app --reload
 ```bash
 cd frontend
 npm install
-cp env.local.example .env.local  # fill in your Supabase URL + anon key
+cp .env.example .env.local       # fill in your Supabase URL + anon key (Moyasar/GA/Redis are optional)
 npm run dev
 ```
 
@@ -201,10 +204,10 @@ The frontend expects the backend at `NEXT_PUBLIC_API_URL` (defaults to `http://1
 
 ```
 backend/
-├── agents/         # The 6 numbered agents (cv_parser, jd_analyzer, tailoring_engine, ...)
+├── agents/         # The 6 numbered pipeline agents, plus linkedin_generator and interview_prep (on-demand add-ons, outside the graph)
 ├── core/           # Orchestration graph, auth, credits/subscriptions, fact-checking loop
 ├── schemas/        # Pydantic contracts between agents
-├── templates/      # 11 Jinja2 CV/cover-letter HTML templates
+├── templates/      # 16 Jinja2 CV templates + 1 cover-letter template
 ├── utils/          # PDF/DOCX rendering, ATS scoring, page-fit logic
 └── main.py         # FastAPI app + SSE streaming endpoints
 

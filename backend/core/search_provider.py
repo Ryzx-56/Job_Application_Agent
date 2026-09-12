@@ -3,18 +3,33 @@
 # EVERY WEB SEARCH IN THE PRODUCT GOES THROUGH HERE. Two providers, one
 # interface, one switch.
 #
-# ⚠️ SEARCH_PROVIDER IS THE SWITCH. It is the only line that decides which
-# provider answers, and it is env-overridable so a bad day can be rolled back
-# from the Render dashboard without a deploy. Both paths are kept and both are
-# maintained — this is not a replacement, it is a dispatcher, the same shape
-# core/llm_config.py's WRITING_MODEL takes for the writing model.
+# ⚠️ TAVILY IS THE LIVE PROVIDER. SEARCH_PROVIDER is the switch — the only
+# line that decides which provider answers — and it is env-overridable so a
+# bad day can be rolled back from the Render dashboard without a deploy. Set
+# it explicitly to 'tavily' in Render; don't rely on this file's own default
+# (see SEARCH_PROVIDER below), because that default is what caused a real
+# production outage. Both paths are kept and both are maintained — this is a
+# dispatcher, the same shape core/llm_config.py's WRITING_MODEL takes for the
+# writing model — but only one of them is actually running traffic.
 #
-# ─── WHY SERPER ─────────────────────────────────────────────────────────────
+# ─── WHY SERPER WAS BUILT, AND WHY IT'S DORMANT ─────────────────────────────
 #
 # Tavily at search_depth='advanced' is 2 credits a call, and its credits cost
 # $0.008 — so $0.016 per call. Serper is $0.001 per search. Sixteen times
 # cheaper, and its free tier is 2,500 searches against Tavily's 1,000 credits
-# (500 advanced calls), so five times more free calls as well.
+# (500 advanced calls), so five times more free calls as well. That price gap
+# is why Serper got built at all.
+#
+# DECIDED AGAINST SHIPPING IT (2026-09-12), reverted to Tavily-only: two of
+# Serper's properties were unverified against this product's actual filters
+# and domain lists (see SNIPPET_IS_SHORT below — defined, never actually
+# consumed by any filter), and it has no confirmed Jobs vertical or
+# `/usage`-equivalent quota endpoint to replace Tavily's. Not worth the risk
+# right after a live-payments launch for a discount that isn't proven yet.
+# The code below is kept working and tested, not ripped out, so a future
+# real side-by-side doesn't mean rebuilding it from scratch — but until that
+# test happens, treat every "Serper" fact in this file as describing code
+# that exists and is dormant, not traffic that is live.
 #
 # ─── THE SHAPE OF A RESULT ──────────────────────────────────────────────────
 #
@@ -63,6 +78,33 @@ class SearchUnavailable(RuntimeError):
     could not look" is not "there is nothing there". See the rule in
     CLAUDE.md.
     """
+
+
+def assert_provider_configured() -> None:
+    """Raise SearchUnavailable up front when the CONFIGURED provider has no
+    key at all, instead of letting every lane discover this independently.
+
+    WHY THIS EXISTS. _search_lane (agents/jobs_finder.py) catches
+    SearchUnavailable and returns [] — correct for a genuinely per-lane,
+    transient failure (one request timed out while the other three
+    succeeded), which is what that swallow was written for. But a missing
+    key is neither per-lane nor transient: every lane hits the exact same
+    provider client, so a missing key fails all four identically, every
+    time. Without this check that determinism was laundered into "0 lanes
+    returned anything" — a page of empty results, billed against a paying
+    user's monthly search quota where one applies — instead of the honest
+    SearchUnavailable the caller can turn into a real error. This is exactly
+    what happened live: SEARCH_PROVIDER defaulted to 'serper' with
+    SERPER_API_KEY deleted, and every search quietly came back empty rather
+    than failing loudly. Call this ONCE, before any lane runs.
+    """
+    if SEARCH_PROVIDER == "tavily" and not (os.getenv("TAVILY_API_KEY") or "").strip():
+        raise SearchUnavailable("TAVILY_API_KEY is not set.")
+    if SEARCH_PROVIDER == "serper" and not (os.getenv("SERPER_API_KEY") or "").strip():
+        raise SearchUnavailable(
+            "SERPER_API_KEY is not set. Set it in Render, or set "
+            "SEARCH_PROVIDER=tavily to fall back."
+        )
 
 
 # ─── WHAT A CALL COSTS ──────────────────────────────────────────────────────

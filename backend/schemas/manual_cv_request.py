@@ -100,7 +100,7 @@ class ManualCVRequest(BaseModel):
     # the CV's. Only the match score and its recommendation follow it; the CV,
     # the cover letter and the portfolio section all follow cv_language.
     ui_language: Optional[str] = "en"
-    template_id: Optional[str] = None  # which of the 11 CV templates to render with — see utils/template_registry.py
+    template_id: Optional[str] = None  # which of the 16 CV templates to render with — see utils/template_registry.py
     # THE PHOTO, for the five portrait templates.
     #
     # A base64 image data URI, the same shape utils/cv_photo.py already stores

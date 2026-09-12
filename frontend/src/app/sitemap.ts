@@ -64,6 +64,17 @@ const ROUTES: Route[] = [
     ],
   },
   {
+    path: "/build-cv",
+    changeFrequency: "monthly",
+    priority: 0.9,
+    sources: [
+      "src/app/[lang]/build-cv/page.tsx",
+      "src/components/build-cv",
+      "src/lib/pricing.ts",
+      "src/lib/language.tsx",
+    ],
+  },
+  {
     path: "/questions",
     changeFrequency: "monthly",
     priority: 0.8,

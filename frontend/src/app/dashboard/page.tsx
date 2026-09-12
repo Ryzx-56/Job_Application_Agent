@@ -37,6 +37,7 @@ import {
   missingRequiredFields,
   requiredFieldLabel,
 } from "@/components/manual-cv-form";
+import { readBuildCvDraft, clearBuildCvDraft, dataUrlToFile } from "@/lib/build-cv-draft";
 import { saveResumeResult } from "@/lib/supabase/resumes";
 import { fetchCredits } from "@/lib/supabase/credits";
 import { updateProfileNames, suggestNameFromCv, fetchAdminStatus, fetchBadges, markBadgesSeen } from "@/lib/supabase/profile-names";
@@ -452,6 +453,14 @@ export default function DashboardHomePage() {
   // photo out of the document itself (read_uploaded_photo). Held as a data URI
   // because that is what the backend stores and what WeasyPrint renders.
   const [candidatePhoto, setCandidatePhoto] = useState<string | null>(null);
+  // Set once, on mount, if a draft from /build-cv's deferred-signup flow was
+  // restored — see the rehydration effect below and lib/build-cv-draft.ts's
+  // header note. draftFileNeedsReupload is the narrower case: the draft
+  // itself was restored but its uploaded file wasn't (too large to carry
+  // over, or failed to decode), so the banner has to say that specifically
+  // rather than leave an empty upload with no explanation.
+  const [draftRestored, setDraftRestored] = useState(false);
+  const [draftFileNeedsReupload, setDraftFileNeedsReupload] = useState(false);
   const [templatePickerOpen, setTemplatePickerOpen] = useState(false);
   const [creditsRemaining, setCreditsRemaining] = useState(0);
   const [creditsTotal, setCreditsTotal] = useState(0);
@@ -494,6 +503,41 @@ export default function DashboardHomePage() {
       setBadgeFoundingNumber(b.founding_member_number);
     });
   }, []);
+
+  // Restores a draft saved by /build-cv — the public page lets a visitor
+  // fill in the whole form before an account exists, and every auth path
+  // (signup, login, Google OAuth, email confirmation) already lands here.
+  // See lib/build-cv-draft.ts's header note for the full reasoning,
+  // including why this is client storage rather than a server-side token.
+  //
+  // readBuildCvDraft() returns null for "nothing to restore" — never saved,
+  // expired, or malformed are all the same case — and this effect is then a
+  // no-op, exactly as if the visitor had come to the dashboard directly.
+  // Runs once, before the visitor has touched the form, so it can never
+  // clobber anything they've already typed on this page.
+  useEffect(() => {
+    const draft = readBuildCvDraft();
+    if (!draft) return;
+
+    setCvMode(draft.cvMode);
+    setManualData(draft.manualData);
+    setAdditionalInfo(draft.additionalInfo);
+    setJobDescription(draft.jobDescription);
+    setCvLanguage(draft.cvLanguage);
+    setCandidatePhoto(draft.candidatePhoto);
+
+    if (draft.cvMode === "upload") {
+      const file = draft.uploadedFile
+        ? dataUrlToFile(draft.uploadedFile.dataUrl, draft.uploadedFile.name, draft.uploadedFile.type)
+        : null;
+      if (file) setCvFile(file);
+      else setDraftFileNeedsReupload(true); // uploadOmitted, or the saved file failed to decode
+    }
+
+    setDraftRestored(true);
+    clearBuildCvDraft(); // one-shot — a refresh must not keep re-applying it
+  }, []);
+
   const [generating, setGenerating] = useState(false);
   const [result, setResult] = useState<GenerateResult | null>(null);
 
@@ -870,6 +914,25 @@ export default function DashboardHomePage() {
       </div>
 
       <div className="space-y-5 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-7">
+        {draftRestored && (
+          <div
+            role="status"
+            className="flex items-start justify-between gap-3 rounded-xl border border-emerald-200 bg-emerald-50 p-3.5"
+          >
+            <p className="text-sm leading-relaxed text-emerald-900">
+              {draftFileNeedsReupload ? copy.draftFileNeedsReupload : copy.draftRestoredBanner}
+            </p>
+            <button
+              type="button"
+              onClick={() => setDraftRestored(false)}
+              aria-label={lang === "ar" ? "إغلاق" : "Close"}
+              className="shrink-0 rounded-lg p-1 text-emerald-700 transition-colors hover:bg-emerald-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600"
+            >
+              <X className="size-4" aria-hidden />
+            </button>
+          </div>
+        )}
+
         <div>
           <label className="mb-2 block text-sm font-medium text-slate-700">{copy.uploadLabel}</label>
           <div data-tour="cv-start" className="grid gap-3 sm:grid-cols-2">

@@ -88,7 +88,7 @@ def _arabicize_prose(context: dict) -> None:
 
 # ---------------------------------------------------------------------------
 # Arabic RTL + font override, injected as CSS rather than baked into every
-# template file - applies uniformly no matter which of the 11 templates is
+# template file - applies uniformly no matter which of the 16 templates is
 # chosen, and keeps the template files themselves free of Arabic-specific
 # markup.
 # ---------------------------------------------------------------------------

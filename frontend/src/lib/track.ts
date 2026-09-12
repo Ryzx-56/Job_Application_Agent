@@ -30,7 +30,7 @@ import { event } from "@/lib/analytics";
 /** Which page the event happened on. Passed explicitly rather than read from
  *  the pathname, so an event fired from a shared component (the footer CTA,
  *  say) still says where the reader actually was. */
-export type Surface = "landing" | "pricing" | "about" | "questions" | "guides";
+export type Surface = "landing" | "pricing" | "about" | "questions" | "guides" | "build-cv";
 
 /** A click on something we asked the reader to click. */
 export function trackCta(cta: string, surface: Surface | string) {

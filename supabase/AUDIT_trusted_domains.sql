@@ -3,11 +3,17 @@
 --
 -- Read-only. Paste into the Supabase SQL editor and run; nothing is written.
 --
--- WHY THIS EXISTS. jobs_finder.TRUSTED_DOMAINS holds sixteen entries. Google
--- stops honouring `site:` terms past roughly eight OR'd together, so on Serper
--- the trusted lane has to be split into two calls — and that is a cost paid on
--- every search, forever. Trimming the list to the entries that actually earn
--- their place removes the split entirely. This asks the only question that
+-- WHY THIS EXISTS. jobs_finder.TRUSTED_DOMAINS holds sixteen entries. On
+-- Tavily (the live provider — see core/search_provider.py) they're passed as
+-- one include_domains list in a single call, so there's no per-search split
+-- cost to remove here; the reason to trim is that Tavily's per-call result
+-- budget is shared across every domain named in it, so a domain that never
+-- contributes a kept result is diluting the ones that do, for every search,
+-- forever. (This file originally reasoned about Serper's `site:` operator,
+-- which Google stops honouring past roughly eight OR'd together and would
+-- force a split lane — moot while Tavily is what's running; see
+-- SEARCH_PROVIDER.) Trimming the list to the entries that actually earn
+-- their place fixes that either way. This asks the only question that
 -- settles it: which of them has ever put a listing in front of a user?
 --
 -- WHAT COUNTS AS EVIDENCE. resumes.similar_jobs holds the job leads that

@@ -48,29 +48,50 @@ USD_TO_SAR = pricing_catalog.SAR_PER_USD
 # Free a NEGATIVE line, since every free user is an acquisition cost rather
 # than income. Derived, not hardcoded per tier, so the two can never disagree.
 #
-# ⚠️ MEASURED, and it is dominated by something that is not the model.
+# ⚠️ RECOMPUTED 2026-09-12 — the previous value (0.28) baked in a cost that no
+# longer exists. History, so the next person doesn't redo this from scratch:
 #
-# The old value was 0.75 SAR, taken from the Claude Sonnet path and counting
-# model tokens only. Both halves of that are now wrong:
+#   v6's value was 0.75 SAR, taken from the Claude Sonnet path and counting
+#   model tokens only.
 #
-#   · The model moved to gpt-5.6-luna (core/llm_config.WRITING_MODEL). Measured
-#     over 10 runs per language: an English CV's model cost is 0.0133 SAR
-#     (tailoring 0.0083 + cover letter 0.0030 + match scorer 0.0020), an
-#     Arabic CV's is 0.0235. That is roughly 1/56th of the old figure.
+#   v7's value was 0.28 SAR = 0.24 (Tavily) + 0.02 (model) rounded up for
+#   headroom. The 0.24 was 8 Tavily credits at $0.008/credit — jobs_finder
+#   used to run on EVERY CV generation, automatically, for every tier. It no
+#   longer does: core/orchestrator.py's route_after_fact_check confirms
+#   jobs_finder isn't a graph sibling for any tier any more (see the Tavily
+#   revert, 2026-09-12) — the job match is on-demand only, through the
+#   `find-jobs` button, metered by its own cap (ADDON_CAPS[JOB_SEARCH]) that
+#   draws on neither the credit pool nor this constant. So the 0.24 SAR/CV
+#   Tavily term is gone, not reduced.
 #
-#   · The old basis counted no TAVILY AT ALL, and Tavily is now the whole
-#     cost. jobs_finder runs on every generation and spends 8 Tavily credits;
-#     at Tavily's published $0.008/credit that is 0.24 SAR per CV — 18x the
-#     model cost of the same CV.
+#   What's left is the model term — and it needed a correction too. v7 used
+#   Arabic's per-CV cost (0.02345 SAR) as "the more expensive locale," true
+#   per CV but not per CREDIT: an Arabic CV costs 2 credits, so its PER-CREDIT
+#   cost is 0.02345 / 2 = 0.0117 SAR. An English CV costs 1 credit for
+#   0.01332 SAR — 0.0133 SAR/credit, actually the higher of the two once
+#   credits (not CVs) are the unit. Measured over 10 runs per language on
+#   gpt-5.6-luna (core/llm_config.WRITING_MODEL): 0.00829 tailoring + 0.00301
+#   cover letter + 0.00202 match scorer = 0.01332 English whole-CV, 1 credit.
 #
-# So this is 0.24 (Tavily) + 0.02 (model, Arabic, the more expensive locale)
-# rounded up for headroom. Gemini extraction — cv_parser, jd_analyzer, the
-# fact checker — is NOT yet included: it could not be measured (see the
-# pre-launch log, Section 10), and it is small but not zero.
+#   0.01332 (English, worst case per credit) + 0.02 (same headroom as v7, for
+#   Gemini extraction — cv_parser, jd_analyzer, the fact checker, the jobs
+#   screener — which still hasn't been measured, see pricing reference v7
+#   §1) = 0.03332, rounded up to 0.04.
+#
+# NOTHING ELSE FEEDS THIS FIGURE. The only other consumers are
+# worst_case_cost_sar() below (tier and pack worst-case cost) and the
+# `cost_per_credit` field this module returns directly to the admin
+# dashboard — both recompute from whatever this constant holds, so nothing
+# downstream needed a separate edit. Interview Prep's and Job Search's own
+# worst-case costs are NOT folded into this constant or into this module's
+# platform-wide total at all (BUNDLED_ADDON_COSTS_SAR["interview_prep"] is
+# defined but never summed, and Job Search doesn't appear here whatsoever) —
+# a separate, pre-existing gap, flagged in pricing reference v7 §5, not fixed
+# by this recomputation.
 #
 # COST_PER_CREDIT_SAR is genuinely local: it is an INPUT cost (what a
 # generation costs us to serve), not a price anyone is charged.
-COST_PER_CREDIT_SAR = 0.28
+COST_PER_CREDIT_SAR = 0.04
 
 # Display labels only. These stay local on purpose: the catalogue's label_en is
 # the description that goes on the Moyasar form and the buyer's card statement

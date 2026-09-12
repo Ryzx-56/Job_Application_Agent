@@ -112,7 +112,7 @@ class AgentState(TypedDict):
     # cv_language, and so does the portfolio section.
     ui_language:                str
 
-    # Which of the 11 CV templates to render with (see
+    # Which of the 16 CV templates to render with (see
     # utils/template_registry.py). No graph node reads or writes this — it
     # rides through state untouched from make_initial_state() all the way
     # to result_state, purely so main.py can read result["template_id"]

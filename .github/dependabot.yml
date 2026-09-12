@@ -61,6 +61,40 @@ updates:
       # requires_dist on PyPI.
       - dependency-name: websockets
 
+      # python-minor-patch (the group below used to catch everything not
+      # named above) is REJECTED, not just trimmed. Its last PR (#22, "Bump
+      # the python-minor-patch group across 1 directory with 60 updates")
+      # bundled google-api-core -> 2.36.0 without protobuf, and
+      # pydantic-core -> 2.48.0 without a matching pydantic — both
+      # ResolutionImpossible, both silent inside a 60-package diff nobody
+      # could review line by line. It shipped anyway: merged by hand with
+      # the two pins fixed (see the "Merge the python-minor-patch group,
+      # with the two pins Dependabot got wrong" commit), which is the
+      # problem, not the fix — catching a THIRD undiscovered coupling the
+      # same way, by hand, in a 60-line diff, is not a plan.
+      #
+      # requirements.txt is a full freeze (see the groups: comment below), so
+      # any minor/patch bump anywhere in it can be the same failure shape
+      # again — not just in the two pairs already caught. `ignore` matches by
+      # dependency name before `groups` ever runs, so a blanket "*" here is
+      # the only way to stop the catch-all without re-typing 50+ package
+      # names by hand — and it takes the pydantic and google-stack groups
+      # below down WITH it, deliberately: their whole purpose was proposing
+      # THOSE minor/patch bumps safely, and there is nothing left for them to
+      # do while all minor/patch bumps are blocked. That's an accepted
+      # side effect, not an oversight.
+      #
+      # Does not touch: major-version bumps (never batched here anyway),
+      # frontend or github-actions updates (separate ecosystem blocks), or
+      # security updates — GitHub raises those independently of `ignore`.
+      #
+      # Remove this by deleting the entry, once backend dependency updates
+      # are being reviewed individually again rather than batch-merged.
+      # pydantic and google-stack resume proposing the moment this is gone —
+      # their groups were never touched, only starved of anything to group.
+      - dependency-name: "*"
+        update-types: ["version-update:semver-minor", "version-update:semver-patch"]
+
     groups:
       # ⚠️ THE PINNED SUB-DEPENDENCIES MOVE WITH THEIR PARENTS OR NOT AT ALL.
       #
@@ -93,10 +127,9 @@ updates:
           - "protobuf"
           - "grpcio*"
           - "proto-plus"
-      python-minor-patch:
-        update-types:
-          - minor
-          - patch
+      # There used to be a python-minor-patch group here, matching anything
+      # not caught by the two above — see the ignore entry up top for why it
+      # was removed rather than kept as a (now permanently empty) group.
 
   # ─── The workflows themselves ─────────────────────────────────────────────
   # These hold repository secrets (SUPABASE_DB_URL), so a compromised or

@@ -593,6 +593,90 @@ export const content = {
       // Shown under the plan a signed-in reader is already on.
       backToProduct: "See what the product does",
     },
+    /* ── /build-cv (prompts/tarshih-copy-and-page.md) ──────────────────────
+       The SEO/conversion page for the public CV-creation flow. The form
+       lives on the page itself — see components/build-cv/build-cv-page.tsx
+       — so this dictionary carries its own small set of form labels rather
+       than reaching into `dashboard` below: that object is written for the
+       signed-in product shell (credits, templates, name prompts) and this
+       page deliberately has none of that. */
+    buildCv: {
+      h1: "Build a CV that gets read",
+      subhead:
+        "Paste the job posting, add your details, and get a CV written for that specific role — in English or Arabic, formatted so applicant tracking systems can actually read it.",
+
+      form: {
+        modeManualTitle: "Create new CV",
+        modeManualSub: "Fill in your details manually",
+        modeUploadTitle: "Upload existing CV",
+        modeUploadSub: "Drag & drop a PDF or DOCX",
+        uploadLabel: "Upload existing CV",
+        uploadHint: "Drag and drop a PDF or DOCX, or click to browse",
+        uploadedLabel: "Uploaded",
+        removeFile: "Remove file",
+        additionalInfoLabel: "Additional information",
+        additionalInfoOptional: "optional",
+        additionalInfoPlaceholder:
+          "Anything else worth including that isn't captured above, like awards, volunteer work, languages, or context about a gap.",
+        jdLabel: "Paste the job posting",
+        jdPlaceholder: "Paste the full job posting here...",
+        jdHint: "The whole thing — we read the requirements and work out what matters.",
+        languageLabel: "Output CV language",
+        generateCta: "Generate my CV",
+        generatingCta: "Continuing…",
+        missingFields: "Add your CV details before continuing.",
+        missingRequired: (fields: string) => `Please fill in: ${fields}.`,
+        missingJobDescription: "Paste the job posting before continuing.",
+        fileTooLarge: "That file is larger than 5 MB. Please upload a smaller CV.",
+        // Sits under the button. This is the whole point of the page, so it
+        // says so plainly rather than leaving Generate to look like a normal
+        // submit button that is about to fail.
+        accountWallNote: "You'll need an account to generate — nothing you've entered here will be lost.",
+      },
+
+      howItWorks: {
+        label: "How it works",
+        steps: [
+          {
+            title: "Add your details",
+            description:
+              "Type them in, or upload a CV you already have and we'll pull the information out of it.",
+          },
+          {
+            title: "Paste the job posting",
+            description: "The whole thing — we read the requirements and work out what matters.",
+          },
+          {
+            title: "Get a tailored CV",
+            description:
+              "Rewritten for that role, with a match score showing how well you fit and what's missing.",
+          },
+        ],
+      },
+
+      atsSection: {
+        title: "Why most CVs never reach a person",
+        paragraphs: [
+          "Most employers run applications through an applicant tracking system before anyone reads them. The software pulls text out of your file and matches it against the role. If it can't read your file properly, or the words don't line up with the posting, the application stops there — and you never find out why.",
+          "Two things go wrong most often. The formatting confuses the parser: columns, text boxes, headers and graphics that look fine to you and come out as scrambled text to the machine. And the wording doesn't match: you wrote \"managed a team\", the posting says \"team leadership\", and nothing connects them.",
+          "Tarshih handles both. Every CV is built in a layout parsers can read, and the wording is rewritten against the posting you paste — using your real experience, not invented claims.",
+        ],
+      },
+
+      bilingualSection: {
+        title: "Arabic and English",
+        body: "Write in either. Arabic CVs are laid out right-to-left properly, with Arabic typography rather than a mirrored English template — and the job matching works in both languages.",
+      },
+
+      // Interpolated, never typed — see CLAUDE.md: an Arabic CV costs more
+      // credits than an English one, so a flat "three CVs" claim would be
+      // true in English and false in Arabic. Same phrasing shape as
+      // hero.freeLine above.
+      freeSection: {
+        title: "What you get free",
+        body: `${enCount(TIERS.free.credits, "credit")} free every month, no card needed. That's ${TIERS.free.credits} CVs in English, or one in Arabic and one in English — plus the ATS score on every one, and a cover letter.`,
+      },
+    },
     /* ── LinkedIn add-on, featured section on the landing page ──
        PRICES ARE REPEATED HERE as numbers because this section renders for
        signed-out visitors, and /api/v1/linkedin/overview (the normal source)
@@ -675,6 +759,9 @@ export const content = {
       // The billing set, shown on /pricing under the plans. Same mechanism:
       // ids, not a slice, so reordering the master list is safe.
       pricingPage: ["credits", "no-card", "refunds", "linkedin-what-is-it", "linkedin-tiers", "linkedin-refunds"],
+      // The set shown on /build-cv — the questions a visitor who hasn't seen
+      // the product yet actually has, before signing up.
+      buildCv: ["build-cv-account", "build-cv-invents", "build-cv-privacy", "build-cv-file-format", "build-cv-saudi"],
       seeAll: "See all questions",
       allTitle: "All questions",
       allDescription: "Everything about how Tarshih works, what it costs, and what happens to your data.",
@@ -776,6 +863,32 @@ export const content = {
           id: "linkedin-refunds",
           q: "Can I get a refund on the LinkedIn add-on?",
           a: "Essential isn't bought separately, so there's nothing to refund on it: it comes with a Pro or Elite subscription, and those can be cancelled any time and stay active to the end of the cycle you've already paid for. Premium is a one-time purchase and is refundable in full any time before your specialist begins work. Once the build has started it isn't, because the content has been delivered and the service is already under way.",
+        },
+        // ── /build-cv FAQ (long-tail search) ──────────────────────────────
+        {
+          id: "build-cv-account",
+          q: "Do I need an account?",
+          a: "Not to start. Fill in your details and see the whole form first — you'll only need an account when you generate.",
+        },
+        {
+          id: "build-cv-invents",
+          q: "Will it invent things about me?",
+          a: "No. It rewrites what you give it and can add skills your own descriptions already demonstrate, but it won't claim experience you never mentioned. A fact-checking pass runs over every CV before you see it.",
+        },
+        {
+          id: "build-cv-privacy",
+          q: "Is my information kept private?",
+          a: "Your details stay in your browser until you create an account. After that they belong to your account and you can delete everything from your settings page at any time.",
+        },
+        {
+          id: "build-cv-file-format",
+          q: "What file do I get?",
+          a: "PDF or Word, your choice. For Arabic, Word is the safer option for applicant tracking systems.",
+        },
+        {
+          id: "build-cv-saudi",
+          q: "Does it work for jobs in Saudi Arabia?",
+          a: "That's what it was built for. Job matching searches your city first, then your country.",
         },
       ],
     },
@@ -1073,6 +1186,16 @@ export const content = {
         missingRequired: (fields: string) =>
           `Add your ${fields} before generating. Nothing is charged until these are filled in.`,
         missingJobDescription: "Paste the job description you're applying to.",
+        // Shown once, on mount, when lib/build-cv-draft.ts finds a draft
+        // saved on /build-cv before the account existed — see that file's
+        // header note. Dismissed by filling anything in or by generating.
+        draftRestoredBanner:
+          "We restored the details you entered on the CV builder page. Review them below and generate when you're ready.",
+        // draft.uploadOmitted was true, or the saved file failed to decode —
+        // either way the file itself didn't survive, only the rest of the
+        // draft did, so this says exactly that rather than silently leaving
+        // an empty upload with no explanation.
+        draftFileNeedsReupload: "Your uploaded CV was too large to carry over. Please re-attach it.",
         // Chosen a template with a photo slot, on the create-from-scratch
         // flow, which has nowhere to take a photo from. Better to say so than
         // to hand back a CV with an empty frame on it.
@@ -2187,6 +2310,70 @@ export const content = {
       faqTitle: "أسئلة عن الاشتراك والدفع",
       backToProduct: "شاهد ما الذي يقدّمه المنتج",
     },
+    /* ── /build-cv (prompts/tarshih-copy-and-page.md) — مكتوبة بالعربية
+       أصلًا، وليست ترجمة عن القسم الإنجليزي أعلاه. ── */
+    buildCv: {
+      h1: "اصنع سيرة ذاتية تُقرأ فعلاً",
+      subhead:
+        "الصق إعلان الوظيفة، أضف بياناتك، واحصل على سيرة ذاتية مكتوبة لهذه الوظيفة تحديدًا — بالعربية أو الإنجليزية، ومنسّقة بحيث تستطيع أنظمة التوظيف قراءتها.",
+
+      form: {
+        modeManualTitle: "إنشاء سيرة ذاتية جديدة",
+        modeManualSub: "أدخل بياناتك يدويًا بالتفصيل",
+        modeUploadTitle: "رفع سيرة ذاتية الحالية",
+        modeUploadSub: "اسحب وأفلت ملف PDF أو DOCX",
+        uploadLabel: "ارفع سيرتك الذاتية الحالية",
+        uploadHint: "اسحب وأفلت ملف PDF أو DOCX، أو اضغط للاختيار",
+        uploadedLabel: "تم الرفع",
+        removeFile: "إزالة الملف",
+        additionalInfoLabel: "معلومات إضافية",
+        additionalInfoOptional: "اختياري",
+        additionalInfoPlaceholder:
+          "أي شيء آخر يستحق الإضافة ولم يتم ذكره أعلاه، مثل الجوائز أو الأعمال التطوعية أو اللغات أو سياق حول فجوة مهنية.",
+        jdLabel: "الصق إعلان الوظيفة",
+        jdPlaceholder: "الصق نص الإعلان الوظيفي كاملًا هنا...",
+        jdHint: "كاملًا — نقرأ المتطلبات ونحدد ما يهم منها.",
+        languageLabel: "لغة السيرة الذاتية الناتجة",
+        generateCta: "أنشئ سيرتي الذاتية",
+        generatingCta: "جارٍ المتابعة…",
+        missingFields: "أضف بيانات سيرتك الذاتية قبل المتابعة.",
+        missingRequired: (fields: string) => `يرجى تعبئة: ${fields}.`,
+        missingJobDescription: "الصق إعلان الوظيفة قبل المتابعة.",
+        fileTooLarge: "حجم الملف أكبر من 5 ميجابايت. أرفق نسخة أصغر من سيرتك الذاتية.",
+        accountWallNote: "ستحتاج حسابًا عند الإنشاء فقط — لن يُفقد أي شيء أدخلته هنا.",
+      },
+
+      howItWorks: {
+        label: "كيف تعمل",
+        steps: [
+          { title: "أضف بياناتك", description: "اكتبها، أو ارفع سيرتك الحالية ونستخرج المعلومات منها." },
+          { title: "الصق إعلان الوظيفة", description: "كاملًا — نقرأ المتطلبات ونحدد ما يهم منها." },
+          {
+            title: "احصل على سيرة مخصّصة",
+            description: "مُعاد كتابتها لهذه الوظيفة، مع درجة توافق توضح مدى ملاءمتك وما ينقصك.",
+          },
+        ],
+      },
+
+      atsSection: {
+        title: "لماذا لا تصل أغلب السير الذاتية إلى موظف التوظيف",
+        paragraphs: [
+          "معظم جهات العمل تمرّر الطلبات على نظام تتبّع المتقدمين قبل أن يقرأها أحد. البرنامج يستخرج النص من ملفك ويطابقه مع الوظيفة. وإذا لم يستطع قراءة الملف بشكل صحيح، أو لم تتطابق الصياغة مع الإعلان، يتوقف الطلب عند هذه النقطة — دون أن تعرف السبب.",
+          "المشكلتان الأكثر تكرارًا: تنسيق يربك البرنامج — أعمدة ومربعات نصية ورسومات تبدو جيدة أمامك وتخرج نصًا مبعثرًا أمام النظام. وصياغة لا تتطابق: كتبت \"أدرت فريقًا\"، والإعلان يقول \"قيادة فريق\"، ولا شيء يربط بينهما.",
+          "ترشيح يعالج الأمرين. كل سيرة تُبنى بتنسيق تقرأه الأنظمة، والصياغة يُعاد كتابتها مقابل الإعلان الذي تلصقه — من خبرتك الحقيقية، دون ادعاءات مُختلقة.",
+        ],
+      },
+
+      bilingualSection: {
+        title: "بالعربية والإنجليزية",
+        body: "اكتب بأيّهما شئت. السير العربية تُنسّق من اليمين إلى اليسار كما ينبغي، بخطوط عربية حقيقية لا قالب إنجليزي معكوس — ومطابقة الوظائف تعمل باللغتين.",
+      },
+
+      freeSection: {
+        title: "ما تحصل عليه مجانًا",
+        body: `${arCount(TIERS.free.credits, AR_POINTS)} مجانًا كل شهر، بلا بطاقة. تكفي ${arCount(TIERS.free.credits, AR_CVS)} بالإنجليزية، أو واحدة بالعربية وأخرى بالإنجليزية — إضافة إلى درجة ATS لكل سيرة، وخطاب تقديم.`,
+      },
+    },
     /* ── إضافة لينكدإن، قسم مميز في الصفحة الرئيسية ──
        الأسعار مكرّرة هنا كأرقام لأن هذا القسم يُعرض للزوار غير المسجّلين،
        ويجب أن تطابق PRICING في backend/core/linkedin.py. */
@@ -2263,6 +2450,7 @@ export const content = {
       // The billing set, shown on /pricing under the plans. Same mechanism:
       // ids, not a slice, so reordering the master list is safe.
       pricingPage: ["credits", "no-card", "refunds", "linkedin-what-is-it", "linkedin-tiers", "linkedin-refunds"],
+      buildCv: ["build-cv-account", "build-cv-invents", "build-cv-privacy", "build-cv-file-format", "build-cv-saudi"],
       seeAll: "عرض كل الأسئلة",
       allTitle: "كل الأسئلة",
       allDescription: "كل ما يتعلق بطريقة عمل ترشيح وتكلفته وما يحدث لبياناتك.",
@@ -2359,6 +2547,32 @@ export const content = {
           id: "linkedin-refunds",
           q: "هل يمكنني استرداد مبلغ إضافة لينكدإن؟",
           a: "الباقة الأساسية لا تُشترى على حدة، فلا شيء يُسترد فيها: هي مشمولة في اشتراك برو أو النخبة، ويمكن إلغاء الاشتراك في أي وقت مع بقائه فعّالًا حتى نهاية الدورة المدفوعة. أما الباقة المميزة فهي شراء لمرة واحدة وقابلة للاسترداد كاملًا في أي وقت قبل أن يبدأ المتخصص عمله، وبعد بدء التنفيذ لا تعود قابلة للاسترداد لأن المحتوى قد سُلِّم والخدمة جارية.",
+        },
+        // ── /build-cv FAQ (long-tail search) ──────────────────────────────
+        {
+          id: "build-cv-account",
+          q: "هل أحتاج حسابًا؟",
+          a: "ليس للبدء. عبّئ بياناتك واطّلع على النموذج كاملًا أولًا — الحساب مطلوب عند الإنشاء فقط.",
+        },
+        {
+          id: "build-cv-invents",
+          q: "هل يختلق معلومات عني؟",
+          a: "لا. يعيد صياغة ما تكتبه، وقد يضيف مهارات يثبتها وصفك بنفسه، لكنه لن يدّعي خبرة لم تذكرها. تمرّ كل سيرة على مرحلة تدقيق قبل أن تصلك.",
+        },
+        {
+          id: "build-cv-privacy",
+          q: "هل بياناتي محفوظة بخصوصية؟",
+          a: "تبقى بياناتك في متصفحك حتى تنشئ حسابًا. بعدها تصبح ملك حسابك، ويمكنك حذف كل شيء من صفحة الإعدادات متى شئت.",
+        },
+        {
+          id: "build-cv-file-format",
+          q: "ما صيغة الملف؟",
+          a: "PDF أو Word، باختيارك. وللعربية، Word هو الخيار الأنسب لأنظمة التوظيف.",
+        },
+        {
+          id: "build-cv-saudi",
+          q: "هل يعمل مع وظائف السعودية؟",
+          a: "لهذا بُني. مطابقة الوظائف تبحث في مدينتك أولًا، ثم في بلدك.",
         },
       ],
     },
@@ -2614,6 +2828,9 @@ export const content = {
         missingRequired: (fields: string) =>
           `أضف ${fields} قبل الإنشاء. لا يُخصم أي رصيد قبل تعبئتها.`,
         missingJobDescription: "الصق الوصف الوظيفي للوظيفة التي تتقدم لها.",
+        draftRestoredBanner:
+          "استعدنا البيانات التي أدخلتها في صفحة إنشاء السيرة الذاتية. راجعها أدناه وأنشئ سيرتك عندما تكون جاهزًا.",
+        draftFileNeedsReupload: "حجم سيرتك الذاتية المرفوعة كان أكبر من أن نحتفظ به. يرجى إرفاقها مرة أخرى.",
         photoTemplateNoPhoto:
           "هذا القالب يعرض صورة شخصية، والسيرة الذاتية المُنشأة من النموذج لا تحتوي على صورة. اختر قالبًا بدون صورة، أو ارفع سيرة ذاتية موجودة تحتوي على صورتك.",
         photoTemplateSwitch: "اختر قالبًا بدون صورة",

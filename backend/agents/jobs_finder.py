@@ -1768,10 +1768,13 @@ def search_jobs_by_title(
     # thin page. Raises SearchQuotaExhausted, which core/job_search.py turns
     # into a distinct user-facing message.
     #
-    # THE KEY IS NOT CHECKED HERE ANY MORE. It was `if not TAVILY_API_KEY:
+    # THE KEY IS NOT CHECKED HERE DIRECTLY. It was `if not TAVILY_API_KEY:
     # return empty` — a missing key rendered as "no jobs found", which is the
-    # exact defect CLAUDE.md now has a rule about. core/search_provider.py
-    # raises SearchUnavailable instead, and the caller says so.
+    # exact defect CLAUDE.md now has a rule about. assert_provider_configured
+    # raises SearchUnavailable instead, and the caller says so — checked ONCE,
+    # up front, rather than discovered independently by all four lanes and
+    # swallowed into an empty page (see that function's docstring).
+    search_provider.assert_provider_configured()
     cold_start = not search_provider.balance_is_known()
     search_provider.assert_search_headroom(
         # On a cold start the balance is unknown, so the search runs on a
@@ -1873,8 +1876,9 @@ def find_similar_jobs(
     profile_location: str | None = None,
 ) -> list:
     """
-    Queries the Tavily API for relevant active job listings posted within
-    the last week and applies a matching tier label based on skill overlap.
+    Searches for relevant active job listings posted within the last week,
+    via whichever provider SEARCH_PROVIDER names, and applies a matching
+    tier label based on skill overlap.
 
     Jadarat (Saudi Arabia's national platform) is checked as ONE of the
     boards searched, every time — not an all-or-nothing gate. It's queried
@@ -1891,12 +1895,39 @@ def find_similar_jobs(
     the manual-entry form does, so callers can pass a known-good fallback here once
     that UI exists. Currently unused if not passed — this is the hook point, not a
     complete fix on its own (the actual UI/state wiring still needs to be added).
-    """
-    api_key = os.getenv('TAVILY_API_KEY')
-    if not api_key:
-        logger.error("❌ TAVILY_API_KEY is missing from environment variables.")
-        return []
 
+    THE KEY IS NOT CHECKED HERE DIRECTLY. This used to be `if not
+    TAVILY_API_KEY: return []` — a leftover from before core/search_provider.py
+    existed, and a vendor name in a file that otherwise holds none. It also
+    silently returned "no jobs found" for a missing key, which is the exact
+    defect CLAUDE.md has a rule about. assert_provider_configured() now owns
+    the check for whichever provider is actually configured, up front, and
+    raises SearchUnavailable — which find_jobs_for_resume (core/documents.py)
+    already turns into a 503, not an empty results page.
+
+    THE LAYER-3 QUOTA GUARD IS ALSO HERE NOW. Until 2026-09-12 this function
+    had no `assert_search_headroom` check at all — search_jobs_by_title (the
+    standalone Job Search page) had it, this one didn't, so a spent platform
+    quota was refused honestly from one entry point and quietly returned as
+    an empty `similar_jobs` list from the other. Same check, same cold-start
+    reduced budget, same reasoning as search_jobs_by_title: see
+    core/search_provider.py's module docstring for why the guard is
+    two-sided (before/after) and why a cold start (routine on Render's free
+    tier) gets a bounded first search rather than a full one.
+    """
+    search_provider.assert_provider_configured()
+    cold_start = not search_provider.balance_is_known()
+    search_provider.assert_search_headroom(
+        search_provider.COLD_START_CALL_BUDGET * search_provider.units_per_call()
+        if cold_start else None
+    )
+    if cold_start:
+        logger.info(
+            "🔍 Cold start: no known search balance yet, so this find-jobs run stays "
+            f"on the primary query only ({search_provider.COLD_START_CALL_BUDGET} calls). "
+            "The response teaches the process its balance and the next search is fully "
+            "guarded — same behaviour as search_jobs_by_title."
+        )
     client = None
 
     job_title = weight_factors.get("job_title", "Software Engineer")
@@ -1974,7 +2005,13 @@ def find_similar_jobs(
     # results are first-class here rather than a reserve — if the open lane
     # has already produced plenty of legitimate postings there is no reason
     # to keep querying.
-    if len(candidates) + len(open_web) < RESULT_CAP * 3 and len(queries) > 1:
+    #
+    # `not cold_start` mirrors _search_one_title's `ladder` gate: on a cold
+    # start the balance is unknown, so this stays on the primary query only,
+    # bounding a restart's exposure to COLD_START_CALL_BUDGET calls instead
+    # of the full 16 — the same reason search_jobs_by_title's ladder is
+    # disabled on a cold start.
+    if len(candidates) + len(open_web) < RESULT_CAP * 3 and len(queries) > 1 and not cold_start:
         remaining = queries[1:]
         logger.info(
             f"🔍 Pool at {len(candidates)} named + {len(open_web)} open-web candidate(s) — "

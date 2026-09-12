@@ -19,6 +19,8 @@
 # The columns and the function ship in supabase/migrations/009_addon_quotas.sql.
 # Until that migration is applied, _consume() fails OPEN and logs loudly, see
 # the note on it below for why that direction was chosen.
+import time
+
 from fastapi import HTTPException, status
 from loguru import logger
 
@@ -83,33 +85,46 @@ PACK_BUYER_TIER = "pro"
 def has_purchased_credits(user_id: str) -> bool:
     """True when this user is holding credits they paid for.
 
-    Never raises: a failed read reports False, which falls back to ordinary
-    tier gating rather than handing out access on a database hiccup.
+    ONE RETRY, THEN FAIL CLOSED. A single transient database error must not
+    be enough to turn away someone who paid 38 SAR for a pack, so a failed
+    read gets one immediate retry before this falls back to gating them as
+    if they hold none. Failing closed is still the right direction for a
+    gate — the alternative is handing out access on a database hiccup — so
+    this does not raise; it just makes the common transient case (a dropped
+    connection, a momentary timeout) recover on its own instead of costing a
+    paying customer their access for the rest of the request.
     """
-    try:
-        row = (
-            get_admin_client()
-            .table("profiles")
-            .select("purchased_credits")
-            .eq("id", user_id)
-            .maybe_single()
-            .execute()
-            .data
-        )
-        return int((row or {}).get("purchased_credits") or 0) > 0
-    except Exception as e:
-        # Fails CLOSED, which is the right direction for a gate — but it means
-        # a customer who paid 38 SAR for a pack is refused Job Search,
-        # Interview Prep and LinkedIn Essential, shown an upgrade prompt, and
-        # nothing anywhere says why. ERROR rather than WARNING because that is
-        # a paying customer being turned away, and it should be findable in a
-        # log without knowing to look for it.
-        logger.error(
-            f"Could not read purchased_credits for {user_id}: {e}. Gating them as "
-            "if they hold none — if they bought a pack, they are being refused "
-            "access they paid for."
-        )
-        return False
+    admin = get_admin_client()
+    for attempt in (1, 2):
+        try:
+            row = (
+                admin
+                .table("profiles")
+                .select("purchased_credits")
+                .eq("id", user_id)
+                .maybe_single()
+                .execute()
+                .data
+            )
+            return int((row or {}).get("purchased_credits") or 0) > 0
+        except Exception as e:
+            if attempt == 1:
+                logger.warning(f"Could not read purchased_credits for {user_id}, retrying once: {e}")
+                time.sleep(0.3)
+                continue
+            # Fails CLOSED, which is the right direction for a gate — but it
+            # means a customer who paid 38 SAR for a pack is refused Job
+            # Search, Interview Prep and LinkedIn Essential, shown an upgrade
+            # prompt, and nothing anywhere says why. ERROR rather than
+            # WARNING because that is a paying customer being turned away,
+            # and it should be findable in a log without knowing to look for
+            # it.
+            logger.error(
+                f"Could not read purchased_credits for {user_id} after a retry: {e}. "
+                "Gating them as if they hold none — if they bought a pack, they are "
+                "being refused access they paid for."
+            )
+            return False
 
 
 def effective_tier(user_id: str) -> str:
