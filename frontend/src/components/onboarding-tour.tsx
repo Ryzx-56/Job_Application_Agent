@@ -12,29 +12,32 @@ import { placeCallout, sameRect, BOX_W, MARGIN, PAD, ARROW, type Rect } from "@/
    popup. It walks through the dashboard and the menu, anchoring a callout
    to the real element it is describing and pointing an arrow at it.
 
-   WHO SEES IT. Only accounts created on or after TOUR_LIVE_FROM. Anyone
-   who was already using Tarshih before the tour existed has learned the
-   product the hard way and does not need a tour of it — and gating on the
-   account's own creation timestamp is exact, needs no migration, and
-   cannot misfire the way "have they done anything yet?" heuristics do.
-   Append ?tour=1 to any dashboard URL to replay it on any account.
+   WHO SEES IT. Any account that has not dismissed it yet, no matter when
+   the account was created. This used to be gated on the account's own
+   creation timestamp (TOUR_LIVE_FROM, 2026-09-11) so only new signups saw
+   it — but that meant every account that existed before the tour shipped
+   could never see it, full stop, regardless of localStorage state. That
+   was reported as "the tour never shows" and the date gate was the actual
+   cause, so it is gone: the only question now is whether *this browser*
+   has dismissed it before. Append ?tour=1 to any dashboard URL to replay
+   it on any account regardless of dismissal state; Settings also has a
+   "Replay the tour" link that does the same thing.
 
-   ONCE. Dismissal is recorded in localStorage under the user's id, so it
-   is per-device: someone who signs up on their phone and later opens a
-   laptop sees it once more there. That is the price of not adding a
-   column to `profiles`, and it errs in the harmless direction.
+   ONCE PER DEVICE. Dismissal is recorded in localStorage under the user's
+   id, so it is per-device: someone who signs up on their phone and later
+   opens a laptop sees it once more there. That is the price of not adding
+   a column to `profiles`, and it errs in the harmless direction.
 
-   If localStorage cannot be read (private mode, blocked site data) we do
-   NOT fall back to showing it — an un-dismissable tour that returns on
-   every navigation is worse than a tour nobody sees. A session-scoped
-   in-memory set backs it up so a dismissal always sticks for that tab.
+   FAILURE SHOWS THE TOUR, NOT HIDES IT. If localStorage cannot be read
+   (private mode, blocked site data) we cannot tell "seen" from "unknown",
+   and showing the tour again to someone who dismissed it is a far smaller
+   cost than never showing it to someone who never got the chance — the
+   same reasoning as core/admin_stats.py::_rpc on the backend: a failed
+   read must not read back as a legitimate result. It will not loop: the
+   in-memory set below still makes a dismissal in this tab stick even when
+   both the read and the write to localStorage are throwing, because
+   markTourSeen adds to it unconditionally before it ever touches storage.
 ======================================================================== */
-
-/**
- * Accounts created before this instant never see the tour.
- * 2026-09-11, the day it shipped.
- */
-const TOUR_LIVE_FROM = Date.parse("2026-09-11T00:00:00Z");
 
 const STORAGE_PREFIX = "tarshih.tour.v1:";
 
@@ -46,8 +49,11 @@ function hasSeenTour(userId: string): boolean {
   try {
     return window.localStorage.getItem(STORAGE_PREFIX + userId) === "1";
   } catch {
-    // Unknown, not false. Treat it as seen: see the header for why.
-    return true;
+    // Could not read, not "read and it said no" — see the header. Showing
+    // the tour again to someone who already dismissed it is the safe
+    // direction to be wrong in; hiding it from someone who never saw it
+    // is not.
+    return false;
   }
 }
 
@@ -126,13 +132,10 @@ function visibleTarget(selector: string): HTMLElement | null {
 ------------------------------------------------------------------ */
 export function OnboardingTour({
   userId,
-  accountCreatedAt,
   onSidebarNeeded,
 }: {
   /** Supabase auth user id — the tour is remembered per account. */
   userId: string;
-  /** ISO timestamp of the account's creation. */
-  accountCreatedAt?: string | null;
   /** Asks the shell to open or close the mobile drawer. */
   onSidebarNeeded: (open: boolean) => void;
 }) {
@@ -149,15 +152,13 @@ export function OnboardingTour({
   const step = STEPS[index];
   const isLast = index >= STEPS.length - 1;
 
-  /* -- Should it run at all? Decided once, on mount. ------------------ */
+  /* -- Should it run at all? Decided once, on mount. -------------------
+     No creation-date gate any more — see the header. The only thing
+     that decides is whether this browser has dismissed it before. */
   useEffect(() => {
     if (!userId) return;
     const forced = new URLSearchParams(window.location.search).get("tour") === "1";
-    if (!forced) {
-      const created = accountCreatedAt ? Date.parse(accountCreatedAt) : NaN;
-      if (!Number.isFinite(created) || created < TOUR_LIVE_FROM) return;
-      if (hasSeenTour(userId)) return;
-    }
+    if (!forced && hasSeenTour(userId)) return;
     setOpen(true);
     // Mount-only by design: the tour must not restart because a prop moved.
     // eslint-disable-next-line react-hooks/exhaustive-deps

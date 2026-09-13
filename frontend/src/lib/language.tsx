@@ -1381,6 +1381,19 @@ export const content = {
          Pro and Elite. Standalone: a job title and nothing else, no CV and
          no job description. Free users get the page blurred behind an
          upgrade panel, same treatment as Interview Prep. */
+      /* ── SHARED ADD-ON METER ──────────────────────────────────────────
+         Job Search, Interview Prep and LinkedIn Essential all draw on a
+         monthly baseline and all show it the same way, so the wording lives
+         here once rather than three times. See
+         components/addon-remaining.tsx, which renders nothing at all when
+         the figure could not be read. */
+      addons: {
+        remainingLabel: "Left this month",
+        remainingExhausted: "next one uses credits",
+        remainingSr: (remaining: number, limit: number) =>
+          `${remaining} of ${limit} included this month remaining.`,
+      },
+
       jobSearch: {
         eyebrow: "Pro and Elite",
         title: "Job Search",
@@ -1435,10 +1448,24 @@ export const content = {
           confirm: "Yes, search again",
           cancel: "Cancel",
         },
+        /* RECENT SEARCHES IS AN ACCORDION, not a row of chips. Each entry
+           names the title that was searched and opens in place to the
+           listings that search actually found, with their links — the whole
+           point of keeping a history is getting back to the jobs, and
+           reopening one is free at any age (see the /history/{id} route). */
         history: {
           heading: "Recent searches",
           empty: "You haven't searched anything yet.",
           reopenLabel: (query: string) => `Reopen search: ${query}`,
+          expandLabel: (query: string) => `Show the jobs found for ${query}`,
+          collapseLabel: (query: string) => `Hide the jobs found for ${query}`,
+          loading: "Loading those results…",
+          noResults: "That search found no openings.",
+          resultSummary: (n: number) => (n === 1 ? "1 opening" : `${n} openings`),
+          openFull: "Open the full results",
+          internships: "Internships",
+          retry: "Try again",
+          retrying: "Trying again…",
         },
       },
 
@@ -1602,6 +1629,9 @@ export const content = {
         languageSection: "Language",
         languageLabel: "Preferred language",
         languageSaved: "Saved. This applies on any device you log in from.",
+        tourSection: "Product tour",
+        tourBody: "A short walkthrough of the dashboard, shown once when you first sign in. You can go through it again any time.",
+        tourReplay: "Replay the tour",
       },
       /* ── LinkedIn add-on (/dashboard/linkedin) ──────────────────────────
          UI copy follows the language toggle like everything else. The
@@ -3063,6 +3093,15 @@ export const content = {
       },
 
       /* ── البحث عن وظائف (/dashboard/job-search) ─────────────────────── */
+      /* عدّاد الإضافات المشترك: البحث عن وظائف والتحضير للمقابلة ولينكدإن
+         الأساسية تشترك في حد شهري واحد لكل منها، وتعرضه بالصيغة نفسها. */
+      addons: {
+        remainingLabel: "المتبقي هذا الشهر",
+        remainingExhausted: "التالي يُخصم من النقاط",
+        remainingSr: (remaining: number, limit: number) =>
+          `المتبقي ${remaining} من ${limit} ضمن باقتك هذا الشهر.`,
+      },
+
       jobSearch: {
         eyebrow: "للباقتين المدفوعتين",
         title: "البحث عن وظائف",
@@ -3111,10 +3150,23 @@ export const content = {
           confirm: "نعم، أعد البحث",
           cancel: "إلغاء",
         },
+        /* سجل البحث قائمة تُفتح في مكانها: كل عملية بحث تحمل المسمى الذي
+           بُحث عنه، وفتحها يعرض الوظائف التي وجدتها وروابطها. إعادة فتح أي
+           بحث مجانية مهما مضى عليه. */
         history: {
           heading: "عمليات البحث الأخيرة",
           empty: "لم تبحث عن شيء بعد.",
           reopenLabel: (query: string) => `فتح بحث: ${query}`,
+          expandLabel: (query: string) => `عرض الوظائف التي وجدها بحث ${query}`,
+          collapseLabel: (query: string) => `إخفاء الوظائف التي وجدها بحث ${query}`,
+          loading: "جارٍ تحميل تلك النتائج…",
+          noResults: "لم يجد هذا البحث أي وظيفة.",
+          resultSummary: (n: number) =>
+            n === 1 ? "وظيفة واحدة" : n === 2 ? "وظيفتان" : `${n} وظائف`,
+          openFull: "فتح النتائج كاملة",
+          internships: "تدريب",
+          retry: "حاول مرة أخرى",
+          retrying: "جارٍ المحاولة…",
         },
       },
 
@@ -3250,6 +3302,9 @@ export const content = {
         languageSection: "اللغة",
         languageLabel: "اللغة المفضلة",
         languageSaved: "تم الحفظ. سيُطبَّق على أي جهاز تسجّل الدخول منه.",
+        tourSection: "الجولة التعريفية",
+        tourBody: "جولة قصيرة تعرّفك بلوحة التحكم، تظهر تلقائيًا عند أول تسجيل دخول. يمكنك إعادة مشاهدتها في أي وقت.",
+        tourReplay: "إعادة عرض الجولة",
       },
       /* ── إضافة لينكدإن (/dashboard/linkedin) ────────────────────────────
          نصوص الواجهة تتبع لغة الموقع كالمعتاد، أما المحتوى المُولَّد نفسه فهو

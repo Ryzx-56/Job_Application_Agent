@@ -239,7 +239,21 @@ def _arabic_override_css() -> str:
         direction: rtl;
       }}
       body {{ text-align: right; }}
-      .entry-header {{ flex-direction: row-reverse; }}
+      /* NO `flex-direction: row-reverse` HERE. It used to be, and it was
+         double-flipping every entry header on every Arabic CV.
+         `.entry-header` is `display: flex` in all 16 templates, and the
+         blanket `direction: rtl` above already makes a flex row run
+         right-to-left — so the first child (the job title / project name /
+         degree) lands on the RIGHT, under its own right-aligned section
+         heading, and the second child (dates, tech stack, graduation year)
+         lands on the LEFT. That is correct RTL and it is what the templates
+         get for free. Reversing it on top of that put the bold job title on
+         the far left of the page, disconnected from the heading above it,
+         and pushed the dates/skills over to the right — measured on an A4
+         render: heading at x=534-565, title at x=134-200. Same bug on the
+         Experience, Projects, Education, Training and Participation rows,
+         in both the upgrade and from-scratch flows, since both render
+         through this one function. */
       ul.bullets {{ margin-right: 18px; margin-left: 0 !important; padding-right: 0; }}
       /* Identifiers stay LTR even inside an RTL document */
       a[href^="mailto"], a[href*="linkedin.com"], a[href*="github.com"] {{

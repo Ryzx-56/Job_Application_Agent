@@ -1,10 +1,11 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
-import { AlertCircle, Briefcase, Clock, ExternalLink, History, Loader2, Lock, RefreshCw, Search } from "lucide-react";
+import { AlertCircle, Briefcase, ChevronDown, Clock, ExternalLink, History, Loader2, Lock, RefreshCw, Search } from "lucide-react";
 import { useLang } from "@/lib/language";
 import { DashboardButton } from "@/components/dashboard";
+import { AddonRemaining, useAddonSummary } from "@/components/addon-remaining";
 import { AddonPurchaseDialog } from "@/components/addon-purchase-dialog";
 import { readAddonPurchaseOffer, type AddonPurchaseOffer } from "@/lib/addonPurchase";
 import { MATCH_TIER_COPY, getMatchTier, type MatchTier, type SimilarJob } from "@/lib/jobMatch";
@@ -15,6 +16,7 @@ import {
   searchJobs,
   JobSearchError,
   type JobSearchHistoryEntry,
+  type JobSearchReopenResult,
   type JobSearchResults,
 } from "@/lib/supabase/jobSearch";
 
@@ -128,7 +130,24 @@ export default function JobSearchPage() {
   const [confirmingRefresh, setConfirmingRefresh] = useState(false);
 
   const [history, setHistory] = useState<JobSearchHistoryEntry[]>([]);
-  const [historyError, setHistoryError] = useState(false);
+  /* THREE STATES, NOT TWO. "loading", "ok" and "failed" are different things
+     and the page says which — the old code had one boolean and rendered a
+     bare sentence for the third, with no way to try again and no way to tell
+     a cold backend apart from a broken one. The history endpoint itself
+     refuses to answer [] on a read failure (see job_search_history_list), so
+     throwing that distinction away here was the only place it got lost. */
+  const [historyState, setHistoryState] = useState<"loading" | "ok" | "failed">("loading");
+
+  /* Which history entry is expanded, and what came back for it. Reopening is
+     free at any age — GET /api/v1/job-search/history/{id} serves the cached
+     result set and never runs a live search — so expanding costs nothing and
+     needs no confirmation. */
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [expanded, setExpanded] = useState<
+    Record<string, { state: "loading" | "ok" | "failed"; data?: JobSearchReopenResult }>
+  >({});
+
+  const { summary: addonSummary, refresh: refreshAddonSummary } = useAddonSummary();
 
   // The 402 addon_purchase_available offer (baseline exhausted, credits
   // could cover it) — set only when the caller hasn't confirmed yet. The
@@ -139,6 +158,23 @@ export default function JobSearchPage() {
     title: string; internships: boolean; location: string; refresh?: boolean;
   } | null>(null);
   const [purchaseDialogError, setPurchaseDialogError] = useState<string | null>(null);
+
+  /* History is read-only and free — loading it up front is what lets the
+     "recent searches" list appear without the user searching first. Pulled
+     out of the mount effect so the Retry button can call the same thing:
+     the commonest reason this fails is the backend still waking up on
+     Render's free tier, which one retry a few seconds later resolves. */
+  const loadHistory = useCallback(async () => {
+    setHistoryState("loading");
+    try {
+      const rows = await fetchJobSearchHistory();
+      setHistory(rows);
+      setHistoryState("ok");
+    } catch (err) {
+      console.error("fetchJobSearchHistory failed:", err);
+      setHistoryState("failed");
+    }
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -157,20 +193,11 @@ export default function JobSearchPage() {
       .finally(() => {
         if (!cancelled) setLoadingOverview(false);
       });
-    // History is read-only and free — loading it up front is what lets the
-    // "recent searches" list appear without the user searching first.
-    fetchJobSearchHistory()
-      .then((rows) => {
-        if (!cancelled) setHistory(rows);
-      })
-      .catch((err) => {
-        console.error("fetchJobSearchHistory failed:", err);
-        if (!cancelled) setHistoryError(true);
-      });
+    void loadHistory();
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [loadHistory]);
 
   function messageFor(err: JobSearchError): string {
     switch (err.code) {
@@ -237,7 +264,11 @@ export default function JobSearchPage() {
       // A fresh entry from someone else's search, plus this user's own past
       // searches, both belong in "recent" — refetch rather than guess at
       // the shape of the row the backend just inserted.
-      fetchJobSearchHistory().then(setHistory).catch(() => {});
+      void loadHistory();
+      // A live search spends a baseline slot (or credits); a cache hit
+      // doesn't. Re-read rather than decrement locally, so the badge always
+      // shows what the server actually counted.
+      refreshAddonSummary();
     } catch (err) {
       console.error("searchJobs failed:", err);
       const e = err as JobSearchError;
@@ -309,6 +340,28 @@ export default function JobSearchPage() {
       setError(messageFor(err as JobSearchError));
     } finally {
       setSearching(false);
+    }
+  }
+
+  /** Expands one history entry in place. Fetches its listings the first time
+   *  and keeps them, so collapsing and reopening the same entry is instant
+   *  and costs nothing either way. A failure is recorded against that entry
+   *  alone — one unreadable search must not blank the whole list. */
+  async function toggleExpanded(entry: JobSearchHistoryEntry) {
+    if (expandedId === entry.id) {
+      setExpandedId(null);
+      return;
+    }
+    setExpandedId(entry.id);
+    if (expanded[entry.id]?.state === "ok") return;
+
+    setExpanded((prev) => ({ ...prev, [entry.id]: { state: "loading" } }));
+    try {
+      const data = await reopenJobSearch(entry.id);
+      setExpanded((prev) => ({ ...prev, [entry.id]: { state: "ok", data } }));
+    } catch (err) {
+      console.error("reopenJobSearch (inline) failed:", err);
+      setExpanded((prev) => ({ ...prev, [entry.id]: { state: "failed" } }));
     }
   }
 
@@ -405,43 +458,181 @@ export default function JobSearchPage() {
           </p>
         )}
 
-        <DashboardButton type="submit" disabled={searching || !jobTitle.trim()}>
-          {searching ? (
-            <>
-              <Loader2 className="size-4 animate-spin" aria-hidden /> {copy.searching}
-            </>
-          ) : (
-            <>
-              <Search className="size-4" aria-hidden /> {copy.searchCta}
-            </>
-          )}
-        </DashboardButton>
+        {/* WHAT'S LEFT, BEFORE THE COMMIT. Sits with the Search button so
+            the count is read at the moment the decision is made, not after
+            the purchase dialog has already appeared. Renders nothing when
+            the figure couldn't be read — see components/addon-remaining. */}
+        <div className="flex flex-wrap items-center gap-3">
+          <DashboardButton type="submit" disabled={searching || !jobTitle.trim()}>
+            {searching ? (
+              <>
+                <Loader2 className="size-4 animate-spin" aria-hidden /> {copy.searching}
+              </>
+            ) : (
+              <>
+                <Search className="size-4" aria-hidden /> {copy.searchCta}
+              </>
+            )}
+          </DashboardButton>
+          <AddonRemaining addon="job_search" summary={addonSummary} />
+        </div>
       </form>
 
-      {!searching && !results && historyError && (
-        <p className="text-xs text-slate-400">{copy.errors.historyUnavailable}</p>
-      )}
-
-      {!searching && !results && history.length > 0 && (
+      {/* RECENT SEARCHES — an accordion over this user's own past lookups.
+          Every entry opens in place to the listings that search found, with
+          their links, because getting back to the jobs is the only reason to
+          keep a history. Reopening is free at any age (the backend serves it
+          from the shared cache and never runs a live search for it), so
+          expanding needs no confirmation and spends nothing. */}
+      {!searching && !results && (
         <section aria-labelledby="jsHistoryHeading">
           <h2 id="jsHistoryHeading" className="mb-2 flex items-center gap-1.5 text-sm font-semibold text-slate-900">
             <History className="size-4 text-slate-400" aria-hidden />
             {copy.history.heading}
           </h2>
-          <ul className="flex flex-wrap gap-2">
-            {history.map((entry) => (
-              <li key={entry.id}>
-                <button
-                  type="button"
-                  onClick={() => handleReopen(entry)}
-                  aria-label={copy.history.reopenLabel(entry.raw_query)}
-                  className="rounded-full border border-slate-200 bg-white px-3.5 py-1.5 text-xs font-medium text-slate-600 transition-colors hover:border-blue-300 hover:bg-blue-50/40 hover:text-blue-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600"
-                >
-                  {entry.raw_query}
-                </button>
-              </li>
-            ))}
-          </ul>
+
+          {/* A FAILED READ IS ITS OWN STATE, WITH A WAY OUT. This used to be
+              one grey sentence with nothing to do about it, which read as
+              leaked internal text rather than a state the page understood.
+              The list is empty for a genuinely different reason (nothing
+              searched yet) and says so separately. */}
+          {historyState === "failed" && (
+            <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
+              <p className="flex items-start gap-2 text-sm text-slate-600">
+                <AlertCircle className="mt-0.5 size-4 shrink-0 text-slate-400" aria-hidden />
+                <span>{copy.errors.historyUnavailable}</span>
+              </p>
+              <button
+                type="button"
+                onClick={() => void loadHistory()}
+                className="flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 transition-colors hover:border-blue-400 hover:text-blue-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600"
+              >
+                <RefreshCw className="size-3.5" aria-hidden />
+                {copy.history.retry}
+              </button>
+            </div>
+          )}
+
+          {historyState === "loading" && (
+            <p className="flex items-center gap-2 px-1 text-xs text-slate-400">
+              <Loader2 className="size-3.5 animate-spin" aria-hidden />
+              {copy.history.retrying}
+            </p>
+          )}
+
+          {historyState === "ok" && history.length === 0 && (
+            <p className="px-1 text-xs text-slate-500">{copy.history.empty}</p>
+          )}
+
+          {historyState === "ok" && history.length > 0 && (
+            <ul className="divide-y divide-slate-200 overflow-hidden rounded-xl border border-slate-200 bg-white">
+              {history.map((entry) => {
+                const open = expandedId === entry.id;
+                const panel = expanded[entry.id];
+                const jobs = panel?.data ? [...panel.data.exact, ...panel.data.related] : [];
+                return (
+                  <li key={entry.id}>
+                    <h3>
+                      <button
+                        type="button"
+                        onClick={() => void toggleExpanded(entry)}
+                        aria-expanded={open}
+                        aria-controls={`jsHistoryPanel-${entry.id}`}
+                        aria-label={
+                          open
+                            ? copy.history.collapseLabel(entry.raw_query)
+                            : copy.history.expandLabel(entry.raw_query)
+                        }
+                        className="flex w-full items-center gap-3 px-4 py-3 text-start transition-colors hover:bg-slate-50 focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-blue-600"
+                      >
+                        <ChevronDown
+                          className={`size-4 shrink-0 text-slate-400 transition-transform motion-reduce:transition-none ${
+                            open ? "rotate-180" : ""
+                          }`}
+                          aria-hidden
+                        />
+                        <span className="min-w-0 flex-1">
+                          <span className="block truncate text-sm font-medium text-slate-900">
+                            {entry.raw_query}
+                          </span>
+                          <span className="mt-0.5 block truncate text-xs text-slate-500">
+                            {[
+                              entry.internships ? copy.history.internships : null,
+                              entry.location || null,
+                              relativeTime(entry.searched_at, lang),
+                            ]
+                              .filter(Boolean)
+                              .join(" · ")}
+                          </span>
+                        </span>
+                      </button>
+                    </h3>
+
+                    <div
+                      id={`jsHistoryPanel-${entry.id}`}
+                      hidden={!open}
+                      className="border-t border-slate-100 bg-slate-50/60 px-4 py-3"
+                    >
+                      {panel?.state === "loading" && (
+                        <p className="flex items-center gap-2 text-xs text-slate-500">
+                          <Loader2 className="size-3.5 animate-spin" aria-hidden />
+                          {copy.history.loading}
+                        </p>
+                      )}
+
+                      {panel?.state === "failed" && (
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <p className="text-xs text-slate-600">{copy.errors.reopenFailed}</p>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setExpanded((prev) => {
+                                const next = { ...prev };
+                                delete next[entry.id];
+                                return next;
+                              });
+                              setExpandedId(null);
+                              void toggleExpanded(entry);
+                            }}
+                            className="rounded-lg border border-slate-300 bg-white px-2.5 py-1 text-xs font-medium text-slate-700 transition-colors hover:border-blue-400 hover:text-blue-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600"
+                          >
+                            {copy.history.retry}
+                          </button>
+                        </div>
+                      )}
+
+                      {panel?.state === "ok" && jobs.length === 0 && (
+                        <p className="text-xs text-slate-500">{copy.history.noResults}</p>
+                      )}
+
+                      {panel?.state === "ok" && jobs.length > 0 && (
+                        <>
+                          <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+                            <p className="text-xs font-medium text-slate-500">
+                              {copy.history.resultSummary(jobs.length)}
+                              {panel.data?.is_stale ? ` · ${copy.stale}` : ""}
+                            </p>
+                            <button
+                              type="button"
+                              onClick={() => void handleReopen(entry)}
+                              className="rounded-lg border border-slate-300 bg-white px-2.5 py-1 text-xs font-medium text-slate-700 transition-colors hover:border-blue-400 hover:text-blue-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600"
+                            >
+                              {copy.history.openFull}
+                            </button>
+                          </div>
+                          <ul className="space-y-2">
+                            {jobs.map((job, i) => (
+                              <JobCard key={job.url ?? i} job={job} lang={lang} />
+                            ))}
+                          </ul>
+                        </>
+                      )}
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
         </section>
       )}
 

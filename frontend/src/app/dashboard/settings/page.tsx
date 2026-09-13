@@ -591,6 +591,18 @@ export default function SettingsPage() {
         )}
       </section>
 
+      {/* Product tour replay. The tour itself decides whether to actually
+          run (see components/onboarding-tour.tsx) — this just forces it
+          with the same ?tour=1 param the tour already honors, regardless
+          of whether this account has dismissed it before. */}
+      <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-7">
+        <h2 className="mb-1.5 text-sm font-semibold uppercase tracking-wide text-slate-500">{copy.tourSection}</h2>
+        <p className="mb-3 text-sm text-slate-500">{copy.tourBody}</p>
+        <DashboardButton as={Link} href="/dashboard?tour=1" variant="outline" size="sm">
+          {copy.tourReplay}
+        </DashboardButton>
+      </section>
+
       {/* Location */}
       <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-7">
         <h2 className="mb-1.5 text-sm font-semibold uppercase tracking-wide text-slate-500">

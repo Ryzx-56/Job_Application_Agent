@@ -3,6 +3,7 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { Check, Copy, Lock, Sparkles } from "lucide-react";
+import { addonRemainingTextTone } from "@/components/addon-remaining";
 
 /* ========================================================================
    LINKEDIN ADD-ON, SHARED UI
@@ -507,8 +508,15 @@ export function IncludedEssentialPanel({
             <div className="max-w-[10rem] text-sm font-semibold leading-snug text-[#0A66C2]">
               {copy.includedWith}
             </div>
+            {/* COLOURED BY WHAT'S LEFT, not printed flat. This line is the
+                only warning before the user commits to a generation, and in
+                grey it read as a caption rather than a state. Same three
+                bands as the Job Search and Interview Prep meters — see
+                components/addon-remaining.tsx. */}
             {unlocked && limit > 0 && (
-              <div className="mt-1 text-xs text-slate-500">{copy.remaining(remaining, limit)}</div>
+              <div className={`mt-1 text-xs font-medium ${addonRemainingTextTone(remaining, limit)}`}>
+                {copy.remaining(remaining, limit)}
+              </div>
             )}
           </div>
         </div>

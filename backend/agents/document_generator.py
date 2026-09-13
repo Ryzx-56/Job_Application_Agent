@@ -104,19 +104,44 @@ COVER_LETTER_SYSTEM_PROMPT = COVER_LETTER_SYSTEM_PROMPT.replace(
 # of those same terms. One document had "بايثون", the other "Python", in the
 # same application. The letter now follows the CV's rule.
 _AR_COVER_LETTER_LANGUAGE_INSTRUCTION = """OUTPUT LANGUAGE — MANDATORY ARABIC RULES:
-  - Write the entire letter in Modern Standard Arabic, in natural professional business-letter register,
-    not a literal word-for-word translation of a typical English cover letter.
+
+COMPOSE IN ARABIC. DO NOT COMPOSE IN ENGLISH AND RENDER IT IN ARABIC WORDS.
+This is the difference the reader notices first, and the reported defect: letters that were
+grammatically Arabic and still unmistakably a translation — "barely readable" was the word used.
+Before you write a sentence, ask how an Arabic-speaking professional would make that point from
+scratch, and write THAT sentence. Do not produce an English sentence in your head and then find
+Arabic words for its parts.
+
+WHAT TRANSLATIONESE LOOKS LIKE HERE, and what to do instead:
+  - Calqued English idiom. "أتطلع إلى الفرصة", "لدي شغف بـ", "أعتقد أنني سأكون إضافة قوية",
+    "خلفيتي تتوافق مع" are English formulas wearing Arabic words. None of them is how an Arabic
+    business letter argues a case. State what you did and what it produced.
+  - English sentence architecture. English stacks long subordinate clauses onto one subject.
+    Arabic prose moves in shorter, self-contained clauses, often verb-first, joined by الواو and
+    الفاء. A 40-word Arabic sentence with three nested relative clauses is a translated sentence.
+  - Literal renderings of job-market vocabulary. Say ما أنجزه المتقدم فعلاً في عبارة عربية طبيعية
+    rather than transliterating the JD's phrasing clause by clause.
+  - Over-nominalisation. English CV prose nominalises heavily ("responsible for the management
+    of..."). Arabic prefers the verb: "أدرت", "طوّرت", "خفّضت".
+
+REGISTER: formal Saudi business correspondence — المخاطبة الرسمية المهنية. Confident and plain.
+Not literary, not flowery, no ornamental الإطناب, and no religious or ceremonial formulae beyond
+the greeting the template already adds. The same standard the CV itself is held to.
+
+SCRIPT:
   - FACTS_JSON and WEIGHT_FACTORS may contain English or Arabic text. Regardless of source language,
     write your output entirely in Arabic; do not leave sentences untranslated.
-  - Absolutely NO English or Latin-script characters anywhere in the letter body. Translate technical
-    terms, tool names, framework names and acronyms into Arabic (write "بايثون" not "Python",
-    "واجهة برمجة التطبيقات" not "API", "التعلم الآلي" not "Machine Learning"). Mixing Latin words into
-    Arabic sentences breaks right-to-left layout rendering and is the single most visible defect in
-    an Arabic letter.
-  - This rule matters MORE than elegant phrasing. If you are unsure how to translate a term, translate
-    it as best you can rather than leaving it in English. A slightly awkward Arabic phrase is always
-    better than any English word appearing in the output.
-  - Numbers and dates stay as normal digits, not spelled out."""
+  - No English or Latin-script characters in the letter body. Translate technical terms, tool names,
+    framework names and acronyms into Arabic (write "بايثون" not "Python", "التعلم الآلي" not
+    "Machine Learning"). Mixing Latin words into Arabic sentences breaks right-to-left layout.
+  - Where a term has no settled Arabic form, prefer the ordinary Arabic word for what the tool
+    DOES over a laboured expansion of its acronym, and keep the sentence readable. A clumsy
+    calque is not an acceptable price for avoiding a Latin character — write around it instead.
+  - Numbers and dates stay as normal digits, not spelled out.
+
+The BANNED OPENINGS AND PHRASES above are listed in English because that is the language of this
+instruction. They are banned as MOVES, not as strings: do not write the Arabic version of them
+either, and do not substitute the equivalent Arabic cliché."""
 
 _EN_COVER_LETTER_LANGUAGE_INSTRUCTION = """OUTPUT LANGUAGE:
   - Write the entire letter in professional English, regardless of what language FACTS_JSON or

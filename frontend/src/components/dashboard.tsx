@@ -410,8 +410,6 @@ export function StatusBadge({
 type DashboardUser = {
   /** Supabase auth user id. Used to remember the onboarding tour per account. */
   id: string;
-  /** ISO timestamp the account was created. Gates the onboarding tour. */
-  createdAt?: string | null;
   /** Latin-script name. */
   nameEn?: string | null;
   /** Arabic-script name. */
@@ -610,7 +608,6 @@ export function DashboardShell({ user, children }: { user: DashboardUser; childr
           decides for itself whether this account should see it. */}
       <OnboardingTour
         userId={user.id}
-        accountCreatedAt={user.createdAt}
         onSidebarNeeded={setDrawerOpen}
       />
     </div>

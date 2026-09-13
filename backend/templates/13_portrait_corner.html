@@ -25,6 +25,22 @@
      Renders with no photo: the masthead collapses to a plain two-tone bar
      with the name in it, which is a deliberate look rather than a gap. */
   @page { size: A4; margin: 0; }
+  /* PAGE 2 ONWARDS NEEDS ITS OWN TOP MARGIN.
+     Every vertical gutter in this template is `padding` on <body>. Body
+     padding is applied to the BOX, once — it does not repeat per page — so
+     the page box's own `margin: 0` is what page 2 actually starts against.
+     Measured on a two-page render, first text baseline per page:
+         page 1   y = 24-33pt   (the body padding)
+         page 2   y =  1.5pt    English
+         page 2   y = -0.8pt    Arabic  <- above the top edge of the paper
+     That is the "awkward near-empty extra page" whose content starts flush
+     against the top, and in Arabic the line box was clipping off the sheet.
+     :first keeps page 1 byte-identical, so every full-bleed header, banner
+     and sidebar that relies on margin:0 is untouched. No bottom margin is
+     added: that would change how much fits on page 1 and move the
+     fit-to-page search (utils/fit_to_page.py), which this must not do. */
+  @page { margin-top: 28px; }
+  @page :first { margin-top: 0; }
 
   /* ── PAGINATION ─────────────────────────────────────────────────────
      No page limit is set anywhere: length follows content. These rules

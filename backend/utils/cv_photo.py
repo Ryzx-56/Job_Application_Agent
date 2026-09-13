@@ -305,28 +305,46 @@ def normalize_uploaded_photo(photo: str | None) -> str | None:
     """
     if not photo or not isinstance(photo, str):
         return None
-    if not photo.startswith("data:image/"):
-        logger.info("📷 Uploaded photo rejected: not an image data URI.")
+
+    # EVERY REJECTION BELOW IS LOGGED AT ERROR, NOT INFO.
+    #
+    # This function is only ever called because the user explicitly chose a
+    # photo AND a template built around one. Returning None here does not
+    # mean "there was no photo" — main.py coalesces it to "" and the CV
+    # renders with an empty frame, after a credit has been spent. That is a
+    # paying customer affected by a failure that looked like an answer, which
+    # CLAUDE.md asks be logged at ERROR and stated in terms of what the value
+    # means, not just what went wrong. It was INFO, so the one case that
+    # actually fires in production — a phone camera photo over the pre-decode
+    # ceiling — left no trace anyone would look for.
+    def _reject(reason: str) -> None:
+        logger.error(
+            f"📷 Uploaded photo REJECTED ({reason}) — the CV will render with an EMPTY "
+            "photo frame on a template chosen for its photo. This is not 'no photo "
+            "supplied'; the user supplied one and it could not be used."
+        )
         return None
+
+    if not photo.startswith("data:image/"):
+        return _reject("not an image data URI")
 
     # Guard BEFORE base64-decoding: a 50 MB string should not become a 37 MB
     # bytes object in memory first. Generous multiple of the stored ceiling,
     # since the client's encoding is unconstrained and only the OUTPUT size
-    # actually matters.
+    # actually matters. The dashboard downscales before sending (see
+    # downscalePhotoToDataUrl in frontend/src/app/dashboard/page.tsx), so a
+    # hit here now means a client that did not, not an ordinary phone photo.
     if len(photo) > MAX_DATA_URI_BYTES * 20:
-        logger.info(f"📷 Uploaded photo rejected: {len(photo)} chars before decoding.")
-        return None
+        return _reject(f"{len(photo)} chars before decoding, ceiling {MAX_DATA_URI_BYTES * 20}")
 
     try:
         raw = base64.b64decode(photo.split(",", 1)[1], validate=True)
     except Exception as e:
-        logger.info(f"📷 Uploaded photo rejected: not valid base64 ({e}).")
-        return None
+        return _reject(f"not valid base64: {e}")
 
     image = _open_image(raw)
     if image is None:
-        logger.info("📷 Uploaded photo rejected: Pillow could not decode it.")
-        return None
+        return _reject("Pillow could not decode it")
 
     # Deliberately NOT run through _looks_like_a_photograph(). That heuristic
     # exists to pick a headshot out of the images embedded in a PDF, where

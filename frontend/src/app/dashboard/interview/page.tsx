@@ -6,6 +6,7 @@ import { useLang } from "@/lib/language";
 import { formatMediumDate } from "@/lib/pricing";
 import { DashboardButton } from "@/components/dashboard";
 import { AddonPurchaseDialog } from "@/components/addon-purchase-dialog";
+import { AddonRemaining, useAddonSummary } from "@/components/addon-remaining";
 import { readAddonPurchaseOffer, type AddonPurchaseOffer } from "@/lib/addonPurchase";
 import {
   ApiError,
@@ -94,6 +95,10 @@ export default function InterviewPrepPage() {
   const [purchaseOffer, setPurchaseOffer] = useState<AddonPurchaseOffer | null>(null);
   const [pendingCvId, setPendingCvId] = useState<string | null>(null);
   const [purchaseDialogError, setPurchaseDialogError] = useState<string | null>(null);
+
+  // "N/M left this month", shown before a CV is picked — see
+  // components/addon-remaining.tsx.
+  const { summary: addonSummary, refresh: refreshAddonSummary } = useAddonSummary();
 
   // Shared formatter — see formatMediumDate in @/lib/pricing for why a bare
   // "ar-SA" is the one locale string this product never passes.
@@ -270,6 +275,7 @@ export default function InterviewPrepPage() {
       setPendingCvId(null);
       // Refreshes the remaining count and marks this CV as prepared.
       await load().catch(() => undefined);
+      refreshAddonSummary();
     } catch (error) {
       const err = error as ApiError;
       console.error("generateInterviewPrep failed:", err);
@@ -524,6 +530,11 @@ export default function InterviewPrepPage() {
               {copy.picker.title}
             </h2>
             <p className="mt-1 text-sm leading-relaxed text-slate-500">{copy.picker.sub}</p>
+            {/* What's left this month, read BEFORE a CV is picked — choosing
+                one starts the generation, so this is the last moment the
+                count is still information rather than a receipt. Renders
+                nothing when the figure couldn't be read. */}
+            <AddonRemaining addon="interview_prep" summary={addonSummary} className="mt-3" />
           </div>
 
           {loading ? (

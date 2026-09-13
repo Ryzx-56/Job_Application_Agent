@@ -616,6 +616,14 @@ For EACH result below, decide:
 
 4. "relevance" — 0.0 to 1.0, how well this role matches the candidate's FIELD and skills.
 
+   IF "Their skills" IS "unknown", THERE IS NO CV — the target role above is the ONLY thing
+   stated about what they want, so judge relevance against THAT ROLE'S OWN FIELD and day-to-day
+   work. Do not become permissive because you have less to go on: a posting from a different
+   trade or profession is still wrong, and with no skills to weigh it against, the temptation is
+   to fall back on shared words in the title. That is the same mistake as below. "Electrical
+   Engineer" and "Data Analyst" are not 0.6 matches for someone searching "IT Support"; they are
+   0.1-0.2, because nothing about the actual work is the same.
+
    JUDGE THE FIELD, NOT THE JOB TITLE. This is the mistake to avoid: a
    "Senior R&D Scientist" at a glass manufacturer and a "Principal R&D Scientist" at an aluminium
    company both share almost every word with a molecular geneticist's title and are completely
@@ -959,8 +967,11 @@ _LIVENESS_HEADERS = {
 }
 
 # Only worth checking the listings that could actually be shown, plus a
-# little headroom to backfill from when one turns out to be dead.
-_LIVENESS_CHECK_LIMIT = RESULT_CAP + 3
+# little headroom to backfill from when one turns out to be dead. Added to
+# whatever display cap the caller is using rather than baked onto RESULT_CAP,
+# since the standalone Job Search page shows more than the similar-jobs panel
+# does — see _finalize_listings.
+_LIVENESS_HEADROOM = 3
 
 
 def _listing_is_dead(url: str) -> bool:
@@ -985,9 +996,15 @@ def _listing_is_dead(url: str) -> bool:
         return False
 
 
-def _drop_dead_listings(jobs: list[dict]) -> list[dict]:
-    """Removes listings whose URL 404s, checking them concurrently."""
-    to_check = jobs[:_LIVENESS_CHECK_LIMIT]
+def _drop_dead_listings(jobs: list[dict], cap: int = RESULT_CAP) -> list[dict]:
+    """Removes listings whose URL 404s, checking them concurrently.
+
+    Only the listings that could actually be shown are checked, plus a
+    little headroom to backfill from — so the limit follows the caller's
+    display cap rather than a constant that assumed one. These are our own
+    HEAD requests, not search-provider calls: they cost no credits.
+    """
+    to_check = jobs[: cap + _LIVENESS_HEADROOM]
     if not to_check:
         return jobs
 
@@ -998,7 +1015,7 @@ def _drop_dead_listings(jobs: list[dict]) -> list[dict]:
     dropped = len(to_check) - len(alive)
     if dropped:
         logger.info(f"🔍 Liveness check dropped {dropped} listing(s) whose page no longer exists.")
-    return alive + jobs[_LIVENESS_CHECK_LIMIT:]
+    return alive + jobs[cap + _LIVENESS_HEADROOM:]
 
 
 def _drop_duplicate_roles(jobs: list[dict]) -> list[dict]:
@@ -1027,11 +1044,20 @@ def _drop_duplicate_roles(jobs: list[dict]) -> list[dict]:
     return kept
 
 
-def _finalize_listings(jobs: list[dict]) -> list[dict]:
-    """Duplicate collapse, then liveness, then cap — and strip internals."""
+def _finalize_listings(jobs: list[dict], cap: int = RESULT_CAP) -> list[dict]:
+    """Duplicate collapse, then liveness, then cap — and strip internals.
+
+    `cap` defaults to RESULT_CAP, which is the right size for the
+    post-generation similar-jobs PANEL beside a CV. The standalone Job
+    Search PAGE passes a larger one (TITLE_SEARCH_RESULT_CAP): it is a
+    results page, not a panel, and the candidates it slices away here were
+    already searched, screened and paid for. Cutting them costs nothing to
+    keep and is a large part of why that page got thin — see
+    search_jobs_by_title.
+    """
     jobs = _drop_duplicate_roles(jobs)
-    jobs = _drop_dead_listings(jobs)
-    final = jobs[:RESULT_CAP]
+    jobs = _drop_dead_listings(jobs, cap)
+    final = jobs[:cap]
     for job in final:
         # Every leading-underscore field is internal and must not reach the
         # API response or the user's persisted resume history.
@@ -1555,6 +1581,28 @@ RELATED_TITLES_MAX = 5
 # were then sliced away.
 RELATED_CAP = RESULT_CAP * 2
 
+# ─── HOW BIG A PAGE THE STANDALONE SEARCH IS AIMING AT ─────────────────────
+#
+# RESULT_CAP (5) is the size of the similar-jobs PANEL that sits beside a
+# generated CV. The Job Search PAGE is not a panel, and applying the panel's
+# cap to it put a hard ceiling of five on a whole search — exact and related
+# TOGETHER, because _screen_and_finalize ran before the two groups were even
+# split. RELATED_CAP's own docstring says that group is meant to hold ten;
+# with a five-cap upstream it could never hold more than five, and only then
+# if every single one of them was a loose match.
+#
+# TITLE_SEARCH_RESULT_CAP is what one pass may contribute. It costs NOTHING
+# extra: these candidates have already been searched, screened and paid for,
+# and were being dropped on the floor at the last step.
+TITLE_SEARCH_RESULT_CAP = 12
+
+# The size of page the search is trying to reach, exact + related combined.
+# A TARGET, not a floor — padding a page to a number is exactly what the
+# relevance floor above exists to stop, and a search that honestly finds
+# three things still returns three. It only decides when buying an adjacent
+# title is worth it.
+TITLE_SEARCH_TARGET = 10
+
 # ─── SEARCH COST CONTROLS (pre-launch Section 9, cuts A-E) ──────────────────
 #
 # Measured before these existed: one standalone search cost 72 Tavily credits
@@ -1566,16 +1614,38 @@ RELATED_CAP = RESULT_CAP * 2
 # Each constant below is one of the five cuts, named so a future change knows
 # what it is trading.
 
-# CUT D. How thin the pool has to be before the broader queries are worth
-# buying. Was RESULT_CAP * 3, which almost never held, so the ladder fired on
-# every search.
-BROADEN_THRESHOLD = RESULT_CAP * 2
+# CUT D. How thin the pool of RAW CANDIDATES has to be before the broader
+# queries are worth buying. Was RESULT_CAP * 3, which almost never held, so
+# the ladder fired on every search.
+#
+# Written as a literal, not as a multiple of a display cap. It used to be
+# `RESULT_CAP * 2`, which silently tied "how many raw candidates are enough"
+# to "how many listings do we show" — two unrelated questions, and changing
+# either one would have moved the other's behaviour (and its cost) without
+# anyone touching this line.
+BROADEN_THRESHOLD = 10
 
-# CUT A. Adjacent titles are offered only when the requested title returned
-# NOTHING, not merely fewer than a full page. Was `len(exact) < RESULT_CAP`,
-# which padded a page that already had four good answers with ten roles the
-# user did not search for — a quality problem as much as a cost one.
-ADJACENT_EXPANSION_THRESHOLD = 1
+# CUT A, REBALANCED (see search_jobs_by_title).
+#
+# WHAT IT WAS AND WHY IT WENT TOO FAR. This started as `len(exact) <
+# RESULT_CAP` — expand whenever the exact matches don't fill a page — which
+# padded a good page with roles nobody searched for and bought up to five
+# extra full searches to do it. Cut A took it to `len(exact) < 1`: expand
+# only when the requested title found literally NOTHING.
+#
+# That overshot. A search returning two exact matches is not a search that
+# has been answered, and with the five-cap above it also could not grow; the
+# measured result was "IT Support" returning 2 exact + 1 loose where it used
+# to return about 13, and no expansion because 2 is not less than 1.
+#
+# The gate is now on the WHOLE PAGE against TITLE_SEARCH_TARGET, not on the
+# exact group against a small integer. That is the question actually being
+# asked — "is there enough here to be useful yet" — and it means a search
+# that already fills the page buys nothing, which is the part of Cut A worth
+# keeping. Cuts B, C and E (no ladder, at most two titles, no open lane on a
+# fallback) are all untouched, so an expansion still costs a fraction of what
+# it did before the cuts.
+ADJACENT_EXPANSION_THRESHOLD = TITLE_SEARCH_TARGET
 
 # CUT C. At most this many adjacent titles, each a whole extra search. Was
 # RELATED_TITLES_MAX (5); the measured run that cost 72 credits used 2.
@@ -1652,6 +1722,42 @@ def related_job_titles(job_title: str, count: int = RELATED_TITLES_MAX) -> list[
         if len(out) >= count:
             break
     return out
+
+
+def _demote_related_match_tiers(related: list[dict]) -> None:
+    """
+    Nothing in the RELATED group may wear a "Strong Match" badge.
+
+    THE REPORTED BUG. A search for "IT support internship" came back with an
+    Electrical Engineer listing labelled a strong match, and a Data Analyst
+    beside it. The grouping was right — _title_closeness scores both of those
+    0.00 against "it support", so they correctly landed in `related` — and the
+    page says in words that these are adjacent roles. The BADGE was the lie,
+    and a green "Strong Match" outranks a line of grey explanatory text every
+    time.
+
+    Two separate routes produce it, and this closes both:
+
+      · A pass-1 listing whose title didn't match. Its relevance came from the
+        screener judging it against the title the user typed, and the screener
+        is generous when there is no CV to weigh a candidate against (see the
+        "Their skills is unknown" branch of JOB_SCREEN_PROMPT, which is the
+        other half of this fix). A listing this same function has just
+        classified as NOT the requested role cannot also be a strong match
+        for it — those two statements contradict each other.
+      · An adjacent-title listing. Its relevance was measured against the
+        SUBSTITUTED title, not the user's. 0.9 there means "a strong match for
+        Help Desk Technician", which is not what the badge is read as on a
+        page headed with what the user searched for.
+
+    Demotion only, and only downward: a listing already rated partial or
+    stretch keeps what it has. The exact group is untouched — a real match for
+    the searched title can still say so. No extra model call, no extra search.
+    """
+    for job in related:
+        if job.get("match_tier") == "strong":
+            job["match_tier"] = "partial"
+            job["match_label"] = MATCH_LABELS_EN["partial"]
 
 
 def _title_closeness(listing_title: str, requested_title: str) -> float:
@@ -1747,6 +1853,7 @@ def _screen_and_finalize(
     job_title: str,
     location: str,
     internships: bool,
+    cap: int = RESULT_CAP,
 ) -> list[dict]:
     """The model screen plus duplicate/liveness finalisation, with the same
     heuristic fallback find_similar_jobs uses when the screen can't run.
@@ -1762,8 +1869,10 @@ def _screen_and_finalize(
     screened = _llm_screen_listings(candidates, screen_title, location, [], field_terms=field_terms)
     if screened is None:
         logger.info("🧭 Screening unavailable — falling back to heuristics for this title search.")
-        return _finalize_listings(_heuristic_filter(candidates, _location_terms(location), field_terms))
-    return _finalize_listings(screened)
+        return _finalize_listings(
+            _heuristic_filter(candidates, _location_terms(location), field_terms), cap
+        )
+    return _finalize_listings(screened, cap)
 
 
 def assert_search_affordable(context: str = "search") -> None:
@@ -1855,7 +1964,8 @@ def search_jobs_by_title(
     # ── PASS 1: the title itself ──────────────────────────────────────────
     raw = _search_one_title(client, title, where, internships, seen_urls, counter,
                             ladder=not cold_start)
-    screened = _screen_and_finalize(raw, title, where, internships)
+    screened = _screen_and_finalize(raw, title, where, internships,
+                                    cap=TITLE_SEARCH_RESULT_CAP)
 
     exact, loose = [], []
     for job in screened:
@@ -1883,20 +1993,26 @@ def search_jobs_by_title(
     # title regardless.
     related = loose
     searched_titles: list[str] = []
-    # CUT A. Was `len(exact) < RESULT_CAP`, so a search returning four good
-    # matches still bought up to five more full searches to pad the page with
-    # roles nobody asked for. Now the expansion is what it was always meant to
-    # be — a rescue for a search that found NOTHING.
+    # THE GATE IS THE WHOLE PAGE, NOT THE EXACT GROUP. See
+    # ADJACENT_EXPANSION_THRESHOLD for what this was and why it moved: asking
+    # "did the exact group come back empty" meant a search with two exact
+    # matches and nothing else was treated as answered.
+    #
     # No adjacent-title expansion on a cold start: that is where the other 14
     # calls live, and the point of the reduced budget is not to spend them
     # before the balance is known.
-    if len(exact) < ADJACENT_EXPANSION_THRESHOLD and not cold_start:
+    if len(exact) + len(related) < ADJACENT_EXPANSION_THRESHOLD and not cold_start:
         # CUT C. At most ADJACENT_TITLES_MAX of them, sliced here rather than
         # relying on the RELATED_CAP break below: that break only fires once
         # results have already been paid for, so it capped the output and not
         # the spend.
         for adjacent in related_job_titles(title)[:ADJACENT_TITLES_MAX]:
-            if len(related) >= RELATED_CAP:
+            # STOP AS SOON AS THE PAGE IS BIG ENOUGH. Re-checked every
+            # iteration rather than only before the loop, so the second
+            # adjacent title is not bought when the first one already
+            # answered the search. This is the check that bounds the spend;
+            # RELATED_CAP below only bounds what is displayed.
+            if len(exact) + len(related) >= TITLE_SEARCH_TARGET or len(related) >= RELATED_CAP:
                 break
             logger.info(f"🧭 Expanding '{title}' to adjacent role: '{adjacent}'")
             searched_titles.append(adjacent)
@@ -1907,12 +2023,15 @@ def search_jobs_by_title(
                 client, adjacent, where, internships, seen_urls, counter,
                 ladder=False, use_open_lane=ADJACENT_USES_OPEN_LANE,
             )
-            related += _screen_and_finalize(adjacent_raw, adjacent, where, internships)
+            related += _screen_and_finalize(
+                adjacent_raw, adjacent, where, internships, cap=TITLE_SEARCH_RESULT_CAP
+            )
 
     # A listing can only appear once, and an exact match always wins its slot.
     exact_urls = {job.get("url") for job in exact}
     related = [job for job in related if job.get("url") not in exact_urls]
     related = _drop_duplicate_roles(related)[:RELATED_CAP]
+    _demote_related_match_tiers(related)
 
     logger.info(
         f"🧭 Job search '{title}' returning {len(exact)} exact + {len(related)} related"

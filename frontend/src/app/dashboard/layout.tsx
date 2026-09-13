@@ -56,9 +56,6 @@ export default async function DashboardLayout({ children }: { children: React.Re
 
   const shellUser = {
     id: user.id,
-    // The onboarding tour runs only for accounts created after it shipped;
-    // everyone already using Tarshih learned it without one.
-    createdAt: user.created_at ?? null,
     nameEn: (profile?.name_en as string | null) ?? null,
     nameAr: (profile?.name_ar as string | null) ?? null,
     // Last-resort fallback for accounts created before the name split, and

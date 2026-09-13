@@ -291,6 +291,65 @@ function buildUploadFormData(
   return formData;
 }
 
+/* THE PHOTO IS DOWNSCALED BEFORE IT LEAVES THE BROWSER.
+ *
+ * WHY. The photo was being sent as whatever the file picker returned, and on
+ * a phone that is a 3-8 MB camera capture, which base64 inflates by about a
+ * third. normalize_uploaded_photo in backend/utils/cv_photo.py refuses
+ * anything over MAX_DATA_URI_BYTES * 20 (~5.2 MB of string) BEFORE it
+ * decodes, and returns None — which main.py coalesces to "", which renders
+ * as a photo template with an empty frame. Nothing errored, nothing was
+ * logged above INFO, and the user had already spent a credit. That is the
+ * "a failure must not look like an answer" shape, on the flow where most of
+ * this product's users are (mobile).
+ *
+ * The server still re-decodes, EXIF-rotates, downscales to its own 512px and
+ * re-encodes whatever arrives — this does not become a trust boundary. It
+ * only guarantees that an ordinary phone photo is small enough to survive
+ * the trip, so the server's normalization is the only thing that can reject
+ * it, and it rejects for reasons the user can act on.
+ *
+ * PHOTO_MAX_EDGE is deliberately larger than the server's 512: this is a
+ * transport cap, not the final size, and re-encoding twice at the same edge
+ * would soften the image for nothing.
+ */
+const PHOTO_MAX_EDGE = 1280;
+const PHOTO_JPEG_QUALITY = 0.9;
+
+function downscalePhotoToDataUrl(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(reader.error ?? new Error("FileReader failed"));
+    reader.onload = () => {
+      const source = String(reader.result);
+      const img = new Image();
+      img.onerror = () => reject(new Error("Image could not be decoded"));
+      img.onload = () => {
+        const longest = Math.max(img.width, img.height);
+        if (!longest) {
+          reject(new Error("Image has no dimensions"));
+          return;
+        }
+        const scale = Math.min(1, PHOTO_MAX_EDGE / longest);
+        const canvas = document.createElement("canvas");
+        canvas.width = Math.max(1, Math.round(img.width * scale));
+        canvas.height = Math.max(1, Math.round(img.height * scale));
+        const ctx = canvas.getContext("2d");
+        if (!ctx) {
+          reject(new Error("Canvas 2D context unavailable"));
+          return;
+        }
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+        // JPEG, because that is what the server re-encodes to anyway, and a
+        // PNG of a photograph is several times larger for no benefit.
+        resolve(canvas.toDataURL("image/jpeg", PHOTO_JPEG_QUALITY));
+      };
+      img.src = source;
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
 /**
  * The form's "one per line" textareas (achievements, teaching posts, awards,
  * a custom section's entries) as the string lists the backend expects —
@@ -1144,14 +1203,26 @@ export default function DashboardHomePage() {
                   onChange={(e) => {
                     const file = e.target.files?.[0];
                     if (!file) return;
-                    // Read as a data URI, which is the shape the backend
-                    // stores and the renderer consumes. It re-encodes it
-                    // anyway (normalize_uploaded_photo), so this is a
-                    // convenience, not a trust boundary.
-                    const reader = new FileReader();
-                    reader.onload = () => setCandidatePhoto(String(reader.result));
-                    reader.onerror = () => setError(copy.photoReadFailed);
-                    reader.readAsDataURL(file);
+                    // Downscaled here, then sent as a data URI — the shape
+                    // the backend stores and the renderer consumes. It
+                    // re-encodes it anyway (normalize_uploaded_photo), so
+                    // this is not a trust boundary; it is what stops a phone
+                    // camera photo being silently refused server-side for
+                    // size and rendering as an empty frame. See
+                    // downscalePhotoToDataUrl.
+                    //
+                    // A failure here SAYS SO rather than leaving the banner
+                    // up with no explanation: the user is about to spend a
+                    // credit on a template whose whole point is the photo.
+                    downscalePhotoToDataUrl(file)
+                      .then((dataUrl) => {
+                        setError("");
+                        setCandidatePhoto(dataUrl);
+                      })
+                      .catch((err) => {
+                        console.error("Could not read the selected photo:", err);
+                        setError(copy.photoReadFailed);
+                      });
                   }}
                 />
               </label>

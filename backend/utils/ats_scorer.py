@@ -459,13 +459,42 @@ def education_match_score(
 _MONTHS = {
     "jan": 1, "feb": 2, "mar": 3, "apr": 4, "may": 5, "jun": 6,
     "jul": 7, "aug": 8, "sep": 9, "oct": 10, "nov": 11, "dec": 12,
+    # ARABIC MONTH NAMES. An Arabic CV's dates reach facts_json exactly as
+    # the source document wrote them — utils/arabic_localizer.localize_date
+    # runs at RENDER time, in cv_context, and never touches facts_json — so
+    # this parser is handed "يونيو ٢٠٢١ - حتى الآن" and recognised none of
+    # it. Measured: that role parsed as 0 years, which dropped
+    # experience_match (12% of the score) to 0.167 for a five-year career.
+    #
+    # Duplicated here rather than imported from utils/arabic_localizer:
+    # that module imports core.llm_config, and this one is deliberately
+    # free of any LLM dependency (see run_ats_scorer — "no LLM call, so
+    # it's instant and immune to rate limits"). A twelve-entry table is a
+    # smaller cost than making the scorer import a model client.
+    "يناير": 1, "فبراير": 2, "مارس": 3, "أبريل": 4, "مايو": 5, "يونيو": 6,
+    "يوليو": 7, "أغسطس": 8, "سبتمبر": 9, "أكتوبر": 10, "نوفمبر": 11, "ديسمبر": 12,
 }
-_ONGOING = ("present", "current", "ongoing", "now", "today", "date")
+# "حتى الآن" / "الحالي" are what an Arabic CV writes for "Present". Without
+# them the ongoing branch never fires on an Arabic date range and the role is
+# read as ending in its start year.
+_ONGOING = ("present", "current", "ongoing", "now", "today", "date",
+            "حتى الآن", "حتى الان", "الآن", "الان", "الحالي", "حالياً", "حاليا", "مستمر")
 _YEAR_RE = re.compile(r"\b((?:19|20)\d{2})\b")
+
+# Eastern-Arabic (٠-٩) and Persian (۰-۹) digits, folded to ASCII before any
+# number is read. An Arabic CV routinely writes "٢٠٢١", which _YEAR_RE cannot
+# see at all — so the year, and with it the whole role, silently vanished.
+_ARABIC_DIGITS = str.maketrans("٠١٢٣٤٥٦٧٨٩۰۱۲۳۴۵۶۷۸۹", "01234567890123456789")
+
+
+def fold_digits(text: str) -> str:
+    """Eastern-Arabic / Persian digits to ASCII. A no-op on English text."""
+    return (text or "").translate(_ARABIC_DIGITS)
 
 
 def _parse_endpoint(text: str, default_month: int) -> tuple[int, int] | None:
     """(year, month) from one side of a date range, or None if there's no year."""
+    text = fold_digits(text)
     year_match = _YEAR_RE.search(text)
     if not year_match:
         return None
@@ -495,7 +524,10 @@ def parse_date_range_months(dates: str, today: tuple[int, int] | None = None) ->
 
     # Split on the usual range separators, including the en/em dashes the
     # parser preserves verbatim from the source CV.
-    parts = re.split(r"\s*(?:-|–|—|to|until|through)\s*", text, flags=re.IGNORECASE)
+    # "إلى" is the Arabic range separator (utils/arabic_localizer translates
+    # "to" into exactly that when rendering an Arabic CV, and an Arabic source
+    # CV writes it natively).
+    parts = re.split(r"\s*(?:-|–|—|to|until|through|إلى)\s*", text, flags=re.IGNORECASE)
     parts = [p for p in parts if p.strip()]
     if not parts:
         return None
@@ -575,7 +607,7 @@ def total_experience_years(facts_json: dict, today: tuple[int, int] | None = Non
     years_seen = {
         int(y)
         for exp in facts_json.get("experience") or []
-        for y in _YEAR_RE.findall(exp.get("dates") or "")
+        for y in _YEAR_RE.findall(fold_digits(exp.get("dates") or ""))
     }
     if years_seen:
         return float(max(years_seen) - min(years_seen) + 1), True
@@ -720,6 +752,7 @@ def calculate_ats_score(
     weight_factors: dict,
     tailored_cv_text: str,  # Full text of the tailored CV (bullets joined)
     tailored_skills: dict | None = None,
+    cross_language: bool = False,
 ) -> dict:
     """
     Master function. Calculates the full ATS score breakdown.
@@ -801,8 +834,34 @@ def calculate_ats_score(
         "experience_match": exp_score,
         "education_match": edu_score,
     }
+    # "COULD NOT MEASURE" IS NOT "MEASURED ZERO", and the same redistribution
+    # answers both.
+    #
+    # The first case is the original one: de-duplication left no keywords at
+    # all, so the component has nothing to say.
+    #
+    # The second is cross_language. On an Arabic CV the keyword list is the
+    # JD's own English PHRASING that is not already a named skill — "service
+    # desk", "incident management", "escalation". The skills half of the score
+    # is recoverable because those terms pass through the Arabic glossary (see
+    # arabic_scoring_document), but a JD phrase that was never written in
+    # Latin anywhere on this CV has no glossary entry and no way to match. It
+    # is not absent from the CV; it is unreadable by this comparison.
+    #
+    # Scoring that as a flat 0 states, with a number, that the candidate's CV
+    # covers none of the JD's language — which is the same class of lie as a
+    # dashboard printing an unread metric as zero. Scoring it 1.0 would be the
+    # opposite lie. So it is excluded and its weight redistributed over the
+    # components that DID have evidence, exactly as the empty-keyword case
+    # already is. Any keyword matching at all (an Arabic JD, or a Latin term
+    # the glossary recovered) means the component IS measuring something, and
+    # it stays in.
+    keyword_unmeasurable = (
+        not (matched_kw or unmatched_kw)
+        or (cross_language and not matched_kw)
+    )
     active = {k: v for k, v in components.items()
-              if not (k == "keyword_match" and not (matched_kw or unmatched_kw))}
+              if not (k == "keyword_match" and keyword_unmeasurable)}
     total_weight = sum(WEIGHTS[k] for k in active) or 1.0
     ats_score = int(round(
         sum(v * WEIGHTS[k] for k, v in active.items()) / total_weight * 100
@@ -810,6 +869,10 @@ def calculate_ats_score(
 
     return {
         "ats_score": ats_score,
+        # Carried so a caller (and the logs) can tell "the keyword component
+        # scored zero" from "the keyword component was not counted". Additive
+        # and optional — nothing that reads score_breakdown today breaks.
+        "keyword_measured": not keyword_unmeasurable,
         "score_breakdown": {
             "keyword_match":    int(kw_rate * 100),
             "skills_match":     int(skills_rate * 100),
@@ -829,6 +892,87 @@ def calculate_ats_score(
 
 
 # ─── LANGGRAPH NODE WRAPPER ───────────────────────────────────────────────────
+
+def _english_terms_present(text: str, glossary: dict) -> list[str]:
+    """
+    The English side of every glossary entry whose ARABIC side actually
+    appears in `text`.
+
+    `arabic_glossary` (built in tailoring_engine._enforce_arabic_purity, and
+    already carried on state so cv_context and the cover letter localize
+    identically) maps English term -> Arabic term. Reading it backwards tells
+    us which of the candidate's real terms are on this CV, written in Arabic.
+
+    APPENDING, NOT SUBSTITUTING. The English terms are added to the scoring
+    document rather than replacing the Arabic they were found by. Substituting
+    into Arabic prose means running replacements whose word boundaries are
+    defined for Latin script over text that has none — a short Arabic term can
+    match inside a longer word and quietly corrupt the document being scored.
+    Appending cannot corrupt anything, and it is all the matcher needs: every
+    component here asks "is this term present in the document", and the term
+    genuinely IS on this CV. Once each, because BM25 saturates anyway (see
+    _bm25_term_weight) so repetition would buy nothing.
+    """
+    if not text or not glossary:
+        return []
+    return [
+        english
+        for english, arabic in glossary.items()
+        if isinstance(english, str) and isinstance(arabic, str)
+        and arabic.strip() and arabic in text
+    ]
+
+
+def arabic_scoring_document(text: str, skills: dict, glossary: dict) -> tuple[str, dict]:
+    """
+    An Arabic CV's text and skills, with the English form of every term the
+    glossary recognises added alongside, so an English JD's keywords have
+    something to match.
+
+    ─── WHY THE EXISTING FIX DID NOT WORK ──────────────────────────────────
+    tailoring_engine captures `ats_source_text` immediately BEFORE
+    _enforce_arabic_purity runs, and its comment describes that as "the
+    English text the model produced ... before translating it". That is not
+    what this pipeline does. _build_language_instruction("ar") tells the model
+    "You MUST write ALL values completely in ... Modern Standard Arabic.
+    Absolutely NO English or Latin script characters are allowed", so the CV
+    comes back from the model ALREADY IN ARABIC. _enforce_arabic_purity is not
+    a translation step — it is a mop-up for the handful of Latin terms that
+    slipped through, and it logs "Arabic output is already fully Arabic" when
+    there are none.
+
+    So "before localization" captured Arabic, the scorer compared Arabic
+    against an English JD, and both language-sensitive components scored zero.
+    Measured on one CV scored twice, identical content:
+
+        English output   99%   (skills 100%, keywords 100%)
+        Arabic output    34%   (skills   0%, keywords   0%)
+
+    The 65-point gap is exactly WEIGHTS["skills_match"] + WEIGHTS
+    ["keyword_match"] = 0.40 + 0.25. Title, experience and education were
+    unaffected because they read facts_json, which is never translated.
+
+    Deterministic, no model call, no extra cost: the glossary was already
+    built and already on state.
+    """
+    if not glossary:
+        return text, skills
+
+    present = _english_terms_present(text, glossary)
+    scored_text = f"{text} {' '.join(present)}" if present else text
+
+    scored_skills = {}
+    for category, items in (skills or {}).items():
+        if not isinstance(items, list):
+            scored_skills[category] = items
+            continue
+        expanded = list(items)
+        for item in items:
+            expanded.extend(_english_terms_present(str(item), glossary))
+        scored_skills[category] = expanded
+
+    return scored_text, scored_skills
+
 
 def run_ats_scorer(state: dict) -> dict:
     """
@@ -886,34 +1030,78 @@ def run_ats_scorer(state: dict) -> dict:
         skills_text,
     ]))
 
-    # BUG FIX (Arabic CVs scored 0% keywords / 0% skills):
+    # ARABIC CVs: SCORE THE CONTENT, NOT THE ALPHABET.
     #
-    # An ATS score is a keyword-overlap measure between the JOB DESCRIPTION
-    # and the CV. The job description is written in English; an Arabic CV's
-    # rendered text is not. Comparing the two is guaranteed to find nothing,
-    # so every Arabic run reported 0% keyword match and 0% skills match and
-    # a badly deflated total, regardless of how well the candidate actually
-    # fit the role.
+    # An ATS score is a term-overlap measure between the JOB DESCRIPTION and
+    # the CV. The JD is written in English; an Arabic CV is not. Left alone,
+    # that comparison finds nothing and every Arabic run reports 0% keyword
+    # match and 0% skills match however well the candidate actually fits.
     #
-    # tailoring_engine.py now keeps the English text it generated before
-    # translating it (ats_source_text / ats_source_skills) purely so this
-    # comparison stays meaningful. The score then measures what it's
-    # supposed to measure — does this CV's CONTENT cover what the JD asks
-    # for — instead of measuring which alphabet it's written in.
+    # ats_source_text/ats_source_skills are still preferred as the BASE, for
+    # the one thing they genuinely are: the model's output before the purity
+    # pass replaced its remaining Latin terms, so they carry a few more
+    # matchable terms than the rendered CV does. What they are NOT is English
+    # — see arabic_scoring_document above for the measurement and for why the
+    # comment in tailoring_engine.py describes a pipeline this codebase does
+    # not have.
     #
-    # English CVs are completely unaffected: ats_source_text is empty for
-    # them, so the branch below is skipped and the rendered text is scored
-    # exactly as before.
+    # The glossary then supplies the English form of every term it recognises.
+    #
+    # English CVs are completely unaffected: ats_source_text is empty and
+    # arabic_glossary is empty for them, so both branches below are skipped
+    # and the rendered text is scored exactly as before.
     scoring_text = tailored_cv_text
     scoring_skills = skills_source
     ats_source_text = (state.get("ats_source_text") or "").strip()
     if ats_source_text:
         scoring_text = ats_source_text
         scoring_skills = state.get("ats_source_skills") or skills_source
-        logger.info("📋 Arabic CV — scoring against the pre-translation English text so JD keywords can match.")
 
-    result = calculate_ats_score(facts_json, weight_factors, scoring_text, tailored_skills=scoring_skills)
+    glossary = state.get("arabic_glossary") or {}
+    if glossary:
+        before = scoring_text
+        scoring_text, scoring_skills = arabic_scoring_document(
+            scoring_text, scoring_skills, glossary
+        )
+        recovered = len(scoring_text) - len(before)
+        if recovered > 0:
+            logger.info(
+                f"📋 Arabic CV — added the English form of {len(_english_terms_present(before, glossary))} "
+                "glossary term(s) to the scoring document so the JD's keywords can match. "
+                "This changes nothing that is rendered."
+            )
+        else:
+            # Not fatal, but it means the two language-weighted components
+            # (65% of the score between them) are about to measure almost
+            # nothing. Say so rather than quietly returning a low number that
+            # looks like a judgement of the candidate.
+            logger.error(
+                "📋 Arabic CV — the glossary matched NOTHING in the scoring text, so "
+                "skills_match and keyword_match are about to score near zero for a "
+                "LANGUAGE reason, not a fit reason. The reported ATS score will be "
+                "understated; treat it as unreliable rather than as a low fit."
+            )
+    elif str(state.get("cv_language") or "").lower().startswith("ar"):
+        logger.error(
+            "📋 Arabic CV with NO arabic_glossary on state — skills_match and "
+            "keyword_match (65% of the ATS score between them) will score near zero "
+            "because the CV and the JD are in different scripts. The reported score "
+            "is UNDERSTATED, not a measure of this candidate's fit."
+        )
 
+    result = calculate_ats_score(
+        facts_json, weight_factors, scoring_text,
+        tailored_skills=scoring_skills,
+        # Only the Arabic path can hit the cross-language case; an English CV
+        # scoring 0 keywords has genuinely matched none of them.
+        cross_language=str(state.get("cv_language") or "").lower().startswith("ar"),
+    )
+
+    if not result["keyword_measured"]:
+        logger.info(
+            "📋 Keyword component not counted for this CV (nothing measurable to score "
+            "against) — its weight was redistributed over the components that had evidence."
+        )
     logger.info(f"📋 ATS score: {result['ats_score']}/100")
 
     return {
