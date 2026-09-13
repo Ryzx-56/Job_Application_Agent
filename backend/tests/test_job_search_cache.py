@@ -227,7 +227,7 @@ def test_cache_hit_and_history_use_the_real_begin_addon_use_free_tier_job_search
     import core.entitlements as entitlements
     from fastapi import HTTPException
 
-    with patch.object(entitlements, "read_subscription_tier", return_value="free"), \
+    with patch.object(entitlements, "effective_feature_tier", return_value="free"), \
          patch.object(entitlements, "get_admin_client") as mock_client:
         # get_addon_quota's read of {addon}_used: report 0 used, so
         # quota["remaining"] is 0 (limit 0 - used 0 = 0, capped at 0) and the

@@ -36,7 +36,7 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from loguru import logger
 
-from core.auth import PAID_TIERS, get_current_user_id, read_subscription_tier
+from core.auth import PAID_TIERS, effective_feature_tier, get_current_user_id
 from core.credits import get_admin_client, maybe_row, refund_credits, reserve_addon_credits
 from core.pricing import ADDON_CREDIT_COSTS
 
@@ -132,7 +132,15 @@ def get_addon_quota(user_id: str, addon: str) -> dict:
     # STRICT subscription tier — see the removal note above. A pack buyer
     # spends what they paid for through begin_addon_use()'s credit path
     # below, not through a promoted baseline here.
-    tier = read_subscription_tier(user_id)
+    #
+    # effective_feature_tier(), not read_subscription_tier(): an admin
+    # account reads as 'elite' here (core/auth.py's admin override note), so
+    # the three baselines below are Elite-sized for the product's own team
+    # without profiles.tier ever saying so. Every other caller in this file
+    # (require_addon_quota's 403 copy, credit_balance, the purchase-cap
+    # lookups) takes the tier THIS function already resolved, so the
+    # override only has to happen in the one place.
+    tier = effective_feature_tier(user_id)
     limit = cap_for(tier, addon)
     used = 0
 

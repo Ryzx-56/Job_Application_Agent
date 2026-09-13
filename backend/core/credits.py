@@ -13,6 +13,8 @@ from fastapi import HTTPException, status
 from loguru import logger
 from supabase import create_client, Client
 
+from core.auth import read_admin_flag
+
 SUPABASE_URL = os.getenv("SUPABASE_URL", "").rstrip("/")
 SUPABASE_SERVICE_ROLE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY", "")
 
@@ -154,6 +156,29 @@ def reserve_credits(user_id: str, cv_language: str) -> ReservedCredits:
     """
     lang = normalize_cv_language(cv_language)
     cost = CREDIT_COST[lang]
+
+    # ADMIN OVERRIDE (2026-09-13, core/auth.py's admin feature-access note).
+    # CV generation has no tier-based cost to promote the way the three
+    # bundled add-ons do — CREDIT_COST above is flat per language, and the
+    # only tier-linked figure (the monthly grant, TIER_CREDITS) is applied
+    # straight from profiles.tier by a Postgres function this deliberately
+    # does not touch. So an admin's "Elite baseline" for CV generation is
+    # the balance check being skipped outright, not a bigger number.
+    #
+    # NOTHING IS DEDUCTED: profiles.credits_remaining is untouched, so it
+    # keeps reflecting whatever this account's real tier actually grants —
+    # consistent with profiles.tier never being written to 'elite' for an
+    # admin. The generation still runs real model/parsing calls at real
+    # cost; this only skips the LEDGER, which is why the log line below says
+    # so explicitly rather than looking like an ordinary reservation.
+    if read_admin_flag(user_id):
+        logger.info(
+            f"🔑 Admin CV generation for {user_id} ({lang}) — bypassing the "
+            f"{cost}-credit balance check. Real cost still incurred; nothing "
+            "deducted from credits_remaining and this is not a paid Elite use."
+        )
+        return ReservedCredits(0, 0, 0)
+
     admin = get_admin_client()
 
     # Lazy monthly reset: cheap no-op if not due yet, refreshes the balance

@@ -103,7 +103,7 @@ def test_removed_tier_promotion_free_with_purchased_credits_gets_zero_baseline_o
     # confirmed, funded purchase goes straight through as a credit charge —
     # NOT a promoted baseline (the old bug would have reported "baseline").
     for addon in (LINKEDIN_ESSENTIAL, INTERVIEW_PREP):
-        with patch.object(entitlements, "read_subscription_tier", return_value="free"), \
+        with patch.object(entitlements, "effective_feature_tier", return_value="free"), \
              patch.object(entitlements, "get_admin_client", return_value=_mock_admin(baseline_used=0)), \
              patch.object(entitlements, "credit_balance", return_value=30), \
              patch.object(entitlements, "reserve_addon_credits", return_value=ADDON_CREDIT_COSTS[addon]) as reserve:
@@ -115,7 +115,7 @@ def test_removed_tier_promotion_free_with_purchased_credits_gets_zero_baseline_o
     # Job Search is the one exception (item 1/4): its purchase cap equals
     # its ZERO baseline on Free, so it stays excluded even with credits and
     # even with confirmation — see test_free_tier_job_search_is_excluded... .
-    with patch.object(entitlements, "read_subscription_tier", return_value="free"), \
+    with patch.object(entitlements, "effective_feature_tier", return_value="free"), \
          patch.object(entitlements, "get_admin_client", return_value=_mock_admin(baseline_used=0)), \
          patch.object(entitlements, "reserve_addon_credits") as reserve:
         with pytest.raises(HTTPException):
@@ -130,7 +130,7 @@ def test_free_tier_job_search_is_excluded_even_with_credits_and_confirmation():
     Free's baseline is 0, so its purchase cap is ALSO 0 — 0 purchases made
     (0) is not < 0, so the cap is reported as already reached before any
     credits are touched."""
-    with patch.object(entitlements, "read_subscription_tier", return_value="free"), \
+    with patch.object(entitlements, "effective_feature_tier", return_value="free"), \
          patch.object(entitlements, "get_admin_client", return_value=_mock_admin(baseline_used=0)), \
          patch.object(entitlements, "reserve_addon_credits") as reserve:
         with pytest.raises(HTTPException) as exc:
@@ -144,7 +144,7 @@ def test_free_tier_job_search_is_excluded_even_with_credits_and_confirmation():
 def test_spend_order_is_baseline_first_never_credits_while_baseline_remains():
     """Item 2's central rule, checked directly: with baseline remaining,
     reserve_addon_credits must never even be called."""
-    with patch.object(entitlements, "read_subscription_tier", return_value="pro"), \
+    with patch.object(entitlements, "effective_feature_tier", return_value="pro"), \
          patch.object(entitlements, "get_admin_client", return_value=_mock_admin(baseline_used=0)) as client, \
          patch.object(entitlements, "reserve_addon_credits") as reserve:
         payment = entitlements.begin_addon_use("pro-user", LINKEDIN_ESSENTIAL, confirmed_purchase=False)
@@ -163,7 +163,7 @@ def test_baseline_exhausted_without_confirmation_returns_402_not_a_silent_charge
     pins: never spent WITHOUT the confirmation either, once baseline is
     gone. No exception message match — pinned on the structured code and
     the fields the frontend's confirmation dialog needs."""
-    with patch.object(entitlements, "read_subscription_tier", return_value="pro"), \
+    with patch.object(entitlements, "effective_feature_tier", return_value="pro"), \
          patch.object(entitlements, "get_admin_client", return_value=_mock_admin(baseline_used=2)), \
          patch.object(entitlements, "credit_balance", return_value=18), \
          patch.object(entitlements, "reserve_addon_credits") as reserve:
@@ -179,7 +179,7 @@ def test_baseline_exhausted_without_confirmation_returns_402_not_a_silent_charge
 
 
 def test_confirmed_purchase_with_baseline_exhausted_reserves_credits_and_records_the_purchase():
-    with patch.object(entitlements, "read_subscription_tier", return_value="pro"), \
+    with patch.object(entitlements, "effective_feature_tier", return_value="pro"), \
          patch.object(entitlements, "get_admin_client", return_value=_mock_admin(baseline_used=5, purchased_used=0)) as client, \
          patch.object(entitlements, "reserve_addon_credits", return_value=3) as reserve:
         payment = entitlements.begin_addon_use("pro-user", INTERVIEW_PREP, confirmed_purchase=True)
@@ -248,7 +248,7 @@ def test_purchase_cap_reached_refunds_the_credits_it_just_reserved():
     # passes (this is what makes it a race rather than the ordinary
     # already-at-cap refusal, which never reaches reserve_addon_credits at
     # all — see test_free_tier_job_search_is_excluded... for that path).
-    with patch.object(entitlements, "read_subscription_tier", return_value="pro"), \
+    with patch.object(entitlements, "effective_feature_tier", return_value="pro"), \
          patch.object(entitlements, "get_admin_client", return_value=_mock_admin(baseline_used=5, purchased_used=4)), \
          patch.object(entitlements, "reserve_addon_credits", return_value=5) as reserve, \
          patch.object(entitlements, "refund_credits") as refund, \

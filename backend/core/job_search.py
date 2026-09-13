@@ -48,7 +48,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from loguru import logger
 from pydantic import BaseModel, Field
 
-from core.auth import PAID_TIERS, get_current_user_id, read_subscription_tier
+from core.auth import PAID_TIERS, effective_feature_tier, get_current_user_id
 from core.credits import get_admin_client, maybe_row
 from core import search_provider
 from core.entitlements import JOB_SEARCH as JOB_SEARCH_ADDON, begin_addon_use, release_addon_use
@@ -239,8 +239,13 @@ def job_search_overview(user_id: str = Depends(get_current_user_id)) -> dict:
     and the location the search will default to.
 
     Deliberately NOT tier-gated — see this module's header.
+
+    effective_feature_tier(), not read_subscription_tier(): an admin account
+    reads as 'elite' (core/auth.py's admin override), so this page doesn't
+    show a paywall for a feature begin_addon_use() will actually let them
+    use — see get_addon_quota()'s same substitution.
     """
-    tier = read_subscription_tier(user_id)
+    tier = effective_feature_tier(user_id)
     return {
         "tier": tier,
         "unlocked": tier in PAID_TIERS,

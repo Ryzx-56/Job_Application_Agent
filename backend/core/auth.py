@@ -286,6 +286,58 @@ def has_paid_tier(user_id: str | None) -> bool:
     return read_subscription_tier(user_id) in PAID_TIERS
 
 
+# ─── ADMIN FEATURE-ACCESS OVERRIDE (2026-09-13) ─────────────────────────────
+#
+# Admin accounts get full Elite-level feature access for using the product
+# themselves, WITHOUT becoming a real Elite subscriber in the data. Reuses
+# read_admin_flag() above — the same, single admin gate that already guards
+# /api/v1/admin/* — rather than adding a second "is this user an admin" check.
+#
+# THE OVERRIDE LIVES HERE, NOT ON profiles.tier. profiles.tier keeps
+# reflecting real subscription status only:
+#   · admin_stats.py's admin_tier_counts groups by the raw column, so its
+#     revenue/margin figures must never see an admin account as a paying
+#     Elite subscriber.
+#   · billing.py's renewal job and subscription.py's cancel/reactivate flow
+#     read `tier` straight off `profiles` too — an admin row must never look
+#     like a subscription with no payment method attached.
+#
+# effective_feature_tier() is DELIBERATELY NOT read_subscription_tier() and
+# must stay that way: everything above (billing, admin_stats, and
+# read_subscription_tier() itself) keeps calling read_subscription_tier() or
+# reading `tier` directly, and keeps seeing the REAL tier. Only the handful
+# of call sites that decide "how much of a bundled add-on / baseline does
+# this account get right now" should call this instead:
+#   · entitlements.get_addon_quota() — the LinkedIn Essential, Interview Prep
+#     and Job Search monthly baselines.
+#   · job_search.job_search_overview() / interview.interview_overview() —
+#     the "is this account unlocked" flag the pages render before generating
+#     anything, so an admin isn't shown a paywall for a feature they can
+#     actually use.
+#
+# This is the same SHAPE of promotion the old effective_tier() applied to
+# credit-pack buyers (see entitlements.py's removal note on that) — a free
+# user treated as a paid tier for allowance purposes without a subscription
+# behind it. That one was a bug because it was accidental: holding one
+# unspent credit quietly bought a recurring monthly baseline nobody paid for
+# and nothing about it named what was happening. This one is intentional,
+# named for exactly what it does, and scoped to profiles.is_admin only — if
+# this ever grows a second condition, it needs a removal/rationale note as
+# clear as that one, not a quiet expansion.
+def effective_feature_tier(user_id: str | None) -> str:
+    """
+    This user's tier for FEATURE/ALLOWANCE gating purposes ONLY. Admins read
+    as 'elite' here; everyone else reads their real read_subscription_tier().
+
+    Do not use this anywhere that decides whether to charge money, or that
+    reports who is a paying subscriber — use read_subscription_tier() (or the
+    raw column) for that. See the module note above.
+    """
+    if read_admin_flag(user_id):
+        return "elite"
+    return read_subscription_tier(user_id)
+
+
 def get_current_paid_user_id(authorization: str = Header(None)) -> str:
     """
     Same JWT verification as get_current_user_id, plus a Pro/Elite

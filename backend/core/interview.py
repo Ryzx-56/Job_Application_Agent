@@ -42,7 +42,7 @@ from fastapi.responses import StreamingResponse
 from loguru import logger
 
 from agents.interview_prep import InterviewPrepError, run_interview_prep
-from core.auth import get_current_user_id, read_subscription_tier
+from core.auth import effective_feature_tier, get_current_user_id
 from core.credits import get_admin_client
 from core.entitlements import (
     INTERVIEW_PREP,
@@ -247,8 +247,12 @@ def interview_overview(user_id: str = Depends(get_current_user_id)) -> dict:
     to see the blurred preview and the upgrade prompt, and the CV list they
     see behind the blur is their own data either way. The tier gate is on
     /generate, which is the thing that costs something.
+
+    effective_feature_tier(), not read_subscription_tier(): an admin account
+    reads as 'elite' (core/auth.py's admin override), consistent with
+    get_addon_quota()'s substitution for the actual /generate call.
     """
-    tier = read_subscription_tier(user_id)
+    tier = effective_feature_tier(user_id)
     unlocked = tier in ("pro", "elite")
 
     try:

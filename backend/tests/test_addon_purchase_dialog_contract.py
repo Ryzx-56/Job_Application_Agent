@@ -47,7 +47,7 @@ def test_real_402_body_matches_the_fields_the_frontend_reads():
     detail.addon / detail.credit_cost / detail.credit_balance /
     detail.message off a `code === "addon_purchase_available"` 402 — checked
     here against the actual wire JSON, not a hand-built dict."""
-    with patch.object(entitlements, "read_subscription_tier", return_value="pro"), \
+    with patch.object(entitlements, "effective_feature_tier", return_value="pro"), \
          patch.object(entitlements, "get_admin_client", return_value=_mock_admin(baseline_used=5)), \
          patch.object(entitlements, "credit_balance", return_value=18):
         response = client.get("/probe/job_search", params={"confirmed": False})
@@ -75,7 +75,7 @@ def test_real_429_purchase_limit_reached_is_distinguishable_from_rate_limited():
     isRateLimited() both check `code` on a 429 — pinned here that the two
     codes are actually spelled differently on the wire, not just in
     comments."""
-    with patch.object(entitlements, "read_subscription_tier", return_value="pro"), \
+    with patch.object(entitlements, "effective_feature_tier", return_value="pro"), \
          patch.object(entitlements, "get_admin_client", return_value=_mock_admin(baseline_used=5, purchased_used=5)):
         response = client.get("/probe/job_search", params={"confirmed": True})
 
@@ -104,7 +104,7 @@ def test_real_429_purchase_limit_reached_is_distinguishable_from_rate_limited():
 def test_real_402_insufficient_credits_shape():
     """The other 402 shape a confirmed purchase can hit — same code
     reserve_credits() already uses for a CV, verified here for an add-on."""
-    with patch.object(entitlements, "read_subscription_tier", return_value="pro"), \
+    with patch.object(entitlements, "effective_feature_tier", return_value="pro"), \
          patch.object(entitlements, "get_admin_client", return_value=_mock_admin(baseline_used=5)), \
          patch.object(entitlements, "reserve_addon_credits") as reserve:
         from fastapi import HTTPException, status
