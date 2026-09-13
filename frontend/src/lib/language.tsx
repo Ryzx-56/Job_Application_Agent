@@ -1359,12 +1359,17 @@ export const content = {
         jobsNotSearchedYet: "We haven't searched for jobs for this resume yet.",
         jobsSearchCount: (remaining: number, limit: number) =>
           `${remaining} of ${limit} searches left this month`,
-        jobsSearchNoneLeft: (limit: number) =>
-          `You've used all ${limit} of this month's searches.`,
         jobsQuotaExhausted:
           "Job search is unavailable for the rest of this month while we top up our search provider. Nothing was charged.",
         jobsSearchFailed: "Job search didn't work just now. Nothing was charged, so please try again.",
-        jobsUpgradeRequired: "Job matching is available on the Pro and Elite plans.",
+        // jobsUpgradeRequired and the "quota_exhausted"-keyed
+        // jobsSearchNoneLeft REMOVED (2026-09-13): neither code is raised by
+        // find-jobs any more — a used-up baseline now offers the credit-
+        // purchase dialog instead (AddonPurchaseDialog). purchaseLimitReached
+        // is Job Search's own purchase cap (on top of the baseline) — credits
+        // can't fix this one, so it's a plain message, not the dialog.
+        jobsPurchaseLimitReached: "You've bought the most searches this month allows with credits. It resets with your next billing cycle.",
+        jobsInsufficientCredits: "Your credit balance changed before this could be confirmed. Check your balance and try again.",
         jobsNotSupported:
           "This resume was saved before we stored the data a job search needs. Generate a newer one and search from that.",
         jobsCount: (n: number) => (n === 1 ? "1 job" : `${n} jobs`),
@@ -3045,12 +3050,11 @@ export const content = {
         jobsNotSearchedYet: "لم نبحث بعد عن وظائف لهذه السيرة الذاتية.",
         jobsSearchCount: (remaining: number, limit: number) =>
           `بقيت ${remaining} من ${limit} عملية بحث هذا الشهر`,
-        jobsSearchNoneLeft: (limit: number) =>
-          `استخدمت جميع عمليات البحث المتاحة هذا الشهر وعددها ${limit}.`,
         jobsQuotaExhausted:
           "البحث عن الوظائف غير متاح لبقية هذا الشهر ريثما نجدد رصيد مزوّد البحث. لم يُخصم منك شيء.",
         jobsSearchFailed: "تعذّر البحث عن الوظائف الآن. لم يُخصم منك شيء، فحاول مرة أخرى.",
-        jobsUpgradeRequired: "البحث عن الوظائف المناسبة متاح في باقتي برو والنخبة.",
+        jobsPurchaseLimitReached: "لقد اشتريت أقصى عدد من عمليات البحث هذا الشهر بالنقاط. يُعاد الحد مع دورة الفوترة القادمة.",
+        jobsInsufficientCredits: "تغيّر رصيدك قبل تأكيد هذا الطلب. تحقق من رصيدك وحاول مرة أخرى.",
         jobsNotSupported:
           "حُفظت هذه السيرة الذاتية قبل أن نخزّن البيانات التي يحتاجها البحث. أنشئ سيرة أحدث وابحث منها.",
         jobsCount: (n: number) => (n === 1 ? "وظيفة واحدة" : n === 2 ? "وظيفتان" : `${n} وظائف`),

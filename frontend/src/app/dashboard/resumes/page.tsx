@@ -9,10 +9,13 @@ import {
   getDocumentUrl,
   deleteResume,
   findJobsForResume,
+  FindJobsError,
   ResumeListRecord,
 } from "@/lib/supabase/resumes";
 import { MATCH_TIER_COPY, getMatchTier, type MatchTier, type SimilarJob } from "@/lib/jobMatch";
 import { formatMediumDate } from "@/lib/pricing";
+import { AddonPurchaseDialog } from "@/components/addon-purchase-dialog";
+import { readAddonPurchaseOffer, type AddonPurchaseOffer } from "@/lib/addonPurchase";
 
 // Mirrors WEIGHTS in utils/ats_scorer.py — fallback only, used if an older
 // saved row doesn't have ats_breakdown.weights yet.
@@ -174,30 +177,84 @@ function ResumeJobs({
   const [searchError, setSearchError] = useState<string | null>(null);
   const [searched, setSearched] = useState(savedJobs.length > 0);
 
-  async function handleFind() {
+  // The 402 addon_purchase_available offer (Job Search's shared baseline —
+  // same pool as the standalone page, core/entitlements.py begin_addon_use —
+  // exhausted, credits could cover it). resumeId is a stable prop here, so
+  // there's no separate "pending id" to remember: confirming just resubmits
+  // handleFind with spendCredits=true.
+  const [purchaseOffer, setPurchaseOffer] = useState<AddonPurchaseOffer | null>(null);
+  const [purchaseDialogError, setPurchaseDialogError] = useState<string | null>(null);
+
+  function messageFor(err: FindJobsError): string {
+    switch (err.code) {
+      // upgrade_required and quota_exhausted REMOVED (2026-09-13): neither
+      // code is ever raised by /api/v1/resumes/{id}/find-jobs any more —
+      // confirmed against core/documents.py (get_current_user_id, not the
+      // paid-only dependency; begin_addon_use, not the old
+      // consume_addon_quota wrapper that could 403/429 those two). A used-up
+      // baseline now surfaces as addon_purchase_available (402, handled
+      // below as a dialog) or purchase_limit_reached (429, Job Search's own
+      // purchase cap — credits can't fix this one, so it's not offered as
+      // the dialog).
+      case "search_quota_exhausted":
+        return copy.jobsQuotaExhausted;
+      case "cv_not_supported":
+        return copy.jobsNotSupported;
+      case "purchase_limit_reached":
+        return copy.jobsPurchaseLimitReached;
+      case "insufficient_credits":
+        return copy.jobsInsufficientCredits;
+      default:
+        return copy.jobsSearchFailed;
+    }
+  }
+
+  async function handleFind(spendCredits = false) {
     setSearching(true);
-    setSearchError(null);
+    if (!spendCredits) {
+      setSearchError(null);
+      setPurchaseOffer(null);
+      setPurchaseDialogError(null);
+    } else {
+      setPurchaseDialogError(null);
+    }
     try {
-      const result = await findJobsForResume(resumeId);
+      const result = await findJobsForResume(resumeId, spendCredits);
       setJobs(result.jobs);
       setSearched(true);
+      setPurchaseOffer(null);
     } catch (error) {
-      const err = error as Error & { code?: string };
+      const err = error as FindJobsError;
       console.error("findJobsForResume failed:", err);
-      setSearchError(
-        err.code === "search_quota_exhausted"
-          ? copy.jobsQuotaExhausted
-          : err.code === "upgrade_required"
-            ? copy.jobsUpgradeRequired
-            : err.code === "cv_not_supported"
-              ? copy.jobsNotSupported
-              : err.code === "quota_exhausted"
-                ? copy.jobsSearchNoneLeft("")
-                : copy.jobsSearchFailed
-      );
+      if (!spendCredits) {
+        const offer = readAddonPurchaseOffer(err);
+        if (offer) {
+          // THE DIALOG IS THE RESPONSE — no generic error banner alongside
+          // it, and nothing has been charged yet.
+          setPurchaseOffer(offer);
+          return;
+        }
+      } else {
+        // The CONFIRMED attempt failed (balance moved, or the search itself
+        // then failed) — shown inside the still-open dialog.
+        setPurchaseDialogError(messageFor(err));
+        return;
+      }
+      setSearchError(messageFor(err));
     } finally {
       setSearching(false);
     }
+  }
+
+  function handlePurchaseConfirm() {
+    handleFind(true);
+  }
+
+  function handlePurchaseCancel() {
+    // Nothing is sent. No partial action, no credits touched — matching
+    // what begin_addon_use already guarantees server-side.
+    setPurchaseOffer(null);
+    setPurchaseDialogError(null);
   }
 
   return (
@@ -217,7 +274,12 @@ function ResumeJobs({
           <p className="text-sm text-slate-500">{copy.jobsNotSearchedYet}</p>
           <button
             type="button"
-            onClick={handleFind}
+            // NOT a bare function reference: passed the click event as its
+            // first argument, that event is truthy and would be read as
+            // `spendCredits` — every normal click would look like a
+            // confirmed purchase (the exact bug found and fixed on the
+            // LinkedIn page's equivalent button).
+            onClick={() => handleFind()}
             disabled={searching}
             className="mt-2.5 inline-flex min-h-[40px] items-center gap-1.5 rounded-lg bg-blue-600 px-3.5 text-sm font-medium text-white transition-colors hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-60 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600"
           >
@@ -288,6 +350,18 @@ function ResumeJobs({
           </ul>
         </>
       )}
+
+      <AddonPurchaseDialog
+        open={purchaseOffer !== null}
+        isAr={lang === "ar"}
+        addonLabel={lang === "ar" ? "البحث عن وظائف" : "Job Search"}
+        creditCost={purchaseOffer?.creditCost ?? 0}
+        creditBalance={purchaseOffer?.creditBalance ?? 0}
+        busy={searching}
+        error={purchaseDialogError}
+        onConfirm={handlePurchaseConfirm}
+        onCancel={handlePurchaseCancel}
+      />
     </div>
   );
 }

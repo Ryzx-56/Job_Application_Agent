@@ -594,6 +594,27 @@ _tavily_usage_cache: dict = {"at": 0.0, "value": None}
 
 
 def _tavily_credits_remaining(force: bool = False) -> Optional[int]:
+    """
+    ⚠️ FIXED 2026-09-13 — A LIVE OUTAGE, caught during pre-launch manual
+    testing. This used to read ONLY plan_limit/plan_usage (the free
+    Researcher allowance) and ignore paygo_limit/paygo_usage entirely — so
+    the moment the free 1,000 ran out, this reported 0 and
+    assert_search_headroom refused every search with "unavailable for the
+    rest of the month", EVEN THOUGH Pay-As-You-Go was switched on and
+    funded (pricing-reference-v7.md §5 told us to do exactly that before
+    launch). Confirmed live: plan at 1037/1000 (exhausted), paygo at
+    37/1500 (1463 credits left and paying), and this function was reporting
+    0 total. The failure direction was honest (503, not a fake empty
+    page) — but it was still a full, needless outage of the feature: real
+    money was on the table and the guard couldn't see it.
+
+    Now sums BOTH pools. A missing/null paygo_limit means PAYG genuinely
+    is not configured — a real, known 0, not a read failure — so it does
+    not collapse the whole result to None. Only a response that doesn't
+    even carry the core plan_limit/plan_usage fields (a malformed response,
+    or Tavily changing shape) reports None, which is the only place this
+    function has ever meant "could not read this."
+    """
     now = time.time()
     if not force and _tavily_usage_cache["value"] is not None \
             and now - _tavily_usage_cache["at"] < _USAGE_CACHE_SECONDS:
@@ -606,8 +627,22 @@ def _tavily_credits_remaining(force: bool = False) -> Optional[int]:
         response = httpx.get(_TAVILY_USAGE_URL,
                              headers={"Authorization": f"Bearer {api_key}"}, timeout=5.0)
         account = (response.json() or {}).get("account") or {}
-        limit, used = account.get("plan_limit"), account.get("plan_usage")
-        remaining = None if (limit is None or used is None) else max(0, int(limit) - int(used))
+        plan_limit, plan_used = account.get("plan_limit"), account.get("plan_usage")
+        if plan_limit is None or plan_used is None:
+            # Can't read the core plan fields at all — genuinely unknown,
+            # not a signal that nothing is left.
+            remaining = None
+        else:
+            plan_remaining = max(0, int(plan_limit) - int(plan_used))
+            paygo_limit, paygo_used = account.get("paygo_limit"), account.get("paygo_usage")
+            paygo_remaining = (
+                max(0, int(paygo_limit) - int(paygo_used))
+                if paygo_limit is not None and paygo_used is not None
+                # No PAYG pool reported = legitimately zero (not enabled),
+                # which is a known fact, not an unread one.
+                else 0
+            )
+            remaining = plan_remaining + paygo_remaining
     except Exception as e:
         logger.warning(f"Could not read Tavily usage ({e}) — proceeding without a quota check.")
         remaining = None

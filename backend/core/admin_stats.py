@@ -10,7 +10,7 @@
 # profiles.is_admin server-side on every single request.
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from loguru import logger
 
 from core.auth import get_current_admin_user_id
@@ -823,16 +823,34 @@ def lookup_users(
     admin = get_admin_client()
     term = (q or "").strip()
 
+    # ⚠️ A FAILED SEARCH IS NOT AN EMPTY SEARCH. This used to catch, set
+    # `matches = []`, and fall through to `{"users": [], "count": 0}` — which
+    # the Account Support page renders identically to "nobody matched". That
+    # is the same defect core/documents.py's _lookup_users was fixed for (see
+    # its comment): support reads "no such account" off a broken lookup and
+    # tells a paying customer they have no record with us. Refused honestly
+    # instead, with the same code and the same 503 that page uses, so the two
+    # admin surfaces fail the same way.
     try:
-        if term:
-            matches = admin.rpc("admin_search_users", {"term": term}).execute().data or []
-        else:
-            # No search term: most recent signups, so the page is useful on
-            # first load instead of empty.
-            matches = admin.rpc("admin_search_users", {"term": ""}).execute().data or []
+        # An empty term is a legitimate query, not a missing one: it lists the
+        # most recent signups so the page is useful on first load.
+        matches = admin.rpc("admin_search_users", {"term": term}).execute().data or []
     except Exception as e:
-        logger.error(f"admin user search failed for '{term}': {e}")
-        matches = []
+        logger.error(
+            f"admin user search failed for '{term}': {e}. Reporting UNAVAILABLE rather "
+            "than 'no matches' — a broken lookup must not read as a missing account."
+        )
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail={
+                "code": "search_unavailable",
+                "message": (
+                    "User search is unavailable — the lookup failed rather than "
+                    "returning no matches. This is not a statement about whether "
+                    "the account exists."
+                ),
+            },
+        )
 
     matches = matches[:limit]
     user_ids = [m["id"] for m in matches if m.get("id")]

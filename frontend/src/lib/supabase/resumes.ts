@@ -372,28 +372,66 @@ export type FindJobsResult = {
   resume_id: string;
   jobs: SimilarJob[];
   from_cache: boolean;
+  /** Which pool paid for a live search — absent on a cache hit, which pays
+   *  with neither. See core/documents.py's find_jobs_for_resume. */
+  paid_with?: "baseline" | "credits";
 };
 
-export async function findJobsForResume(resumeId: string): Promise<FindJobsResult> {
+/** Error carrying the backend's machine-readable code AND full detail
+ *  object, same convention lib/addonPurchase.ts reads for the other three
+ *  credit-purchasable add-ons (Job Search, Interview Prep, LinkedIn
+ *  Essential) — this is Job Search's fourth entry point (the per-CV button)
+ *  and needs the same shape to open the same confirmation dialog. */
+export type FindJobsError = Error & {
+  code?: string;
+  status?: number;
+  detail?: Record<string, unknown>;
+};
+
+/**
+ * Searches for jobs matching a saved CV. Idempotent — a CV that already has
+ * `similar_jobs` returns them at zero cost (from_cache: true), so a
+ * double-click or a revisit never re-searches.
+ *
+ * Draws on the SAME shared Job Search pool as the standalone page
+ * (core/entitlements.py's begin_addon_use, unified 2026-09-12) — baseline
+ * first, then credits once it's exhausted. `spendCredits` is the
+ * confirmation from that flow: pass true only after the user has confirmed
+ * the "Use N credits for another Job Search?" dialog a 402
+ * addon_purchase_available raised. Sent as a query param
+ * (`?spend_credits=`), not a JSON body — core/documents.py's endpoint takes
+ * it via FastAPI's Query(), not a request model field, because this route
+ * has no request body at all.
+ */
+export async function findJobsForResume(
+  resumeId: string,
+  spendCredits = false
+): Promise<FindJobsResult> {
   const supabase = createClient();
   const {
     data: { session },
   } = await supabase.auth.getSession();
   if (!session?.access_token) throw new Error("Not authenticated");
 
-  const res = await fetch(`${API_URL}/api/v1/resumes/${resumeId}/find-jobs`, {
-    method: "POST",
-    headers: { Authorization: `Bearer ${session.access_token}` },
-  });
+  const res = await fetch(
+    `${API_URL}/api/v1/resumes/${resumeId}/find-jobs?spend_credits=${spendCredits}`,
+    {
+      method: "POST",
+      headers: { Authorization: `Bearer ${session.access_token}` },
+    }
+  );
 
   if (!res.ok) {
     const body = await res.json().catch(() => null);
     const detail = body?.detail;
-    const err: Error & { code?: string; status?: number } = new Error(
+    const err: FindJobsError = new Error(
       typeof detail === "string" ? detail : detail?.message ?? `Request failed: ${res.status}`
     );
     err.status = res.status;
-    if (detail && typeof detail === "object") err.code = detail.code;
+    if (detail && typeof detail === "object") {
+      err.code = detail.code;
+      err.detail = detail;
+    }
     throw err;
   }
   return (await res.json()) as FindJobsResult;
