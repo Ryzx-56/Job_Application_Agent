@@ -31,6 +31,7 @@
      · TIERS.credits      -> TIER_CREDITS   in backend/core/credits.py
      · CREDIT_COST        -> CREDIT_COST    in backend/core/credits.py
      · ADDON_CAPS         -> ADDON_CAPS     in backend/core/entitlements.py
+     · ADDON_CREDIT_COSTS -> ADDON_CREDIT_COSTS in backend/core/pricing.py
 
    backend/tests/test_pricing_parity.py reads this file as text and fails if
    ANY of those drift, naming both figures in the message.
@@ -52,16 +53,19 @@ export const SAR_PER_USD = 3.75;
    riyal figure and each language renders its own currency word, so one
    value can serve both dictionaries. */
 
-/** Credits spent per generated CV + cover letter. Arabic costs more because
- *  it takes more processing, which is why a free allowance yields fewer
- *  Arabic CVs than English ones — any copy about free usage must say so. */
-export const CREDIT_COST = { en: 1, ar: 2 };
+/** Credits spent per generated CV + cover letter. Arabic dropped to the same
+ *  1 credit as English on 2026-09-12 (it costs 1.76x on the model, but that's
+ *  about one halala — charging double was generous to us, not a reflection
+ *  of real cost, and penalised the primary market for a rounding error). */
+export const CREDIT_COST = { en: 1, ar: 1 };
 
-/** Monthly subscription price in SAR, and the credits it grants. */
+/** Monthly subscription price in SAR, and the credits it grants.
+ *  Elite 80->100 on 2026-09-12: 99/80 was 1.238 SAR/credit, worse than Pro's
+ *  29/24 = 1.208 — the larger tier must have the better rate. */
 export const TIERS: Record<"free" | "pro" | "elite", { sar: number; credits: number }> = {
   free: { sar: 0, credits: 3 },
   pro: { sar: 29, credits: 24 },
-  elite: { sar: 99, credits: 80 },
+  elite: { sar: 99, credits: 100 },
 };
 
 /** One-off credit packs. Keys are the `slug` the checkout route reads. */
@@ -71,11 +75,35 @@ export const PACKS: Record<"starter" | "best-value" | "power", { sar: number; cr
   power: { sar: 38, credits: 30 },
 };
 
-/** Bundled add-ons, capped per month. Neither is sold: both come with a
- *  paid plan, and Free gets zero of each. */
-export const ADDON_CAPS: Record<"pro" | "elite", { linkedinEssential: number; interviewPrep: number }> = {
-  pro: { linkedinEssential: 2, interviewPrep: 5 },
-  elite: { linkedinEssential: 5, interviewPrep: 15 },
+/** Bundled add-ons, INCLUDED with a paid plan up to this monthly count.
+ *  Free gets zero of all three. Once the count runs out, credits buy more —
+ *  see ADDON_CREDIT_COSTS below. jobSearch is a SHARED pool: the standalone
+ *  Job Search page and the per-CV "find matching jobs" button draw on the
+ *  same counter (2026-09-12, unifying the two entry points). */
+export const ADDON_CAPS: Record<"pro" | "elite", { linkedinEssential: number; interviewPrep: number; jobSearch: number }> = {
+  pro: { linkedinEssential: 2, interviewPrep: 5, jobSearch: 5 },
+  elite: { linkedinEssential: 5, interviewPrep: 15, jobSearch: 13 },
+};
+
+/**
+ * Credits it costs to buy ONE MORE of an add-on once the monthly baseline
+ * above is used up. Available to ANYONE with credits — a Free user, a
+ * Pro/Elite subscriber past their baseline, or someone who only bought a
+ * credit pack — not just paid subscribers (2026-09-12: buying a pack no
+ * longer promotes anyone to a Pro baseline; it just grants credits, which
+ * spend here exactly like on a CV).
+ *
+ * jobSearch ALSO HAS A PURCHASE CAP, equal to its own baseline above (Pro 5,
+ * Elite 13) — at most double the monthly allowance by paying for the rest.
+ * linkedinEssential and interviewPrep have no such cap: buy as many as
+ * credits allow. Free's jobSearch purchase cap is 0 (same as its baseline),
+ * so credits cannot buy a Job Search on Free — every other combination
+ * (tier x addon) can be bought with enough credits.
+ */
+export const ADDON_CREDIT_COSTS: Record<"linkedinEssential" | "interviewPrep" | "jobSearch", number> = {
+  linkedinEssential: 2,
+  interviewPrep: 3,
+  jobSearch: 5,
 };
 
 /** The only LinkedIn tier with a price. Essential deliberately has none —

@@ -279,3 +279,9 @@ class LinkedInGenerateRequest(BaseModel):
     # On the Essential route it is REQUIRED: nothing else says which CV to
     # build from.
     source_cv_id: Optional[str] = None
+    # ESSENTIAL ROUTE ONLY. Confirms spending credits once the monthly
+    # LinkedIn Essential baseline is exhausted (2026-09-12, credit-addons
+    # prompt item 2) — see core/entitlements.py's begin_addon_use. Ignored
+    # on the Premium route, which is a one-off Moyasar purchase and was
+    # never part of this credit system.
+    spend_credits: bool = False

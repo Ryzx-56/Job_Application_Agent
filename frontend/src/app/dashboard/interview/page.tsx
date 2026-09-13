@@ -5,6 +5,8 @@ import { AlertCircle, ArrowLeft, ArrowRight, Loader2, RefreshCw } from "lucide-r
 import { useLang } from "@/lib/language";
 import { formatMediumDate } from "@/lib/pricing";
 import { DashboardButton } from "@/components/dashboard";
+import { AddonPurchaseDialog } from "@/components/addon-purchase-dialog";
+import { readAddonPurchaseOffer, type AddonPurchaseOffer } from "@/lib/addonPurchase";
 import {
   ApiError,
   fetchInterviewOverview,
@@ -85,6 +87,14 @@ export default function InterviewPrepPage() {
   const [filter, setFilter] = useState<InterviewCategory | "all">("all");
   const [openIds, setOpenIds] = useState<Set<number>>(new Set());
 
+  // The 402 addon_purchase_available offer (baseline exhausted, credits
+  // could cover it). pendingCvId is which CV to resubmit against on
+  // confirm — generateInterviewPrep takes only a CV id, not a whole params
+  // object, so remembering the id alone is enough here.
+  const [purchaseOffer, setPurchaseOffer] = useState<AddonPurchaseOffer | null>(null);
+  const [pendingCvId, setPendingCvId] = useState<string | null>(null);
+  const [purchaseDialogError, setPurchaseDialogError] = useState<string | null>(null);
+
   // Shared formatter — see formatMediumDate in @/lib/pricing for why a bare
   // "ar-SA" is the one locale string this product never passes.
   const formatDate = useCallback(
@@ -149,17 +159,31 @@ export default function InterviewPrepPage() {
 
   function messageForError(err: ApiError): string {
     switch (err.code) {
-      case "upgrade_required":
-        return copy.errors.upgradeRequired;
+      // upgrade_required and monthly_limit_reached REMOVED (2026-09-13):
+      // nothing on this page's generate path can raise either any more.
+      // /api/v1/interview/generate uses get_current_user_id (not the
+      // paid-only dependency) and prices through begin_addon_use, which
+      // never raises a 403, and claims the baseline slot directly rather
+      // than through the old consume_addon_quota() wrapper that raised
+      // monthly_limit_reached. A used-up baseline now surfaces as
+      // addon_purchase_available (402, handled below as a dialog) instead.
+      // Confirmed against core/interview.py and core/entitlements.py
+      // directly before removing these two cases.
       case "no_jd":
         return copy.errors.no_jd;
       case "no_snapshot":
         return copy.errors.no_snapshot;
-      case "monthly_limit_reached":
-        return copy.errors.monthlyLimit;
       case "generation_failed":
       case "stream_interrupted":
         return copy.errors.generationFailed;
+      // core/rate_limit.py's request-VOLUME limiter (ADDON_GENERATION,
+      // 15/hour) — a distinct mechanism from the baseline/purchase system,
+      // with its own `code`. Neither a credit purchase nor an upgrade fixes
+      // this; it clears on its own.
+      case "rate_limited":
+        return copy.errors.rateLimited;
+      case "insufficient_credits":
+        return copy.errors.insufficientCredits;
       default:
         return err.message || copy.errors.generationFailed;
     }
@@ -228,18 +252,42 @@ export default function InterviewPrepPage() {
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
-  async function handleGenerate(cvId: string) {
+  async function handleGenerate(cvId: string, spendCredits = false) {
     setBusyId(cvId);
     setStep(null);
-    setActionError(null);
+    if (!spendCredits) {
+      setActionError(null);
+      setPurchaseOffer(null);
+      setPendingCvId(null);
+      setPurchaseDialogError(null);
+    } else {
+      setPurchaseDialogError(null);
+    }
     try {
-      const { content } = await generateInterviewPrep(cvId, lang, setStep);
+      const { content } = await generateInterviewPrep(cvId, lang, setStep, spendCredits);
       showResult(content, cvId);
+      setPurchaseOffer(null);
+      setPendingCvId(null);
       // Refreshes the remaining count and marks this CV as prepared.
       await load().catch(() => undefined);
     } catch (error) {
       const err = error as ApiError;
       console.error("generateInterviewPrep failed:", err);
+      if (!spendCredits) {
+        const offer = readAddonPurchaseOffer(err);
+        if (offer) {
+          // THE DIALOG IS THE RESPONSE — no generic error banner alongside
+          // it, and nothing has been charged yet.
+          setPendingCvId(cvId);
+          setPurchaseOffer(offer);
+          return;
+        }
+      } else {
+        // The CONFIRMED attempt failed (balance moved, or generation itself
+        // then failed) — shown inside the still-open dialog.
+        setPurchaseDialogError(messageForError(err));
+        return;
+      }
       setActionError(messageForError(err));
       // A 403 here means the tier changed under them (or the page was open
       // across an expiry). Re-reading the overview re-locks the page rather
@@ -249,6 +297,19 @@ export default function InterviewPrepPage() {
       setBusyId(null);
       setStep(null);
     }
+  }
+
+  function handlePurchaseConfirm() {
+    if (!pendingCvId) return;
+    handleGenerate(pendingCvId, true);
+  }
+
+  function handlePurchaseCancel() {
+    // Nothing is sent. No partial action, no credits touched — matching
+    // what begin_addon_use already guarantees server-side.
+    setPurchaseOffer(null);
+    setPendingCvId(null);
+    setPurchaseDialogError(null);
   }
 
   // Which phases this particular run will report. An English CV never emits
@@ -511,6 +572,18 @@ export default function InterviewPrepPage() {
           </DashboardButton>
         </div>
       )}
+
+      <AddonPurchaseDialog
+        open={purchaseOffer !== null}
+        isAr={lang === "ar"}
+        addonLabel={copy.title}
+        creditCost={purchaseOffer?.creditCost ?? 0}
+        creditBalance={purchaseOffer?.creditBalance ?? 0}
+        busy={busyId !== null}
+        error={purchaseDialogError}
+        onConfirm={handlePurchaseConfirm}
+        onCancel={handlePurchaseCancel}
+      />
     </div>
   );
 }

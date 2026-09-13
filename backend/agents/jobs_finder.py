@@ -53,6 +53,23 @@ from utils.ats_scorer import (
 # postings, add 'ajeer.qiwa.sa' (not ajeer.com.sa) and re-measure.
 PRIORITY_DOMAINS = ['jadarat.sa']
 
+# ─── PRIORITY LANE DEPTH OVERRIDE ───────────────────────────────────────────
+#
+# 2026-09-12, backend/tools/tavily_depth_test.py, 12 paired lane calls
+# (36 credits). Every lane except this one showed real divergence between
+# basic and advanced — different URLs, and basic content routinely under
+# half the length. The priority lane (Jadarat) was the one exception: 12/12
+# URL overlap on BOTH test queries run against it, and content length within
+# 5% either way (2130/2102 chars and 2056/1982 chars). Jadarat's own pages
+# are apparently simple enough that Tavily's cheap crawl already gets
+# everything the expensive one does — so this is the one lane where the
+# saving is free, not a quality trade.
+#
+# A PER-LANE OVERRIDE, NOT A GLOBAL SEARCH_DEPTH FLAG. The data only supports
+# it here; every other lane keeps the safe default. See _run_search_pass,
+# the only place this constant is read.
+PRIORITY_LANE_SEARCH_DEPTH = search_provider.DEPTH_FAST
+
 # Established boards and aggregators. These are PRE-VETTED: a result from
 # one of them skips the legitimacy filter below, because the platform itself
 # is the vetting. Every entry is a well-established board verified as
@@ -1067,7 +1084,8 @@ SearchUnavailable = search_provider.SearchUnavailable
 
 
 def _search_lane(client, query: str, domains: list[str] | None, max_results: int,
-                 counter: dict | None = None, country: str | None = None):
+                 counter: dict | None = None, country: str | None = None,
+                 depth: str = search_provider.DEPTH_THOROUGH):
     """
     One lane's worth of results, from whichever provider is configured.
 
@@ -1076,6 +1094,11 @@ def _search_lane(client, query: str, domains: list[str] | None, max_results: int
     and the dispatcher builds its own, but the parameter is kept so the four
     concurrent lane calls below did not all have to change shape at the same
     time as the provider did.
+
+    `depth` is one of search_provider's neutral DEPTH_* constants, passed
+    straight through — this function doesn't decide which lane gets which
+    depth, _run_search_pass does, since that's where each lane's identity
+    (priority/trusted/saudi/open) is actually known.
 
     QUOTA IS NOT A LANE FAILURE. Every other error here means this one lane
     found nothing, which the other three can cover for. Running out of
@@ -1086,7 +1109,7 @@ def _search_lane(client, query: str, domains: list[str] | None, max_results: int
     try:
         return search_provider.search(
             query, domains=domains, max_results=max_results,
-            counter=counter, country=country,
+            counter=counter, country=country, depth=depth,
         )
     except search_provider.SearchQuotaExhausted:
         raise
@@ -1239,7 +1262,12 @@ def _run_search_pass(
         # inside each query) and a pool worker inherits NO thread-local state.
         # The first version of this counted only the outermost four calls and
         # under-reported a real search by a factor of three.
-        priority_future = executor.submit(_search_lane, client, query, PRIORITY_DOMAINS, RAW_FETCH_LIMIT, counter)
+        # PRIORITY LANE DEPTH OVERRIDE — see the constant's own comment above.
+        # Every other lane below gets no explicit depth, i.e. the safe default.
+        priority_future = executor.submit(
+            _search_lane, client, query, PRIORITY_DOMAINS, RAW_FETCH_LIMIT, counter,
+            depth=PRIORITY_LANE_SEARCH_DEPTH,
+        )
         trusted_future = executor.submit(_search_lane, client, query, TRUSTED_DOMAINS, RAW_FETCH_LIMIT, counter)
         saudi_future = executor.submit(
             _search_lane, client, query, SAUDI_AGGREGATOR_DOMAINS, SAUDI_AGGREGATOR_FETCH_LIMIT,
@@ -1738,6 +1766,46 @@ def _screen_and_finalize(
     return _finalize_listings(screened)
 
 
+def assert_search_affordable(context: str = "search") -> None:
+    """
+    THE LAYER 1+3 PRE-FLIGHT, factored out so a caller can run it BEFORE
+    spending anything (2026-09-12, credit-addons prompt item 9) rather than
+    only inside search_jobs_by_title / find_similar_jobs, which now run
+    AFTER core/job_search.py and core/documents.py have already claimed a
+    baseline slot or reserved credits via entitlements.begin_addon_use.
+
+    Without this, "the pre-flight runs before any credit is deducted" would
+    only be true in the refund sense (claim, then refund on a caught
+    SearchUnavailable/SearchQuotaExhausted) rather than the stronger sense
+    the rule actually asks for — checked first, nothing claimed at all if it
+    fails. Both callers now do:
+
+        agents.jobs_finder.assert_search_affordable("...")
+        payment = begin_addon_use(...)
+        try: <run the search> ...
+
+    Still called again, redundantly, at the top of search_jobs_by_title and
+    find_similar_jobs themselves — cheap (a cached balance read, not a
+    network call except on a rare cache miss) and correct defence-in-depth
+    for any future caller that reaches either function directly.
+
+    Raises SearchUnavailable (no key/provider configured) or
+    SearchQuotaExhausted (the platform quota can't afford this search).
+    """
+    search_provider.assert_provider_configured()
+    cold_start = not search_provider.balance_is_known()
+    search_provider.assert_search_headroom(
+        search_provider.COLD_START_CALL_BUDGET * search_provider.units_per_call()
+        if cold_start else None
+    )
+    if cold_start:
+        logger.info(
+            f"🔍 Cold start: no known search balance yet, so this {context} runs on a "
+            f"reduced budget ({search_provider.COLD_START_CALL_BUDGET} calls). The "
+            "response teaches the process its balance and the next search is fully guarded."
+        )
+
+
 def search_jobs_by_title(
     job_title: str,
     location: str | None = None,
@@ -1774,22 +1842,8 @@ def search_jobs_by_title(
     # raises SearchUnavailable instead, and the caller says so — checked ONCE,
     # up front, rather than discovered independently by all four lanes and
     # swallowed into an empty page (see that function's docstring).
-    search_provider.assert_provider_configured()
+    assert_search_affordable("standalone job search")
     cold_start = not search_provider.balance_is_known()
-    search_provider.assert_search_headroom(
-        # On a cold start the balance is unknown, so the search runs on a
-        # reduced budget rather than a full one — see COLD_START_CALL_BUDGET.
-        # Render's free tier spins down when idle, so this is a routine path,
-        # not an edge case.
-        search_provider.COLD_START_CALL_BUDGET * search_provider.units_per_call()
-        if cold_start else None
-    )
-    if cold_start:
-        logger.info(
-            "🔍 Cold start: no known search balance yet, so this search runs on the "
-            f"primary lane only ({search_provider.COLD_START_CALL_BUDGET} calls). The "
-            "response teaches the process its balance and the next search is fully guarded."
-        )
 
     client = None
     where = (location or "").strip()
@@ -1915,19 +1969,8 @@ def find_similar_jobs(
     two-sided (before/after) and why a cold start (routine on Render's free
     tier) gets a bounded first search rather than a full one.
     """
-    search_provider.assert_provider_configured()
+    assert_search_affordable("find-jobs run")
     cold_start = not search_provider.balance_is_known()
-    search_provider.assert_search_headroom(
-        search_provider.COLD_START_CALL_BUDGET * search_provider.units_per_call()
-        if cold_start else None
-    )
-    if cold_start:
-        logger.info(
-            "🔍 Cold start: no known search balance yet, so this find-jobs run stays "
-            f"on the primary query only ({search_provider.COLD_START_CALL_BUDGET} calls). "
-            "The response teaches the process its balance and the next search is fully "
-            "guarded — same behaviour as search_jobs_by_title."
-        )
     client = None
 
     job_title = weight_factors.get("job_title", "Software Engineer")

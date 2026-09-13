@@ -13,6 +13,7 @@ import { LANG_COOKIE, localePath, splitLocale } from "@/lib/lang-cookie";
 import { useRouter } from "next/navigation";
 import {
   ADDON_CAPS,
+  ADDON_CREDIT_COSTS,
   CREDIT_COST,
   LINKEDIN_PREMIUM_SAR,
   PACKS,
@@ -37,6 +38,7 @@ const AR_POINTS = { one: "نقطة واحدة", two: "نقطتان", few: "نق�
 const AR_CVS = { one: "سيرة ذاتية واحدة", two: "سيرتان ذاتيتان", few: "سير ذاتية", many: "سيرة ذاتية" };
 const AR_PROFILES = { one: "ملف واحد", two: "ملفان", few: "ملفات", many: "ملفًا" };
 const AR_JOBS = { one: "وظيفة واحدة", two: "وظيفتان", few: "وظائف", many: "وظيفة" };
+const AR_SEARCHES = { one: "بحث واحد", two: "بحثان", few: "عمليات بحث", many: "عملية بحث" };
 
 /* ========================================================================
    CONTENT — one dictionary per language, shared by every page. Add new
@@ -61,10 +63,11 @@ export const content = {
        list. This states what the product does and what you get.
 
        The free line is the third messaging pillar and sits with the CTA
-       because it removes the last objection before signup. It has to be
-       exact: an Arabic CV costs two credits, so the free allowance yields
-       fewer Arabic CVs than English ones and the copy says so rather than
-       rounding in our favour. Numbers come from lib/pricing.ts. */
+       because it removes the last objection before signup. Arabic and
+       English cost the same 1 credit each (2026-09-12 — Arabic used to cost
+       2), so the free allowance yields the same number of CVs in either
+       language; the copy says so plainly rather than hedging. Numbers come
+       from lib/pricing.ts. */
     hero: {
       /* THE H1 NAMES THE CATEGORY NOW. "Every job gets its own CV" was the
          better sentence and it carried none of the words anyone types into a
@@ -75,7 +78,7 @@ export const content = {
       sub: "Paste the job description and get a CV and cover letter written for it, in Arabic or English. Each one comes with an ATS score, the gaps behind it, and live job openings matched to your CV.",
       ctaPrimary: "Start free",
       ctaSecondary: "See how it works",
-      freeLine: `${enCount(TIERS.free.credits, "credit")} free every month, no card. That is ${TIERS.free.credits} CVs in English, or one in Arabic and one in English.`,
+      freeLine: `${enCount(TIERS.free.credits, "credit")} free every month, no card. That is ${TIERS.free.credits} CVs, in English or Arabic.`,
       // Alt text. The visuals carry real information, so they get described
       // rather than labelled "product screenshot".
       scoreAlt: "An ATS score of 92, broken into skills, keywords, job title, experience and education",
@@ -459,11 +462,23 @@ export const content = {
           period: "/ month",
           description: "Everything you need to try Tarshih on your next application.",
           features: [
-            `${enCount(TIERS.free.credits, "credit")} / month: ${TIERS.free.credits} English CVs, or mix in Arabic`,
+            `${enCount(TIERS.free.credits, "credit")} / month: ${TIERS.free.credits} CVs, in English or Arabic`,
             "Full ATS & job match scoring",
             "Tailored CV + matching cover letter",
             "Resume history, last 10 kept",
           ],
+          // WHAT'S NOT INCLUDED, STATED PLAINLY (2026-09-13) — the contrast is
+          // part of the answer, not just the inclusion list. Free's baselines
+          // for all three add-ons are zero (core/entitlements.py ADDON_CAPS),
+          // but Job Search is the one exception credits cannot buy either
+          // (PURCHASE_CAPPED_ADDONS's purchase cap == baseline == 0 on Free)
+          // — said explicitly rather than left to be discovered mid-search.
+          notIncluded: [
+            "LinkedIn Essential — buyable with credits instead",
+            "Interview Prep — buyable with credits instead",
+            "Job Search — Pro and Elite only, not available for credits either",
+          ] as string[] | null,
+          creditsNote: `Credits left after your CVs still spend: ${enCount(ADDON_CREDIT_COSTS.linkedinEssential, "credit")} for a LinkedIn Essential profile, or ${enCount(ADDON_CREDIT_COSTS.interviewPrep, "credit")} for an Interview Prep.`,
           cta: "Get started free",
           badge: null as string | null,
           limitedOffer: null as string | null,
@@ -481,7 +496,7 @@ export const content = {
           period: "/ month",
           description: "For active job seekers who want serious volume, every time.",
           features: [
-            `${enCount(TIERS.pro.credits, "credit")} / month: ${TIERS.pro.credits} English CVs, or mix in Arabic`,
+            `${enCount(TIERS.pro.credits, "credit")} / month: ${TIERS.pro.credits} CVs, in English or Arabic`,
             "Tailored CV + personalized cover letter",
             "Full ATS & job match scoring",
             "Shows exactly what you're missing",
@@ -489,10 +504,24 @@ export const content = {
             "Fact-check pass on every generation",
             `LinkedIn Essential, ${ADDON_CAPS.pro.linkedinEssential} profiles / month`,
             `Interview Prep, ${ADDON_CAPS.pro.interviewPrep} jobs / month`,
+            `Job Search, ${ADDON_CAPS.pro.jobSearch} searches / month`,
             "Pro badge on your profile",
             "Resume history, last 100 kept",
             "Priority processing",
           ],
+          notIncluded: [
+            "Elite's larger monthly allowances (credits, LinkedIn, Interview Prep, Job Search)",
+            "Elite badge",
+            "Unlimited resume history",
+            "Highest processing priority",
+          ] as string[] | null,
+          // ONCE AN ALLOWANCE RUNS OUT, CREDITS BUY MORE — Job Search is the
+          // one with a purchase cap on top of its baseline (equal to it, so
+          // Pro can buy at most 5 more), because it is the one add-on that
+          // costs noticeably more per credit than a CV; LinkedIn Essential
+          // and Interview Prep have no such cap, only the credits themselves
+          // limit how many more you buy.
+          creditsNote: `Once a monthly allowance above is used up, credits buy more: ${enCount(ADDON_CREDIT_COSTS.linkedinEssential, "credit")} for another LinkedIn Essential, ${enCount(ADDON_CREDIT_COSTS.interviewPrep, "credit")} for another Interview Prep, or ${enCount(ADDON_CREDIT_COSTS.jobSearch, "credit")} for another Job Search (up to ${ADDON_CAPS.pro.jobSearch} more a month).`,
           cta: "Start Pro",
           badge: "Most Popular",
           // The founding offer is a BADGE and a scarcity claim. It is not a
@@ -508,7 +537,7 @@ export const content = {
           period: "/ month",
           description: "The premium tier for candidates who want every advantage.",
           features: [
-            `${enCount(TIERS.elite.credits, "credit")} / month: ${TIERS.elite.credits} English CVs, or mix in Arabic`,
+            `${enCount(TIERS.elite.credits, "credit")} / month: ${TIERS.elite.credits} CVs, in English or Arabic`,
             "Tailored CV + personalized cover letter",
             "Full ATS & job match scoring",
             "Shows exactly what you're missing",
@@ -516,11 +545,17 @@ export const content = {
             "Fact-check pass on every generation",
             `LinkedIn Essential, ${ADDON_CAPS.elite.linkedinEssential} profiles / month`,
             `Interview Prep, ${ADDON_CAPS.elite.interviewPrep} jobs / month`,
+            `Job Search, ${ADDON_CAPS.elite.jobSearch} searches / month`,
             "Unlimited resume history",
             "Highest AI processing priority",
             "Exclusive Elite badge on your profile",
             "Everything included in Pro",
           ],
+          // The top tier — nothing is withheld, so there is no contrast list
+          // to show. Still says the honest thing about Job Search: 13 more
+          // a month via credits, not unlimited.
+          notIncluded: null as string[] | null,
+          creditsNote: `Once a monthly allowance above is used up, credits buy more: ${enCount(ADDON_CREDIT_COSTS.linkedinEssential, "credit")} for another LinkedIn Essential, ${enCount(ADDON_CREDIT_COSTS.interviewPrep, "credit")} for another Interview Prep, or ${enCount(ADDON_CREDIT_COSTS.jobSearch, "credit")} for another Job Search (up to ${ADDON_CAPS.elite.jobSearch} more a month).`,
           cta: "Go Elite",
           badge: null as string | null,
           limitedOffer: null as string | null,
@@ -567,7 +602,7 @@ export const content = {
 
       creditsTitle: "One credit, one application",
       creditsBody:
-        "A credit covers one CV rewritten for a posting and the cover letter that goes with it. Arabic spends two, because an Arabic generation runs a localisation and script pass that an English one does not.",
+        "A credit covers one CV rewritten for a posting and the cover letter that goes with it — the same 1 credit whether it's written in English or Arabic.",
       // Values interpolated from CREDIT_COST, never typed. The last two are
       // "included" because scoring and the job search run inside the SAME
       // generation — see core/orchestrator.py, where document_generator,
@@ -581,7 +616,12 @@ export const content = {
       ],
 
       packsTitle: "Or buy credits on their own",
-      packsBody: "A one-off purchase rather than a subscription, for a search that comes in bursts.",
+      // 2026-09-12: made explicit that a pack is credits only — no monthly
+      // LinkedIn Essential / Interview Prep / Job Search allowance comes
+      // with it (that used to be true briefly and wrongly; see
+      // core/entitlements.py's removal note). Credits still spend on those
+      // three once a subscriber's own baseline runs out, same as anyone's.
+      packsBody: "A one-off purchase rather than a subscription, for a search that comes in bursts. Credits only — no monthly allowance for Job Search, Interview Prep or LinkedIn Essential comes with a pack, but you can spend the credits on any of those once your plan's own allowance (if any) runs out.",
 
       foundingTitle: "Founding members",
       foundingBody:
@@ -685,13 +725,13 @@ export const content = {
         body: "Write in either. Arabic CVs are laid out right-to-left properly, with Arabic typography rather than a mirrored English template — and the job matching works in both languages.",
       },
 
-      // Interpolated, never typed — see CLAUDE.md: an Arabic CV costs more
-      // credits than an English one, so a flat "three CVs" claim would be
-      // true in English and false in Arabic. Same phrasing shape as
-      // hero.freeLine above.
+      // Interpolated, never typed — see CLAUDE.md: prices and credit costs
+      // change, most recently 2026-09-12 when Arabic dropped from 2 credits
+      // to the same 1 as English. Same phrasing shape as hero.freeLine
+      // above.
       freeSection: {
         title: "What you get free",
-        body: `${enCount(TIERS.free.credits, "credit")} free every month, no card needed. That's ${TIERS.free.credits} CVs in English, or one in Arabic and one in English — plus the ATS score on every one, and a cover letter.`,
+        body: `${enCount(TIERS.free.credits, "credit")} free every month, no card needed. That's ${TIERS.free.credits} CVs, in English or Arabic — plus the ATS score on every one, and a cover letter.`,
       },
     },
     /* ── LinkedIn add-on, featured section on the landing page ──
@@ -834,7 +874,7 @@ export const content = {
         {
           id: "credits",
           q: "What's a credit and how many do I get?",
-          a: `A credit is what you spend generating one tailored CV and cover letter. English applications cost ${enCount(CREDIT_COST.en, "credit")}, Arabic applications cost ${CREDIT_COST.ar}, since they take more processing. Free includes ${enCount(TIERS.free.credits, "credit")} a month, Pro includes ${TIERS.pro.credits}, and Elite includes ${TIERS.elite.credits}.`,
+          a: `A credit is what you spend generating one tailored CV and cover letter — ${enCount(CREDIT_COST.en, "credit")}, in English or Arabic. Credits also buy more Job Search, Interview Prep or LinkedIn Essential once your monthly allowance for one of those runs out. Free includes ${enCount(TIERS.free.credits, "credit")} a month, Pro includes ${TIERS.pro.credits}, and Elite includes ${TIERS.elite.credits}.`,
         },
         {
           id: "sounds-like-me",
@@ -1360,13 +1400,40 @@ export const content = {
           missingTitle: "Enter a job title to search for.",
           titleTooLong: "That looks like a job description. Enter just the job title.",
           search: "Job search is temporarily unavailable. Please try again shortly.",
-          upgradeRequired: "Job Search is available on the Pro and Elite plans.",
+          historyUnavailable: "Could not load your search history right now.",
+          reopenFailed: "Could not open that search right now. Try again, or search again.",
+          // 2026-09-13: replaces upgradeRequired, which nothing on this
+          // page's search path can raise any more — see messageFor's own
+          // comment in job-search/page.tsx. purchaseLimitReached is Job
+          // Search's own purchase cap (on top of the baseline); rateLimited
+          // is the unrelated 30/hour request-volume limiter.
+          purchaseLimitReached: "You've bought the most searches this month allows with credits. It resets with your next billing cycle.",
+          rateLimited: "You're searching faster than we can keep up with. Please wait a moment and try again.",
+          insufficientCredits: "Your credit balance changed before this could be confirmed. Check your balance and try again.",
         },
         locked: {
           badge: "Pro and Elite",
           title: "Search jobs without a CV",
           body: "Enter a job title and get current openings from Saudi government platforms, the major boards, and companies' own careers pages. Upgrade to search.",
           cta: "See plans",
+        },
+        /* Cache age, staleness and the Refresh confirmation — 2026-09-12.
+           A result set can come from a shared cache another user's search
+           already filled, so the age is about the LISTINGS, not "your last
+           search". */
+        foundAgo: (relative: string) => `Found ${relative}`,
+        stale: "These results may be outdated.",
+        refreshCta: "Refresh",
+        refreshing: "Refreshing…",
+        refreshConfirm: {
+          question: "Search again for the latest listings?",
+          confirm: "Yes, search again",
+          cancel: "Cancel",
+        },
+        history: {
+          heading: "Recent searches",
+          empty: "You haven't searched anything yet.",
+          reopenLabel: (query: string) => `Reopen search: ${query}`,
         },
       },
 
@@ -1488,13 +1555,24 @@ export const content = {
 
         errors: {
           load: "We couldn't load your CVs. Please try again.",
-          upgradeRequired: "Interview Prep is available on the Pro and Elite plans.",
+          // 2026-09-12: Interview Prep is no longer subscription-only — once
+          // the monthly baseline (Pro/Elite) is used up, anyone can buy one
+          // with credits (ADDON_CREDIT_COSTS.interviewPrep each). This copy
+          // is what's shown for a genuine subscription-only failure; the
+          // dedicated "spend N credits?" confirmation (addon_purchase_available)
+          // needs its own dialog, not this string.
+          // upgradeRequired and monthlyLimit REMOVED (2026-09-13): the
+          // "spend N credits?" confirmation is now a real dialog
+          // (AddonPurchaseDialog), and neither code can be raised by
+          // /api/v1/interview/generate any more — see messageForError's own
+          // comment in interview/page.tsx.
           no_jd: "This CV has no job description saved with it, so there's nothing to prepare against.",
           no_snapshot:
             "This CV was saved before we started storing the data this needs. Generate a newer CV and prepare from that one.",
           generationFailed:
             "Something went wrong preparing your questions. Nothing was charged, so please try again.",
-          monthlyLimit: "You have used all of this month's interview preps. Your allowance resets with your credits.",
+          rateLimited: "You're preparing faster than we can keep up with. Please wait a moment and try again.",
+          insufficientCredits: "Your credit balance changed before this could be confirmed. Check your balance and try again.",
           retry: "Try again",
         },
       },
@@ -1602,10 +1680,16 @@ export const content = {
           cta: "Generate a LinkedIn profile",
           remaining: (left: number, total: number) => `${left} of ${total} left this month`,
           usedUp: (total: number) =>
-            `You have used all ${total} of this month's LinkedIn profiles. Your allowance resets with your credits.`,
+            `You have used all ${total} of this month's LinkedIn profiles. It resets with your next billing cycle — or spend credits to generate one now.`,
+          usedUpCta: "Use credits instead",
           lockedTitle: "Included with Pro and Elite",
-          lockedBody: `Subscribe to generate LinkedIn profiles from your CVs: ${ADDON_CAPS.pro.linkedinEssential} a month on Pro, ${ADDON_CAPS.elite.linkedinEssential} a month on Elite.`,
+          // 2026-09-12: this used to say "subscribe" as the only path.
+          // Buying a credit pack now works too — any credits you hold spend
+          // on this exactly like on a CV, at ADDON_CREDIT_COSTS.linkedinEssential
+          // each, no subscription required.
+          lockedBody: `Included free with Pro (${ADDON_CAPS.pro.linkedinEssential} a month) and Elite (${ADDON_CAPS.elite.linkedinEssential} a month) — or spend ${enCount(ADDON_CREDIT_COSTS.linkedinEssential, "credit")} to generate one now.`,
           lockedCta: "See plans",
+          lockedCtaCredits: "Use credits instead",
         },
 
         tiers: {
@@ -1827,6 +1911,8 @@ export const content = {
             "That CV was saved before structured data was stored, so we cannot build from it. Please select a more recent one.",
           generationFailed:
             "Something went wrong while generating your profile. Your purchase remains valid, so please try again.",
+          rateLimited: "You're generating faster than we can keep up with. Please wait a moment and try again.",
+          insufficientCredits: "Your credit balance changed before this could be confirmed. Check your balance and try again.",
         },
       },
     },
@@ -1858,7 +1944,7 @@ export const content = {
       sub: "الصق إعلان الوظيفة لتحصل على سيرة ذاتية وخطاب تقديم مكتوبين له، بالعربية أو بالإنجليزية. ومع كل سيرة درجة توافق مع أنظمة ATS، وما ينقصها، ووظائف مفتوحة تناسب خبرتك.",
       ctaPrimary: "ابدأ مجانًا",
       ctaSecondary: "شاهد كيف يعمل",
-      freeLine: `${arCount(TIERS.free.credits, AR_POINTS)} مجانًا كل شهر، بلا بطاقة. تكفي ${arCount(TIERS.free.credits, AR_CVS)} بالإنجليزية، أو واحدة بالعربية وأخرى بالإنجليزية.`,
+      freeLine: `${arCount(TIERS.free.credits, AR_POINTS)} مجانًا كل شهر، بلا بطاقة. تكفي ${arCount(TIERS.free.credits, AR_CVS)}، بالإنجليزية أو العربية.`,
       scoreAlt: "درجة توافق مع أنظمة التتبع 92، موزّعة على المهارات والكلمات المفتاحية والمسمى الوظيفي والخبرة والتعليم",
       matchesAlt: "خمس وظائف مطابقة، كل واحدة موسومة بتطابق قوي أو جزئي أو فرصة طموحة",
     },
@@ -2178,11 +2264,17 @@ export const content = {
           period: "شهريًا",
           description: "كل ما تحتاجه لتجربة ترشيح في طلبك القادم.",
           features: [
-            `${arCount(TIERS.free.credits, AR_POINTS)} شهريًا: ${arCount(TIERS.free.credits, AR_CVS)} إنجليزية، أو مزيج مع العربية`,
+            `${arCount(TIERS.free.credits, AR_POINTS)} شهريًا: ${arCount(TIERS.free.credits, AR_CVS)} بالإنجليزية أو العربية`,
             "نتيجة ATS وتوافق وظيفي كاملة",
             "سيرة ذاتية مخصصة + خطاب تقديم مطابق",
             "سجل يحفظ آخر 10 سير ذاتية",
           ],
+          notIncluded: [
+            "لينكدإن الأساسية — يمكن شراؤها بالنقاط بدلًا من ذلك",
+            "التحضير للمقابلة — يمكن شراؤه بالنقاط بدلًا من ذلك",
+            "البحث عن وظائف — حصري لبرو والنخبة، ولا يُشترى بالنقاط أيضًا",
+          ] as string[] | null,
+          creditsNote: `ما تبقى من نقاط بعد سيرك الذاتية ينفق أيضًا: ${arCount(ADDON_CREDIT_COSTS.linkedinEssential, AR_POINTS)} لملف لينكدإن الأساسي، أو ${arCount(ADDON_CREDIT_COSTS.interviewPrep, AR_POINTS)} لتحضير مقابلة.`,
           cta: "ابدأ مجانًا",
           badge: null as string | null,
           limitedOffer: null as string | null,
@@ -2198,7 +2290,7 @@ export const content = {
           period: "شهريًا",
           description: "لمن يبحث عن عمل بنشاط ويريد كمية أكبر من الطلبات، في كل مرة.",
           features: [
-            `${arCount(TIERS.pro.credits, AR_POINTS)} شهريًا: ${arCount(TIERS.pro.credits, AR_CVS)} إنجليزية، أو مزيج مع العربية`,
+            `${arCount(TIERS.pro.credits, AR_POINTS)} شهريًا: ${arCount(TIERS.pro.credits, AR_CVS)} بالإنجليزية أو العربية`,
             "سيرة ذاتية مخصصة + خطاب تقديم شخصي",
             "نتيجة ATS وتوافق وظيفي كاملة",
             "يوضح بالضبط ما ينقصك",
@@ -2206,10 +2298,18 @@ export const content = {
             "مراجعة تحقق من الحقائق",
             `لينكدإن الأساسية، ${arCount(ADDON_CAPS.pro.linkedinEssential, AR_PROFILES)} شهريًا`,
             `التحضير للمقابلة، ${arCount(ADDON_CAPS.pro.interviewPrep, AR_JOBS)} شهريًا`,
+            `البحث عن وظائف، ${arCount(ADDON_CAPS.pro.jobSearch, AR_SEARCHES)} شهريًا`,
             "شارة برو على ملفك الشخصي",
             "سجل يحفظ آخر 100 سيرة ذاتية",
             "معالجة ذات أولوية",
           ],
+          notIncluded: [
+            "الحدود الشهرية الأكبر في النخبة (نقاط، لينكدإن، التحضير للمقابلة، البحث عن وظائف)",
+            "شارة النخبة",
+            "سجل غير محدود للسير الذاتية",
+            "أعلى أولوية في المعالجة",
+          ] as string[] | null,
+          creditsNote: `عند نفاد أحد الحدود الشهرية أعلاه، تشتري النقاط المزيد: ${arCount(ADDON_CREDIT_COSTS.linkedinEssential, AR_POINTS)} لملف لينكدإن إضافي، ${arCount(ADDON_CREDIT_COSTS.interviewPrep, AR_POINTS)} لتحضير مقابلة إضافي، أو ${arCount(ADDON_CREDIT_COSTS.jobSearch, AR_POINTS)} لعملية بحث إضافية (حتى ${ADDON_CAPS.pro.jobSearch} أخرى في الشهر).`,
           cta: "ابدأ مع برو",
           badge: "الأكثر رواجًا",
           // عرض التأسيس شارة وندرة، وليس خصمًا.
@@ -2224,7 +2324,7 @@ export const content = {
           period: "شهريًا",
           description: "الفئة المميزة لمن يريد كل ميزة ممكنة في طلباته.",
           features: [
-            `${arCount(TIERS.elite.credits, AR_POINTS)} شهريًا: ${arCount(TIERS.elite.credits, AR_CVS)} إنجليزية، أو مزيج مع العربية`,
+            `${arCount(TIERS.elite.credits, AR_POINTS)} شهريًا: ${arCount(TIERS.elite.credits, AR_CVS)} بالإنجليزية أو العربية`,
             "سيرة ذاتية مخصصة + خطاب تقديم شخصي",
             "نتيجة ATS وتوافق وظيفي كاملة",
             "يوضح بالضبط ما ينقصك",
@@ -2232,11 +2332,14 @@ export const content = {
             "مراجعة تحقق من الحقائق",
             `لينكدإن الأساسية، ${arCount(ADDON_CAPS.elite.linkedinEssential, AR_PROFILES)} شهريًا`,
             `التحضير للمقابلة، ${arCount(ADDON_CAPS.elite.interviewPrep, AR_JOBS)} شهريًا`,
+            `البحث عن وظائف، ${arCount(ADDON_CAPS.elite.jobSearch, AR_SEARCHES)} شهريًا`,
             "سجل غير محدود للسير الذاتية",
             "أعلى أولوية في معالجة الذكاء الاصطناعي",
             "شارة النخبة الحصرية على ملفك الشخصي",
             "كل ما في خطة برو",
           ],
+          notIncluded: null as string[] | null,
+          creditsNote: `عند نفاد أحد الحدود الشهرية أعلاه، تشتري النقاط المزيد: ${arCount(ADDON_CREDIT_COSTS.linkedinEssential, AR_POINTS)} لملف لينكدإن إضافي، ${arCount(ADDON_CREDIT_COSTS.interviewPrep, AR_POINTS)} لتحضير مقابلة إضافي، أو ${arCount(ADDON_CREDIT_COSTS.jobSearch, AR_POINTS)} لعملية بحث إضافية (حتى ${ADDON_CAPS.elite.jobSearch} أخرى في الشهر).`,
           cta: "انضم إلى النخبة",
           badge: null as string | null,
           limitedOffer: null as string | null,
@@ -2304,7 +2407,7 @@ export const content = {
 
       creditsTitle: "نقطة واحدة، طلب واحد",
       creditsBody:
-        "تغطي النقطة سيرة ذاتية واحدة تُعاد كتابتها لإعلان وظيفة، وخطاب التقديم المرافق لها. والعربية تستهلك نقطتين، لأن الإنشاء بالعربية يمرّ بمرحلة توطين ومعالجة للنص لا تمرّ بها الإنجليزية.",
+        "تغطي النقطة سيرة ذاتية واحدة تُعاد كتابتها لإعلان وظيفة، وخطاب التقديم المرافق لها — نقطة واحدة سواء كتبتها بالإنجليزية أو العربية.",
       // القيم تأتي من CREDIT_COST ولا تُكتب. والسطران الأخيران «مشمول» لأن
       // التقييم والبحث عن الوظائف يجريان داخل الإنشاء نفسه (انظر
       // core/orchestrator.py)، فلا يكلّفان شيئًا فوق النقطة المدفوعة أصلًا.
@@ -2316,7 +2419,7 @@ export const content = {
       ],
 
       packsTitle: "أو اشترِ النقاط وحدها",
-      packsBody: "شراء لمرة واحدة لا اشتراك، لبحث يأتي على فترات متباعدة.",
+      packsBody: "شراء لمرة واحدة لا اشتراك، لبحث يأتي على فترات متباعدة. نقاط فقط — لا حد شهري للبحث عن وظائف أو التحضير للمقابلة أو لينكدإن الأساسية يأتي مع الحزمة، لكن يمكنك إنفاق النقاط على أي منها بعد نفاد حد خطتك (إن وُجد).",
 
       foundingTitle: "الأعضاء المؤسِّسون",
       foundingBody:
@@ -2398,7 +2501,7 @@ export const content = {
 
       freeSection: {
         title: "ما تحصل عليه مجانًا",
-        body: `${arCount(TIERS.free.credits, AR_POINTS)} مجانًا كل شهر، بلا بطاقة. تكفي ${arCount(TIERS.free.credits, AR_CVS)} بالإنجليزية، أو واحدة بالعربية وأخرى بالإنجليزية — إضافة إلى درجة ATS لكل سيرة، وخطاب تقديم.`,
+        body: `${arCount(TIERS.free.credits, AR_POINTS)} مجانًا كل شهر، بلا بطاقة. تكفي ${arCount(TIERS.free.credits, AR_CVS)}، بالإنجليزية أو العربية — إضافة إلى درجة ATS لكل سيرة، وخطاب تقديم.`,
       },
     },
     /* ── إضافة لينكدإن، قسم مميز في الصفحة الرئيسية ──
@@ -2528,7 +2631,7 @@ export const content = {
         {
           id: "credits",
           q: "ما هي النقطة (Credit) وكم أحصل منها؟",
-          a: `النقطة هي ما تستهلكه لتوليد سيرة ذاتية وخطاب تقديم مخصصين. الطلبات بالإنجليزية تكلّف ${arCount(CREDIT_COST.en, AR_POINTS)}، والطلبات بالعربية تكلّف ${arCount(CREDIT_COST.ar, AR_POINTS)} لأنها تتطلب معالجة أكبر. تشمل الخطة المجانية ${arCount(TIERS.free.credits, AR_POINTS)} شهريًا، وبرو ${arCount(TIERS.pro.credits, AR_POINTS)}، والنخبة ${arCount(TIERS.elite.credits, AR_POINTS)}.`,
+          a: `النقطة هي ما تستهلكه لتوليد سيرة ذاتية وخطاب تقديم مخصصين — ${arCount(CREDIT_COST.en, AR_POINTS)}، بالإنجليزية أو العربية. يمكنك أيضًا استخدام رصيدك لشراء المزيد من البحث عن وظائف أو التحضير للمقابلة أو ملف لينكدإن الأساسي بعد نفاد الحد الشهري لأي منها. تشمل الخطة المجانية ${arCount(TIERS.free.credits, AR_POINTS)} شهريًا، وبرو ${arCount(TIERS.pro.credits, AR_POINTS)}، والنخبة ${arCount(TIERS.elite.credits, AR_POINTS)}.`,
         },
         {
           id: "sounds-like-me",
@@ -2980,13 +3083,34 @@ export const content = {
           missingTitle: "اكتب المسمى الوظيفي للبحث عنه.",
           titleTooLong: "هذا يبدو وصفًا وظيفيًا. اكتب المسمى الوظيفي فقط.",
           search: "خدمة البحث غير متاحة حاليًا. حاول مرة أخرى بعد قليل.",
-          upgradeRequired: "البحث عن وظائف متاح في الباقتين المدفوعتين.",
+          historyUnavailable: "تعذّر تحميل سجل بحثك الآن.",
+          purchaseLimitReached: "لقد اشتريت أقصى عدد من عمليات البحث هذا الشهر بالنقاط. يُعاد الحد مع دورة الفوترة القادمة.",
+          rateLimited: "أنت تبحث أسرع مما يمكننا مواكبته. انتظر لحظة وحاول مرة أخرى.",
+          insufficientCredits: "تغيّر رصيدك قبل تأكيد هذا الطلب. تحقق من رصيدك وحاول مرة أخرى.",
+          reopenFailed: "تعذّر فتح هذا البحث الآن. حاول مرة أخرى، أو ابحث من جديد.",
         },
         locked: {
           badge: "للباقتين المدفوعتين",
           title: "ابحث عن وظائف بدون سيرة ذاتية",
           body: "اكتب المسمى الوظيفي واحصل على الإعلانات المفتوحة من المنصات الحكومية السعودية ومواقع التوظيف الكبرى وصفحات التوظيف في الشركات نفسها. رقِّ باقتك للبحث.",
           cta: "عرض الباقات",
+        },
+        /* عمر النتائج المخزّنة وتأكيد التحديث — قد تأتي النتائج من بحث خزّنه
+           مستخدم آخر بنفس المسمى، لذلك العمر يخص الإعلانات نفسها لا "آخر
+           بحث لك". */
+        foundAgo: (relative: string) => `النتائج ${relative}`,
+        stale: "قد تكون هذه النتائج قديمة.",
+        refreshCta: "تحديث",
+        refreshing: "جارٍ التحديث…",
+        refreshConfirm: {
+          question: "تريد إعادة البحث للحصول على أحدث الإعلانات؟",
+          confirm: "نعم، أعد البحث",
+          cancel: "إلغاء",
+        },
+        history: {
+          heading: "عمليات البحث الأخيرة",
+          empty: "لم تبحث عن شيء بعد.",
+          reopenLabel: (query: string) => `فتح بحث: ${query}`,
         },
       },
 
@@ -3092,12 +3216,12 @@ export const content = {
 
         errors: {
           load: "تعذّر تحميل سيرك الذاتية. حاول مرة أخرى.",
-          upgradeRequired: "«التحضير للمقابلة» متاح في باقتي المميزة والنخبة.",
           no_jd: "لا يوجد وصف وظيفي محفوظ مع هذه السيرة الذاتية، فلا يوجد ما نحضّر مقابله.",
           no_snapshot:
             "حُفظت هذه السيرة قبل أن نبدأ بتخزين البيانات التي يحتاجها هذا القسم. أنشئ سيرة أحدث وحضّر منها.",
           generationFailed: "حدث خطأ أثناء تحضير أسئلتك. لم يُخصم منك شيء، فحاول مرة أخرى.",
-          monthlyLimit: "استخدمت كل مرات التحضير للمقابلة هذا الشهر. ويتجدد رصيدك مع تجدد نقاطك.",
+          rateLimited: "أنت تحضّر أسرع مما يمكننا مواكبته. انتظر لحظة وحاول مرة أخرى.",
+          insufficientCredits: "تغيّر رصيدك قبل تأكيد هذا الطلب. تحقق من رصيدك وحاول مرة أخرى.",
           retry: "حاول مرة أخرى",
         },
       },
@@ -3194,10 +3318,12 @@ export const content = {
           cta: "توليد ملف لينكدإن",
           remaining: (left: number, total: number) => `بقي ${left} من ${total} هذا الشهر`,
           usedUp: (total: number) =>
-            `استخدمت كل ملفات لينكدإن المتاحة هذا الشهر (${total}). ويتجدد رصيدك مع تجدد نقاطك.`,
+            `استخدمت كل ملفات لينكدإن المتاحة هذا الشهر (${total}). يُعاد الحد مع دورة الفوترة القادمة — أو استخدم نقاطك لتوليد ملف الآن.`,
+          usedUpCta: "استخدم رصيدك بدلًا من ذلك",
           lockedTitle: "مشمولة مع برو والنخبة",
-          lockedBody: `اشترك لتوليد ملفات لينكدإن من سيرك الذاتية: ${arCount(ADDON_CAPS.pro.linkedinEssential, AR_PROFILES)} شهريًا في برو، و${arCount(ADDON_CAPS.elite.linkedinEssential, AR_PROFILES)} في النخبة.`,
+          lockedBody: `مشمولة مجانًا مع برو (${arCount(ADDON_CAPS.pro.linkedinEssential, AR_PROFILES)} شهريًا) والنخبة (${arCount(ADDON_CAPS.elite.linkedinEssential, AR_PROFILES)} شهريًا) — أو استخدم ${arCount(ADDON_CREDIT_COSTS.linkedinEssential, AR_POINTS)} لتوليد ملف الآن.`,
           lockedCta: "عرض الخطط",
+          lockedCtaCredits: "استخدم رصيدك بدلًا من ذلك",
         },
 
         tiers: {
@@ -3408,6 +3534,8 @@ export const content = {
           cvNotSupported:
             "تلك السيرة الذاتية محفوظة قبل تخزين البيانات المنظمة، لذا لا نستطيع البناء منها. اختر واحدة أحدث.",
           generationFailed: "حدث خطأ أثناء توليد ملفك. شراؤك ما زال ساريًا، فحاول مرة أخرى.",
+          rateLimited: "أنت تولّد أسرع مما يمكننا مواكبته. انتظر لحظة وحاول مرة أخرى.",
+          insufficientCredits: "تغيّر رصيدك قبل تأكيد هذا الطلب. تحقق من رصيدك وحاول مرة أخرى.",
         },
       },
     },

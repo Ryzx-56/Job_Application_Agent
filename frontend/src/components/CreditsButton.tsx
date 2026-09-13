@@ -42,11 +42,12 @@ export function CreditsButton({ creditsRemaining, creditsTotal, lang = "en", upg
     en: {
       credits: "credits left",
       title: "Credit usage",
-      english: "English CV",
-      arabic: "Arabic CV",
-      englishCost: "1 credit",
-      arabicCost: "2 credits",
-      note: "Arabic CVs take more processing, so they use more credits.",
+      cv: "CV, either language",
+      cvCost: "1 credit",
+      // 2026-09-12: Arabic dropped to the same 1 credit as English (it was
+      // 2), so the two languages no longer need separate rows here — and
+      // credits now do more than pay for a CV, so the note says so.
+      note: "Credits also buy more Job Search, Interview Prep or LinkedIn Essential once your monthly allowance for one of those runs out.",
       lowWarning: "You're almost out of credits.",
       emptyWarning: "You're out of credits for this cycle.",
       upgrade: "Upgrade plan",
@@ -54,11 +55,9 @@ export function CreditsButton({ creditsRemaining, creditsTotal, lang = "en", upg
     ar: {
       credits: "رصيد متبقٍ",
       title: "استخدام الرصيد",
-      english: "سيرة ذاتية بالإنجليزية",
-      arabic: "سيرة ذاتية بالعربية",
-      englishCost: "نقطة واحدة",
-      arabicCost: "نقطتان",
-      note: "السير الذاتية بالعربية تتطلب معالجة أكبر، لذلك تستهلك نقاطًا أكثر.",
+      cv: "سيرة ذاتية، بأي لغة",
+      cvCost: "نقطة واحدة",
+      note: "يمكنك أيضًا استخدام رصيدك لشراء المزيد من البحث عن وظائف أو التحضير للمقابلة أو ملف لينكدإن الأساسي بعد نفاد الحد الشهري لأي منها.",
       lowWarning: "رصيدك أوشك على النفاد.",
       emptyWarning: "نفد رصيدك لهذه الدورة.",
       upgrade: "ترقية الخطة",
@@ -117,12 +116,8 @@ export function CreditsButton({ creditsRemaining, creditsTotal, lang = "en", upg
 
             <div className="space-y-2 text-xs text-slate-600">
               <div className="flex items-center justify-between">
-                <span>{copy.english}</span>
-                <span className="font-medium text-slate-900">{copy.englishCost}</span>
-              </div>
-              <div className="flex items-center justify-between">
-                <span>{copy.arabic}</span>
-                <span className="font-medium text-slate-900">{copy.arabicCost}</span>
+                <span>{copy.cv}</span>
+                <span className="font-medium text-slate-900">{copy.cvCost}</span>
               </div>
             </div>
 

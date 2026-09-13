@@ -37,9 +37,9 @@ from core import moyasar_client, pricing
 from core.credits import get_admin_client, maybe_row
 from core.entitlements import (
     LINKEDIN_ESSENTIAL,
-    consume_addon_quota,
+    begin_addon_use,
     get_addon_quota,
-    release_addon_quota,
+    release_addon_use,
 )
 from core.linkedin_notify import lookup_buyers, send_premium_order_alert
 # Payment status vocabulary, previously imported from core/payment_gateway.py.
@@ -959,13 +959,15 @@ def linkedin_generate(
 
 def _generate_included(payload: LinkedInGenerateRequest, user_id: str) -> dict:
     """
-    ESSENTIAL, the version included with Pro and Elite.
-
-    No purchase exists to check, so the gate is entirely the subscription and
-    the monthly cap: 2 on Pro, 5 on Elite (pricing reference v6 section 4).
-    The slot is claimed BEFORE the model runs and handed back if it fails,
-    mirroring reserve_credits / refund_credits, so a failed generation never
-    costs the subscriber part of their month.
+    ESSENTIAL, the version included with Pro and Elite — and, since
+    2026-09-12, buyable with credits by anyone once that baseline (zero, for
+    Free and for a pack buyer who isn't separately a Pro/Elite subscriber)
+    runs out. The monthly cap is still 2 on Pro, 5 on Elite (pricing
+    reference v6 section 4); begin_addon_use decides which of the two paid
+    for this one. The slot/credits are claimed BEFORE the model runs and
+    handed back if it fails, mirroring reserve_credits / refund_credits, so
+    a failed generation never costs the subscriber part of their month (or
+    their credits).
     """
     source_cv_id = (payload.source_cv_id or "").strip()
     if not source_cv_id:
@@ -978,10 +980,13 @@ def _generate_included(payload: LinkedInGenerateRequest, user_id: str) -> dict:
     facts_json = _facts_from_resume(resume)
     names = _require_english_name(user_id)
 
-    # Everything that can refuse the request has now refused it, so the slot
-    # is claimed as late as possible: a user turned away for a missing name
-    # must not lose one of their two profiles for the month.
-    consume_addon_quota(user_id, LINKEDIN_ESSENTIAL)
+    # Everything that can refuse the request has now refused it, so the
+    # slot/credits are claimed as late as possible: a user turned away for a
+    # missing name must not lose one of their two profiles for the month, or
+    # any credits. May raise 402 (confirmation needed, or not enough
+    # credits) — no purchase cap beyond the credits themselves, unlike Job
+    # Search.
+    payment = begin_addon_use(user_id, LINKEDIN_ESSENTIAL, confirmed_purchase=payload.spend_credits)
 
     inserted = (
         get_admin_client()
@@ -998,7 +1003,7 @@ def _generate_included(payload: LinkedInGenerateRequest, user_id: str) -> dict:
         or []
     )
     if not inserted:
-        release_addon_quota(user_id, LINKEDIN_ESSENTIAL)
+        release_addon_use(user_id, payment)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Couldn't start the generation. Please try again.",
@@ -1010,7 +1015,7 @@ def _generate_included(payload: LinkedInGenerateRequest, user_id: str) -> dict:
         resume,
         facts_json,
         names,
-        on_failure=lambda: release_addon_quota(user_id, LINKEDIN_ESSENTIAL),
+        on_failure=lambda: release_addon_use(user_id, payment),
     )
 
     return {
@@ -1020,6 +1025,7 @@ def _generate_included(payload: LinkedInGenerateRequest, user_id: str) -> dict:
         "status": "ready",
         "content": content,
         "quota": get_addon_quota(user_id, LINKEDIN_ESSENTIAL),
+        "paid_with": payment["source"],
     }
 
 

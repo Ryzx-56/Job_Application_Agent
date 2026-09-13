@@ -226,15 +226,23 @@ def test_credit_cost_per_language_matches(ts_source):
 
 
 def test_addon_caps_match(ts_source):
-    """The monthly LinkedIn Essential / Interview Prep allowances.
+    """The monthly LinkedIn Essential / Interview Prep / Job Search
+    allowances.
 
     These are quoted on the pricing page as part of what a plan includes, and
-    enforced per generation by core/entitlements.py."""
-    from core.entitlements import ADDON_CAPS, INTERVIEW_PREP, LINKEDIN_ESSENTIAL
+    enforced per generation by core/entitlements.py. Job Search joined this
+    table 2026-09-12 when its two entry points (the standalone page and the
+    per-CV find-jobs button) were unified into one shared pool worth
+    quoting honestly on the pricing page."""
+    from core.entitlements import ADDON_CAPS, INTERVIEW_PREP, JOB_SEARCH, LINKEDIN_ESSENTIAL
 
     # camelCase on the site, snake_case in the SQL column the backend
     # increments. Same allowance, two naming conventions.
-    field_for = {"linkedinEssential": LINKEDIN_ESSENTIAL, "interviewPrep": INTERVIEW_PREP}
+    field_for = {
+        "linkedinEssential": LINKEDIN_ESSENTIAL,
+        "interviewPrep": INTERVIEW_PREP,
+        "jobSearch": JOB_SEARCH,
+    }
 
     shown = _nested_entries(_block(ts_source, "ADDON_CAPS"))
     assert shown, "couldn't parse ADDON_CAPS out of pricing.ts"
@@ -252,3 +260,38 @@ def test_addon_caps_match(ts_source):
     assert all(v == 0 for v in ADDON_CAPS["free"].values()), (
         "Free now has a non-zero add-on cap, so pricing.ts can no longer omit it"
     )
+
+
+def test_addon_credit_costs_match(ts_source):
+    """2026-09-12, credit-addons prompt item 2: once a tier's baseline for
+    one of these three is exhausted, credits buy more — at these fixed
+    prices, the same everywhere (not per-tier)."""
+    from core.pricing import ADDON_CREDIT_COSTS as backend_costs
+    from core.entitlements import INTERVIEW_PREP, JOB_SEARCH, LINKEDIN_ESSENTIAL
+
+    field_for = {
+        "linkedinEssential": LINKEDIN_ESSENTIAL,
+        "interviewPrep": INTERVIEW_PREP,
+        "jobSearch": JOB_SEARCH,
+    }
+
+    shown = _flat_fields(_block(ts_source, "ADDON_CREDIT_COSTS"))
+    assert shown, "couldn't parse ADDON_CREDIT_COSTS out of pricing.ts"
+
+    for ts_field, backend_field in field_for.items():
+        assert shown[ts_field] == backend_costs[backend_field], (
+            f"{ts_field}: site says {shown[ts_field]} credits, "
+            f"backend charges {backend_costs[backend_field]}"
+        )
+
+
+def test_job_search_purchase_cap_equals_its_baseline_pro_and_elite():
+    """The one add-on with a purchase cap on top of its baseline — checked
+    directly against core/entitlements.py rather than parsed from
+    pricing.ts, which has no separate 'purchase cap' constant: it IS the
+    baseline again, by design (purchase_cap_for), so there is nothing extra
+    to keep in sync on the frontend side beyond ADDON_CAPS itself."""
+    from core.entitlements import ADDON_CAPS, JOB_SEARCH, purchase_cap_for
+
+    for tier in ("pro", "elite"):
+        assert purchase_cap_for(tier, JOB_SEARCH) == ADDON_CAPS[tier][JOB_SEARCH]

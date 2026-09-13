@@ -2,16 +2,47 @@
 
 import React, { useEffect, useState } from "react";
 import Link from "next/link";
-import { AlertCircle, Briefcase, ExternalLink, Loader2, Lock, Search } from "lucide-react";
+import { AlertCircle, Briefcase, Clock, ExternalLink, History, Loader2, Lock, RefreshCw, Search } from "lucide-react";
 import { useLang } from "@/lib/language";
 import { DashboardButton } from "@/components/dashboard";
+import { AddonPurchaseDialog } from "@/components/addon-purchase-dialog";
+import { readAddonPurchaseOffer, type AddonPurchaseOffer } from "@/lib/addonPurchase";
 import { MATCH_TIER_COPY, getMatchTier, type MatchTier, type SimilarJob } from "@/lib/jobMatch";
 import {
+  fetchJobSearchHistory,
   fetchJobSearchOverview,
+  reopenJobSearch,
   searchJobs,
   JobSearchError,
+  type JobSearchHistoryEntry,
   type JobSearchResults,
 } from "@/lib/supabase/jobSearch";
+
+/** "6 hours ago" / "قبل 6 ساعات" — via Intl so Arabic plural/number forms
+ *  are correct natively rather than hand-written (CLAUDE.md: write Arabic
+ *  natively, and don't hand-roll what a locale-aware API already gets
+ *  right). Falls back to the plain date past a month, where "ago" phrasing
+ *  stops being useful. */
+function relativeTime(iso: string | undefined, lang: "en" | "ar"): string | null {
+  if (!iso) return null;
+  const then = new Date(iso).getTime();
+  if (Number.isNaN(then)) return null;
+  const diffSeconds = Math.round((then - Date.now()) / 1000);
+  const rtf = new Intl.RelativeTimeFormat(lang === "ar" ? "ar" : "en", { numeric: "auto" });
+  const thresholds: [number, Intl.RelativeTimeFormatUnit][] = [
+    [60, "second"],
+    [3600, "minute"],
+    [86400, "hour"],
+    [2592000, "day"],
+  ];
+  for (const [limit, unit] of thresholds) {
+    if (Math.abs(diffSeconds) < limit) {
+      const divisor = unit === "second" ? 1 : unit === "minute" ? 60 : unit === "hour" ? 3600 : 86400;
+      return rtf.format(Math.round(diffSeconds / divisor), unit);
+    }
+  }
+  return new Date(iso).toLocaleDateString(lang === "ar" ? "ar" : "en");
+}
 
 /* ========================================================================
    /dashboard/job-search — standalone Job Search (Pro and Elite).
@@ -91,6 +122,23 @@ export default function JobSearchPage() {
   const [searching, setSearching] = useState(false);
   const [results, setResults] = useState<JobSearchResults | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // Set only on a cache hit (live or reopened) — a fresh live search has no
+  // separate "found at" moment worth showing, and `is_stale` doesn't apply.
+  const [resultAge, setResultAge] = useState<{ at?: string; stale: boolean } | null>(null);
+  const [confirmingRefresh, setConfirmingRefresh] = useState(false);
+
+  const [history, setHistory] = useState<JobSearchHistoryEntry[]>([]);
+  const [historyError, setHistoryError] = useState(false);
+
+  // The 402 addon_purchase_available offer (baseline exhausted, credits
+  // could cover it) — set only when the caller hasn't confirmed yet. The
+  // exact search params are remembered so confirming resubmits the SAME
+  // request with spendCredits: true, not a reconstructed guess at it.
+  const [purchaseOffer, setPurchaseOffer] = useState<AddonPurchaseOffer | null>(null);
+  const [pendingSearch, setPendingSearch] = useState<{
+    title: string; internships: boolean; location: string; refresh?: boolean;
+  } | null>(null);
+  const [purchaseDialogError, setPurchaseDialogError] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -109,6 +157,16 @@ export default function JobSearchPage() {
       .finally(() => {
         if (!cancelled) setLoadingOverview(false);
       });
+    // History is read-only and free — loading it up front is what lets the
+    // "recent searches" list appear without the user searching first.
+    fetchJobSearchHistory()
+      .then((rows) => {
+        if (!cancelled) setHistory(rows);
+      })
+      .catch((err) => {
+        console.error("fetchJobSearchHistory failed:", err);
+        if (!cancelled) setHistoryError(true);
+      });
     return () => {
       cancelled = true;
     };
@@ -116,15 +174,106 @@ export default function JobSearchPage() {
 
   function messageFor(err: JobSearchError): string {
     switch (err.code) {
-      case "upgrade_required":
-        return copy.errors.upgradeRequired;
+      // upgrade_required REMOVED (2026-09-13): nothing on this page's search
+      // path can raise it any more. /api/v1/job-search uses
+      // get_current_user_id (not the paid-only dependency) and prices
+      // through begin_addon_use, which never raises a 403 — a Free user now
+      // gets addon_purchase_available (handled below, as a dialog) if
+      // credits could cover it, or purchase_limit_reached if not (Job
+      // Search's Free-tier exclusion — its purchase cap equals its zero
+      // baseline). Confirmed against core/job_search.py and
+      // core/entitlements.py directly before removing this case.
       case "missing_title":
         return copy.errors.missingTitle;
       case "title_too_long":
         return copy.errors.titleTooLong;
+      case "cache_unavailable":
+        return copy.errors.reopenFailed;
+      // The purchase cap (Job Search only — see PURCHASE_CAPPED_ADDONS in
+      // core/entitlements.py) is spent too. A credit purchase cannot fix
+      // this, so it is never offered as the dialog above.
+      case "purchase_limit_reached":
+        return copy.errors.purchaseLimitReached;
+      // core/rate_limit.py's request-VOLUME limiter (30/hour) — a distinct
+      // mechanism from the purchase cap above, with its own `code`. Neither
+      // a credit purchase nor an upgrade fixes this; it clears on its own.
+      case "rate_limited":
+        return copy.errors.rateLimited;
+      case "insufficient_credits":
+        return copy.errors.insufficientCredits;
       default:
         return copy.errors.search;
     }
+  }
+
+  async function runSearch(opts: {
+    title: string; internships: boolean; location: string; refresh?: boolean; spendCredits?: boolean;
+  }) {
+    setConfirmingRefresh(false);
+    if (!opts.spendCredits) {
+      // A fresh attempt (not a confirmed resubmit) starts clean — any
+      // dialog left over from a different search must not linger.
+      setError(null);
+      setPurchaseOffer(null);
+      setPendingSearch(null);
+      setPurchaseDialogError(null);
+    } else {
+      setPurchaseDialogError(null);
+    }
+    setSearching(true);
+    if (!opts.refresh) setResults(null);
+    try {
+      const data = await searchJobs({
+        jobTitle: opts.title,
+        internships: opts.internships,
+        location: opts.location,
+        refresh: opts.refresh,
+        spendCredits: opts.spendCredits,
+      });
+      setResults(data);
+      setResultAge(data.from_cache ? { at: data.cached_at, stale: false } : null);
+      setPurchaseOffer(null);
+      setPendingSearch(null);
+      // A fresh entry from someone else's search, plus this user's own past
+      // searches, both belong in "recent" — refetch rather than guess at
+      // the shape of the row the backend just inserted.
+      fetchJobSearchHistory().then(setHistory).catch(() => {});
+    } catch (err) {
+      console.error("searchJobs failed:", err);
+      const e = err as JobSearchError;
+      if (!opts.spendCredits) {
+        const offer = readAddonPurchaseOffer(e);
+        if (offer) {
+          // THE DIALOG IS THE RESPONSE — no generic error banner alongside
+          // it, and nothing has been charged yet.
+          setPendingSearch(opts);
+          setPurchaseOffer(offer);
+          return;
+        }
+      } else {
+        // The CONFIRMED attempt failed (balance moved between the 402 and
+        // the confirm, or the search itself then failed) — shown inside the
+        // still-open dialog so retrying doesn't mean reopening it.
+        setPurchaseDialogError(messageFor(e));
+        return;
+      }
+      setError(messageFor(e));
+    } finally {
+      setSearching(false);
+    }
+  }
+
+  function handlePurchaseConfirm() {
+    if (!pendingSearch) return;
+    runSearch({ ...pendingSearch, spendCredits: true });
+  }
+
+  function handlePurchaseCancel() {
+    // Nothing is sent. No partial action, no credits touched — matching
+    // what begin_addon_use already guarantees server-side.
+    setPurchaseOffer(null);
+    setPendingSearch(null);
+    setPurchaseDialogError(null);
   }
 
   async function handleSearch(e: React.FormEvent) {
@@ -134,14 +283,29 @@ export default function JobSearchPage() {
       setError(copy.errors.missingTitle);
       return;
     }
+    await runSearch({ title, internships, location: location.trim() });
+  }
+
+  /** Refresh needs its OWN confirmed title/location/internships — the form
+   *  fields may have changed since the results on screen were fetched. */
+  function handleRefreshConfirmed() {
+    runSearch({ title: jobTitle.trim() || results?.job_title || "", internships, location: location.trim(), refresh: true });
+  }
+
+  async function handleReopen(entry: JobSearchHistoryEntry) {
     setError(null);
+    setConfirmingRefresh(false);
     setSearching(true);
     setResults(null);
     try {
-      const data = await searchJobs({ jobTitle: title, internships, location: location.trim() });
+      const data = await reopenJobSearch(entry.id);
+      setJobTitle(entry.raw_query);
+      setInternships(entry.internships);
+      setLocation(entry.location || "");
       setResults(data);
+      setResultAge({ at: data.cached_at, stale: data.is_stale });
     } catch (err) {
-      console.error("searchJobs failed:", err);
+      console.error("reopenJobSearch failed:", err);
       setError(messageFor(err as JobSearchError));
     } finally {
       setSearching(false);
@@ -149,6 +313,7 @@ export default function JobSearchPage() {
   }
 
   const totalResults = (results?.exact.length ?? 0) + (results?.related.length ?? 0);
+  const ageLabel = resultAge?.at ? relativeTime(resultAge.at, lang) : null;
 
   const page = (
     <div className="space-y-6">
@@ -253,9 +418,81 @@ export default function JobSearchPage() {
         </DashboardButton>
       </form>
 
+      {!searching && !results && historyError && (
+        <p className="text-xs text-slate-400">{copy.errors.historyUnavailable}</p>
+      )}
+
+      {!searching && !results && history.length > 0 && (
+        <section aria-labelledby="jsHistoryHeading">
+          <h2 id="jsHistoryHeading" className="mb-2 flex items-center gap-1.5 text-sm font-semibold text-slate-900">
+            <History className="size-4 text-slate-400" aria-hidden />
+            {copy.history.heading}
+          </h2>
+          <ul className="flex flex-wrap gap-2">
+            {history.map((entry) => (
+              <li key={entry.id}>
+                <button
+                  type="button"
+                  onClick={() => handleReopen(entry)}
+                  aria-label={copy.history.reopenLabel(entry.raw_query)}
+                  className="rounded-full border border-slate-200 bg-white px-3.5 py-1.5 text-xs font-medium text-slate-600 transition-colors hover:border-blue-300 hover:bg-blue-50/40 hover:text-blue-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600"
+                >
+                  {entry.raw_query}
+                </button>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+
       {searching && (
         <div className="flex items-center justify-center gap-2 rounded-2xl border border-slate-200 bg-white py-14 text-sm text-slate-400">
           <Loader2 className="size-4 animate-spin" aria-hidden /> {copy.searching}
+        </div>
+      )}
+
+      {results && !searching && (totalResults > 0 || resultAge) && (
+        <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-slate-200 bg-slate-50 px-4 py-2.5">
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-slate-500">
+            {ageLabel && (
+              <span className="flex items-center gap-1">
+                <Clock className="size-3.5" aria-hidden />
+                {copy.foundAgo(ageLabel)}
+              </span>
+            )}
+            {resultAge?.stale && (
+              <span className="font-medium text-amber-700">{copy.stale}</span>
+            )}
+          </div>
+          {resultAge && !confirmingRefresh && (
+            <button
+              type="button"
+              onClick={() => setConfirmingRefresh(true)}
+              className="flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-600 transition-colors hover:border-blue-300 hover:text-blue-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600"
+            >
+              <RefreshCw className="size-3.5" aria-hidden />
+              {copy.refreshCta}
+            </button>
+          )}
+          {resultAge && confirmingRefresh && (
+            <div className="flex flex-wrap items-center gap-2 text-xs">
+              <span className="text-slate-600">{copy.refreshConfirm.question}</span>
+              <button
+                type="button"
+                onClick={handleRefreshConfirmed}
+                className="rounded-lg bg-blue-600 px-3 py-1.5 font-medium text-white transition-colors hover:bg-blue-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600"
+              >
+                {copy.refreshConfirm.confirm}
+              </button>
+              <button
+                type="button"
+                onClick={() => setConfirmingRefresh(false)}
+                className="rounded-lg border border-slate-200 px-3 py-1.5 font-medium text-slate-600 transition-colors hover:bg-slate-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600"
+              >
+                {copy.refreshConfirm.cancel}
+              </button>
+            </div>
+          )}
         </div>
       )}
 
@@ -347,6 +584,18 @@ export default function JobSearchPage() {
           </div>
         </div>
       )}
+
+      <AddonPurchaseDialog
+        open={purchaseOffer !== null}
+        isAr={lang === "ar"}
+        addonLabel={copy.title}
+        creditCost={purchaseOffer?.creditCost ?? 0}
+        creditBalance={purchaseOffer?.creditBalance ?? 0}
+        busy={searching}
+        error={purchaseDialogError}
+        onConfirm={handlePurchaseConfirm}
+        onCancel={handlePurchaseCancel}
+      />
     </div>
   );
 }

@@ -280,10 +280,12 @@ def test_row_write_failure_does_not_crash_the_caller(monkeypatch):
 
 def test_catalog_matches_the_confirmed_price_list():
     """Guards the numbers in core/pricing.py against a careless edit. These
-    are the figures confirmed with the site owner on 2026-09-01."""
+    are the figures confirmed with the site owner on 2026-09-01, updated
+    2026-09-12 for elite_plan's credit bump (credit-addons prompt item 5:
+    80->100, since 99/80 was a worse per-credit rate than Pro's 29/24)."""
     expected = {
         "pro_plan":         (2900, 24),
-        "elite_plan":       (9900, 80),
+        "elite_plan":       (9900, 100),
         "starter_pack":     (900, 5),
         "best_value_pack":  (2200, 15),
         "power_pack":       (3800, 30),

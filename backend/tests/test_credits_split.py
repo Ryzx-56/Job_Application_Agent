@@ -71,15 +71,17 @@ def params_for(admin, fn):
 
 
 def test_reserve_uses_spend_credits_and_still_behaves_as_an_int(admin):
-    admin.spend_result = {"ok": True, "from_monthly": 2, "from_purchased": 0}
+    admin.spend_result = {"ok": True, "from_monthly": 1, "from_purchased": 0}
     reserved = credits.reserve_credits("user-1", "ar")
 
     assert "spend_credits" in names(admin)
     # Every existing call site treats this as a number; it still is one.
-    assert reserved == 2
+    assert reserved == 1
     assert isinstance(reserved, int)
-    assert reserved + 1 == 3
-    assert params_for(admin, "spend_credits")["p_amount"] == 2   # Arabic costs 2
+    assert reserved + 1 == 2
+    # Arabic dropped to 1 credit on 2026-09-12 (credit-addons prompt item 3)
+    # — same as English now.
+    assert params_for(admin, "spend_credits")["p_amount"] == 1
 
 
 def test_reserve_carries_the_split(admin):
@@ -203,13 +205,14 @@ def test_spend_falls_back_when_the_migration_has_not_landed(monkeypatch):
 
     reserved = credits.reserve_credits("user-1", "ar")
 
-    assert reserved == 2
+    # Arabic dropped to 1 credit on 2026-09-12 — same as English now.
+    assert reserved == 1
     # Tried the new one, fell back to the old one — generation still works.
     assert [n for n, _ in fake.calls] == [
         "reset_credits_if_due", "spend_credits", "reserve_credits"
     ]
     # Nothing is claimed as purchased on a schema with no such column.
-    assert (reserved.from_monthly, reserved.from_purchased) == (2, 0)
+    assert (reserved.from_monthly, reserved.from_purchased) == (1, 0)
 
 
 def test_refund_falls_back_when_the_migration_has_not_landed(monkeypatch):

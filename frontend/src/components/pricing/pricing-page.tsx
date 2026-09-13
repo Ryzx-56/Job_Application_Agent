@@ -3,7 +3,7 @@
 import React, { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, ArrowRight, Check } from "lucide-react";
+import { ArrowLeft, ArrowRight, Check, X } from "lucide-react";
 import { useLang, useLocaleHref } from "@/lib/language";
 import { formatSar, formatShortDate, sarPerCredit, usdApprox } from "@/lib/pricing";
 import { LinkedInGlyph } from "@/components/linkedin-ui";
@@ -557,6 +557,34 @@ export function PricingPage() {
                         </li>
                       ))}
                     </ul>
+
+                    {/* WHAT'S NOT INCLUDED, STATED PLAINLY (2026-09-13) —
+                        the contrast is part of the answer. Absent on the top
+                        tier: nothing is withheld from it, so there is
+                        nothing to contrast against. */}
+                    {plan.notIncluded && (
+                      <ul className="m-0 mt-4 list-none space-y-2.5 p-0">
+                        {plan.notIncluded.map((item) => (
+                          <li key={item} className="t-meta flex gap-2.5" style={{ color: "var(--ink-3)" }}>
+                            <X className="mt-0.5 size-3.5 shrink-0" aria-hidden />
+                            <span className="min-w-0">{item}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+
+                    {/* Credits are one pool: they pay for a CV, or for more
+                        of an add-on once its own monthly allowance (above)
+                        runs out. Said once per plan because the prices and
+                        caps differ by plan. */}
+                    {plan.creditsNote && (
+                      <p
+                        className="t-meta mt-4 border-t pt-4"
+                        style={{ color: "var(--ink-3)", borderColor: "var(--line-hairline)" }}
+                      >
+                        {plan.creditsNote}
+                      </p>
+                    )}
                   </div>
                 );
               })}

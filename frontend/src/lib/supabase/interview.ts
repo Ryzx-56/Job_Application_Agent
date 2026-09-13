@@ -197,7 +197,14 @@ export async function generateInterviewPrep(
   /** The site's language. The questions are written in it, so an English CV
    *  read on an Arabic page produces Arabic questions. */
   language: "en" | "ar",
-  onStep?: (step: InterviewStep) => void
+  onStep?: (step: InterviewStep) => void,
+  /** Confirms spending credits once the monthly Interview Prep baseline is
+   *  exhausted (core/interview.py's `spend_credits` field, checked directly
+   *  in the backend source — not assumed). Everything refusable, including
+   *  this decision, is resolved BEFORE the SSE stream opens (see this
+   *  function's own docstring above), so a 402 `addon_purchase_available`
+   *  arrives as a normal HTTP error here, never as an SSE `error` event. */
+  spendCredits = false
 ): Promise<{ resume_id: string; content: InterviewPrepContent; quota?: InterviewQuota }> {
   const supabase = createClient();
   const {
@@ -211,7 +218,7 @@ export async function generateInterviewPrep(
       "Content-Type": "application/json",
       Authorization: `Bearer ${session.access_token}`,
     },
-    body: JSON.stringify({ resume_id: resumeId, language }),
+    body: JSON.stringify({ resume_id: resumeId, language, spend_credits: spendCredits }),
   });
 
   if (!res.ok || !res.body) {

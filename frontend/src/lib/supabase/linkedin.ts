@@ -290,6 +290,13 @@ export async function generateLinkedInProfile(params: {
    *  paid Premium purchase. The backend picks the route from its presence. */
   purchaseId?: string;
   sourceCvId?: string;
+  /** ESSENTIAL ROUTE ONLY. Confirms spending credits once the monthly
+   *  LinkedIn Essential baseline is exhausted (schemas/linkedin_schema.py's
+   *  `spend_credits` field on LinkedInGenerateRequest, checked directly in
+   *  the backend source). Ignored by the backend on the Premium route,
+   *  which is a one-off Moyasar purchase and was never part of this credit
+   *  system. */
+  spendCredits?: boolean;
 }): Promise<{
   generation_id: string;
   purchase_id: string | null;
@@ -304,6 +311,7 @@ export async function generateLinkedInProfile(params: {
     body: JSON.stringify({
       purchase_id: params.purchaseId ?? null,
       source_cv_id: params.sourceCvId ?? null,
+      spend_credits: params.spendCredits ?? false,
     }),
   });
 }

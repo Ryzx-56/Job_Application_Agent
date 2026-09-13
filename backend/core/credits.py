@@ -19,7 +19,13 @@ SUPABASE_SERVICE_ROLE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY", "")
 # Credit cost per generation, by output CV language. Must stay in sync with
 # the copy shown in CreditsButton.tsx and the helper text under the EN/AR
 # toggle on the generate page.
-CREDIT_COST = {"en": 1, "ar": 2}
+#
+# Arabic dropped 2->1 on 2026-09-12 (credit-addons prompt, item 3). Arabic
+# costs 1.76x English on the model (pricing-reference-v7.md §1) — a
+# difference of about one halala — so charging double was generous to us,
+# not a reflection of real cost, and it penalised the primary market for a
+# rounding error.
+CREDIT_COST = {"en": 1, "ar": 1}
 
 # THERE ARE TWO KINDS OF CREDIT, and the difference is what someone paid.
 #
@@ -44,7 +50,13 @@ CREDIT_COST = {"en": 1, "ar": 2}
 # reasons about, but reset_credits_if_due() in Postgres is what tops accounts
 # up, so a change here without the matching migration means the page promises
 # one figure and the database grants another.
-TIER_CREDITS = {"free": 3, "pro": 24, "elite": 80}
+#
+# Elite 80->100 on 2026-09-12 (credit-addons prompt, item 5): 99 SAR / 80
+# credits was 1.238 SAR/credit, WORSE than Pro's 29/24 = 1.208 — the larger
+# tier must have the better rate. 100 credits = 0.99 SAR/credit.
+# supabase/migrations/20260912200000_credit_addons_and_unified_job_search.sql
+# updates reset_credits_if_due() and apply_monthly_allowance() to match.
+TIER_CREDITS = {"free": 3, "pro": 24, "elite": 100}
 
 
 def maybe_row(result):
@@ -187,6 +199,63 @@ def reserve_credits(user_id: str, cv_language: str) -> ReservedCredits:
     from_purchased = int(outcome.get("from_purchased") or 0)
     logger.info(
         f"✅ Reserved {cost} credit(s) for user {user_id} ({lang} CV) — "
+        f"{from_monthly} monthly, {from_purchased} purchased."
+    )
+    return ReservedCredits(cost, from_monthly, from_purchased)
+
+
+def reserve_addon_credits(user_id: str, cost: int, description: str) -> ReservedCredits:
+    """
+    Like reserve_credits(), but for spending credits on an ADD-ON purchase
+    (LinkedIn Essential / Interview Prep / Job Search, once the monthly
+    baseline is exhausted — core/entitlements.py's ADDON_CREDIT_COSTS)
+    rather than on a CV. Same pool, same atomic spend_credits() RPC, same
+    monthly-then-purchased split — an add-on credit and a CV credit are not
+    different currencies, so this reuses _spend() rather than inventing a
+    second ledger.
+
+    `description` is for the error message and the log line only; it never
+    reaches a query.
+
+    Returns the reservation (pass to refund_credits() on a failed add-on
+    run, exactly like a failed CV generation). Raises 402 with
+    `insufficient_credits` if the balance can't cover it — the SAME error
+    shape reserve_credits() uses, so a frontend that already handles that
+    code for CV generation handles this for free.
+    """
+    if cost <= 0:
+        raise ValueError(f"reserve_addon_credits needs a positive cost, got {cost}.")
+
+    admin = get_admin_client()
+    admin.rpc("reset_credits_if_due", {"p_user_id": user_id}).execute()
+
+    outcome = _spend(admin, user_id, cost)
+    if not outcome.get("ok"):
+        profile = (
+            maybe_row(admin.table("profiles")
+            .select("credits_remaining, tier")
+            .eq("id", user_id)
+            .maybe_single()
+            .execute())
+        )
+        remaining = profile["credits_remaining"] if profile else 0
+        tier = profile["tier"] if profile else "free"
+        logger.info(f"🚫 Add-on credit check failed — user {user_id} ({tier}) has {remaining}, needs {cost} for {description}.")
+        raise HTTPException(
+            status_code=status.HTTP_402_PAYMENT_REQUIRED,
+            detail={
+                "code": "insufficient_credits",
+                "message": f"Not enough credits for {description} ({cost} needed, {remaining} remaining).",
+                "credits_remaining": remaining,
+                "credits_needed": cost,
+                "tier": tier,
+            },
+        )
+
+    from_monthly = int(outcome.get("from_monthly") or 0)
+    from_purchased = int(outcome.get("from_purchased") or 0)
+    logger.info(
+        f"✅ Reserved {cost} credit(s) for user {user_id} ({description}) — "
         f"{from_monthly} monthly, {from_purchased} purchased."
     )
     return ReservedCredits(cost, from_monthly, from_purchased)

@@ -145,3 +145,9 @@ class InterviewPrepRequest(BaseModel):
     # one they asked for. Falls back to the CV's language when absent, which
     # is what an older client sends. Anything other than "ar" means English.
     language: Optional[str] = None
+    # Confirms spending credits once the monthly Interview Prep baseline is
+    # exhausted (2026-09-12, credit-addons prompt item 2). Without it, an
+    # exhausted-baseline request gets a 402 naming the price and the
+    # caller's balance rather than spending anything — see
+    # core/entitlements.py's begin_addon_use.
+    spend_credits: bool = False

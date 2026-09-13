@@ -1243,7 +1243,9 @@ export default function DashboardHomePage() {
             : "Your CV and cover letter will be generated in the selected language, even if your input is in the other language."}
         </p>
         <p className="-mt-1.5 text-xs text-slate-400">
-          {lang === "ar" ? "الإنجليزية: نقطة واحدة · العربية: نقطتان" : "English uses 1 credit · Arabic uses 2 credits"}
+          {/* 2026-09-12: Arabic dropped to the same 1 credit as English (it
+              was 2) — nothing left to distinguish between the two here. */}
+          {lang === "ar" ? "كل سيرة ذاتية تستهلك نقطة واحدة، بأي لغة." : "Every CV uses 1 credit, in either language."}
         </p>
 
         {/* The same out-of-credits prompt as the top banner, repeated right

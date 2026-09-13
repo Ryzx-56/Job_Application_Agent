@@ -18,6 +18,8 @@ import { useLang } from "@/lib/language";
 import { formatMediumDate } from "@/lib/pricing";
 import { fetchResumes, ResumeListRecord } from "@/lib/supabase/resumes";
 import { updateProfileNames } from "@/lib/supabase/profile-names";
+import { AddonPurchaseDialog } from "@/components/addon-purchase-dialog";
+import { readAddonPurchaseOffer, type AddonPurchaseOffer } from "@/lib/addonPurchase";
 import {
   ApiError,
   fetchLinkedInGeneration,
@@ -121,6 +123,13 @@ export default function LinkedInPage() {
   const [openingId, setOpeningId] = useState<string | null>(null);
   const [busyPurchaseId, setBusyPurchaseId] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
+
+  // The 402 addon_purchase_available offer for the INCLUDED (Essential)
+  // route only — Premium is a one-off Moyasar purchase and never raises
+  // this. pendingCvId is which CV to resubmit against on confirm.
+  const [purchaseOffer, setPurchaseOffer] = useState<AddonPurchaseOffer | null>(null);
+  const [pendingCvId, setPendingCvId] = useState<string | null>(null);
+  const [purchaseDialogError, setPurchaseDialogError] = useState<string | null>(null);
 
   // Shown when the profile has no English name yet. Asked rather than
   // transliterated, the generated profile carries this name publicly, and
@@ -262,6 +271,14 @@ export default function LinkedInPage() {
         return copy.errors.cvNotSupported;
       case "generation_failed":
         return copy.errors.generationFailed;
+      // core/rate_limit.py's request-VOLUME limiter (ADDON_GENERATION,
+      // 15/hour) — covers both the Essential and Premium generate routes.
+      // Distinct from the baseline/purchase system; neither a purchase nor
+      // an upgrade fixes it, it just clears on its own.
+      case "rate_limited":
+        return copy.errors.rateLimited;
+      case "insufficient_credits":
+        return copy.errors.insufficientCredits;
       default:
         return err.message || copy.errors.load;
     }
@@ -334,15 +351,23 @@ export default function LinkedInPage() {
    * API function with no purchaseId: the backend decides the route from that
    * absence, so there is one generation path on the client too.
    */
-  async function handleGenerateIncluded() {
-    if (!cvId) {
+  async function handleGenerateIncluded(spendCredits = false) {
+    const targetCvId = spendCredits ? pendingCvId : cvId;
+    if (!targetCvId) {
       setSelectorError(copy.cvSelector.selectFirst);
       return;
     }
     setBusyPurchaseId(INCLUDED_ESSENTIAL_KEY);
-    setActionError(null);
+    if (!spendCredits) {
+      setActionError(null);
+      setPurchaseOffer(null);
+      setPendingCvId(null);
+      setPurchaseDialogError(null);
+    } else {
+      setPurchaseDialogError(null);
+    }
     try {
-      const result = await generateLinkedInProfile({ sourceCvId: cvId });
+      const result = await generateLinkedInProfile({ sourceCvId: targetCvId, spendCredits });
       await loadOverview();
       setOpenGeneration({
         generation_id: result.generation_id,
@@ -353,12 +378,29 @@ export default function LinkedInPage() {
         source_cv: null,
         content: result.content,
       });
+      setPurchaseOffer(null);
+      setPendingCvId(null);
       window.scrollTo({ top: 0, behavior: "smooth" });
     } catch (error) {
       const err = error as ApiError;
       console.error("generateLinkedInProfile (included) failed:", err);
       if (err.code === "missing_profile_name") {
-        setNameNeededFor({ purchaseId: INCLUDED_ESSENTIAL_KEY, cvId });
+        setNameNeededFor({ purchaseId: INCLUDED_ESSENTIAL_KEY, cvId: targetCvId });
+        return;
+      }
+      if (!spendCredits) {
+        const offer = readAddonPurchaseOffer(err);
+        if (offer) {
+          // THE DIALOG IS THE RESPONSE — no generic error banner alongside
+          // it, and nothing has been charged yet.
+          setPendingCvId(targetCvId);
+          setPurchaseOffer(offer);
+          return;
+        }
+      } else {
+        // The CONFIRMED attempt failed (balance moved, or generation itself
+        // then failed) — shown inside the still-open dialog.
+        setPurchaseDialogError(messageForError(err));
         return;
       }
       setActionError(messageForError(err));
@@ -366,6 +408,19 @@ export default function LinkedInPage() {
     } finally {
       setBusyPurchaseId(null);
     }
+  }
+
+  function handlePurchaseConfirm() {
+    if (!pendingCvId) return;
+    handleGenerateIncluded(true);
+  }
+
+  function handlePurchaseCancel() {
+    // Nothing is sent. No partial action, no credits touched — matching
+    // what begin_addon_use already guarantees server-side.
+    setPurchaseOffer(null);
+    setPendingCvId(null);
+    setPurchaseDialogError(null);
   }
 
   function chooseTier(next: LinkedInPurchasableTier) {
@@ -781,7 +836,11 @@ export default function LinkedInPage() {
                   (essentialPicker && !tier ? (
                     <button
                       type="button"
-                      onClick={handleGenerateIncluded}
+                      // NOT a bare function reference: passed the click
+                      // event as its first argument, that event is truthy
+                      // and would be read as `spendCredits` — every normal
+                      // click would look like a confirmed purchase.
+                      onClick={() => handleGenerateIncluded()}
                       disabled={busyPurchaseId === INCLUDED_ESSENTIAL_KEY}
                       className={liPrimaryButton}
                     >
@@ -811,6 +870,18 @@ export default function LinkedInPage() {
           )}
         </>
       )}
+
+      <AddonPurchaseDialog
+        open={purchaseOffer !== null}
+        isAr={lang === "ar"}
+        addonLabel={lang === "ar" ? "لينكدإن الأساسية" : "LinkedIn Essential"}
+        creditCost={purchaseOffer?.creditCost ?? 0}
+        creditBalance={purchaseOffer?.creditBalance ?? 0}
+        busy={busyPurchaseId === INCLUDED_ESSENTIAL_KEY}
+        error={purchaseDialogError}
+        onConfirm={handlePurchaseConfirm}
+        onCancel={handlePurchaseCancel}
+      />
     </LinkedInPageShell>
   );
 }

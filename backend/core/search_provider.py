@@ -107,27 +107,65 @@ def assert_provider_configured() -> None:
         )
 
 
+# ─── DEPTH, THE ONE PROVIDER-NEUTRAL KNOB ON RESULT QUALITY ─────────────────
+#
+# "thorough" / "fast" rather than Tavily's own "advanced" / "basic", because
+# callers outside this file (agents/jobs_finder.py) must not know Tavily's
+# vocabulary — the whole point of this module is that no agent knows which
+# provider answered. Translated to each provider's own parameter (or ignored)
+# at the bottom of each provider's section below.
+#
+# DEFAULT IS "thorough" EVERYWHERE. The one exception is the Jadarat/priority
+# lane, which callers request explicitly with DEPTH_FAST —
+# backend/tools/tavily_depth_test.py (run 2026-09-12, 36 credits) found basic
+# and advanced returning near-identical results AND near-identical content
+# length specifically for that lane (12/12 URL overlap both test queries,
+# content within 5%), unlike every other lane, which showed real divergence
+# in both URL coverage and content richness. This is a per-lane override, not
+# a global switch, because the data only supports it for this one lane.
+DEPTH_THOROUGH = "thorough"
+DEPTH_FAST = "fast"
+
 # ─── WHAT A CALL COSTS ──────────────────────────────────────────────────────
 #
 # Per PROVIDER CALL, in the provider's own unit, and the USD each unit costs.
 # Reported by the counter below so a search's cost is attributable in one
-# place rather than inferred from an invoice.
+# place rather than inferred from an invoice. Tavily's cost depends on depth
+# (advanced=2 credits, basic=1); Serper bills the same per call regardless of
+# depth (it has no depth concept at all — see _search_serper).
 _PROVIDER_COST = {
-    # search_depth='advanced' is 2 credits; Tavily credits are $0.008 on
-    # Pay-As-You-Go. Verified against their published API-credit table.
-    "tavily": {"units_per_call": 2, "usd_per_unit": 0.008, "unit": "credit"},
-    # Serper bills one search per call, $0.001 each on the paid tier.
-    "serper": {"units_per_call": 1, "usd_per_unit": 0.001, "unit": "search"},
+    # Tavily credits are $0.008 each on Pay-As-You-Go, verified against their
+    # published API-credit table.
+    "tavily": {
+        "units_per_call": {DEPTH_THOROUGH: 2, DEPTH_FAST: 1},
+        "usd_per_unit": 0.008,
+        "unit": "credit",
+    },
+    # Serper bills one search per call, $0.001 each on the paid tier, same at
+    # any depth.
+    "serper": {
+        "units_per_call": {DEPTH_THOROUGH: 1, DEPTH_FAST: 1},
+        "usd_per_unit": 0.001,
+        "unit": "search",
+    },
 }
 
 
-def cost_per_call_usd(provider: str | None = None) -> float:
+def cost_per_call_usd(provider: str | None = None, depth: str = DEPTH_THOROUGH) -> float:
     c = _PROVIDER_COST[provider or SEARCH_PROVIDER]
-    return c["units_per_call"] * c["usd_per_unit"]
+    return c["units_per_call"][depth] * c["usd_per_unit"]
 
 
-def units_per_call(provider: str | None = None) -> int:
-    return _PROVIDER_COST[provider or SEARCH_PROVIDER]["units_per_call"]
+def units_per_call(provider: str | None = None, depth: str = DEPTH_THOROUGH) -> int:
+    return _PROVIDER_COST[provider or SEARCH_PROVIDER]["units_per_call"][depth]
+
+
+def usd_per_unit(provider: str | None = None) -> float:
+    """The raw per-unit price (per Tavily credit, per Serper search) — for a
+    caller reporting cost from a unit count it already has (e.g.
+    admin_stats.py converting `tavily_credits_used` into SAR), rather than
+    from a call count this module would have to re-derive."""
+    return _PROVIDER_COST[provider or SEARCH_PROVIDER]["usd_per_unit"]
 
 
 # ─── CALL ACCOUNTING ────────────────────────────────────────────────────────
@@ -170,15 +208,20 @@ def current_counter() -> dict | None:
     return getattr(_counter_state, "counter", None)
 
 
-def record_call(counter: dict | None) -> None:
+def record_call(counter: dict | None, depth: str = DEPTH_THOROUGH) -> None:
     """One provider call happened. Counted BEFORE the request, because it is
-    billed whether or not it returns anything."""
+    billed whether or not it returns anything.
+
+    `depth` must match what the call actually sent — a fast/priority-lane
+    call recorded at the thorough rate would overstate cost, and the whole
+    point of measuring the Jadarat override's savings is a counter that
+    tells the truth about which calls got cheaper."""
     target = counter if counter is not None else current_counter()
     if target is None:
         return
     target["calls"] += 1
-    target["units"] += units_per_call()
-    target["usd"] += cost_per_call_usd()
+    target["units"] += units_per_call(depth=depth)
+    target["usd"] += cost_per_call_usd(depth=depth)
 
 
 # ─── HOW MANY site: OPERATORS GOOGLE WILL HONOUR ────────────────────────────
@@ -259,7 +302,14 @@ def _is_quota_error(exc_or_text: Any) -> bool:
 _SEARCH_TIME_RANGE = "month"
 
 
-def _search_tavily(query: str, domains: list[str] | None, max_results: int) -> list[dict]:
+# This module's neutral depth names, translated to Tavily's own parameter
+# values. Unknown depth falls back to "advanced" — the safer, more thorough
+# default — rather than silently running the cheap path on a typo.
+_TAVILY_DEPTH = {DEPTH_THOROUGH: "advanced", DEPTH_FAST: "basic"}
+
+
+def _search_tavily(query: str, domains: list[str] | None, max_results: int,
+                    depth: str = DEPTH_THOROUGH) -> list[dict]:
     """The path this product used until the Serper migration. Kept and
     maintained so SEARCH_PROVIDER=tavily is a real revert, not a dead branch."""
     from tavily import TavilyClient
@@ -270,7 +320,7 @@ def _search_tavily(query: str, domains: list[str] | None, max_results: int) -> l
 
     kwargs: dict[str, Any] = dict(
         query=query,
-        search_depth="advanced",
+        search_depth=_TAVILY_DEPTH.get(depth, "advanced"),
         max_results=max_results,
         time_range=_SEARCH_TIME_RANGE,
     )
@@ -354,12 +404,18 @@ def _serper_post(path: str, payload: dict) -> dict:
 
 
 def _search_serper(query: str, domains: list[str] | None, max_results: int,
-                   country: str | None = None) -> list[dict]:
+                   country: str | None = None, depth: str = DEPTH_THOROUGH) -> list[dict]:
     """
     One Google search through Serper.
 
     `domains` becomes a `site:` filter in the query text — Google has no
     include_domains parameter. See site_filter() for why the list is capped.
+
+    `depth` is accepted and ignored: Google/Serper has no equivalent knob,
+    and the dispatcher passes it uniformly to both providers so a caller
+    never has to know which one is live. If Serper adds a real
+    quality/depth parameter later, translate it here the way _TAVILY_DEPTH
+    does — don't let jobs_finder.py learn a second vocabulary.
     """
     site = site_filter(domains)
     payload = {
@@ -397,7 +453,8 @@ def _search_serper(query: str, domains: list[str] | None, max_results: int,
 # ─── THE DISPATCHER ─────────────────────────────────────────────────────────
 
 def search(query: str, domains: list[str] | None = None, max_results: int = 20,
-           counter: dict | None = None, country: str | None = None) -> list[dict]:
+           counter: dict | None = None, country: str | None = None,
+           depth: str = DEPTH_THOROUGH) -> list[dict]:
     """
     One web search on whichever provider SEARCH_PROVIDER names.
 
@@ -407,6 +464,11 @@ def search(query: str, domains: list[str] | None = None, max_results: int = 20,
     name leaking into an agent, a log line or a filter — and what makes the
     next swap a config change instead of another migration.
 
+    `depth` is DEPTH_THOROUGH or DEPTH_FAST (see the constants above) — a
+    caller says how much it needs, not which provider parameter that maps
+    to. Only Tavily's priority/Jadarat lane currently asks for DEPTH_FAST;
+    every other caller should pass nothing and get the safe default.
+
     Raises SearchQuotaExhausted when the plan is spent and SearchUnavailable
     when the provider could not be reached. Neither is caught here: the
     difference between "no results" and "could not look" belongs to the
@@ -414,13 +476,15 @@ def search(query: str, domains: list[str] | None = None, max_results: int = 20,
     """
     # Counted BEFORE the call — it is billed whether or not it returns
     # anything, and a failed call that went unrecorded is how a quota
-    # disappears faster than the counter says it should.
-    record_call(counter)
+    # disappears faster than the counter says it should. Counted at the
+    # actual depth requested, so a fast call is never billed as a thorough
+    # one in the counter that measures the override's savings.
+    record_call(counter, depth=depth)
 
     if SEARCH_PROVIDER == "tavily":
-        return _search_tavily(query, domains, max_results)
+        return _search_tavily(query, domains, max_results, depth=depth)
     if SEARCH_PROVIDER == "serper":
-        return _search_serper(query, domains, max_results, country=country)
+        return _search_serper(query, domains, max_results, country=country, depth=depth)
     raise SearchUnavailable(
         f"SEARCH_PROVIDER={SEARCH_PROVIDER!r} is not a provider. "
         "Set it to 'serper' or 'tavily'."

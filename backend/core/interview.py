@@ -5,10 +5,10 @@
 #
 # SECURITY MODEL, the rules this file exists to enforce:
 #   1. Both routes require a verified Supabase JWT.
-#   2. /generate additionally requires Pro or Elite, via
-#      core/auth.py::get_current_paid_user_id. The frontend blurs the page for
-#      Free users; THIS is the check that decides. A Free user who calls the
-#      endpoint directly gets a 403, not questions.
+#   2. /generate no longer requires Pro or Elite (changed 2026-09-12 — see
+#      below): any authenticated user can call it, and
+#      core/entitlements.py::begin_addon_use decides whether that's the
+#      monthly baseline (Pro/Elite only) or a credit purchase (anyone).
 #   3. Every resume touched is re-checked against the CALLER'S OWN user_id
 #      server-side. Someone else's resume id returns 404, never data, and
 #      never a 403 that would confirm the id exists. Same reasoning as
@@ -23,8 +23,14 @@
 # state. A prep is one immutable document per CV, replaced wholesale when the
 # user chooses to regenerate.
 #
-# NO CREDITS ARE CONSUMED. Access is the subscription itself, so a failed
-# generation costs the user nothing and "try again" is always safe to offer.
+# CREDIT-PURCHASABLE, 2026-09-12 (credit-addons prompt items 1 and 2). Used
+# to be "no credits are consumed, access is the subscription itself" — that
+# was true right up until pack buyers stopped being promoted to a Pro
+# baseline (core/entitlements.py's removed effective_tier()) and needed
+# another way to spend what they paid for. Baseline (Pro/Elite, free) is
+# still tried first, always; a failed generation still costs nothing,
+# whichever way it was paid for — see release_addon_use in
+# _stream_interview_prep's worker.
 import json
 import queue
 import threading
@@ -36,13 +42,13 @@ from fastapi.responses import StreamingResponse
 from loguru import logger
 
 from agents.interview_prep import InterviewPrepError, run_interview_prep
-from core.auth import get_current_paid_user_id, get_current_user_id, read_subscription_tier
+from core.auth import get_current_user_id, read_subscription_tier
 from core.credits import get_admin_client
 from core.entitlements import (
     INTERVIEW_PREP,
-    consume_addon_quota,
+    begin_addon_use,
     get_addon_quota,
-    release_addon_quota,
+    release_addon_use,
 )
 from schemas.interview_schema import (
     QUESTION_COUNT_MAX,
@@ -337,7 +343,7 @@ def _sse(event: str, data: dict) -> str:
     return f"event: {event}\ndata: {json.dumps(data, ensure_ascii=False)}\n\n"
 
 
-def _stream_interview_prep(row: dict, user_id: str, language: str | None):
+def _stream_interview_prep(row: dict, user_id: str, language: str | None, payment: dict):
     """
     Runs the generation on a worker thread and yields SSE frames from the main
     one.
@@ -424,10 +430,10 @@ def _stream_interview_prep(row: dict, user_id: str, language: str | None):
             # charged" — it has to actually run, on this thread, whatever the
             # client did.
             if "error" in result:
-                release_addon_quota(user_id, INTERVIEW_PREP)
+                release_addon_use(user_id, payment)
                 logger.info(
-                    f"↩️ [{request_id}] Released the interview-prep slot for {user_id} "
-                    "— the run produced nothing"
+                    f"↩️ [{request_id}] Released the interview-prep {payment.get('source', 'slot')} "
+                    f"for {user_id} — the run produced nothing"
                 )
             events.put(("__done__", None))
 
@@ -463,7 +469,7 @@ def _stream_interview_prep(row: dict, user_id: str, language: str | None):
 @router.post("/api/v1/interview/generate", tags=["Interview"])
 def generate_interview_prep(
     payload: InterviewPrepRequest,
-    user_id: str = Depends(get_current_paid_user_id),
+    user_id: str = Depends(get_current_user_id),
 ):
     """
     Generates one interview prep set from a saved CV and its job description,
@@ -506,11 +512,14 @@ def generate_interview_prep(
 
     # Claimed as late as possible, after every refusable check above has
     # passed, so a request turned away for an ineligible CV never costs one
-    # of the month's runs. Released again by the worker if the run fails.
-    consume_addon_quota(user_id, INTERVIEW_PREP)
+    # of the month's runs (or credits). May raise 402 (confirmation needed,
+    # or not enough credits) — LinkedIn Essential/Interview Prep have no
+    # purchase cap beyond the credits themselves, unlike Job Search. Released
+    # again by the worker if the run fails.
+    payment = begin_addon_use(user_id, INTERVIEW_PREP, confirmed_purchase=payload.spend_credits)
 
     return StreamingResponse(
-        _stream_interview_prep(row, user_id, payload.language),
+        _stream_interview_prep(row, user_id, payload.language, payment),
         media_type="text/event-stream",
         headers={
             "Cache-Control": "no-cache",

@@ -298,15 +298,18 @@ def get_current_paid_user_id(authorization: str = Header(None)) -> str:
     convention core/linkedin.py's error details use.
     """
     user_id = get_current_user_id(authorization)
-    # effective_tier, not read_subscription_tier: someone who bought a credit
-    # pack has paid, and gating them out of the features they can spend those
-    # credits on is a refund request. See PACK_BUYER_TIER in
-    # core/entitlements.py for why a pack confers access without conferring a
-    # subscription. Imported here rather than at module scope because
-    # entitlements imports this module — a top-level import is circular.
-    from core.entitlements import effective_tier
-
-    tier = effective_tier(user_id)
+    # STRICT subscription tier (2026-09-12) — the old effective_tier()
+    # promotion this used to call is gone entirely (credit-addons prompt
+    # item 1; see core/entitlements.py's removal note). This dependency is
+    # now a hard "must actually subscribe" gate, which is correct for
+    # anything genuinely Pro/Elite-exclusive with no credit-purchase
+    # alternative. NOTHING CURRENTLY USES IT: LinkedIn Essential, Interview
+    # Prep and Job Search all moved to get_current_user_id +
+    # entitlements.begin_addon_use(), since a Free user (or a pack buyer)
+    # can now buy any of the three with credits and must be able to reach
+    # the endpoint to do so. Left in place for a future feature that is
+    # genuinely subscription-only.
+    tier = read_subscription_tier(user_id)
     if tier not in PAID_TIERS:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,

@@ -9,9 +9,10 @@ lived in the generator after the model call was, in practice, optional:
   · `_save_prep` never ran     -> the questions were regenerated next visit,
                                   which is the "it regenerates every time"
                                   complaint and a repeated model bill
-  · `release_addon_quota`      -> ran on the worker already, so it was fine
+  · `release_addon_use`        -> ran on the worker already, so it was fine
                                   for a crash but the SUCCESS path still
-                                  charged a slot for a discarded result
+                                  charged a slot (or credits, since
+                                  2026-09-12) for a discarded result
 
 Both now live on the worker thread. These tests pin that, because the failure
 mode leaves no trace in the output — the user just sees a spinner again.
@@ -28,6 +29,10 @@ import core.interview as interview
 
 ROW = {"id": "resume-1", "job_description": "x" * 400, "generation_snapshot": {"facts_json": {}}}
 CONTENT = {"language": "en", "questions": [{"question": "why us"}], "overview": "o"}
+# A baseline claim, the same shape entitlements.begin_addon_use returns when
+# the monthly allowance covers it — most of these tests are about the
+# save/release TIMING, not which payment source was used.
+PAYMENT = {"source": "baseline", "addon": "interview_prep"}
 
 
 def _drain(gen, stop_after=None):
@@ -47,8 +52,8 @@ def test_a_successful_prep_is_saved_even_if_the_client_disconnects():
     with patch.object(interview, "run_interview_prep", return_value=CONTENT), \
          patch.object(interview, "_save_prep", side_effect=lambda *a: saved.append(a)), \
          patch.object(interview, "get_addon_quota", return_value={}), \
-         patch.object(interview, "release_addon_quota") as release:
-        gen = interview._stream_interview_prep(ROW, "user-1", "en")
+         patch.object(interview, "release_addon_use") as release:
+        gen = interview._stream_interview_prep(ROW, "user-1", "en", PAYMENT)
         # Abandon the stream before the `complete` frame is ever read.
         _drain(gen, stop_after=0)
         # The worker owns the save, so give it a moment to finish.
@@ -65,15 +70,30 @@ def test_a_crash_releases_the_monthly_slot_and_logs_a_traceback(caplog):
     with patch.object(interview, "run_interview_prep", side_effect=KeyError("facts_json")), \
          patch.object(interview, "_save_prep") as save, \
          patch.object(interview, "get_addon_quota", return_value={}), \
-         patch.object(interview, "release_addon_quota") as release:
-        frames = _drain(interview._stream_interview_prep(ROW, "user-1", "en"))
+         patch.object(interview, "release_addon_use") as release:
+        frames = _drain(interview._stream_interview_prep(ROW, "user-1", "en", PAYMENT))
 
-    release.assert_called_once_with("user-1", interview.INTERVIEW_PREP)
+    release.assert_called_once_with("user-1", PAYMENT)
     save.assert_not_called()
     error_frames = [f for f in frames if "event: error" in f]
     assert error_frames, frames
     assert "request_id" in error_frames[0], \
         "a user-visible failure must carry an id that can be found in the logs"
+
+
+def test_a_crash_releases_purchased_credits_too():
+    """The release path is the same function regardless of payment source —
+    this pins that a credits-sourced payment is released through
+    release_addon_use exactly like a baseline one, not a separate code path
+    that could be forgotten."""
+    credits_payment = {"source": "credits", "addon": "interview_prep", "reserved": 3}
+    with patch.object(interview, "run_interview_prep", side_effect=KeyError("facts_json")), \
+         patch.object(interview, "_save_prep"), \
+         patch.object(interview, "get_addon_quota", return_value={}), \
+         patch.object(interview, "release_addon_use") as release:
+        _drain(interview._stream_interview_prep(ROW, "user-1", "en", credits_payment))
+
+    release.assert_called_once_with("user-1", credits_payment)
 
 
 def test_the_error_payload_never_leaks_the_exception_to_the_user():
@@ -82,8 +102,8 @@ def test_the_error_payload_never_leaks_the_exception_to_the_user():
                       side_effect=RuntimeError("connection to 10.0.0.4:5432 refused")), \
          patch.object(interview, "_save_prep"), \
          patch.object(interview, "get_addon_quota", return_value={}), \
-         patch.object(interview, "release_addon_quota"):
-        frames = _drain(interview._stream_interview_prep(ROW, "user-1", "en"))
+         patch.object(interview, "release_addon_use"):
+        frames = _drain(interview._stream_interview_prep(ROW, "user-1", "en", PAYMENT))
 
     blob = "".join(frames)
     assert "10.0.0.4" not in blob

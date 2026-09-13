@@ -32,15 +32,45 @@ export type JobSearchResults = {
   related: SimilarJob[];
   /** The adjacent titles that were searched, for labelling the second group. */
   related_titles: string[];
+  /** True when this response was served from the shared cache rather than a
+   *  live search — see supabase/migrations/20260912100000_..._cache.sql. */
+  from_cache?: boolean;
+  /** When the underlying listings were actually fetched (ISO 8601) — only
+   *  present on a cache hit; a fresh live search has no separate "cached
+   *  at" moment worth showing. */
+  cached_at?: string;
+};
+
+/** One entry in this user's own search history. Free to list and free to
+ *  reopen, regardless of age — see /api/v1/job-search/history. */
+export type JobSearchHistoryEntry = {
+  id: string;
+  cache_key: string;
+  raw_query: string;
+  location: string;
+  internships: boolean;
+  searched_at: string;
+};
+
+/** A reopened history entry's results — always served from cache, and
+ *  flagged stale rather than silently re-fetched. */
+export type JobSearchReopenResult = JobSearchResults & {
+  searched_at: string;
+  is_stale: boolean;
 };
 
 export class JobSearchError extends Error {
   code?: string;
   status?: number;
-  constructor(message: string, code?: string, status?: number) {
+  /** The backend's full `detail` object, when it sent one — carries the
+   *  extra fields a plain code/message can't (credit_cost/credit_balance on
+   *  a 402, purchase_limit on a 429). See @/lib/addonPurchase. */
+  detail?: Record<string, unknown>;
+  constructor(message: string, code?: string, status?: number, detail?: Record<string, unknown>) {
     super(message);
     this.code = code;
     this.status = status;
+    this.detail = detail;
   }
 }
 
@@ -66,7 +96,8 @@ async function unwrap(res: Response) {
   throw new JobSearchError(
     typeof detail === "string" ? detail : detail?.message ?? `Request failed: ${res.status}`,
     typeof detail === "object" ? detail?.code : undefined,
-    res.status
+    res.status,
+    typeof detail === "object" ? detail : undefined
   );
 }
 
@@ -77,12 +108,27 @@ export async function fetchJobSearchOverview(): Promise<JobSearchOverview> {
   return unwrap(res);
 }
 
-/** The search itself. 403 `upgrade_required` for Free users — enforced
- *  server-side, not by this client. */
+/** The search itself.
+ *
+ *  A plain call (refresh not set) may still come back `from_cache: true` —
+ *  that's the shared cache serving a fresh entry, not something the caller
+ *  asked for. `refresh: true` is the ONLY thing that forces a live
+ *  re-search of a query that already has one; the caller must have gotten
+ *  an explicit confirmation from the user before ever setting it — this
+ *  function does not ask again.
+ *
+ *  Once the shared Job Search baseline is exhausted (core/job_search.py,
+ *  same pool as the per-CV find-jobs button), this raises a 402
+ *  `addon_purchase_available` naming the credit cost and balance — see
+ *  @/lib/addonPurchase. Pass `spendCredits: true` (the request's
+ *  `spend_credits` field) only after the user has explicitly confirmed
+ *  that dialog; this function never asks on its own. */
 export async function searchJobs(params: {
   jobTitle: string;
   internships: boolean;
   location?: string;
+  refresh?: boolean;
+  spendCredits?: boolean;
 }): Promise<JobSearchResults> {
   const res = await fetch(`${API_URL}/api/v1/job-search`, {
     method: "POST",
@@ -91,7 +137,28 @@ export async function searchJobs(params: {
       job_title: params.jobTitle,
       internships: params.internships,
       location: params.location || null,
+      refresh: params.refresh ?? false,
+      spend_credits: params.spendCredits ?? false,
     }),
+  });
+  return unwrap(res);
+}
+
+/** This user's past searches, newest first. Costs nothing to call — it's a
+ *  list of past lookups, not a search. */
+export async function fetchJobSearchHistory(): Promise<JobSearchHistoryEntry[]> {
+  const res = await fetch(`${API_URL}/api/v1/job-search/history`, { headers: await authHeaders() });
+  const data = await unwrap(res);
+  return data.history ?? [];
+}
+
+/** Reopens one past search. ALWAYS free regardless of age — a result set
+ *  past the cache TTL comes back with `is_stale: true` rather than hidden
+ *  or silently re-fetched. Refresh (searchJobs with refresh: true) is the
+ *  only paid path. */
+export async function reopenJobSearch(historyId: string): Promise<JobSearchReopenResult> {
+  const res = await fetch(`${API_URL}/api/v1/job-search/history/${encodeURIComponent(historyId)}`, {
+    headers: await authHeaders(),
   });
   return unwrap(res);
 }

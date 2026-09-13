@@ -313,6 +313,16 @@ def get_any_resume_document(
 @router.post("/api/v1/resumes/{resume_id}/find-jobs", tags=["Resumes"])
 def find_jobs_for_resume(
     resume_id: str,
+    spend_credits: bool = Query(
+        False,
+        description=(
+            "Confirms spending credits on this search once the monthly Job "
+            "Search baseline (shared with the standalone Job Search page) is "
+            "used up. Without it, a request against an exhausted baseline "
+            "gets a 402 naming the price and the caller's balance instead of "
+            "spending anything."
+        ),
+    ),
     user_id: str = Depends(get_current_user_id),
 ) -> dict:
     """
@@ -322,14 +332,22 @@ def find_jobs_for_resume(
     a CV that already has results returns them without spending anything, so a
     double-click or a refresh cannot cost a second search — pass
     `?refresh=true` to deliberately re-run one.
+
+    PAID FROM THE SAME POOL AS THE STANDALONE JOB SEARCH PAGE (2026-09-12,
+    credit-addons prompt item 4) — baseline first, then credits once it's
+    exhausted, exactly like core/job_search.py's endpoint. See
+    entitlements.begin_addon_use for the spend order and the explicit-
+    confirmation rule.
     """
     from agents.jobs_finder import (
         SearchQuotaExhausted,
+        SearchUnavailable,
         _fetch_profile_location,
         _looks_like_real_location,
+        assert_search_affordable,
         find_similar_jobs,
     )
-    from core.entitlements import JOB_SEARCH, consume_addon_quota, release_addon_quota, require_addon_quota
+    from core.entitlements import JOB_SEARCH, begin_addon_use, release_addon_use
     from core.rate_limit import JOB_SEARCH as JOB_SEARCH_RATE, enforce
 
     enforce(JOB_SEARCH_RATE, user_id)
@@ -350,7 +368,9 @@ def find_jobs_for_resume(
     existing = row.get("similar_jobs") or []
     if existing:
         # ALREADY PAID FOR. Returning the stored results costs nothing and is
-        # what makes the button safe to press twice.
+        # what makes the button safe to press twice — checked BEFORE
+        # begin_addon_use, so a double-click never even reaches the spend
+        # decision, let alone a second charge.
         return {"resume_id": resume_id, "jobs": existing, "from_cache": True}
 
     snapshot = row.get("generation_snapshot") or {}
@@ -368,14 +388,39 @@ def find_jobs_for_resume(
             },
         )
 
-    # Refused BEFORE the search, so an over-cap request costs nothing.
-    require_addon_quota(user_id, JOB_SEARCH)
-    if not consume_addon_quota(user_id, JOB_SEARCH):
+    # THE PRE-FLIGHT RUNS BEFORE ANYTHING IS CLAIMED (2026-09-12, credit-
+    # addons prompt item 9) — checked here, ahead of begin_addon_use, so a
+    # quota/config failure costs nothing at all rather than costing a
+    # baseline slot or credits that then have to be refunded.
+    # find_similar_jobs re-checks this internally too (cheap, redundant,
+    # correct defence-in-depth).
+    try:
+        assert_search_affordable("find-jobs run")
+    except SearchQuotaExhausted as e:
+        logger.error(f"🚫 Job match unavailable (search quota) for resume {resume_id}: {e}")
         raise HTTPException(
-            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-            detail={"code": "quota_exhausted",
-                    "message": "You have used this month's job searches."},
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail={
+                "code": "search_quota_exhausted",
+                "message": (
+                    "Job matching is unavailable for the rest of this month while we "
+                    "top up our search provider. Nothing was charged."
+                ),
+            },
         )
+    except SearchUnavailable as e:
+        logger.opt(exception=True).error(f"❌ Job match unavailable (provider) for resume {resume_id}: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail={"code": "search_failed",
+                    "message": "Job matching is temporarily unavailable. Nothing was charged."},
+        )
+
+    # Refused/priced after the pre-flight, before the search, so an over-cap
+    # or unconfirmed request costs nothing. May raise 402 (confirmation
+    # needed, or not enough credits) or 429 (the purchase cap, on top of the
+    # baseline, is spent).
+    payment = begin_addon_use(user_id, JOB_SEARCH, confirmed_purchase=spend_credits)
 
     cv_location = ((facts_json.get("personal", {}) or {}).get("location") or "").strip()
     profile_location = _fetch_profile_location(user_id)
@@ -388,9 +433,10 @@ def find_jobs_for_resume(
             profile_location=profile_location,
         )
     except SearchQuotaExhausted as e:
-        # The slot goes back: they asked for a search and got nothing, and the
-        # reason was ours. Same rule the interview-prep worker applies.
-        release_addon_quota(user_id, JOB_SEARCH)
+        # The slot (or the credits) goes back: they asked for a search and
+        # got nothing, and the reason was ours. Same rule the interview-prep
+        # worker applies.
+        release_addon_use(user_id, payment)
         logger.error(f"🚫 Job match unavailable (search quota) for resume {resume_id}: {e}")
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -403,7 +449,7 @@ def find_jobs_for_resume(
             },
         )
     except Exception as e:
-        release_addon_quota(user_id, JOB_SEARCH)
+        release_addon_use(user_id, payment)
         logger.opt(exception=True).error(f"❌ Job match failed for resume {resume_id}: {e}")
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -421,4 +467,4 @@ def find_jobs_for_resume(
         # than losing the cache.
         logger.error(f"Could not store job matches for resume {resume_id}: {e}")
 
-    return {"resume_id": resume_id, "jobs": jobs, "from_cache": False}
+    return {"resume_id": resume_id, "jobs": jobs, "from_cache": False, "paid_with": payment["source"]}

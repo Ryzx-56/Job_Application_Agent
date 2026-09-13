@@ -442,10 +442,19 @@ export function TierPanel({
    the entitlement, how much of the month is left, and offers the action.
 
    Three states, and the difference matters:
-     · not unlocked  -> Free. The panel explains what a subscription adds and
-                        points at the plans.
-     · used up       -> the allowance is spent. Says so plainly with the
-                        numbers, rather than presenting a button that fails.
+     · not unlocked  -> Free/no baseline ever. The panel explains what a
+                        subscription adds AND that credits buy one now
+                        (2026-09-13 — LinkedIn Essential is buyable with
+                        credits by anyone, not just Pro/Elite; see
+                        core/entitlements.py's removed pack-buyer tier
+                        promotion and begin_addon_use).
+     · used up       -> the MONTHLY BASELINE is spent, but credits can still
+                        buy one — onGenerate still fires; the backend answers
+                        with a 402 naming the price, and the confirmation
+                        dialog (AddonPurchaseDialog, in the pages that render
+                        this panel) is what actually asks. This used to be a
+                        dead end with no button at all, which is exactly
+                        backwards now that credits are a real path.
      · available     -> the action, with the count next to it.
 ======================================================================== */
 export function IncludedEssentialPanel({
@@ -463,9 +472,11 @@ export function IncludedEssentialPanel({
     cta: string;
     remaining: (left: number, total: number) => string;
     usedUp: (total: number) => string;
+    usedUpCta: string;
     lockedTitle: string;
     lockedBody: string;
     lockedCta: string;
+    lockedCtaCredits: string;
   };
   /** Null while the overview is still loading, or on an older backend. */
   quota: { limit: number; used: number; remaining: number; unlocked: boolean } | null;
@@ -519,15 +530,37 @@ export function IncludedEssentialPanel({
           <div className="mt-6 rounded-xl border border-[#0A66C2]/25 bg-[#EAF4FB]/60 p-4">
             <p className="text-sm font-semibold text-slate-900">{copy.lockedTitle}</p>
             <p className="mt-1 text-sm leading-relaxed text-slate-600">{copy.lockedBody}</p>
-            <Link href="/dashboard/upgrade" className={`mt-3 ${liPrimaryButton}`}>
-              <Sparkles className="size-4" aria-hidden />
-              {copy.lockedCta}
-            </Link>
+            <div className="mt-3 flex flex-wrap gap-2">
+              <Link href="/dashboard/upgrade" className={liPrimaryButton}>
+                <Sparkles className="size-4" aria-hidden />
+                {copy.lockedCta}
+              </Link>
+              {/* Credits buy one now regardless of tier (2026-09-13) — the
+                  backend's own 402 asks for the actual confirmation; this
+                  button just starts that request. */}
+              <button
+                type="button"
+                onClick={onGenerate}
+                className="inline-flex items-center justify-center gap-2 rounded-lg border border-[#0A66C2]/30 bg-white px-4 py-2.5 text-sm font-semibold text-[#0A66C2] transition-colors hover:bg-[#EAF4FB] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#0A66C2]"
+              >
+                {copy.lockedCtaCredits}
+              </button>
+            </div>
           </div>
         ) : usedUp ? (
-          <p className="mt-6 rounded-xl border border-amber-200 bg-amber-50/70 px-4 py-3 text-sm leading-relaxed text-amber-800">
-            {copy.usedUp(limit)}
-          </p>
+          <div className="mt-6 space-y-3">
+            <p className="rounded-xl border border-amber-200 bg-amber-50/70 px-4 py-3 text-sm leading-relaxed text-amber-800">
+              {copy.usedUp(limit)}
+            </p>
+            {/* Baseline is spent, not the option to buy one — this used to
+                dead-end here with no button at all. onGenerate still runs
+                the normal request; the backend's 402 is what actually asks
+                for the credit-spend confirmation. */}
+            <button type="button" onClick={onGenerate} className={`w-full ${liPrimaryButton}`}>
+              <Sparkles className="size-4" aria-hidden />
+              {copy.usedUpCta}
+            </button>
+          </div>
         ) : (
           <button type="button" onClick={onGenerate} className={`mt-6 w-full ${liPrimaryButton}`}>
             <Sparkles className="size-4" aria-hidden />

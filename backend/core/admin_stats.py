@@ -16,6 +16,7 @@ from loguru import logger
 from core.auth import get_current_admin_user_id
 from core.credits import get_admin_client
 from core import pricing as pricing_catalog
+from core import search_provider
 from core.entitlements import ADDON_CAPS
 
 router = APIRouter()
@@ -66,32 +67,50 @@ USD_TO_SAR = pricing_catalog.SAR_PER_USD
 #
 #   What's left is the model term — and it needed a correction too. v7 used
 #   Arabic's per-CV cost (0.02345 SAR) as "the more expensive locale," true
-#   per CV but not per CREDIT: an Arabic CV costs 2 credits, so its PER-CREDIT
-#   cost is 0.02345 / 2 = 0.0117 SAR. An English CV costs 1 credit for
-#   0.01332 SAR — 0.0133 SAR/credit, actually the higher of the two once
-#   credits (not CVs) are the unit. Measured over 10 runs per language on
-#   gpt-5.6-luna (core/llm_config.WRITING_MODEL): 0.00829 tailoring + 0.00301
-#   cover letter + 0.00202 match scorer = 0.01332 English whole-CV, 1 credit.
+#   per CV but not per CREDIT: an Arabic CV cost 2 credits at the time, so its
+#   PER-CREDIT cost was 0.02345 / 2 = 0.0117 SAR — LOWER than English's
+#   0.01332, once credits (not CVs) were the unit. Measured over 10 runs per
+#   language on gpt-5.6-luna (core/llm_config.WRITING_MODEL): 0.00829
+#   tailoring + 0.00301 cover letter + 0.00202 match scorer = 0.01332 English
+#   whole-CV, 1 credit.
 #
-#   0.01332 (English, worst case per credit) + 0.02 (same headroom as v7, for
+#   0.01332 (English, worst case per credit AT THE TIME) + 0.02 (headroom for
 #   Gemini extraction — cv_parser, jd_analyzer, the fact checker, the jobs
 #   screener — which still hasn't been measured, see pricing reference v7
 #   §1) = 0.03332, rounded up to 0.04.
 #
+# ⚠️ RECOMPUTED AGAIN, SAME DAY — Arabic dropped 2->1 credit (credit-addons
+# prompt item 3), which FLIPS which language is the worse per-credit case.
+# Arabic's per-CV cost didn't change (still 0.02345 SAR of model work), but
+# it is now bought with 1 credit instead of 2 — so its per-credit cost is
+# 0.02345, not 0.0117, and THAT is now the higher of the two (English stays
+# 0.01332/credit). Recomputed the same way: 0.02345 + 0.02 headroom = 0.04345,
+# rounded up to 0.05.
+#
 # NOTHING ELSE FEEDS THIS FIGURE. The only other consumers are
-# worst_case_cost_sar() below (tier and pack worst-case cost) and the
+# worst_case_cost_sar() below (tier and pack worst-case cost), the
 # `cost_per_credit` field this module returns directly to the admin
-# dashboard — both recompute from whatever this constant holds, so nothing
-# downstream needed a separate edit. Interview Prep's and Job Search's own
-# worst-case costs are NOT folded into this constant or into this module's
-# platform-wide total at all (BUNDLED_ADDON_COSTS_SAR["interview_prep"] is
-# defined but never summed, and Job Search doesn't appear here whatsoever) —
-# a separate, pre-existing gap, flagged in pricing reference v7 §5, not fixed
-# by this recomputation.
+# dashboard, and _addon_worst_case_ceiling() below (item 7's per-subscriber
+# ceiling) — all three recompute from whatever this constant holds.
 #
 # COST_PER_CREDIT_SAR is genuinely local: it is an INPUT cost (what a
 # generation costs us to serve), not a price anyone is charged.
-COST_PER_CREDIT_SAR = 0.04
+COST_PER_CREDIT_SAR = 0.05
+
+# ─── JOB SEARCH'S WORST-CASE PER-SEARCH COST, FOR THE ADD-ON CEILING BELOW ──
+#
+# 36 Tavily credits worst case (pricing-reference-v7.md §1.1) x 0.03 SAR/
+# credit ($0.008 x SAR_PER_USD) = 1.08 SAR — UNTIL the Jadarat/priority-lane
+# depth override landed 2026-09-12 (PRIORITY_LANE_SEARCH_DEPTH in
+# agents/jobs_finder.py): that lane's calls dropped from 2 credits to 1, and
+# it is called once per query pass (3 in the primary ladder + 2 in the
+# adjacent-title fallback = 5 calls worst case), saving 5 credits: 36 -> 31.
+# 31 x 0.03 = 0.93 SAR. Recompute this by hand if either the depth override
+# or the cut-A-through-E call counts change again — it is not derived from
+# search_provider.py at import time because the worst case depends on the
+# SHAPE of the search (which lanes, how many queries), not just the per-call
+# price that module already tracks.
+JOB_SEARCH_WORST_CASE_SAR = 0.93
 
 # Display labels only. These stay local on purpose: the catalogue's label_en is
 # the description that goes on the Moyasar form and the buyer's card statement
@@ -203,6 +222,74 @@ def worst_case_cost_sar(credits: int) -> float:
     return round(float(credits or 0) * COST_PER_CREDIT_SAR, 2)
 
 
+def _addon_worst_case_ceiling(tier: str) -> dict:
+    """
+    ONE SUBSCRIBER'S worst-case ceiling for a tier, per credit-addons prompt
+    item 7 (patched — real current figures, not the file's stale target
+    numbers):
+
+        CV credits remaining after max Job Search purchases x per-CV cost
+        + (baseline Job Search + purchased Job Search) x JOB_SEARCH_WORST_CASE_SAR
+        + Interview Prep baseline x BUNDLED_ADDON_COSTS_SAR["interview_prep"]
+        + LinkedIn Essential baseline x BUNDLED_ADDON_COSTS_SAR["linkedin_essential"]
+
+    THIS IS A CEILING PER SUBSCRIBER, not multiplied by how many are active —
+    that projection already exists in get_analytics()'s tier loop for CV
+    credits alone (worst_case_cost_sar() x active_count) and is left
+    untouched here; this is the "one subscriber who does everything the plan
+    allows" number pricing-reference-v7.md §4 reported separately, not folded
+    into the platform-wide total_cost.
+
+    ONLY JOB SEARCH GETS "+ purchased": it is the sole add-on with a purchase
+    cap (core/entitlements.py PURCHASE_CAPPED_ADDONS) AND the sole one where
+    buying it with credits costs noticeably more per credit than a CV would
+    (0.93 SAR / 5 credits = 0.186 SAR/credit, against this tier's
+    COST_PER_CREDIT_SAR — measured, not assumed). LinkedIn Essential and
+    Interview Prep purchases are uncapped but are NOT more expensive per
+    credit than a CV (Interview Prep is close; LinkedIn is cheaper) — so a
+    subscriber diverting credits into those two, instead of CVs, does not
+    raise the ceiling beyond what the CV-credit term already assumes for
+    every credit granted. That is a real economic claim, not an oversight:
+    it is what makes Job Search the only add-on that NEEDED a purchase cap
+    in the first place (see PURCHASE_CAPPED_ADDONS's own comment).
+
+    CREDIT-CONSTRAINED, NOT POLICY-CAPPED, for how many Job Search purchases
+    are actually fundable: the purchase cap (Pro 5, Elite 13) is a POLICY
+    ceiling, but Pro's 24 monthly credits cannot fund 5 purchases at 5
+    credits each (25 > 24) without ALSO buying a credit pack — a separate,
+    separately-profitable transaction already priced in the Packs table, not
+    assumed for free here. So this uses
+    `min(policy_cap, monthly_credits // cost_per_purchase)`.
+    """
+    from core.entitlements import ADDON_CAPS, INTERVIEW_PREP, JOB_SEARCH, LINKEDIN_ESSENTIAL, purchase_cap_for
+    from core.pricing import ADDON_CREDIT_COSTS
+
+    credits = TIER_PRICING.get(tier, {}).get("credits") or 0
+    caps = ADDON_CAPS.get(tier, ADDON_CAPS["free"])
+
+    js_baseline = caps[JOB_SEARCH]
+    js_policy_cap = purchase_cap_for(tier, JOB_SEARCH) or 0
+    js_cost_each = ADDON_CREDIT_COSTS[JOB_SEARCH]
+    js_purchases = min(js_policy_cap, credits // js_cost_each) if js_cost_each else 0
+    cv_credits_remaining = max(0, credits - js_purchases * js_cost_each)
+
+    cv_term = worst_case_cost_sar(cv_credits_remaining)
+    job_search_term = round((js_baseline + js_purchases) * JOB_SEARCH_WORST_CASE_SAR, 2)
+    interview_term = round(caps[INTERVIEW_PREP] * BUNDLED_ADDON_COSTS_SAR["interview_prep"]["cost_sar"], 2)
+    linkedin_term = round(caps[LINKEDIN_ESSENTIAL] * BUNDLED_ADDON_COSTS_SAR["linkedin_essential"]["cost_sar"], 2)
+
+    total = round(cv_term + job_search_term + interview_term + linkedin_term, 2)
+    return {
+        "cv_credits_remaining": cv_credits_remaining,
+        "cv_term_sar": cv_term,
+        "job_search_purchases_assumed": js_purchases,
+        "job_search_term_sar": job_search_term,
+        "interview_prep_term_sar": interview_term,
+        "linkedin_essential_term_sar": linkedin_term,
+        "total_sar": total,
+    }
+
+
 def _margin_pct(revenue: float, cost: float) -> float | None:
     """Profit as a share of revenue. None when there's no revenue to divide
     by, which must render as "not applicable" rather than 0% — a tier nobody
@@ -227,6 +314,49 @@ def _rpc(name: str, params: dict | None = None):
     except Exception as e:
         logger.error(f"admin stats RPC '{name}' failed: {e}")
         return None
+
+
+def _job_search_cache_stats() -> dict | None:
+    """
+    Cache-hit performance for the standalone Job Search page (2026-09-12,
+    shared cache — see supabase/migrations/20260912100000_..._cache.sql).
+
+    Returns None on a read failure — NOT a dict of zeros. A 0% hit rate is a
+    real, different state ("the cache is live but nobody's hit it yet") from
+    "we could not read job_search_cache". Collapsing those is the exact
+    defect CLAUDE.md has a rule about, and this is the newest table in the
+    product to get it right from the start rather than needing a fix later.
+    """
+    try:
+        rows = (
+            get_admin_client()
+            .table("job_search_cache")
+            .select("hit_count, tavily_credits_used")
+            .execute()
+            .data
+        )
+    except Exception as e:
+        logger.error(f"admin stats: could not read job_search_cache: {e}")
+        return None
+
+    rows = rows or []
+    total_hits = sum(int(r.get("hit_count") or 0) for r in rows)
+    total_fetches = len(rows)  # one live fetch produced each cache row
+    total_lookups = total_hits + total_fetches
+    credits_avoided = sum(
+        int(r.get("hit_count") or 0) * int(r.get("tavily_credits_used") or 0) for r in rows
+    )
+    sar_avoided = round(credits_avoided * search_provider.usd_per_unit("tavily") * USD_TO_SAR, 2)
+
+    return {
+        "cache_entries": total_fetches,
+        "total_hits": total_hits,
+        # None (not 0.0) when there have been no lookups at all yet — a hit
+        # rate needs a denominator; "no searches yet" isn't "0% hit rate".
+        "hit_rate_pct": round(total_hits / total_lookups * 100, 1) if total_lookups else None,
+        "tavily_credits_avoided": credits_avoided,
+        "sar_avoided": _money(sar_avoided),
+    }
 
 
 def _first_row(name: str, params: dict | None = None) -> dict | None:
@@ -415,6 +545,13 @@ def get_analytics(admin_user_id: str = Depends(get_current_admin_user_id)) -> di
         total_revenue += revenue
         total_cost += cost
 
+        # ONE SUBSCRIBER'S full ceiling (CV credits + every bundled add-on at
+        # its worst case) — item 7. Deliberately NOT multiplied into `cost`/
+        # `total_cost` above, which project CV-credit cost across the
+        # ACTIVE COUNT; this is the single-subscriber number
+        # pricing-reference-v7.md §4 reported on its own.
+        addon_ceiling = _addon_worst_case_ceiling(slug)
+
         tier_rows.append({
             "tier": slug,
             "label": pricing.get("label", slug.title()),
@@ -424,11 +561,19 @@ def get_analytics(admin_user_id: str = Depends(get_current_admin_user_id)) -> di
             "price_sar": pricing.get("price_sar"),
             "credits": credits,
             "estimated_monthly": _money(monthly),
-            # ── Worst case, per §7 of the pricing reference ──
+            # ── Worst case, per §7 of the pricing reference (CV credits only,
+            # projected across active subscribers) ──
             "worst_case_cost": _money(cost),
             "worst_case_profit": _money(revenue - cost),
             "worst_case_margin_pct": _margin_pct(revenue, cost),
             "unit_worst_case_cost": _money(unit_cost),
+            # ── One subscriber's full ceiling, CV credits + every bundled
+            # add-on (2026-09-12, credit-addons prompt item 7) ──
+            "addon_ceiling": {
+                **addon_ceiling,
+                "profit_sar": round(float(pricing.get("price_sar") or 0) - addon_ceiling["total_sar"], 2),
+                "margin_pct": _margin_pct(float(pricing.get("price_sar") or 0), addon_ceiling["total_sar"]),
+            },
             # Free's figure is a cost, so the UI renders it differently.
             "is_cost": slug == "free",
         })
@@ -549,6 +694,11 @@ def get_analytics(admin_user_id: str = Depends(get_current_admin_user_id)) -> di
             "excludes": ["linkedin_premium"],
         },
         "linkedin": linkedin,
+        # Not folded into worst_case/total_cost above — this is a SAVING on
+        # the Job Search line, and Job Search's own cost isn't in that total
+        # to begin with yet (see the note on COST_PER_CREDIT_SAR). Reported
+        # on its own until that gap is closed, the same way `linkedin` is.
+        "job_search_cache": _job_search_cache_stats(),
         # Projected from who is subscribed right now at their actual price.
         # Distinct from `revenue`, which is money actually recorded.
         "estimated_mrr": _money(estimated_mrr),

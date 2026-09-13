@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
-import { Check, Sparkles, Zap, Heart } from "lucide-react";
+import { Check, Sparkles, Zap, Heart, X } from "lucide-react";
 import { Badge } from "@/components/badges";
 import Link from "next/link";
 import { useLang } from "@/lib/language";
@@ -210,14 +210,35 @@ export default function UpgradePage() {
               )}
               <p className="mt-2 text-sm leading-relaxed text-slate-500">{plan.description}</p>
 
-              <ul className="mt-4 flex-1 space-y-2">
-                {plan.features.map((f) => (
-                  <li key={f} className="flex gap-2 text-sm text-slate-600">
-                    <Check className="mt-0.5 size-4 shrink-0 text-emerald-500" aria-hidden />
-                    <span>{f}</span>
-                  </li>
-                ))}
-              </ul>
+              <div className="flex-1">
+                <ul className="mt-4 space-y-2">
+                  {plan.features.map((f) => (
+                    <li key={f} className="flex gap-2 text-sm text-slate-600">
+                      <Check className="mt-0.5 size-4 shrink-0 text-emerald-500" aria-hidden />
+                      <span>{f}</span>
+                    </li>
+                  ))}
+                </ul>
+
+                {/* WHAT'S NOT INCLUDED, STATED PLAINLY (2026-09-13) — absent
+                    on the top tier, which withholds nothing. */}
+                {plan.notIncluded && (
+                  <ul className="mt-3 space-y-2">
+                    {plan.notIncluded.map((item) => (
+                      <li key={item} className="flex gap-2 text-sm text-slate-400">
+                        <X className="mt-0.5 size-4 shrink-0" aria-hidden />
+                        <span>{item}</span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+
+                {plan.creditsNote && (
+                  <p className="mt-3 border-t border-slate-100 pt-3 text-xs leading-relaxed text-slate-500">
+                    {plan.creditsNote}
+                  </p>
+                )}
+              </div>
 
               {/* What you actually keep, shown as the badge itself rather
                   than described in text. Pro/Elite subscribers earn their

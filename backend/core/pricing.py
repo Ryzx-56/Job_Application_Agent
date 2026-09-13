@@ -106,12 +106,13 @@ class Product:
 
 # ─── THE TABLE ──────────────────────────────────────────────────────────────
 #
-# Confirmed with the site owner 2026-09-01. Do not round, do not "tidy", do
+# Confirmed with the site owner 2026-09-01, Elite's credits updated
+# 2026-09-12 (credit-addons prompt item 5). Do not round, do not "tidy", do
 # not retype from memory — every one of these has changed at least once.
 #
 #   Free              0 SAR        0 halalas    3 credits   (never billed)
 #   Pro (monthly)    29 SAR     2900 halalas   24 credits
-#   Elite (monthly)  99 SAR     9900 halalas   80 credits
+#   Elite (monthly)  99 SAR     9900 halalas  100 credits
 #   Starter pack      9 SAR      900 halalas    5 credits
 #   Best Value pack  22 SAR     2200 halalas   15 credits
 #   Power pack       38 SAR     3800 halalas   30 credits
@@ -141,7 +142,10 @@ CATALOG: dict[str, Product] = {
         amount_halalas=9900,
         label_en="Elite plan — monthly",
         label_ar="اشتراك إيليت — شهري",
-        credits=80,
+        # 80->100 on 2026-09-12: 99/80 was 1.238 SAR/credit, worse than Pro's
+        # 29/24 = 1.208. The larger tier must have the better rate. See
+        # TIER_CREDITS in core/credits.py, which this must stay in sync with.
+        credits=100,
         tier="elite",
     ),
     "starter_pack": Product(
@@ -186,6 +190,31 @@ CATALOG: dict[str, Product] = {
 # CATALOG: nothing about Free is purchasable and it must never produce a
 # Moyasar payment. Mirrors TIER_CREDITS["free"] in core/credits.py.
 FREE_TIER_CREDITS = 3
+
+# ─── ADD-ONS PURCHASABLE WITH CREDITS ───────────────────────────────────────
+#
+# 2026-09-12, credit-addons prompt item 2. Once a tier's monthly baseline for
+# one of these three (core/entitlements.py's ADDON_CAPS) is exhausted, the
+# feature can still be bought outright with ordinary credits — the SAME
+# credits a CV costs, spent through core/credits.py's reserve_addon_credits,
+# never a separate currency. This is what makes "pack buyers get no baseline
+# but can still spend their credits on these, exactly like anyone else"
+# (item 1) actually true rather than aspirational: a credit pack is credits,
+# and credits now buy all four things (a CV, or one of these three) at a
+# fixed exchange rate.
+#
+# Job Search is priced highest because it is by far the most expensive thing
+# the product does (pricing-reference-v7.md §1.1) — 5 credits against a
+# worst-case Tavily cost of ~0.93 SAR is still comfortably profitable at
+# roughly 0.99 SAR/credit (Elite) to 1.208 SAR/credit (Pro), but it is not
+# free to us the way a bundled allowance slot mostly is.
+#
+# Mirrored in frontend/src/lib/pricing.ts, checked by test_pricing_parity.py.
+ADDON_CREDIT_COSTS: dict[str, int] = {
+    "linkedin_essential": 2,
+    "interview_prep": 3,
+    "job_search": 5,
+}
 
 
 def get_product(reference: str) -> Optional[Product]:

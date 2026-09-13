@@ -40,6 +40,7 @@ from core.interview import router as interview_router
 # outside the CV graph entirely — it takes a job title and nothing else, and
 # reuses agents/jobs_finder.py's search pipeline. See core/job_search.py.
 from core.job_search import router as job_search_router
+from core.entitlements import router as addons_router
 # One-time payments (credit packs + the LinkedIn premium add-on). Owns the
 # shared "verify a Moyasar payment, then grant what it bought" function that
 # the callback route and the webhook both call, so the two can never drift.
@@ -135,6 +136,7 @@ app.include_router(badges_router)
 app.include_router(linkedin_router)
 app.include_router(interview_router)
 app.include_router(job_search_router)
+app.include_router(addons_router)
 app.include_router(payments_router)
 app.include_router(account_router)
 
