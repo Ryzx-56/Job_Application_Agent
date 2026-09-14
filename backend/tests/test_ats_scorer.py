@@ -191,6 +191,93 @@ def test_title_and_seniority_are_scored():
     assert title_match_score("", "", senior_nurse) == 1.0
 
 
+def test_no_work_history_is_scored_on_real_evidence_not_zeroed():
+    """Interns, new graduates and career changers are a large share of this
+    market. Having held no job is not a failure to match a title."""
+    from utils.ats_scorer import title_match_score
+
+    grad = {
+        "experience": [],
+        "education": [{"degree": "Bachelor of Science in Information Technology",
+                       "relevant_coursework": ["Computer Networks", "Technical Support Fundamentals"]}],
+        "projects": [{"name": "Campus Help Desk Ticketing System",
+                      "description": "Built a ticketing tool used by the university IT support team.",
+                      "tech_stack": ["Python"]}],
+        "certifications": ["CompTIA A+"],
+        "skills": {"tools": ["Active Directory"]},
+    }
+
+    # The case that was reported: a student applying to an internship in the
+    # field they are studying used to score 0.0 on 15% of the ATS total.
+    assert title_match_score("IT Support Specialist", "intern", grad) > 0.9
+    assert title_match_score("IT Support Specialist", "entry", grad) > 0.9
+
+    # Still honest about the ladder: the same person is a worse fit for a
+    # Lead posting than an entry one, and the score says so.
+    assert title_match_score("IT Support Specialist", "lead", grad) < \
+           title_match_score("IT Support Specialist", "entry", grad)
+
+    # NOT a floor: evidence in the wrong field still scores low.
+    wrong_field = {"experience": [], "projects": [], "certifications": [], "skills": {},
+                   "education": [{"degree": "BSc Mechanical Engineering"}]}
+    assert title_match_score("IT Support Specialist", "entry", wrong_field) < 0.4
+
+    # A CV with nothing on it at all does not crash and does not score high.
+    assert title_match_score("IT Support Specialist", "entry", {}) < 0.4
+
+
+def test_unrelated_job_history_does_not_hide_relevant_evidence():
+    """A career changer's projects and degree are read alongside their job
+    titles, not only when the employment section is empty."""
+    from utils.ats_scorer import title_match_score
+
+    # An AI student whose only job is summer retail — this repo's own sample CV.
+    ai_student = {
+        "experience": [{"title": "Sales & Customer Service Assistant"}],
+        "education": [{"degree": "B.Sc. Artificial Intelligence"}],
+        "projects": [
+            {"name": "Flight Route Demand Prediction",
+             "description": "Comparative machine learning study classifying route demand.",
+             "tech_stack": ["TensorFlow", "Scikit-learn"]},
+        ],
+        "skills": {"frameworks": ["TensorFlow"]},
+        "certifications": [],
+    }
+    # A pure retail CV, same job title, no ML evidence anywhere.
+    retail = {
+        "experience": [{"title": "Sales & Customer Service Assistant"}],
+        "education": [{"degree": "Diploma in Retail Management"}],
+        "projects": [{"name": "Store Stock Tracker", "description": "Spreadsheet for shelf stock."}],
+        "skills": {"soft_skills": ["Customer Service"]},
+        "certifications": [],
+    }
+
+    with_evidence = title_match_score("Machine Learning Engineer", "entry", ai_student)
+    without = title_match_score("Machine Learning Engineer", "entry", retail)
+
+    assert with_evidence > without, (
+        "ML projects and an AI degree must count toward an ML role even when "
+        "the candidate's only job title is unrelated."
+    )
+    # But it is partial credit, not a pass: they have still never held the role.
+    assert with_evidence < 0.9
+    # And the retail CV is not lifted by the change.
+    assert without < 0.4
+
+
+def test_intern_seniority_rank_zero_is_not_swallowed():
+    """`_seniority_rank` returns 0 for "intern", and `x or y` treats 0 as
+    absent — so a declared internship was silently re-read off the title
+    string, which usually contains a senior-sounding level word."""
+    from utils.ats_scorer import title_match_score
+
+    junior = {"experience": [{"title": "IT Support Intern"}]}
+    # seniority_level="intern" must win over the word "Specialist" in the title.
+    declared_intern = title_match_score("IT Support Specialist", "intern", junior)
+    declared_senior = title_match_score("IT Support Specialist", "senior", junior)
+    assert declared_intern > declared_senior
+
+
 def test_preferred_skills_add_credit_but_never_penalise():
     facts = {"education": [], "experience": [], "projects": [],
              "skills": {"languages": ["Python"], "tools": ["Docker"]}}
@@ -248,3 +335,43 @@ def test_full_ats_score():
     print(f"\nATS Score: {result['ats_score']}")
     print(f"   Breakdown: {result['score_breakdown']}")
     print(f"   Missing: {result['missing_skills']}")
+
+def test_arabic_job_titles_are_recovered_for_title_matching():
+    """
+    The half of the Arabic scoring fix that the previous round missed.
+
+    skills and keywords were repaired by scoring the CV TEXT with English
+    terms appended. title_match_score does not read the text — it reads
+    facts_json["experience"][*]["title"], which on an Arabic CV is Arabic,
+    against an English JD title. Same defect, different door.
+    """
+    from utils.ats_scorer import arabic_scoring_facts, title_match_score
+
+    glossary = {"IT Support Specialist": "أخصائي دعم فني",
+                "Bachelor of Information Technology": "بكالوريوس تقنية المعلومات"}
+    arabic_facts = {
+        "experience": [{"title": "أخصائي دعم فني", "company": "المراعي",
+                        "dates": "يونيو ٢٠٢١ - حتى الآن"}],
+        "education": [{"degree": "بكالوريوس تقنية المعلومات"}],
+    }
+
+    raw = title_match_score("IT Support Specialist", "mid", arabic_facts)
+    recovered = title_match_score(
+        "IT Support Specialist", "mid", arabic_scoring_facts(arabic_facts, glossary)
+    )
+    assert recovered > raw
+    # Same content in English scores the same as the recovered Arabic.
+    english = title_match_score(
+        "IT Support Specialist", "mid",
+        {"experience": [{"title": "IT Support Specialist"}]},
+    )
+    assert recovered == english
+
+    # APPENDED, NEVER SUBSTITUTED: the Arabic the candidate wrote survives.
+    widened = arabic_scoring_facts(arabic_facts, glossary)
+    assert "أخصائي دعم فني" in widened["experience"][0]["title"]
+    # And the original dict is not mutated — this shape is for scoring only.
+    assert arabic_facts["experience"][0]["title"] == "أخصائي دعم فني"
+
+    # No glossary (an English CV) changes nothing at all.
+    assert arabic_scoring_facts(arabic_facts, {}) is arabic_facts

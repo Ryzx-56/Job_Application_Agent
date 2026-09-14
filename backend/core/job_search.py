@@ -95,11 +95,69 @@ def _normalize_job_search_key(title: str, location: str, internships: bool) -> s
     cache entry — the 2026-09-12 decision to make this cache shared rather
     than per-user, which is where the real credit savings come from.
     """
-    def _norm(value: str) -> str:
-        return re.sub(r"\s+", " ", (value or "").strip().lower())
+    material = (f"{_norm_key_part(title)}|{_norm_key_part(location)}"
+                f"|internships={bool(internships)}")
+    return _hash_key(material)
 
-    material = f"{_norm(title)}|{_norm(location)}|internships={bool(internships)}"
+
+def _norm_key_part(value: str) -> str:
+    return re.sub(r"\s+", " ", (value or "").strip().lower())
+
+
+def _hash_key(material: str) -> str:
     return hashlib.sha256(material.encode("utf-8")).hexdigest()
+
+
+# ─── THE AUTOMATIC PER-CV MATCH READS THIS CACHE TOO ───────────────────────
+#
+# Two keys, deliberately, and the asymmetry between them is the point.
+#
+# The automatic match (agents/jobs_finder.find_matching_jobs_for_cv) runs on
+# every CV generation and buys only two lanes. The Job Search PAGE runs on
+# request, costs the user an allowance slot, and buys four lanes plus
+# adjacent-title expansion. Their results are not interchangeable:
+#
+#   · The auto match READING a page search's cached row is free quality: it
+#     gets a wider, deeper result set than it paid for.
+#   · The page search reading an AUTO match's row would be a downgrade —
+#     somebody spends a monthly search on a two-lane, five-result answer
+#     assembled for a panel. That must never happen.
+#
+# So the auto match reads BOTH keys and writes only its own. The page search
+# reads and writes only the page key, exactly as before; nothing about its
+# behaviour changes.
+_AUTO_MATCH_KEY_NAMESPACE = "auto-cv-match"
+
+
+def auto_match_cache_key(title: str, location: str) -> str:
+    """The cache identity for an automatic per-CV match (never internships)."""
+    return _hash_key(f"{_AUTO_MATCH_KEY_NAMESPACE}|{_norm_key_part(title)}|"
+                     f"{_norm_key_part(location)}")
+
+
+def page_search_cache_key(title: str, location: str, internships: bool = False) -> str:
+    """The Job Search page's cache identity, for the auto match to read."""
+    return _normalize_job_search_key(title, location, internships)
+
+
+def read_fresh_cache(cache_key: str) -> dict | None:
+    """
+    A cached result set for this key if one exists and is still fresh, else
+    None. None means "do not serve a cache hit" and nothing more — it covers
+    a miss, a stale row and an unreadable cache alike, and every caller
+    responds to all three the same way (search live).
+    """
+    row = _get_cached_search(cache_key)
+    if not row or not _cache_is_fresh(row):
+        return None
+    _record_cache_hit(cache_key)
+    return row.get("results") or None
+
+
+def write_cache(cache_key: str, title: str, location: str, results: dict,
+                credits_used: int, internships: bool = False) -> None:
+    """Store a result set. Never raises — see _store_search_in_cache."""
+    _store_search_in_cache(cache_key, title, location, internships, results, credits_used)
 
 
 def _parse_timestamp(value) -> datetime | None:

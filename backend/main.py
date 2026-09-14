@@ -383,6 +383,8 @@ def make_initial_state(cv_text: str, jd_text: str, template_id: str = DEFAULT_TE
         job_match_reason="",
         overall_recommendation="",
         similar_jobs=[],
+        # Until Agent 6 runs, nothing has been looked for. Not "none found".
+        similar_jobs_status="unavailable",
         tailoring_attempts=0,
         error=None,
         current_step="start",
@@ -858,6 +860,11 @@ def build_success_payload(result_state: dict, request_id: str, reserved_amount: 
         "tailored_bullets": result_state.get("tailored_bullets", []),
         "cover_letter_text": result_state.get("cover_letter_text", ""),
         "similar_jobs": result_state.get("similar_jobs", []),
+        # "ok" / "none_found" / "unavailable". An empty similar_jobs means
+        # two different things and this says which — see
+        # agents/jobs_finder.py. The panel must not render a failed search
+        # as "no jobs found".
+        "similar_jobs_status": result_state.get("similar_jobs_status", "unavailable"),
         "fact_check_passed": result_state.get("fact_check_passed", False),
         "job_title": result_state.get("weight_factors", {}).get("job_title", ""),
         # Not the "Unknown" placeholder — that would file the CV under a

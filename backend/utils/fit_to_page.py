@@ -99,8 +99,12 @@ SPARSE_PAGE_CHAR_THRESHOLD = 300  # ~a section heading plus one or two short lin
 # ratios above are in the same band as the English ones for that reason.
 CLIPPING_MIN_RATIO = 0.5
 
-# Below this the ratio gets noisy (fixed template chrome dominates) and there
-# is no meaningful amount of content to lose.
+# Below this there is no meaningful amount of content to lose, and the ratio
+# is dominated by fixed template chrome — which now inflates only the
+# NUMERATOR (see _context_text_length), so a short CV reads high and is
+# skipped here anyway. 500 counts the candidate's own text alone, so it is a
+# larger CV than the same number meant when chrome and duplicated contact
+# blocks were being counted into it.
 MIN_MEASURABLE_CHARS = 500
 
 
@@ -144,39 +148,101 @@ def _glyph_count(pdf_bytes: bytes) -> int:
         return -1
 
 
-# Context keys that hold EMBEDDED ASSETS rather than text the reader sees.
+# THE CANDIDATE'S OWN CONTENT. Everything the denominator is allowed to
+# count, named explicitly.
 #
-# `photo` is a base64 JPEG data URI (see utils/cv_photo.py) — tens of
-# thousands of characters that draw zero glyphs. Counting it as "content
-# we asked for" would push `expected` far past what any template could
-# possibly draw, dropping the ratio below CLIPPING_MIN_RATIO and raising
-# ContentClippedError on a perfectly good CV. That error is fatal by design:
-# it refunds the credit and hands the user a failure. So a photo template
-# would have failed 100% of the time for anyone who has a photo, which is
-# precisely the population it exists for.
-_NON_CONTENT_CONTEXT_KEYS = {"photo"}
+# ─── WHY A WHITELIST, AFTER THIS WAS A BLACKLIST TWICE ──────────────────
+# This started as "count the whole context", then became "count the whole
+# context except `photo`" when a base64 JPEG turned out to be tens of
+# thousands of characters that draw zero glyphs. Both versions ask the
+# render context to be a list of things the reader sees, and it is not —
+# it also carries section labels, template metadata, direction flags,
+# diagnostics, and several DERIVED VIEWS of the same data.
+#
+# Measured on a real short Arabic CV (fresh graduate, one project, one
+# degree), before this change:
+#
+#     expected = 847 chars          drawn = 280 glyphs   ratio = 33%
+#       labels             376      <- all 28 section labels, of which this
+#                                      CV draws about five
+#       contact_lines      124      <- the contact block, formatted
+#       contact_items      109      <- the contact block again, differently
+#       personal            58      <- the contact block a third time
+#       education           57
+#       tailored_summary    47      }  the actual CV: ~163 chars
+#       skills              27      }
+#       projects            22      }
+#       certifications      10      }
+#       template_id         14      <- "07_compact_ats", never drawn
+#       publications_dir     3      <- "rtl", never drawn
+#
+# 33% is below CLIPPING_MIN_RATIO, so this raised ContentClippedError —
+# which is fatal by design, refunds the credit and hands the user a
+# failure. The PDF was perfect. Every one of those 280 glyphs was drawn
+# correctly; the denominator was measuring things no template was ever
+# going to print, and counting the same five contact fields three times.
+# Short CVs are commonest in Arabic (a graduate's first CV) and commonest
+# among exactly the population §1 of this same brief is about, so this was
+# a live cost leak pointed at new users.
+#
+# A whitelist cannot rot the way the blacklist did: a context key added
+# later for chrome, a flag or a diagnostic is excluded by default instead
+# of silently inflating the denominator and refunding someone's credit.
+#
+# `personal` is here and its two derived views are not — `contact_items`
+# and `contact_lines` are the same five fields re-formatted for templates
+# that lay the contact block out differently, and only one of the three is
+# ever drawn.
+_CANDIDATE_CONTENT_KEYS = frozenset({
+    "tagline",
+    "tailored_summary",
+    "personal",
+    "experience",
+    "projects",
+    "skills",
+    "education",
+    "certifications",
+    "volunteer_work",
+    "major_achievements",
+    "training_courses",
+    "participation",
+    "publications",
+    "teaching_and_editorial",
+    "awards",
+    "languages_spoken",
+    "additional_sections",
+})
 
 
 def _context_text_length(context: dict) -> int:
     """
-    Rough size of the readable content being rendered, straight off the
-    context. Embedded assets are excluded — see _NON_CONTENT_CONTEXT_KEYS.
+    How much of the CANDIDATE'S OWN text this render was given.
+
+    Only the top-level keys in _CANDIDATE_CONTENT_KEYS are counted; nested
+    structures under them are walked in full. Template chrome, metadata and
+    derived duplicates are not content and are not counted — see the note
+    above for the measurement that forced this.
+
+    The result is deliberately an UNDER-count of what lands on the page:
+    `drawn` includes the section headings and field labels the template
+    prints, and this does not. That makes the ratio err high, which for a
+    guard whose only action is to fail the render and refund is the correct
+    direction to be wrong in.
     """
     total = 0
-    stack = [context]
+    stack = [
+        value for key, value in context.items()
+        if key in _CANDIDATE_CONTENT_KEYS
+    ]
     while stack:
         item = stack.pop()
         if isinstance(item, str):
-            # Belt-and-braces alongside the key check below: any future
-            # context value carrying an inline asset is skipped on sight,
-            # wherever in the tree it turns up.
+            # Belt-and-braces: any content value carrying an inline asset is
+            # skipped on sight, wherever in the tree it turns up.
             if not item.startswith("data:"):
                 total += len(item)
         elif isinstance(item, dict):
-            stack.extend(
-                value for key, value in item.items()
-                if key not in _NON_CONTENT_CONTEXT_KEYS
-            )
+            stack.extend(item.values())
         elif isinstance(item, (list, tuple)):
             stack.extend(item)
     return total

@@ -3,7 +3,12 @@ import json
 import re
 from loguru import logger
 from core.state import AgentState
-from core.llm_config import WRITING_MODEL, generate_writing_text, TruncationError
+from core.llm_config import (
+    WRITING_MODEL,
+    JUDGEMENT_TEMPERATURE,
+    generate_writing_text,
+    TruncationError,
+)
 
 MATCH_SCORER_PROMPT = """
 You are an expert recruiter and career coach.
@@ -179,7 +184,10 @@ def run_match_scorer(state: AgentState) -> AgentState:
     budget = 5000 if is_arabic else 2500
 
     try:
-        raw = generate_writing_text(prompt, max_tokens=budget, max_tokens_ceiling=12000)
+        raw = generate_writing_text(prompt, max_tokens=budget, max_tokens_ceiling=12000,
+                                    # A scorer must return the same number for the
+                                    # same evidence. See JUDGEMENT_TEMPERATURE.
+                                    temperature=JUDGEMENT_TEMPERATURE)
         #logger.debug(f"Agent 5 raw response:\n{raw}")
         raw = re.sub(r"```json|```", "", raw).strip()
         MAX_RETRIES = 3
@@ -196,7 +204,10 @@ def run_match_scorer(state: AgentState) -> AgentState:
                     f"Agent 5 JSON parse failed ({attempt+1}/{MAX_RETRIES}), retrying..."
                 )
 
-                raw = generate_writing_text(prompt, max_tokens=budget, max_tokens_ceiling=12000)
+                raw = generate_writing_text(prompt, max_tokens=budget, max_tokens_ceiling=12000,
+                                    # A scorer must return the same number for the
+                                    # same evidence. See JUDGEMENT_TEMPERATURE.
+                                    temperature=JUDGEMENT_TEMPERATURE)
                 raw = re.sub(r"```json|```", "", raw).strip()
 
         match_score = data.get("score", 0)

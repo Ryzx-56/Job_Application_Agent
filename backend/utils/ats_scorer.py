@@ -688,12 +688,139 @@ def _title_subject(text: str) -> str:
     return " ".join(t for t in normalize(text).split() if t not in _TITLE_LEVEL_WORDS)
 
 
+# The rungs a candidate with NO work history sits on. Someone who has never
+# held a job is the intended reader of both an internship posting and a
+# graduate/entry one, so the "distance" to either is zero and the ladder is
+# climbed from there: mid is one rung away, senior two, lead three. Stated as
+# the band rather than a single rank because picking one of the two would
+# make the other look like a mismatch when it is not.
+_NO_HISTORY_SENIORITY_BAND = (0, 1)
+
+
+def _role_evidence_phrases(facts_json: dict) -> list[str]:
+    """
+    What a candidate with no job titles has instead: the short, role-shaped
+    statements on their CV.
+
+    Each one is returned SEPARATELY rather than concatenated into a single
+    document, because phrase_coverage is BM25-normalised against document
+    length — one long blob of every field on the CV would dilute every term
+    in it and quietly score this population lower than the titles path does
+    for everyone else. A degree line, a project name, a certification: each
+    is about the length of a job title, so each gets measured on the same
+    terms as one.
+
+    Ordered by how directly the field states a ROLE. Nothing here is
+    inferred or invented: every string is taken verbatim from the CV, which
+    is the same standard title_match_score already held itself to.
+    """
+    phrases: list[str] = []
+
+    for edu in facts_json.get("education") or []:
+        if not isinstance(edu, dict):
+            continue
+        # "BSc Computer Science" says what field this person is being trained
+        # for, which is exactly the question the role axis asks.
+        if str(edu.get("degree") or "").strip():
+            phrases.append(str(edu["degree"]))
+        # Flagged in the schema itself as "useful for students with no
+        # experience" — this is that use.
+        for course in edu.get("relevant_coursework") or []:
+            if str(course or "").strip():
+                phrases.append(str(course))
+
+    for project in facts_json.get("projects") or []:
+        if not isinstance(project, dict):
+            continue
+        if str(project.get("name") or "").strip():
+            phrases.append(str(project["name"]))
+        # The description is a sentence, not a title, so it is kept whole and
+        # measured on its own rather than merged into anything.
+        if str(project.get("description") or "").strip():
+            phrases.append(str(project["description"]))
+        for tech in project.get("tech_stack") or []:
+            if str(tech or "").strip():
+                phrases.append(str(tech))
+
+    for cert in facts_json.get("certifications") or []:
+        if str(cert or "").strip():
+            phrases.append(str(cert))
+
+    for course in facts_json.get("training_courses") or []:
+        if isinstance(course, dict):
+            name = str(course.get("name") or course.get("title") or "").strip()
+        else:
+            name = str(course or "").strip()
+        if name:
+            phrases.append(name)
+
+    # Volunteer work and participation are where a student's only "role"
+    # often lives — "IT Support Volunteer, university help desk".
+    for item in (facts_json.get("volunteer_work") or []):
+        if str(item or "").strip():
+            phrases.append(str(item))
+    for item in (facts_json.get("participation") or []):
+        if isinstance(item, dict):
+            name = str(item.get("name") or item.get("role") or "").strip()
+        else:
+            name = str(item or "").strip()
+        if name:
+            phrases.append(name)
+
+    # Named skills, last. A skills list is mostly tools ("Python", "Excel")
+    # and rarely states a role, but when it does say "Technical Support" or
+    # "Network Administration" that is a direct answer to the role question.
+    skills = facts_json.get("skills")
+    if isinstance(skills, dict):
+        for group in skills.values():
+            if isinstance(group, list):
+                for skill in group:
+                    if str(skill or "").strip():
+                        phrases.append(str(skill))
+
+    return phrases
+
+
 def title_match_score(job_title: str, seniority_level: str, facts_json: dict) -> float:
     """
-    How close the candidate's real job titles are to the one being applied
-    for, on two axes: the ROLE itself and its LEVEL.
+    How close the candidate is to the role being applied for, on two axes:
+    the ROLE itself and its LEVEL.
 
     Returns 0.0-1.0, or 1.0 when the JD names no title (nothing to fail).
+
+    ─── NO WORK HISTORY IS A CASE, NOT A FAILURE ──────────────────────────
+    This used to `return 0.0` the moment the candidate had no job titles,
+    which meant every intern, new graduate and career changer scored zero on
+    15% of the ATS total for the one thing they could not possibly have done
+    yet. That is a large share of this product's actual users, and it was
+    internally inconsistent too: the level axis below already treats an
+    UNSTATED seniority as "neither credit nor penalty", so the same function
+    was generous about a missing level and absolute about a missing title.
+
+    A student applying to an INTERNSHIP scored 0 on title match for not
+    having held a job, which is the wrong answer to the question being
+    asked. So the role axis now reads the evidence that does exist — the
+    degree, the coursework, the projects, the certifications — on exactly
+    the mechanism the titles path uses, and the level axis reads "no
+    history" as the entry band it factually is rather than as unknown.
+
+    THE SAME APPLIES TO HISTORY THAT DOES NOT HELP. The evidence is read
+    ALONGSIDE the job titles, not only when there are none, because a
+    candidate whose titles do not answer the question is in the same
+    position as one with no titles. Measured on this repo's own sample CV
+    (tests/sample_data/, an AI undergraduate whose only job is a summer
+    retail position) against a graduate ML posting: the role axis was
+    scoring the museum job and returning 0.30, while two machine-learning
+    projects and an AI degree sat unread. It now returns 0.53 — partial
+    credit for partial evidence, which is what the rest of this module
+    does everywhere else. A retail CV applying to the same ML posting
+    still scores 0.30, because there is nothing there to find.
+
+    NOT A DEFAULT AND NOT A FLOOR. A fresh graduate whose evidence is all in
+    the wrong field still scores near zero on the role axis, and one
+    applying for a Lead role still takes the full level penalty (0.3, three
+    rungs). What changed is that having no employment history is no longer
+    itself the thing being scored.
     """
     if not (job_title or "").strip():
         return 1.0
@@ -703,28 +830,61 @@ def title_match_score(job_title: str, seniority_level: str, facts_json: dict) ->
         for exp in (facts_json.get("experience") or [])
         if str(exp.get("title") or "").strip()
     ]
-    if not titles:
-        return 0.0
 
     # ROLE: the best partial-phrase coverage of the JD's title across every
-    # title the candidate has actually held.
+    # title the candidate has actually held — or, for a candidate with none,
+    # across what their CV says about the field they are entering.
     subject = _title_subject(job_title)
-    if subject:
+    if not subject:
+        role = 1.0  # a title that is only a level, e.g. "Senior"
+    else:
+        # EVERY piece of role evidence on the CV, not just the employment
+        # section. A candidate whose job titles do not answer the question is
+        # in the same position as one with no job titles at all: the museum
+        # summer job on an AI student's CV says nothing about whether they
+        # are an ML candidate, and their two ML projects say everything.
+        # max() only ever RAISES the role score, and only on evidence the
+        # candidate actually wrote down, so a matching title still scores
+        # exactly what it did before.
+        evidence = titles + _role_evidence_phrases(facts_json)
         role = max(
-            (phrase_coverage(subject, *_stem_counts(_title_subject(t))) for t in titles),
+            (phrase_coverage(subject, *_stem_counts(_title_subject(t))) for t in evidence),
             default=0.0,
         )
-    else:
-        role = 1.0  # a title that is only a level, e.g. "Senior"
 
     # LEVEL: how far apart the two sit on the ladder. The JD's declared
     # seniority_level wins over whatever adjective is in the title string.
-    wanted = _seniority_rank(seniority_level or "") or _seniority_rank(job_title)
+    #
+    # `is None`, NOT `or`. "intern" ranks 0, and 0 is falsy — so
+    # `_seniority_rank(level) or _seniority_rank(title)` threw away every
+    # declared INTERNSHIP and re-read the level off the title string
+    # instead. A JD with seniority_level="intern" and the title "IT Support
+    # Specialist" came out as rank 3, because "specialist" is a level word:
+    # the one posting type a student is most likely to be applying to was
+    # scored as if it wanted a senior. Measured before this line changed:
+    # that exact pair scored 0.865 for a fresh graduate, the same as a
+    # genuine Senior posting, and 0.135 below the 1.0 it should be.
+    wanted = _seniority_rank(seniority_level or "")
+    if wanted is None:
+        wanted = _seniority_rank(job_title)
     held = max((r for r in (_seniority_rank(t) for t in titles) if r is not None), default=None)
-    if wanted is None or held is None:
-        level = 0.75  # unstated on one side: neither credit nor penalty
+
+    if wanted is None:
+        level = 0.75  # the JD never said: neither credit nor penalty
+    elif held is None and titles:
+        # Titles held, none of them carrying a level word. Genuinely unknown.
+        level = 0.75
     else:
-        gap = abs(wanted - held)
+        if held is None:
+            # NO EMPLOYMENT HISTORY AT ALL. This is not an unknown level, it
+            # is a known one — the bottom of the ladder — and saying so is
+            # both fairer and more honest than 0.75 in either direction: it
+            # scores an internship applicant 1.0 where the old code gave a
+            # hedge, and it scores the same person against a Lead posting
+            # 0.3, which a hedge would have overstated.
+            gap = min(abs(wanted - rung) for rung in _NO_HISTORY_SENIORITY_BAND)
+        else:
+            gap = abs(wanted - held)
         level = {0: 1.0, 1: 0.8, 2: 0.55}.get(gap, 0.3)
 
     return round(0.7 * min(1.0, role) + 0.3 * level, 3)
@@ -974,6 +1134,64 @@ def arabic_scoring_document(text: str, skills: dict, glossary: dict) -> tuple[st
     return scored_text, scored_skills
 
 
+def arabic_scoring_facts(facts_json: dict, glossary: dict) -> dict:
+    """
+    facts_json with the English form of every recognised term appended to the
+    fields the scorer READS DIRECTLY rather than through the CV text.
+
+    ─── THE HALF OF THE ARABIC FIX THAT WAS MISSED ────────────────────────
+    arabic_scoring_document above repaired the two components that read the
+    rendered CV text — skills and keywords. It could not repair the three
+    that read facts_json instead, and one of those is language-sensitive too:
+    title_match_score compares the candidate's own job titles against the
+    JD's job_title, and on an Arabic CV those are "أخصائي دعم فني" and
+    "IT Support Specialist". They describe the same job in two scripts and
+    shared not one character.
+
+    Measured on one CV scored in both languages against the same English JD,
+    after the previous round's fix and before this one:
+
+        English output   99%   (title 94)
+        Arabic output    82%   (title 22)
+
+    Every remaining point of that 17-point gap was this component. It went
+    unnoticed because the earlier measurement reported title as "unaffected
+    — reads facts_json, which is never translated", which is true of the
+    STRUCTURE and false of the CONTENT: the titles inside it are Arabic
+    because the candidate's CV is Arabic.
+
+    Appending, never substituting, and only onto a copy — for the same
+    reasons arabic_scoring_document appends. Nothing here is rendered; this
+    shape exists only to be scored.
+    """
+    if not glossary or not facts_json:
+        return facts_json
+
+    def widen(value: str) -> str:
+        english = _english_terms_present(str(value or ""), glossary)
+        return f"{value} {' '.join(english)}" if english else value
+
+    scored = dict(facts_json)
+
+    experience = []
+    for role in facts_json.get("experience") or []:
+        if isinstance(role, dict) and role.get("title"):
+            role = {**role, "title": widen(role["title"])}
+        experience.append(role)
+    if experience:
+        scored["experience"] = experience
+
+    education = []
+    for entry in facts_json.get("education") or []:
+        if isinstance(entry, dict) and entry.get("degree"):
+            entry = {**entry, "degree": widen(entry["degree"])}
+        education.append(entry)
+    if education:
+        scored["education"] = education
+
+    return scored
+
+
 def run_ats_scorer(state: dict) -> dict:
     """
     LangGraph node. Wraps calculate_ats_score above — pure Python matching,
@@ -1058,11 +1276,15 @@ def run_ats_scorer(state: dict) -> dict:
         scoring_skills = state.get("ats_source_skills") or skills_source
 
     glossary = state.get("arabic_glossary") or {}
+    scoring_facts = facts_json
     if glossary:
         before = scoring_text
         scoring_text, scoring_skills = arabic_scoring_document(
             scoring_text, scoring_skills, glossary
         )
+        # The components that read facts_json directly need the same
+        # treatment — title_match_score above all. See arabic_scoring_facts.
+        scoring_facts = arabic_scoring_facts(facts_json, glossary)
         recovered = len(scoring_text) - len(before)
         if recovered > 0:
             logger.info(
@@ -1090,7 +1312,7 @@ def run_ats_scorer(state: dict) -> dict:
         )
 
     result = calculate_ats_score(
-        facts_json, weight_factors, scoring_text,
+        scoring_facts, weight_factors, scoring_text,
         tailored_skills=scoring_skills,
         # Only the Arabic path can hit the cross-language case; an English CV
         # scoring 0 keywords has genuinely matched none of them.

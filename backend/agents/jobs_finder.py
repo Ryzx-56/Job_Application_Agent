@@ -1141,9 +1141,11 @@ def _search_lane(client, query: str, domains: list[str] | None, max_results: int
         raise
     except search_provider.SearchUnavailable as e:
         logger.error(f"❌ Search failed for domains {domains or 'OPEN WEB'}: {e}")
+        search_provider.record_failure(counter)
         return []
     except Exception as e:
         logger.error(f"❌ Search failed for domains {domains or 'OPEN WEB'}: {e}")
+        search_provider.record_failure(counter)
         return []
 
 
@@ -1257,15 +1259,24 @@ def _collect_candidates(raw_results: list[dict], required_skills_lower: list[str
     return candidates
 
 
+# Every lane one pass can run, and what each costs per query.
+#
+# Named so a caller can ask for a SUBSET instead of all four. The automatic
+# per-CV match (find_matching_jobs_for_cv) is the reason this exists: it buys
+# the two pre-vetted lanes and nothing else. See AUTO_MATCH_LANES.
+ALL_LANES = ("priority", "trusted", "saudi", "open")
+
+
 def _run_search_pass(
     counter: dict | None,
     client,
     query: str,
     required_skills_lower: list[str],
     use_open_lane: bool = True,
+    lanes: tuple[str, ...] = ALL_LANES,
 ) -> tuple[list[dict], list[dict]]:
     """
-    One full search pass across THREE LANES, queried concurrently:
+    One full search pass across up to FOUR LANES, queried concurrently:
 
       priority : Jadarat and Ajeer, the Saudi government platforms.
       trusted  : the established boards and aggregators in TRUSTED_DOMAINS.
@@ -1293,12 +1304,15 @@ def _run_search_pass(
         priority_future = executor.submit(
             _search_lane, client, query, PRIORITY_DOMAINS, RAW_FETCH_LIMIT, counter,
             depth=PRIORITY_LANE_SEARCH_DEPTH,
+        ) if "priority" in lanes else None
+        trusted_future = (
+            executor.submit(_search_lane, client, query, TRUSTED_DOMAINS, RAW_FETCH_LIMIT, counter)
+            if "trusted" in lanes else None
         )
-        trusted_future = executor.submit(_search_lane, client, query, TRUSTED_DOMAINS, RAW_FETCH_LIMIT, counter)
         saudi_future = executor.submit(
             _search_lane, client, query, SAUDI_AGGREGATOR_DOMAINS, SAUDI_AGGREGATOR_FETCH_LIMIT,
             counter,
-        )
+        ) if "saudi" in lanes else None
         # domains=None -> no include_domains -> the whole web.
         #
         # CUT E. Skipped entirely for adjacent titles. This lane is the one
@@ -1309,11 +1323,11 @@ def _run_search_pass(
         # buying mostly rejects.
         open_future = (
             executor.submit(_search_lane, client, query, None, RAW_FETCH_LIMIT, counter)
-            if use_open_lane else None
+            if use_open_lane and "open" in lanes else None
         )
-        priority_result = priority_future.result()
-        trusted_result = trusted_future.result()
-        saudi_result = saudi_future.result()
+        priority_result = priority_future.result() if priority_future is not None else []
+        trusted_result = trusted_future.result() if trusted_future is not None else []
+        saudi_result = saudi_future.result() if saudi_future is not None else []
         open_result = open_future.result() if open_future is not None else []
 
     priority_raw = [r for r in priority_result if _matches_any_domain(r.get('url', ''), PRIORITY_DOMAINS)]
@@ -1378,6 +1392,7 @@ def _run_search_passes(
     queries: list[str],
     required_skills_lower: list[str],
     use_open_lane: bool = True,
+    lanes: tuple[str, ...] = ALL_LANES,
 ) -> list[tuple[list[dict], list[dict]]]:
     """
     Runs several query variants at the same time, returning one
@@ -1397,11 +1412,13 @@ def _run_search_passes(
     if not queries:
         return []
     if len(queries) == 1:
-        return [_run_search_pass(counter, client, queries[0], required_skills_lower, use_open_lane)]
+        return [_run_search_pass(counter, client, queries[0], required_skills_lower,
+                                 use_open_lane, lanes)]
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=len(queries)) as executor:
         futures = [
-            executor.submit(_run_search_pass, counter, client, query, required_skills_lower, use_open_lane)
+            executor.submit(_run_search_pass, counter, client, query, required_skills_lower,
+                            use_open_lane, lanes)
             for query in queries
         ]
         # Iterating `futures` (not as_completed) is what preserves order;
@@ -2282,6 +2299,227 @@ def _fetch_profile_location(user_id: str | None) -> str | None:
         return None
 
 
+# ═══════════════════════════════════════════════════════════════════════════
+# THE AUTOMATIC PER-CV JOB MATCH
+# ═══════════════════════════════════════════════════════════════════════════
+#
+# WHY THIS IS NOT find_similar_jobs. This runs on EVERY CV generation, for
+# every tier, with no button and no confirmation — so its cost is multiplied
+# by every CV this product ever makes, and the old version of exactly this
+# feature is what got it removed:
+#
+#   "EVERY CV generation spent 8 Tavily credits looking for matching jobs
+#    whether or not the person ever scrolled to that panel. Tavily was 95%
+#    of the cost of generating a CV."
+#
+# find_similar_jobs (the "Find matching jobs" button) has since grown to
+# FOUR lanes and up to four query passes — 7 credits for the common case and
+# 28 for a thin one. Putting that back on every generation would be three
+# times worse than the thing that was removed. So this is a different, much
+# smaller search that happens to answer the same question:
+#
+#   ONE query, not four.        find_similar_jobs ladders up to 4 passes.
+#   TWO lanes, not four.        Priority (Jadarat) + trusted boards.
+#   FIVE results, hard.         It is a panel on a results page, not a
+#                               search product.
+#   CACHE FIRST, ALWAYS.        And it reads the Job Search page's cache as
+#                               well as its own, so a title someone searched
+#                               on that page today costs this nothing.
+#
+# WHICH TWO LANES, AND WHY THOSE. Both are PRE-VETTED (a named domain skips
+# the legitimacy filter entirely), which is what makes a two-lane search
+# safe to show without the open lane's noise:
+#
+#   priority — Jadarat, the Saudi national platform. Runs at DEPTH_FAST, so
+#     it costs ONE credit rather than two. That is not a quality trade here:
+#     backend/tools/tavily_depth_test.py measured 12/12 URL overlap and
+#     content length within 5% between fast and thorough on this lane
+#     specifically (see PRIORITY_LANE_SEARCH_DEPTH).
+#   trusted — LinkedIn, Bayt, Indeed, the ATS platforms. The highest-volume
+#     lane, and the one most likely to fill five slots on its own.
+#
+# The two that are dropped are the two that fit a teaser worst: the Saudi
+# aggregator lane is documented above as having lower useful density (SEO
+# category pages), and the open lane is the noisiest and the one the
+# legitimacy filter rejects most of. Neither is worth 2 credits on a panel
+# capped at five.
+AUTO_MATCH_RESULT_CAP = 5
+AUTO_MATCH_LANES = ("priority", "trusted")
+
+# What one live automatic match costs, in provider units. Derived from the
+# lane set rather than written down, so it cannot drift away from it.
+def auto_match_cost_units(provider: str | None = None) -> int:
+    """
+    Billing units one live automatic match costs on `provider` (default: the
+    configured one).
+
+    The provider argument exists because the COST MODEL and the RUNTIME can
+    legitimately disagree: core/admin_stats.py prices everything in Tavily
+    credits — the more expensive of the two providers, which is the right
+    basis for a worst case — while SEARCH_PROVIDER may be set to Serper,
+    which bills one flat unit per call regardless of depth. Asking for the
+    units without saying whose silently mixed the two: the Serper call
+    count, at the Tavily price.
+    """
+    per_lane = {
+        "priority": PRIORITY_LANE_SEARCH_DEPTH,
+        "trusted": search_provider.DEPTH_THOROUGH,
+        "saudi": search_provider.DEPTH_THOROUGH,
+        "open": search_provider.DEPTH_THOROUGH,
+    }
+    return sum(
+        search_provider.units_per_call(provider=provider, depth=depth)
+        for lane, depth in per_lane.items()
+        if lane in AUTO_MATCH_LANES
+    )
+
+
+# The statuses this can end in. "none_found" and "unavailable" are separate
+# on purpose and must stay that way: one means the search ran and this
+# candidate has no matches today, the other means no search happened. A
+# panel that renders them the same way tells someone there is no work for
+# them when what actually happened is that we could not look.
+MATCH_OK = "ok"
+MATCH_NONE_FOUND = "none_found"
+MATCH_UNAVAILABLE = "unavailable"
+
+
+def find_matching_jobs_for_cv(
+    weight_factors: dict,
+    facts_json: dict,
+    profile_location: str | None = None,
+) -> tuple[list[dict], str]:
+    """
+    Up to AUTO_MATCH_RESULT_CAP listings for a CV that has just been
+    generated. Returns (jobs, status).
+
+    NEVER RAISES. This runs inside CV generation, and a CV must not fail
+    because a job board was slow — but it does not report a failure as an
+    empty list either. The caller gets MATCH_UNAVAILABLE and can say so.
+    """
+    job_title = (weight_factors.get("job_title") or "").strip()
+    if not job_title:
+        # Nothing to search for. Genuinely empty, not a failure.
+        logger.info("🧲 Auto job match skipped: the JD analysis produced no job title.")
+        return [], MATCH_NONE_FOUND
+
+    cv_location = ((facts_json.get("personal", {}) or {}).get("location") or "").strip()
+    location = cv_location or (profile_location or "").strip()
+
+    # ── CACHE FIRST, both namespaces. Free, and the page's rows are richer.
+    try:
+        from core.job_search import (  # imported here: core.job_search imports
+            auto_match_cache_key,      # this module, so a module-level import
+            page_search_cache_key,     # would be circular.
+            read_fresh_cache,
+            write_cache,
+        )
+    except Exception as e:
+        logger.error(f"🧲 Auto job match cache unavailable ({e}) — searching live.")
+        auto_match_cache_key = page_search_cache_key = read_fresh_cache = write_cache = None
+
+    auto_key = auto_match_cache_key(job_title, location) if auto_match_cache_key else None
+    if read_fresh_cache:
+        for key, label in ((page_search_cache_key(job_title, location), "Job Search page"),
+                           (auto_key, "auto match")):
+            cached = read_fresh_cache(key)
+            if not cached:
+                continue
+            jobs = ((cached.get("exact") or []) + (cached.get("related") or []))[:AUTO_MATCH_RESULT_CAP]
+            logger.info(
+                f"🧲 Auto job match for '{job_title}' served from the {label} cache "
+                f"({len(jobs)} listing(s)) — 0 search credits."
+            )
+            return jobs, (MATCH_OK if jobs else MATCH_NONE_FOUND)
+
+    # ── LIVE. One query, two lanes.
+    try:
+        # The same platform-level guard every other search entry point uses.
+        # Raising here means the whole platform is out of allowance, in which
+        # case this free panel must not be the thing that spends the last of
+        # it — the paid Job Search page has first claim.
+        assert_search_affordable("automatic CV job match")
+
+        required_skills = weight_factors.get("required_skills") or []
+        search_skills = " ".join(required_skills[:3])
+        location_part = f" in {location}" if location else ""
+        query = f"{job_title} active job openings hiring {search_skills}{location_part}".strip()
+
+        # ITS OWN COUNTER, NOT THE AMBIENT ONE. CV generation does not run
+        # inside a search_call_counter() block the way the Job Search
+        # endpoints do, so current_counter() is None here in production —
+        # and a guard that reads None can never fire. This match needs real
+        # numbers for two separate reasons (knowing what it spent, and
+        # knowing whether every lane failed), so it makes its own and folds
+        # the totals back into the ambient counter afterwards if there is
+        # one, so no accounting is lost either way.
+        counter = {"calls": 0, "units": 0, "usd": 0.0, "failed": 0,
+                   "provider": search_provider.SEARCH_PROVIDER}
+        named, open_web = _run_search_pass(
+            counter, None, query, [s.lower() for s in required_skills],
+            use_open_lane=False, lanes=AUTO_MATCH_LANES,
+        )
+        ambient = search_provider.current_counter()
+        if ambient is not None:
+            for field in ("calls", "units", "usd", "failed"):
+                ambient[field] = ambient.get(field, 0) + counter[field]
+        candidates = _drop_source_job(named + open_web, weight_factors)
+
+        field_terms = candidate_field_terms(facts_json, required_skills)
+        screened = _llm_screen_listings(
+            candidates, job_title, location, required_skills, field_terms=field_terms
+        )
+        if screened is None:
+            screened = _heuristic_filter(candidates, _location_terms(location), field_terms)
+
+        # EVERY LANE FAILED IS NOT "NOTHING FOUND". _search_lane swallows a
+        # lane error and returns [] so one dead board cannot sink a search —
+        # correct for the search, and a silent lie at this level if all of
+        # them did it. Caught by tests/test_auto_job_match.py, which is the
+        # only reason this branch exists: without it a provider outage
+        # rendered as "no jobs match your CV".
+        # Counted against the lanes ASKED FOR, not against the calls billed:
+        # a failure that happens before the provider bills (a client that
+        # cannot be constructed, a DNS failure) records no call at all, and
+        # comparing the two would silently skip exactly that case.
+        if counter["failed"] >= len(AUTO_MATCH_LANES):
+            logger.error(
+                f"🧲 Auto job match UNAVAILABLE for '{job_title}': all "
+                f"{len(AUTO_MATCH_LANES)} search lane(s) failed. Reporting "
+                "UNAVAILABLE, not 'no jobs found'."
+            )
+            return [], MATCH_UNAVAILABLE
+
+        jobs = _finalize_listings(screened, AUTO_MATCH_RESULT_CAP)
+
+        if write_cache and auto_key:
+            write_cache(auto_key, job_title, location,
+                        {"exact": jobs, "related": []}, counter["units"])
+
+        logger.info(
+            f"🧲 Auto job match for '{job_title}': {len(jobs)} listing(s) from "
+            f"{len(candidates)} candidate(s), {counter['units']} search credit(s)."
+        )
+        return jobs, (MATCH_OK if jobs else MATCH_NONE_FOUND)
+
+    except SearchQuotaExhausted as e:
+        # NOT an empty result. The platform is out of search allowance; this
+        # candidate's matches were never looked for. ERROR because a paying
+        # customer is affected and the panel must say "unavailable", not
+        # "none".
+        logger.error(
+            f"🧲 Auto job match UNAVAILABLE for '{job_title}' (search allowance exhausted): {e}. "
+            "Reporting UNAVAILABLE, not 'no jobs found'."
+        )
+        return [], MATCH_UNAVAILABLE
+    except Exception as e:
+        logger.opt(exception=True).error(
+            f"🧲 Auto job match UNAVAILABLE for '{job_title}': {e}. "
+            "Reporting UNAVAILABLE, not 'no jobs found'. The CV itself is unaffected."
+        )
+        return [], MATCH_UNAVAILABLE
+
+
 def run_jobs_finder(state: AgentState) -> dict:
     """
     LangGraph execution node for Agent 6.
@@ -2310,13 +2548,17 @@ def run_jobs_finder(state: AgentState) -> dict:
     if not user_id:
         logger.warning("Agent 6 has no user_id in state — falling back to the CV's location only.")
 
-    fallback_location = None if _looks_like_real_location(cv_location) else profile_location
-
-    similar_jobs = find_similar_jobs(
+    # THE AUTOMATIC MATCH, NOT find_similar_jobs. This node runs on every
+    # generation; find_similar_jobs is the on-demand button and costs several
+    # times more. See find_matching_jobs_for_cv for the full reasoning.
+    jobs, status = find_matching_jobs_for_cv(
         weight_factors,
         facts_json,
-        fallback_location=fallback_location,
         profile_location=profile_location,
     )
 
-    return {"similar_jobs": similar_jobs}
+    # similar_jobs stays a plain list because everything that reads it — the
+    # results panel, My Resumes, the resumes.similar_jobs column — already
+    # does. The STATUS rides alongside so a failed search is never rendered
+    # as "no jobs found"; see MATCH_UNAVAILABLE.
+    return {"similar_jobs": jobs, "similar_jobs_status": status}

@@ -9,6 +9,7 @@ from agents.tailoring_engine import run_tailoring_engine   # Agent 3
 from core.fact_checker import run_fact_checker      # Validation Node
 from agents.document_generator import run_document_generator  # Agent 4
 from agents.match_scorer import run_match_scorer    # Agent 5
+from agents.jobs_finder import run_jobs_finder       # Agent 6 — automatic per-CV job match
 from utils.ats_scorer import run_ats_scorer          # Deterministic ATS keyword/skills/education/experience match
 
 # 1. Initialize State Graph Engine
@@ -21,6 +22,7 @@ workflow.add_node("jd_analyzer", run_jd_analyzer)
 workflow.add_node("tailoring_engine", run_tailoring_engine) # Updated node reference
 workflow.add_node("fact_checker", run_fact_checker)
 workflow.add_node("document_generator", run_document_generator)
+workflow.add_node("jobs_finder", run_jobs_finder)
 
 # SPEED: ats_scorer and match_scorer are ONE node.
 #
@@ -120,22 +122,35 @@ def route_after_fact_check(state: AgentState):
         # independent of each other. See run_scoring for why the two scorers
         # are one node rather than two.
         #
-        # ⚠️ jobs_finder IS NO LONGER HERE, and that is the single largest
-        # cost change in the product.
+        # ⚠️ jobs_finder IS BACK — as a DIFFERENT, much smaller search.
         #
-        # It used to be an unconditional third sibling, so EVERY CV
-        # generation spent 8 Tavily credits looking for matching jobs whether
-        # or not the person ever scrolled to that panel. Measured: 0.24 SAR of
-        # Tavily against 0.0133 SAR of model on the same English CV — Tavily
-        # was 95% of the cost of generating a CV, and it was spent on a
-        # feature nobody asked for at that moment.
+        # THE HISTORY MATTERS, because the obvious mistake here is to restore
+        # what was removed. What was removed was this node calling
+        # find_similar_jobs unconditionally: 8 Tavily credits on every CV
+        # whether or not anyone scrolled to the panel. Measured at the time:
+        # 0.24 SAR of Tavily against 0.0133 SAR of model on the same English
+        # CV — Tavily was 95% of the cost of generating a CV. find_similar_jobs
+        # has since grown to four lanes and a four-pass ladder, so restoring
+        # it verbatim would now cost 7-28 credits per generation, several
+        # times worse than the version that was pulled.
         #
-        # It is now on demand: POST /api/v1/resumes/{id}/find-jobs, behind a
-        # "Find matching jobs" button on the results page. Anyone who wants
-        # the results still gets exactly the same results, from the same
-        # pipeline, written back to the same `similar_jobs` column — they just
-        # press a button first. See find_jobs_for_resume in core/documents.py.
-        return ["document_generator", "scoring"]
+        # What runs here instead is find_matching_jobs_for_cv: one query, two
+        # pre-vetted lanes, five results, and the 48h shared cache checked
+        # first — 3 credits on a miss and 0 on a hit. The panel is a marketed
+        # feature (it is on the landing page and in the video), so it is back
+        # on by default for every tier; the two PAID surfaces are untouched
+        # and keep their own metering:
+        #
+        #   · /dashboard/job-search  — the Job Search page, 12 results,
+        #     adjacent titles, a monthly allowance.
+        #   · "Find matching jobs"   — POST /api/v1/resumes/{id}/find-jobs,
+        #     find_similar_jobs, same allowance.
+        #
+        # It is a parallel sibling, so it costs no wall-clock time the cover
+        # letter was not already spending, and it CANNOT fail the run:
+        # find_matching_jobs_for_cv swallows everything and reports a status
+        # instead. See its docstring.
+        return ["document_generator", "scoring", "jobs_finder"]
 
     # FAIL FAST #2 — the checker itself couldn't run (see
     # FactCheckerUnavailable in core/fact_checker.py). Nothing downstream
@@ -170,6 +185,7 @@ workflow.add_conditional_edges(
     {
         "document_generator": "document_generator",
         "scoring": "scoring",
+        "jobs_finder": "jobs_finder",
         "tailoring_engine": "tailoring_engine",
         "abort": END,
     }
@@ -180,6 +196,7 @@ workflow.add_conditional_edges(
 # Connect everything out to final execution sink step
 workflow.add_edge("document_generator", END)
 workflow.add_edge("scoring", END)
+workflow.add_edge("jobs_finder", END)
 
 # Compile Graph Structure
 app = workflow.compile()

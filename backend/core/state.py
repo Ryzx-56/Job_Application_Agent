@@ -200,6 +200,12 @@ class AgentState(TypedDict):
 
     # ── AGENT 6 OUTPUT (Tavily) ─────────────────────────────
     similar_jobs:            List[dict]
+    # "ok" / "none_found" / "unavailable" — see agents/jobs_finder.py.
+    # An empty similar_jobs list is ambiguous on its own: it means both "we
+    # looked and there is nothing today" and "we could not look". This is
+    # the field that tells them apart, so the results panel can say
+    # "unavailable" instead of showing a confident nothing.
+    similar_jobs_status:     str
 
     # ── CONTROL ─────────────────────────────────────────────
     tailoring_attempts:      int

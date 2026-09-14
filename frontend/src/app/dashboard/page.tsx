@@ -113,6 +113,9 @@ type GenerateResult = {
   tailoredBullets: TailoredBullet[];
   coverLetterText: string;
   similarJobs: SimilarJob[];
+  /* "ok" | "none_found" | "unavailable". An empty similarJobs means two
+     different things and this says which — see agents/jobs_finder.py. */
+  similarJobsStatus: string;
   factCheckPassed: boolean;
   gapAnalysis: GapItem[];
   overallRecommendation: string;
@@ -240,6 +243,9 @@ function mapBackendResponse(raw: any): GenerateResult {
     tailoredBullets: raw.tailored_bullets ?? [],
     coverLetterText: raw.cover_letter_text ?? "",
     similarJobs: raw.similar_jobs ?? [],
+    // Absent on a resume saved before the automatic match existed — those
+    // genuinely were never searched, so "unavailable" is the honest default.
+    similarJobsStatus: raw.similar_jobs_status ?? "unavailable",
     factCheckPassed: raw.fact_check_passed ?? false,
     gapAnalysis: raw.gap_analysis ?? [],
     overallRecommendation: raw.overall_recommendation ?? "",
@@ -1675,6 +1681,15 @@ export default function DashboardHomePage() {
               />
             </div>
           </div>
+
+          {/* A FAILED SEARCH IS NOT AN EMPTY ONE. Rendering nothing at all
+              for both is how "we couldn't look" becomes "there is no work
+              for you" — so the one case that can't speak for itself says so. */}
+          {result.similarJobs.length === 0 && result.similarJobsStatus === "unavailable" && (
+            <p className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
+              {copy.jobsUnavailable}
+            </p>
+          )}
 
           {result.similarJobs.length > 0 && (
             <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-[#0B1220] via-[#0F1E3D] to-[#122952] p-6 shadow-lg shadow-blue-950/20 sm:p-8">

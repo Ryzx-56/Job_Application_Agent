@@ -93,9 +93,68 @@ USD_TO_SAR = pricing_catalog.SAR_PER_USD
 # dashboard, and _addon_worst_case_ceiling() below (item 7's per-subscriber
 # ceiling) — all three recompute from whatever this constant holds.
 #
+# ⚠️ RECOMPUTED 2026-09-14 — THE AUTOMATIC JOB MATCH IS BACK, so a per-CV
+# search term returns to this figure. Read the v7 note above first: the 0.24
+# SAR Tavily term was removed because jobs_finder stopped running on every
+# generation. It runs on every generation again (core/orchestrator.py), so
+# the term cannot stay at zero — but it is NOT 0.24 any more, because what
+# runs is not what was removed.
+#
+#   REMOVED in September:  find_similar_jobs on every CV
+#                          8 provider credits = 0.24 SAR
+#   RUNNING now:           find_matching_jobs_for_cv on every CV
+#                          3 provider credits = 0.09 SAR
+#
+# 3 credits is measured, not estimated — tests/test_auto_job_match.py asserts
+# it and fails if a lane is ever added: the Jadarat lane at DEPTH_FAST (1
+# credit) plus the trusted-boards lane (2). At 0.03 SAR/credit ($0.008 x
+# SAR_PER_USD) that is 0.09 SAR.
+#
+# WORST CASE, SO NO CACHE CREDIT IS TAKEN. The automatic match checks the 48h
+# shared cache first and a hit costs nothing, so the real average will sit
+# below 0.09 — by how much depends on how many CVs target a title someone
+# already searched, which nothing has measured yet. A cost model must not
+# spend a discount it cannot prove, so this assumes every single generation
+# misses the cache.
+#
+#   0.02345 (Arabic model work per credit, the worse of the two languages)
+# + 0.02    (headroom for the Gemini extraction calls, still unmeasured)
+# + 0.09    (the automatic job match, 3 provider credits)
+# = 0.13345, rounded up to 0.14.
+#
+# APPLIED TO EVERY CREDIT, which is deliberately slightly conservative: a
+# credit diverted into a Job Search purchase buys no CV and so triggers no
+# automatic match. _addon_worst_case_ceiling() below already separates those
+# two pools (cv_credits_remaining), so the ceiling is exact; the
+# platform-wide projection in get_analytics() charges all credits at this
+# rate and therefore rounds against us, which is the right direction for a
+# worst case.
+#
 # COST_PER_CREDIT_SAR is genuinely local: it is an INPUT cost (what a
 # generation costs us to serve), not a price anyone is charged.
-COST_PER_CREDIT_SAR = 0.05
+COST_PER_CREDIT_SAR = 0.14
+
+# What one automatic per-CV job match costs, broken out so the dashboard can
+# show it and so the next person can see the term rather than having to
+# reverse it out of COST_PER_CREDIT_SAR. Derived from the lane set itself,
+# so adding a lane moves this without anyone remembering to.
+def auto_job_match_cost_sar() -> float:
+    """
+    SAR cost of the automatic job match attached to one CV generation.
+
+    PRICED IN TAVILY CREDITS, deliberately and explicitly, like every other
+    figure in this module: Tavily is the more expensive of the two providers,
+    so costing the worst case against it is the conservative choice even on a
+    day when SEARCH_PROVIDER says Serper. Both halves — the unit count and
+    the unit price — name the same provider, because taking the count from
+    one and the price from the other is how a cost model quietly reports a
+    number that was never true of anything.
+    """
+    from agents.jobs_finder import auto_match_cost_units
+    return round(
+        auto_match_cost_units("tavily") * search_provider.usd_per_unit("tavily") * USD_TO_SAR,
+        4,
+    )
 
 # ─── JOB SEARCH'S WORST-CASE PER-SEARCH COST, FOR THE ADD-ON CEILING BELOW ──
 #
@@ -110,6 +169,17 @@ COST_PER_CREDIT_SAR = 0.05
 # search_provider.py at import time because the worst case depends on the
 # SHAPE of the search (which lanes, how many queries), not just the per-call
 # price that module already tracks.
+#
+# ⚠️ RE-MEASURED 2026-09-14 and UNCHANGED. The job-search rebalance of
+# 2026-09-13 (ADJACENT_EXPANSION_THRESHOLD moved from "the exact group is
+# empty" to "the whole page is under 10") raises TYPICAL cost on a thin
+# cache-missing search by up to ~48%, but it did not move the ceiling: a
+# search that finds nothing still runs 18 calls for 31 credits, because the
+# adjacent-title expansion was already reaching its cap in that case. Driven
+# through the real search_jobs_by_title with the network stubbed and the
+# real counter, warm start: 18 calls / 31 credits / 0.93 SAR. So this figure
+# stands, and the typical-cost rise lands inside a ceiling that already
+# allowed for it.
 JOB_SEARCH_WORST_CASE_SAR = 0.93
 
 # Display labels only. These stay local on purpose: the catalogue's label_en is

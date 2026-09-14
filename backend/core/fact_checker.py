@@ -8,6 +8,7 @@ import concurrent.futures
 from google import genai
 from google.genai import types
 from loguru import logger
+from core.llm_config import EXTRACTION_TEMPERATURE
 from core.state import AgentState
 from agents.tailoring_engine import make_regeneration_fn
 
@@ -206,7 +207,13 @@ def _call_gemini_raw(prompt: str) -> str:
                 model    = "gemini-3.1-flash-lite",
                 contents = prompt,
                 config   = types.GenerateContentConfig(
-                    response_mime_type="application/json"
+                    response_mime_type="application/json",
+                    # Verification, not writing: the same bullet checked
+                    # against the same facts must reach the same verdict
+                    # every time. See EXTRACTION_TEMPERATURE in
+                    # core/llm_config.py for the reasoning; imported rather
+                    # than restated so there is one value to change.
+                    temperature=EXTRACTION_TEMPERATURE,
                 )
             )
             return response.text.strip()

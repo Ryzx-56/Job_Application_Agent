@@ -1227,6 +1227,11 @@ export const content = {
         generateCta: "Generate",
         generatingCta: "Generating…",
         resultsTitle: "Your tailored application",
+        // Shown when the automatic job match could not RUN — never when it
+        // ran and found nothing, which is a different sentence and currently
+        // renders as no panel at all.
+        jobsUnavailable:
+          "We couldn't check for matching jobs just now. Your CV and cover letter are unaffected — open Job Search to try again.",
         atsLabel: "ATS match score",
         keywordMatch: "Keyword match",
         formatting: "Formatting",
@@ -2980,6 +2985,10 @@ export const content = {
         generateCta: "إنشاء",
         generatingCta: "جارٍ الإنشاء…",
         resultsTitle: "طلبك المخصص",
+        // تظهر فقط عندما يتعذّر تشغيل البحث عن وظائف مطابقة، لا عندما يعمل
+        // البحث ولا يجد نتائج — وهما حالتان مختلفتان.
+        jobsUnavailable:
+          "تعذّر البحث عن وظائف مطابقة الآن. سيرتك الذاتية وخطاب التقديم لم يتأثرا، ويمكنك المحاولة من صفحة البحث عن وظائف.",
         atsLabel: "نتيجة توافق ATS",
         keywordMatch: "تطابق الكلمات المفتاحية",
         formatting: "التنسيق",

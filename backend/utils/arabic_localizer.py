@@ -38,7 +38,7 @@ import json
 import re
 from loguru import logger
 
-from core.llm_config import generate_writing_text
+from core.llm_config import JUDGEMENT_TEMPERATURE, generate_writing_text
 
 # One "term" is a run of Latin words: letters, digits, and the punctuation
 # that legitimately appears INSIDE a technology name (Next.js, Scikit-learn,
@@ -195,6 +195,11 @@ def build_glossary(terms: list[str], on_usage=None, max_terms: int = 120) -> dic
             max_tokens=6000,
             max_tokens_ceiling=12000,
             on_usage=on_usage,
+            # A term-for-term mapping, not prose. The same CV must produce the
+            # same glossary every run: it decides both what the reader sees and
+            # what utils/ats_scorer.arabic_scoring_document can recover, so a
+            # glossary that wanders moves the Arabic ATS score with it.
+            temperature=JUDGEMENT_TEMPERATURE,
         )
         raw = re.sub(r"```json|```", "", raw).strip()
         data = json.loads(raw)

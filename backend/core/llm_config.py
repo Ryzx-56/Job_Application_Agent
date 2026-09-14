@@ -24,6 +24,7 @@ import time
 from google import genai
 from google.genai import errors as genai_errors
 from google.genai import types
+from loguru import logger
 import anthropic
 import openai
 
@@ -100,10 +101,72 @@ _MAX_TRUNCATION_RETRIES = 2
 # is a ceiling, not a target, and short extractions still stop when they stop.
 GEMINI_MAX_OUTPUT_TOKENS = 65536
 
+# ─── SAMPLING TEMPERATURE ───────────────────────────────────────────────────
+#
+# NOTHING IN THIS FILE SET A TEMPERATURE UNTIL NOW, so every agent ran on
+# whichever default its provider picked — around 1.0 on both. That is a
+# creative-writing default applied to a pipeline whose first two agents are
+# document extraction and whose fifth is a scorer, and it is the reason the
+# same CV re-run through the same path returned different ATS and match
+# scores: Agent 1 extracted a slightly different facts_json, Agent 3 chose
+# slightly different keywords, Agent 5 formed a slightly different opinion.
+# The upgrade-CV vs from-scratch gap that was reported (58% vs 47% match on
+# near-identical input) was never measurable against that much noise.
+#
+# Three values, because there are three different jobs here and one number
+# cannot be right for all of them:
+#
+#   EXTRACTION (0.0) — "read this document and report what it says". There is
+#     exactly one correct answer and no reason to sample around it. Agent 1
+#     (cv_parser), Agent 2 (jd_analyzer) and the job screener all run here.
+#     This is also what makes a re-run reproducible at all: if extraction
+#     wanders, everything downstream inherits the wander.
+#
+#   JUDGEMENT (0.0) — "score this / verify this". Same argument, and it is
+#     the direct fix for inconsistent match scores. A scorer that returns a
+#     different number for the same evidence is not measuring anything.
+#
+#   WRITING (0.3) — bullets, cover letters, LinkedIn copy. Deliberately NOT
+#     0.0: greedy decoding on a writing task produces flat, repetitive
+#     phrasing and reaches for the same sentence shape on every CV, which is
+#     precisely the "reads like it was generated" quality this product is
+#     trying not to have. 0.3 is low enough that the same CV and JD yield
+#     substantially the same content — so the ATS score computed from it is
+#     stable to within a point or two — and high enough that the prose does
+#     not come out mechanical.
+#
+# Overridable from the environment so a bad choice is a Render config change,
+# not a deploy — the same reasoning as WRITING_MODEL above.
+def _env_temperature(name: str, default: float) -> float:
+    raw = (os.getenv(name) or "").strip()
+    if not raw:
+        return default
+    try:
+        value = float(raw)
+    except ValueError:
+        logger.error(
+            f"{name}={raw!r} is not a number — falling back to {default}. "
+            "Sampling temperature is NOT being overridden."
+        )
+        return default
+    if not 0.0 <= value <= 2.0:
+        logger.error(
+            f"{name}={value} is outside 0.0-2.0 — falling back to {default}."
+        )
+        return default
+    return value
+
+
+EXTRACTION_TEMPERATURE = _env_temperature("EXTRACTION_TEMPERATURE", 0.0)
+JUDGEMENT_TEMPERATURE = _env_temperature("JUDGEMENT_TEMPERATURE", 0.0)
+WRITING_TEMPERATURE = _env_temperature("WRITING_TEMPERATURE", 0.3)
+
+
 # Shared config for Gemini JSON responses
 gemini_json_config = types.GenerateContentConfig(
     response_mime_type="application/json",
     max_output_tokens=GEMINI_MAX_OUTPUT_TOKENS,
+    temperature=EXTRACTION_TEMPERATURE,
 )
 
 
@@ -249,6 +312,7 @@ def _generate_anthropic_text(
     on_usage=None,
     system: str | None = None,
     max_tokens_ceiling: int | None = None,
+    temperature: float | None = None,
 ) -> str:
     """
     Call Claude and return plain text. Retries on rate limits / transient
@@ -328,6 +392,8 @@ def _generate_anthropic_text(
                     }
                 ],
             )
+            if temperature is not None:
+                call_kwargs["temperature"] = temperature
             if system:
                 call_kwargs["system"] = [
                     {
@@ -452,6 +518,33 @@ def _is_retryable_openai_error(exc: Exception) -> bool:
     return isinstance(exc, (openai.APIConnectionError, openai.APITimeoutError))
 
 
+# Set the first time a model refuses a custom temperature, so the fallback
+# below is paid once per process rather than on every call. See
+# _temperature_unsupported.
+_TEMPERATURE_REFUSED_BY: set[str] = set()
+
+
+def _temperature_unsupported(exc: Exception) -> bool:
+    """
+    True when the provider refused the request specifically BECAUSE of the
+    temperature parameter.
+
+    Reasoning-tuned models (the o-series, and some GPT-5 variants) accept
+    only their default temperature and answer a custom one with a 400. This
+    file cannot know which family WRITING_MODEL names — it is an env var
+    that is expected to change — so shipping a hard temperature without this
+    check would mean one model swap silently taking down every writing call
+    in the pipeline.
+
+    Matched on the message rather than the status code alone: a 400 has many
+    other causes, and retrying those without temperature would be treating an
+    unrelated failure as this one.
+    """
+    if not isinstance(exc, openai.BadRequestError):
+        return False
+    return "temperature" in str(exc).lower()
+
+
 def _generate_openai_text(
     model: str,
     prompt: str,
@@ -460,6 +553,7 @@ def _generate_openai_text(
     on_usage=None,
     system: str | None = None,
     max_tokens_ceiling: int | None = None,
+    temperature: float | None = None,
 ) -> str:
     """
     Call the OpenAI writing model and return plain text. Same contract as
@@ -511,11 +605,15 @@ def _generate_openai_text(
                 messages.append({"role": "system", "content": system})
             messages.append({"role": "user", "content": prompt})
 
-            response = openai_client.chat.completions.create(
+            call_kwargs = dict(
                 model=model,
                 max_completion_tokens=current_max_tokens,
                 messages=messages,
             )
+            if temperature is not None and model not in _TEMPERATURE_REFUSED_BY:
+                call_kwargs["temperature"] = temperature
+
+            response = openai_client.chat.completions.create(**call_kwargs)
 
             choice = response.choices[0] if response.choices else None
             text = ((choice.message.content if choice else None) or "").strip()
@@ -571,6 +669,23 @@ def _generate_openai_text(
             raise
         except Exception as e:
             last_error = e
+            # THE MODEL REFUSED THE TEMPERATURE, not the work. Retry the same
+            # request without it and remember, so the rest of this process
+            # stops sending it. Logged at ERROR because the pipeline is now
+            # running at the provider's default sampling — which is the
+            # non-determinism these constants exist to remove — and that is a
+            # thing someone needs to know is happening, not a detail.
+            if _temperature_unsupported(e) and model not in _TEMPERATURE_REFUSED_BY:
+                _TEMPERATURE_REFUSED_BY.add(model)
+                logger.error(
+                    f"[{model}] rejected temperature={temperature}: {e}. Retrying "
+                    "without it and NOT sending it again this process. Generation "
+                    "still works, but this model is now sampling at its own default, "
+                    "so scores and wording will vary between identical runs. Set "
+                    "WRITING_TEMPERATURE to this model's supported value, or pick a "
+                    "model that accepts one."
+                )
+                continue
             if _is_retryable_openai_error(e) and attempt < max_retries:
                 delay = min(60, 8 * attempt)
                 print(f"[{model}] Transient error, retrying in {delay:.0f}s "
@@ -589,6 +704,7 @@ def generate_writing_text(
     on_usage=None,
     system: str | None = None,
     max_tokens_ceiling: int | None = None,
+    temperature: float = WRITING_TEMPERATURE,
 ) -> str:
     """
     Run one writing call on whichever provider WRITING_MODEL names.
@@ -612,6 +728,7 @@ def generate_writing_text(
         on_usage=on_usage,
         system=system,
         max_tokens_ceiling=max_tokens_ceiling,
+        temperature=temperature,
     )
 
 
@@ -694,7 +811,8 @@ def usd_cost(model: str, input_tokens: int, output_tokens: int, cached_tokens: i
     ) / 1_000_000
 
 
-def generate_writing_json(prompt: str, max_tokens: int = 3000, max_retries: int = 5, on_usage=None) -> str:
+def generate_writing_json(prompt: str, max_tokens: int = 3000, max_retries: int = 5, on_usage=None,
+                          temperature: float = WRITING_TEMPERATURE) -> str:
     """
     A writing call that is expected to return a JSON object.
 
@@ -705,7 +823,8 @@ def generate_writing_json(prompt: str, max_tokens: int = 3000, max_retries: int 
     and switching to a structured-output mode is a behaviour change that
     belongs in its own commit, not inside a provider swap.
     """
-    return generate_writing_text(prompt, max_tokens=max_tokens, max_retries=max_retries, on_usage=on_usage)
+    return generate_writing_text(prompt, max_tokens=max_tokens, max_retries=max_retries,
+                                 on_usage=on_usage, temperature=temperature)
 
 
 def generate_gemini_text(prompt: str, max_retries: int = 5) -> str:
@@ -717,6 +836,12 @@ def generate_gemini_text(prompt: str, max_retries: int = 5) -> str:
             response = gemini_client.models.generate_content(
                 model=GEMINI_MODEL,
                 contents=prompt,
+                # Same deterministic setting as the JSON path — this is the
+                # composite-JD builder, not a creative writing call.
+                config=types.GenerateContentConfig(
+                    temperature=EXTRACTION_TEMPERATURE,
+                    max_output_tokens=GEMINI_MAX_OUTPUT_TOKENS,
+                ),
             )
             return _gemini_text_or_raise(response, "text generation")
         except (genai_errors.ClientError, genai_errors.ServerError) as e:

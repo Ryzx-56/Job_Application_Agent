@@ -20,6 +20,61 @@
 > has the same `/usage` quota pre-flight `search_jobs_by_title` already had
 > (§5) — the two entry points fail the same way when the platform ceiling is
 > hit, not just when a key is missing.
+>
+> **Third update, 2026-09-13:** `COST_PER_CREDIT_SAR` moved 0.04 → **0.05**.
+> Arabic dropped from 2 credits to 1, which flips which language is the worse
+> PER-CREDIT case: Arabic's 0.02345 SAR of model work now buys one credit
+> rather than two, so 0.02345 + 0.02 headroom = 0.04345, rounded up.
+>
+> ## Fourth update, 2026-09-14 — THE AUTOMATIC JOB MATCH IS BACK
+>
+> This is the largest change since v7 was written, and it reverses the second
+> update above. **Read this before trusting any Tavily figure below.**
+>
+> The automatic per-CV job match is a marketed feature (landing page, and the
+> marketing video references it), so it is back on for every tier. What is
+> back is **not what was removed**:
+>
+> | | removed Sept | restored 2026-09-14 |
+> |---|---|---|
+> | function | `find_similar_jobs` | `find_matching_jobs_for_cv` |
+> | queries | up to 4 passes | **1** |
+> | lanes | 4 (priority, trusted, saudi, open) | **2** (priority, trusted) |
+> | results | up to 5, uncapped pool | **5, hard cap** |
+> | cache | none | **48h shared cache checked first** |
+> | credits/CV | 8 (0.24 SAR) | **3 (0.09 SAR)**, 0 on a cache hit |
+>
+> The two PAID surfaces are untouched and keep their own metering: the Job
+> Search page (12 results, adjacent titles) and the per-CV "Find matching
+> jobs" button (`find_similar_jobs`, 7 credits typical / 31 worst case).
+>
+> **`COST_PER_CREDIT_SAR` is therefore 0.05 → 0.14**:
+> 0.02345 (Arabic model) + 0.02 (Gemini headroom) + **0.09 (auto job match)**
+> = 0.13345, rounded up. No cache discount is taken — a worst case must not
+> spend a saving nobody has measured yet.
+>
+> **Margins after the change** (`_addon_worst_case_ceiling`, one subscriber
+> doing everything the plan allows):
+>
+> | tier | worst-case cost | was | margin | was | floor |
+> |---|---|---|---|---|---|
+> | Free | 0.42 SAR | 0.15 | n/a (no revenue) | — | — |
+> | Pro (29 SAR) | 9.15 SAR | 8.79 | **68.4%** | 69.7% | 65% ✅ |
+> | Elite (99 SAR) | 29.72 SAR | 26.57 | **70.0%** | 73.2% | 65% ✅ |
+>
+> **Per-CV cost for a Free-tier user: 0.14 SAR** (was 0.05 after the removal;
+> was 0.28 under the original automatic match). A Free user's whole 3-credit
+> worst case is **0.42 SAR**, half what the same feature cost them before it
+> was pulled (0.84 SAR at 0.28/credit).
+>
+> **`JOB_SEARCH_WORST_CASE_SAR` stays 0.93.** Re-measured 2026-09-14 by
+> driving the real `search_jobs_by_title` with the network stubbed and the
+> real counter, warm start: **18 calls / 31 credits / 0.93 SAR** for a search
+> that finds nothing. The 2026-09-13 relevance rebalance raises TYPICAL cost
+> on a thin cache-missing search by up to ~48%, but it did not move the
+> ceiling — the adjacent-title expansion was already hitting its cap in that
+> case. The typical-cost rise lands inside a ceiling that already allowed
+> for it.
 
 Every figure here is either **read from the code** or **measured by running
 it**. Nothing is retyped from v6, because v6's two load-bearing numbers were
@@ -98,6 +153,7 @@ the only cost driver is how many times a search fires.
 |---|---|---|---|
 | **Per CV creation, automatic** | **0** | **$0.00** | **0.00** |
 | `find-jobs` (per-CV button) — typical | 8 | $0.064 | **0.24** |
+| **automatic per-CV match (2026-09-14)** | **3** | **$0.024** | **0.09** |
 | `find-jobs` (per-CV button) — worst case | 32 | $0.256 | **0.96** |
 | Standalone Job Search — typical | 24 | $0.192 | **0.72** |
 | Standalone Job Search — worst case | 36 | $0.288 | **1.08** |
@@ -108,6 +164,10 @@ At Tavily's published Pay-As-You-Go rate of **$0.008/credit**
 (0.008 × 3.75, `SAR_PER_USD`).
 
 **Per CV creation is genuinely zero, not "gated to zero for free tier."**
+> ⚠️ **Superseded 2026-09-14** — see the fourth update at the top. `jobs_finder`
+> IS a graph sibling again, running the 3-credit `find_matching_jobs_for_cv`
+> rather than the 8-credit `find_similar_jobs` described below.
+
 `core/orchestrator.py`'s `route_after_fact_check` confirms `jobs_finder` is no
 longer a graph sibling for *any* tier — CV generation runs tailoring, fact
 check, cover letter and scoring, and nothing else. The job match only runs

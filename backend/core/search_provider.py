@@ -194,7 +194,12 @@ def search_call_counter():
     reported 24 calls for a search that made 72: a 3x undercount that looked
     entirely plausible.
     """
-    counter = {"calls": 0, "units": 0, "usd": 0.0, "provider": SEARCH_PROVIDER}
+    # `failed` counts lanes that were billed but returned nothing because the
+    # CALL failed — see record_failure. Without it a caller cannot tell "every
+    # board we asked had no matches" from "every board we asked was down",
+    # since agents/jobs_finder._search_lane deliberately swallows a lane error
+    # and returns [] so the other lanes can cover for it.
+    counter = {"calls": 0, "units": 0, "usd": 0.0, "failed": 0, "provider": SEARCH_PROVIDER}
     previous = getattr(_counter_state, "counter", None)
     _counter_state.counter = counter
     try:
@@ -222,6 +227,23 @@ def record_call(counter: dict | None, depth: str = DEPTH_THOROUGH) -> None:
     target["calls"] += 1
     target["units"] += units_per_call(depth=depth)
     target["usd"] += cost_per_call_usd(depth=depth)
+
+
+def record_failure(counter: dict | None) -> None:
+    """
+    One provider call was billed and came back as an error rather than as
+    results.
+
+    THE POINT IS TELLING TWO EMPTY RESULTS APART. A lane that errors returns
+    the same `[]` a lane with no matches returns, on purpose, so one dead
+    board cannot take down a whole search. That is right for the search and
+    wrong for whoever has to describe the outcome: if EVERY lane errored, the
+    honest answer is "we could not look", not "there is nothing".
+    """
+    target = counter if counter is not None else current_counter()
+    if target is None:
+        return
+    target["failed"] = target.get("failed", 0) + 1
 
 
 # ─── HOW MANY site: OPERATORS GOOGLE WILL HONOUR ────────────────────────────
