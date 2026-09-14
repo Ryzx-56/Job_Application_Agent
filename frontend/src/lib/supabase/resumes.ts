@@ -61,7 +61,13 @@ export type ResumeRecord = {
   tailored_summary: string;
   tailored_bullets: TailoredBullet[];
   gap_analysis: GapItem[];
+  /* FREE automatic teaser, up to 5, written on every generation. */
   similar_jobs: SimilarJob[];
+  /* PAID results, up to 10, written only by the "Find matching jobs" button.
+     null until that button has actually been paid for and run — which is
+     exactly what the backend's idempotency check reads, so the two must not
+     be conflated here either. */
+  matched_jobs: SimilarJob[] | null;
   cover_letter_text: string;
   // Structured data the backend regenerates the PDF/DOCX from on demand —
   // see backend/main.py's build_generation_snapshot. Opaque on the
@@ -167,8 +173,12 @@ const RESUME_LIST_COLUMNS =
   "id, user_id, role, company, cv_language, job_description, ats_score, " +
   "ats_breakdown, job_match_score, job_match_reason, overall_recommendation, " +
   "fact_check_passed, tailored_summary, tailored_bullets, gap_analysis, " +
-  "similar_jobs, cover_letter_text, is_archived, created_at, " +
+  "similar_jobs, matched_jobs, cover_letter_text, is_archived, created_at, " +
   "snapshot_name:generation_snapshot->facts_json->personal->name";
+
+/* The same list without `matched_jobs`, for the window between this code
+   deploying and its migration being applied. See fetchResumes. */
+const RESUME_LIST_COLUMNS_LEGACY = RESUME_LIST_COLUMNS.replace("matched_jobs, ", "");
 
 /** Every column except `generation_snapshot`, plus `has_snapshot` answering
  *  the only question the lists ever asked it.
@@ -189,12 +199,26 @@ export async function fetchResumes(
   const from = page * pageSize;
   const to = from + pageSize - 1;
 
-  const { data, error, count } = await supabase
-    .from("resumes")
-    .select(RESUME_LIST_COLUMNS, { count: "exact" })
-    .eq("is_archived", false)
-    .order("created_at", { ascending: false })
-    .range(from, to);
+  /* SURVIVES THE DEPLOY WINDOW. `matched_jobs` arrives in a migration a
+     human applies, while this bundle ships on push. Selecting a column that
+     does not exist yet fails the WHOLE query, which would empty My Resumes
+     for every user until someone applied it — a far worse outcome than the
+     one missing field. So the richer select is tried first and a failure
+     falls back to the set that is live today. Self-healing: the first load
+     after the migration lands picks up the real column. */
+  const run = (columns: string) =>
+    supabase
+      .from("resumes")
+      .select(columns, { count: "exact" })
+      .eq("is_archived", false)
+      .order("created_at", { ascending: false })
+      .range(from, to);
+
+  let { data, error, count } = await run(RESUME_LIST_COLUMNS);
+  if (error) {
+    console.error("fetchResumes: retrying without matched_jobs —", error.message);
+    ({ data, error, count } = await run(RESUME_LIST_COLUMNS_LEGACY));
+  }
 
   if (error) throw error;
   const rows = (data ?? []) as unknown as (ResumeListRecord & { snapshot_name?: unknown })[];

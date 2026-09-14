@@ -164,17 +164,27 @@ const MATCH_BADGE_CLASSES: Record<MatchTier, string> = {
 function ResumeJobs({
   resumeId,
   savedJobs,
+  teaserJobs,
   lang,
   copy,
 }: {
   resumeId: string;
+  /** PAID results (resumes.matched_jobs). Their presence, and only theirs,
+   *  means this search has already been bought. */
   savedJobs: SimilarJob[];
+  /** FREE automatic teaser (resumes.similar_jobs). Shown while the paid
+   *  search has not been run, so the panel is never empty — but it must
+   *  NEVER make the button look already-used, which is the whole point of
+   *  the 2026-09-14 split. */
+  teaserJobs: SimilarJob[];
   lang: "en" | "ar";
   copy: any;
 }) {
-  const [jobs, setJobs] = useState<SimilarJob[]>(savedJobs);
+  const [jobs, setJobs] = useState<SimilarJob[]>(savedJobs.length > 0 ? savedJobs : teaserJobs);
   const [searching, setSearching] = useState(false);
   const [searchError, setSearchError] = useState<string | null>(null);
+  // PAID results only. A CV holding just the free teaser has NOT been
+  // searched, so the button stays offered and pressing it runs a real search.
   const [searched, setSearched] = useState(savedJobs.length > 0);
 
   // The 402 addon_purchase_available offer (Job Search's shared baseline —
@@ -269,9 +279,17 @@ function ResumeJobs({
         )}
       </div>
 
-      {!searched && jobs.length === 0 && (
+      {/* THE BUTTON IS OFFERED WHENEVER THE PAID SEARCH HAS NOT RUN, even
+          when the panel already shows listings. Those listings are the free
+          automatic teaser (up to 5); the button buys the full search (up to
+          10). Gating on `jobs.length === 0` — which is what this did while
+          the two shared a column — hid the paid feature behind the free
+          one's output. */}
+      {!searched && (
         <div className="mt-2">
-          <p className="text-sm text-slate-500">{copy.jobsNotSearchedYet}</p>
+          <p className="text-sm text-slate-500">
+            {jobs.length > 0 ? copy.jobsTeaserNote : copy.jobsNotSearchedYet}
+          </p>
           <button
             type="button"
             // NOT a bare function reference: passed the click event as its
@@ -661,7 +679,8 @@ function ResumeDetail({ resume, lang, copy, generateCopy }: { resume: ResumeList
           before job search shipped — coalesce before handing it on. */}
       <ResumeJobs
         resumeId={resume.id}
-        savedJobs={resume.similar_jobs ?? []}
+        savedJobs={resume.matched_jobs ?? []}
+        teaserJobs={resume.similar_jobs ?? []}
         lang={lang}
         copy={copy}
       />

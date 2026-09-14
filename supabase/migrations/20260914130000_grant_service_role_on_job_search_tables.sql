@@ -1,0 +1,57 @@
+-- The job search cache and history tables were never granted to service_role
+-- — 2026-09-14.
+--
+-- ─── THE DEFECT ─────────────────────────────────────────────────────────────
+--
+-- 20260912100000 created `job_search_cache` and `job_search_history` and
+-- granted neither table to anything. Its closing comment explains the
+-- omission as deliberate:
+--
+--     "No GRANTs to anon/authenticated on either table: both are read and
+--      written exclusively through the backend's service-role client
+--      (core/job_search.py) ... 20260901120344 makes that the default for
+--      new tables"
+--
+-- That misreads 20260901120344. That migration makes new tables
+-- DENY-BY-DEFAULT FOR EVERY ROLE, service_role included, and says so
+-- explicitly:
+--
+--     "a new table is deny-by-default and must grant what it wants exposed,
+--      e.g. GRANT SELECT ON TABLE public.thing TO authenticated;
+--           GRANT ALL    ON TABLE public.thing TO service_role;
+--      without which PostgREST answers 404/permission-denied"
+--
+-- So both tables have been unreadable and unwritable by the only client that
+-- was ever meant to touch them, since the day they shipped.
+--
+-- ─── WHAT THAT ACTUALLY BROKE ───────────────────────────────────────────────
+--
+-- Verified live against production with the backend's own service-role key:
+-- `resumes` and `profiles` read fine, both of these return
+-- 42501 permission denied.
+--
+--   1. THE 48h SHARED SEARCH CACHE HAS NEVER ONCE SERVED A HIT. Every read
+--      raises, _get_cached_search swallows it and returns None, and None
+--      means "search live". So every Job Search — and every automatic per-CV
+--      match added on 2026-09-14 — has paid full price, and the cost saving
+--      the shared cache was built for (the 2026-09-12 decision to make it
+--      shared across users rather than per-user) has never been collected.
+--
+--   2. THE JOB SEARCH HISTORY PAGE. This is the root cause of the "Could not
+--      load your search history right now" string reported in the 2026-09-13
+--      testing pass. That round fixed the UI (real loading/failed states and
+--      a retry) but could not identify why the fetch failed, because the
+--      sandbox could not reach Supabase to ask. It is this: the list
+--      endpoint raises 503 because its own table refuses it.
+--
+-- Neither failure could be seen from the outside: one degrades silently into
+-- "search live" and the other into a message about being unable to load.
+--
+-- ALL, not SELECT/INSERT/UPDATE: the backend prunes history rows
+-- (prune_job_search_history) and the cache is upserted, so this matches what
+-- 20260901120344's own worked example prescribes for a backend-owned table.
+-- Still no grant to anon or authenticated — that part of the original
+-- comment was right, and these tables stay backend-only.
+
+GRANT ALL ON TABLE public.job_search_cache   TO service_role;
+GRANT ALL ON TABLE public.job_search_history TO service_role;

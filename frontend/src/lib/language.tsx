@@ -1362,6 +1362,12 @@ export const content = {
         jobsFindCta: "Find matching jobs",
         jobsFinding: "Searching…",
         jobsNotSearchedYet: "We haven't searched for jobs for this resume yet.",
+        // Shown when the panel is displaying the free automatic matches and
+        // the full search has not been run. Says what the user is looking at
+        // and what the button adds, without naming credits — the purchase
+        // dialog does that, and only when the baseline is actually spent.
+        jobsTeaserNote:
+          "These were found automatically when this resume was created. Run a full search for a wider list.",
         jobsSearchCount: (remaining: number, limit: number) =>
           `${remaining} of ${limit} searches left this month`,
         jobsQuotaExhausted:
@@ -3087,6 +3093,10 @@ export const content = {
         jobsFindCta: "ابحث عن وظائف مناسبة",
         jobsFinding: "جارٍ البحث…",
         jobsNotSearchedYet: "لم نبحث بعد عن وظائف لهذه السيرة الذاتية.",
+        // تظهر عندما تعرض اللوحة النتائج التلقائية المجانية ولم يُشغَّل البحث
+        // الكامل بعد.
+        jobsTeaserNote:
+          "هذه نتائج عُثر عليها تلقائيًا عند إنشاء هذه السيرة الذاتية. شغّل بحثًا كاملًا للحصول على قائمة أوسع.",
         jobsSearchCount: (remaining: number, limit: number) =>
           `بقيت ${remaining} من ${limit} عملية بحث هذا الشهر`,
         jobsQuotaExhausted:

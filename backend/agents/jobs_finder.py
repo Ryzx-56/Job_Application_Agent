@@ -241,6 +241,33 @@ _SCAM_SIGNALS = [
 # Final number of listings returned to the user.
 RESULT_CAP = 5
 
+# ─── WHAT THE PAID BUTTON RETURNS ──────────────────────────────────────────
+#
+# RESULT_CAP (5) is the size of the FREE automatic teaser that now runs on
+# every generation (AUTO_MATCH_RESULT_CAP). The paid "Find matching jobs"
+# button has to be visibly worth pressing, so it returns up to ten.
+#
+# THIS COST NOTHING TO RAISE, which is the only reason it is ten and not some
+# number chosen for how it sounds. Measured 2026-09-14 against the real
+# Tavily account and the real Gemini screener, three live searches:
+#
+#   query                              credits  screened  live & deduped  kept
+#   Software Engineer, Riyadh                7         9               8     5
+#   Accountant, Jeddah                      28        24              22     5
+#   Quantum Optics Research Scientist       28        17              16     5
+#
+# Every one of those searches had already found, screened, liveness-checked
+# and PAID FOR 8-22 listings, and then dropped all but five on the floor at
+# the last step. Raising the cap buys nothing new; it stops discarding what
+# the user already bought. Cost after the change is identical — 7 credits
+# typical, 28 worst case — and the same three searches now return 8, 10 and
+# 10.
+#
+# The broadening gate below is deliberately NOT scaled up with this. Widening
+# the search to chase ten every time is exactly the spend this codebase has
+# spent a month removing; a search that honestly has eight returns eight.
+BUTTON_RESULT_CAP = 10
+
 # How many raw candidates to pull per search before quality-filtering trims
 # them down to RESULT_CAP. Needs headroom since noise/closed/off-topic
 # results get dropped AFTER the fact, not before — asking the provider for
@@ -2133,10 +2160,11 @@ def find_similar_jobs(
     required_skills_lower = [s.lower() for s in required_skills]
 
     # PROGRESSIVELY BROADER QUERIES. Each is run only while the candidate
-    # pool is still too thin to reliably yield RESULT_CAP after screening.
-    # The pool target is a multiple of RESULT_CAP because screening drops a
+    # pool is still too thin to reliably yield a page after screening. The
+    # pool target is a multiple of RESULT_CAP because screening drops a
     # meaningful share (articles, category pages), and a pool of exactly 5
-    # reliably produced 1-2 survivors.
+    # reliably produced 1-2 survivors. Measured 2026-09-14: a pool of 31
+    # candidates yielded 9 screened and 8 live, so the multiple is right.
     queries = [
         f"{job_title} active job openings hiring {search_skills}{location_query_part}",
         f"{job_title} jobs vacancies apply{location_query_part}",
@@ -2190,6 +2218,14 @@ def find_similar_jobs(
     # bounding a restart's exposure to COLD_START_CALL_BUDGET calls instead
     # of the full 16 — the same reason search_jobs_by_title's ladder is
     # disabled on a cold start.
+    # STILL RESULT_CAP * 3 (15), NOT BUTTON_RESULT_CAP * 3. This is the gate
+    # that decides whether to BUY three more query passes, and raising the
+    # display cap to ten deliberately did not move it: scaling it to 30 would
+    # make the broadening fire on searches that already have plenty, which is
+    # the 21-credits-for-nothing spend this codebase has spent a month
+    # removing. Measured — "Software Engineer" fills the page from pass 1 and
+    # returns 8 listings for 7 credits; chasing the last two would have cost
+    # 21 more. See BUTTON_RESULT_CAP.
     if len(candidates) + len(open_web) < RESULT_CAP * 3 and len(queries) > 1 and not cold_start:
         remaining = queries[1:]
         logger.info(
@@ -2233,17 +2269,17 @@ def find_similar_jobs(
     )
     if screened is None:
         filtered = _heuristic_filter(candidates, location_terms, field_terms)
-        final = _finalize_listings(filtered)
+        final = _finalize_listings(filtered, BUTTON_RESULT_CAP)
         logger.info(f"✅ Found {len(final)} job listings via heuristic fallback (screening unavailable).")
         return final
 
-    final = _finalize_listings(screened)
-    if len(final) < RESULT_CAP:
-        # NOT padded back up to RESULT_CAP. A short list of listings the
+    final = _finalize_listings(screened, BUTTON_RESULT_CAP)
+    if len(final) < BUTTON_RESULT_CAP:
+        # NOT padded back up to BUTTON_RESULT_CAP. A short list of listings the
         # candidate could actually want is the intended outcome — see
         # MIN_RELEVANCE for the run that made this the rule.
         logger.info(
-            f"🔍 Returning {len(final)}/{RESULT_CAP} listings — the rest were off-field, "
+            f"🔍 Returning {len(final)}/{BUTTON_RESULT_CAP} listings — the rest were off-field, "
             f"closed, duplicated or gone. Not padding with irrelevant results."
         )
     logger.info(

@@ -302,10 +302,12 @@ def get_any_resume_document(
 # the cost of generating a CV, and most of it was spent on a feature nobody
 # had asked for at that moment.
 #
-# The results are identical — same pipeline, same screening, same
-# `similar_jobs` column. The only change is that somebody presses a button
-# first. If half the users never press it, that is half the Tavily bill, and
-# nobody who wants the jobs is any worse off.
+# The results are NO LONGER identical to the free panel, and since 2026-09-14
+# they are not even in the same column. A free automatic teaser (5 listings,
+# 2 lanes, 3 credits) runs on every generation and writes `similar_jobs`;
+# this endpoint runs the full 4-lane search, returns up to 10, and writes
+# `matched_jobs`. Same pipeline and same screening, deliberately different
+# depth — that difference is what the allowance slot buys.
 #
 # METERED, like LinkedIn Essential and Interview Prep. It is the most
 # expensive thing the product does and it was the only paid feature with no
@@ -352,25 +354,60 @@ def find_jobs_for_resume(
 
     enforce(JOB_SEARCH_RATE, user_id)
 
-    row = maybe_row(
-        get_admin_client()
-        .table("resumes")
-        .select("id, user_id, generation_snapshot, similar_jobs")
-        .eq("id", _require_uuid(resume_id))
-        .maybe_single()
-        .execute()
-    )
+    # ─── SURVIVES THE DEPLOY WINDOW ────────────────────────────────────────
+    #
+    # `matched_jobs` arrives in a migration
+    # (20260914120000_separate_paid_job_matches_from_auto_teaser.sql) that a
+    # human applies, while this code ships the moment main is pushed. Between
+    # those two moments the column does not exist, and selecting it is not a
+    # degraded read — PostgREST rejects the whole query, which would 500 this
+    # endpoint for every user until someone noticed.
+    #
+    # So the column is asked for, and its absence falls back to the behaviour
+    # that is live today rather than to an error. Self-healing: the moment the
+    # migration lands, the first request picks up the real column and the
+    # fallback stops being used.
+    def _fetch(columns: str):
+        return maybe_row(
+            get_admin_client()
+            .table("resumes")
+            .select(columns)
+            .eq("id", _require_uuid(resume_id))
+            .maybe_single()
+            .execute()
+        )
+
+    paid_column_available = True
+    try:
+        row = _fetch("id, user_id, generation_snapshot, matched_jobs, similar_jobs")
+    except Exception as e:
+        paid_column_available = False
+        logger.error(
+            f"resumes.matched_jobs is unreadable ({e}) — the 2026-09-14 migration has "
+            "not been applied yet. Falling back to similar_jobs for idempotency, which "
+            "means the FREE automatic teaser will again suppress this PAID search. "
+            "Apply the migration."
+        )
+        row = _fetch("id, user_id, generation_snapshot, similar_jobs")
     if not row or row.get("user_id") != user_id:
         # 404 rather than 403 for someone else's id — a 403 would confirm the
         # row exists. Same convention as core/linkedin.py and core/interview.py.
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="CV not found.")
 
-    existing = row.get("similar_jobs") or []
+    # ─── IDEMPOTENCY READS THE PAID COLUMN ONLY ────────────────────────────
+    #
+    # `matched_jobs`, NOT `similar_jobs`. The free automatic teaser writes
+    # similar_jobs on every generation (agents/jobs_finder), so reading that
+    # column here meant every CV looked like it had already been paid for and
+    # this endpoint returned the teaser's five listings without ever running
+    # the search anyone bought. See the 2026-09-14 migration.
+    #
+    # The property this check exists for is unchanged: a double-click or a
+    # refresh still returns the previous PAID result rather than buying a
+    # second search, because it is checked before begin_addon_use.
+    existing = (row.get("matched_jobs") if paid_column_available
+                else row.get("similar_jobs")) or []
     if existing:
-        # ALREADY PAID FOR. Returning the stored results costs nothing and is
-        # what makes the button safe to press twice — checked BEFORE
-        # begin_addon_use, so a double-click never even reaches the spend
-        # decision, let alone a second charge.
         return {"resume_id": resume_id, "jobs": existing, "from_cache": True}
 
     snapshot = row.get("generation_snapshot") or {}
@@ -457,11 +494,12 @@ def find_jobs_for_resume(
                     "message": "Job matching is temporarily unavailable. Nothing was charged."},
         )
 
-    # Stored so the next visit is free — this is the same column the graph
-    # node used to write, so My Resumes and everything else reads it unchanged.
+    # Stored in the PAID column so the next visit is free and the free teaser
+    # in similar_jobs is left exactly as it was.
     try:
         get_admin_client().table("resumes").update(
-            {"similar_jobs": jobs}).eq("id", resume_id).execute()
+            {"matched_jobs" if paid_column_available else "similar_jobs": jobs}
+        ).eq("id", resume_id).execute()
     except Exception as e:
         # The user has their results; failing the request now would be worse
         # than losing the cache.

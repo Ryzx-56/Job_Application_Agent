@@ -160,3 +160,50 @@ def test_the_on_demand_button_still_costs_more_than_the_auto_match(stubbed):
         jf.find_similar_jobs(WF, FACTS)
 
     assert auto["units"] < on_demand["units"]
+
+
+def test_the_button_returns_more_than_the_free_teaser(stubbed):
+    """
+    The free panel and the paid button must return visibly different amounts,
+    or the allowance slot buys nothing. Ten and five, measured against a
+    stub that supplies plenty of usable candidates.
+    """
+    assert jf.BUTTON_RESULT_CAP == 10
+    assert jf.AUTO_MATCH_RESULT_CAP == 5
+    assert jf.BUTTON_RESULT_CAP > jf.AUTO_MATCH_RESULT_CAP
+
+    auto_jobs, _ = jf.find_matching_jobs_for_cv(WF, FACTS)
+    button_jobs = jf.find_similar_jobs(WF, FACTS)
+
+    assert len(auto_jobs) <= 5
+    assert len(button_jobs) > len(auto_jobs), (
+        "the paid button returned no more than the free teaser — the cap "
+        "raise is not reaching find_similar_jobs"
+    )
+    assert len(button_jobs) <= 10
+
+
+def test_raising_the_button_cap_did_not_widen_the_search(stubbed):
+    """
+    The cap raise was free: it stops discarding results already paid for, it
+    does not buy more. If this ever fails, the broadening gate has been
+    scaled with the display cap and the button now costs more per press.
+    """
+    with search_provider.search_call_counter() as counter:
+        jf.find_similar_jobs(WF, FACTS)
+    # One pass, four lanes, the pool filled on pass 1 — 7 credits, unchanged.
+    assert counter["units"] == 7, (
+        f"the button spent {counter['units']} credits on a healthy search; it "
+        "spent 7 before the cap was raised to 10"
+    )
+
+
+def test_the_automatic_match_is_untouched_by_the_button_changes(stubbed):
+    """Belt and braces around the free panel: still 2 lanes, still 3 credits,
+    still capped at 5, still cache-first."""
+    with search_provider.search_call_counter() as counter:
+        jobs, status = jf.find_matching_jobs_for_cv(WF, FACTS)
+    assert counter["units"] == 3
+    assert counter["calls"] == 2
+    assert len(jobs) <= 5
+    assert status == jf.MATCH_OK
