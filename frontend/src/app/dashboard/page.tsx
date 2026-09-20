@@ -38,7 +38,7 @@ import {
   requiredFieldLabel,
 } from "@/components/manual-cv-form";
 import { readBuildCvDraft, clearBuildCvDraft, dataUrlToFile } from "@/lib/build-cv-draft";
-import { saveResumeResult } from "@/lib/supabase/resumes";
+import { saveResumeResultDurable } from "@/lib/supabase/resumes";
 import { fetchCredits } from "@/lib/supabase/credits";
 import { updateProfileNames, suggestNameFromCv, fetchAdminStatus, fetchBadges, markBadgesSeen } from "@/lib/supabase/profile-names";
 import { BadgeUnlockModal } from "@/components/badge-unlock";
@@ -838,14 +838,17 @@ export default function DashboardHomePage() {
       setResult(data);
 
       // Persist so it shows up in "My Resumes" and survives sign-out/back-in.
-      // Best-effort — the user already has their result on screen either way.
-      saveResumeResult({
+      // Durable, not best-effort: retries silently in the background and
+      // survives the tab closing mid-retry — see saveResumeResultDurable.
+      // The user already has their result on screen either way, so none of
+      // this is shown to them.
+      saveResumeResultDurable({
         role: data.jobTitle,
         company: data.company,
         cvLanguage,
         jobDescription,
         result: data,
-      }).catch((err) => console.error("Failed to save resume to history:", err));
+      });
     } catch (err) {
       console.error(err);
       const code = (err as Error & { code?: string })?.code;

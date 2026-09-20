@@ -1,4 +1,5 @@
 import { createClient } from "@/lib/supabase/client";
+import { saveDurable, flushPendingSaves, DEFAULT_RETRY_DELAYS_MS } from "./resume-save-retry";
 
 /* ========================================================================
    TYPES — mirror the GenerateResult shape produced in the Dashboard's
@@ -145,6 +146,45 @@ export async function saveResumeResult(params: {
   }
 
   return row as ResumeRecord;
+}
+
+/* ========================================================================
+   DURABLE SAVE — wraps saveResumeResult with silent retries and a
+   localStorage fallback.
+
+   THE BUG THIS REPLACES: the dashboard used to call saveResumeResult and
+   .catch(console.error) it — fire-and-forget. The generated CV was already
+   on screen either way, so a failed insert (a network blip is the obvious
+   cause; most users are on mobile, and this fires right when generation
+   finishes, exactly when someone would background the app or lose signal)
+   vanished into the console and the CV was gone forever: not in My
+   Resumes, not in the admin viewer, nowhere. Measured against production
+   on 2026-09-19: 14 of 15 successful generations from the most recent
+   signup cohort were never saved.
+
+   No error is ever surfaced to the user here, on purpose — they already
+   have their result on screen, and there is nothing they could do
+   differently with the information. This is a background durability
+   concern, handled entirely behind the scenes.
+======================================================================== */
+/** Same params as saveResumeResult, but never throws. Call this instead of
+ *  saveResumeResult from the generation flow. The actual retry/persistence
+ *  logic lives in resume-save-retry.ts (kept free of this file's Supabase
+ *  import so it can be unit-tested directly — see that file's comment);
+ *  this is just the production wiring. */
+export async function saveResumeResultDurable(
+  params: Parameters<typeof saveResumeResult>[0]
+): Promise<void> {
+  return saveDurable(params, saveResumeResult, DEFAULT_RETRY_DELAYS_MS);
+}
+
+/** Retries every generation that never made it into `resumes`. Called once
+ *  per dashboard mount (see DashboardShell) — this is what actually
+ *  recovers a save whose tab closed before saveResumeResultDurable's
+ *  in-tab retries finished. Silent by design, same reasoning as
+ *  saveResumeResultDurable. */
+export async function flushPendingResumeSaves(): Promise<void> {
+  return flushPendingSaves(saveResumeResult);
 }
 
 /* ========================================================================

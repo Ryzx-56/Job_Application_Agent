@@ -26,6 +26,7 @@ import { LinkedInGlyph } from "@/components/linkedin-ui";
 import { Globe } from "lucide-react";
 import { useLang, useSyncLanguageFromAccount } from "@/lib/language";
 import { fetchAdminStatus } from "@/lib/supabase/profile-names";
+import { flushPendingResumeSaves } from "@/lib/supabase/resumes";
 import { Logo } from "@/components/brand";
 import { signOut } from "@/lib/auth";
 import { OnboardingTour } from "@/components/onboarding-tour";
@@ -543,6 +544,13 @@ export function DashboardShell({ user, children }: { user: DashboardUser; childr
   const [isAdmin, setIsAdmin] = useState(false);
   useEffect(() => {
     fetchAdminStatus().then(({ isAdmin: admin }) => setIsAdmin(admin));
+  }, []);
+  // Recovers any CV generation that got saved to localStorage but never
+  // made it into `resumes` — e.g. the tab closed before
+  // saveResumeResultDurable's in-tab retries finished. Runs once per
+  // dashboard mount; silent, same reasoning as saveResumeResultDurable.
+  useEffect(() => {
+    flushPendingResumeSaves();
   }, []);
   // Follows the interface language, not the account's "primary" name —
   // see pickDisplayName.
