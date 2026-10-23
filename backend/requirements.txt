@@ -85,7 +85,7 @@ python-multipart==0.0.32
 PyYAML==6.0.3
 referencing==0.37.0
 regex==2026.9.3
-reportlab==4.3.1
+reportlab==5.0.1
 requests==2.34.2
 requests-toolbelt==1.0.0
 rpds-py==2026.6.3
